@@ -1,0 +1,42 @@
+{
+  "name": "ha-ha-ai",
+  "version": "0.1.0",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts,.tsx",
+    "e2e:build:ios": "detox build -c ios.sim.debug",
+    "e2e:ios": "detox test -c ios.sim.debug --cleanup"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.1.2",
+    "expo": "~53.0.0",
+    "expo-asset": "~11.1.7",
+    "expo-router": "~5.1.11",
+    "expo-secure-store": "~14.2.1",
+    "expo-status-bar": "~2.2.0",
+    "react": "19.0.0",
+    "react-native": "0.79.6",
+    "react-native-safe-area-context": "5.4.0",
+    "react-native-screens": "~4.11.1",
+    "zustand": "^4.5.2"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@eslint/js": "^9.39.1",
+    "@types/jest": "^30.0.0",
+    "@types/react": "~19.0.10",
+    "@types/react-native": "0.73.0",
+    "detox": "^20.47.0",
+    "eslint": "^9.17.0",
+    "globals": "^15.15.0",
+    "jest": "^30.2.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.46.0"
+  }
+}

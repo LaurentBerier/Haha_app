@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Ha-Ha.ai",
+    "slug": "ha-ha-ai",
+    "scheme": "hahaha",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "root": "src/app"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "ios": {
+      "bundleIdentifier": "com.anonymous.ha-ha-ai"
+    }
+  }
+}
