@@ -270,14 +270,16 @@ Rules:
 4. Keep config-driven behavior: editing artist config changes output without touching engine logic.
 
 ## Streaming Requirements
-1. User message added as `complete`.
-2. Insert placeholder artist message as `pending`.
-3. Choose backend by flag:
+1. Capture conversation history before appending the current user turn.
+2. User message added as `complete`.
+3. Insert placeholder artist message as `pending`.
+4. Choose backend by flag:
    - `USE_MOCK_LLM=true`: mock stream path
    - `USE_MOCK_LLM=false`: Claude API path
-4. On each token/chunk, append content and set `streaming`.
-5. On completion, set `complete`.
-6. On failure, set `error` and keep partial content.
+5. On each token/chunk, append content and set `streaming`.
+6. On completion, set `complete`.
+7. If Claude fails before completion, retry same turn with mock stream automatically.
+8. On final failure (Claude + mock), set `error` and keep partial content.
 
 ## UI Scope (Phase 1)
 Build:
@@ -325,6 +327,8 @@ When done, return:
 - Artist response path works in both modes:
   - live Claude API path
   - mock fallback path
+- Claude path does not send the same user turn twice.
+- Mode selection remains usable with long mode lists (scrollable).
 - Prompt assembly is dynamic and pure.
 - No business logic in components.
 - No TypeScript errors in strict mode.

@@ -14,11 +14,13 @@
 - Mock token streaming service retained as fallback and offline path.
 - Claude-to-mock runtime fallback on generation failures (resilience path without feature flag toggle).
 - Chat orchestration with queued stream handling, safe token appends, cancellation guards, and unmount cleanup.
+- Duplicate-turn prevention in live Claude path (history snapshot before current user message append).
 - Structured chat validation errors (`ChatError`) surfaced from hook to UI.
 - i18n layer (`fr-CA` and `en-CA` dictionaries).
 - Theme tokens and reusable components.
 - Mode selection UX (home -> mode-select -> chat).
 - Scrollable mode selection list for large mode catalogs.
+- Deterministic icon fallback variety for new/unknown modes.
 - Auto-scroll to latest message while preserving manual scroll position when user scrolls up.
 - XLSX import pipeline for modes/few-shots (`npm run import:modes`).
 - Hybrid persistence and startup hydration (`AsyncStorage` + `SecureStore`).
@@ -53,6 +55,7 @@
 
 - `npm run typecheck`: passing
 - `npm run lint`: passing
+- `npx expo install --check`: passing
 - iOS build: passing
 - `npm run e2e:ios`: passing
 

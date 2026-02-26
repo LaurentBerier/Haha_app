@@ -16,6 +16,8 @@ Phase 1 currently ships one artist (`Cathy Gauthier`) with dual chat backends:
   - live Claude API client (`claudeApiService.ts`)
   - mock reply generator (`mockLlmService.ts`)
 - Modes: 8 Cathy modes (including `radar-attitude`).
+- Mode selection: scrollable list and resilient icon fallback for newly added modes.
+- Chat UX: auto-scroll to latest messages while preserving manual scroll when user reads older content.
 - Persistence: hybrid storage (`AsyncStorage` + `expo-secure-store`).
 - Import pipeline: XLSX -> generated TypeScript mode config + few-shots.
 - Testing: Detox iOS E2E tests (Release simulator build).
@@ -60,6 +62,7 @@ Runtime behavior:
 - In non-React Native runtime, SSE streaming is used.
 - UI still renders token/appended content through the same message pipeline.
 - If Claude request fails at runtime, chat automatically falls back to mock generation for resilience.
+- Conversation history is captured before appending the current user turn to avoid duplicate-turn payloads.
 
 ## Run
 
@@ -76,6 +79,8 @@ npm run ios
 ```bash
 npm run typecheck
 npm run lint
+npx expo install --check
+npm run e2e:ios
 ```
 
 

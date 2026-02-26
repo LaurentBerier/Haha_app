@@ -64,11 +64,13 @@ Core files:
 Behavior:
 
 - User selects artist on home screen, then selects mode on mode-select screen.
+- Mode selector is rendered with `FlatList` to support long mode catalogs.
 - Conversation is created with `modeId`.
 - `useChat` resolves active mode and dedicated mode few-shots.
 - If a mode has no dedicated few-shots, `useChat` falls back to `getAllCathyFewShots()`.
 - Mock path uses mode few-shots for response selection and recency filtering.
 - Live path uses mode id to build system instructions (`personalityEngineService.ts` + `modePrompts.ts`).
+- Mode card emoji selection uses explicit per-mode mapping plus deterministic fallback for unknown/new mode ids.
 
 ## Chat Flow
 
@@ -77,22 +79,33 @@ Hook: `src/hooks/useChat.ts`
 1. Validate input and conversation id.
 2. Enforce max input length (`MAX_MESSAGE_LENGTH`) and return structured `ChatError` when invalid.
 3. Resolve active conversation mode (`modeId`) and associated mode few-shots.
-4. Add user message (`complete`).
-5. Add placeholder artist message (`pending`).
-6. Build `systemPrompt` (`buildSystemPrompt(modeId)`) and format conversation history.
-7. Queue stream jobs (prevents overlapping streams on rapid sends).
+4. Capture conversation history snapshot before appending the new user turn.
+5. Add user message (`complete`).
+6. Add placeholder artist message (`pending`).
+7. Build `systemPrompt` (`buildSystemPrompt(modeId)`) and queue stream job (prevents overlapping streams on rapid sends).
 8. Choose execution path:
    - `USE_MOCK_LLM=true` -> `streamMockReply`
    - `USE_MOCK_LLM=false` -> `streamClaudeResponse`
-   - If Claude fails, hook retries the same turn with `streamMockReply` automatically.
+   - If Claude fails before completion, hook retries the same turn with `streamMockReply` automatically.
+   - During fallback retry, placeholder content is reset and status returns to `pending`.
 9. Stream/append text into placeholder via `appendMessageContent` (`streaming`).
 10. Complete with usage metadata (`complete`) or mark error (`error`).
+
+Why history snapshot matters:
+
+- Prevents sending the same user input twice to Claude for one turn.
 
 Unmount behavior:
 
 - Cancels active stream.
 - Marks active and queued artist messages as `error`.
 - Guards against stale token writes after cancellation/conversation changes.
+
+Message list behavior:
+
+- Conversation uses `FlatList`.
+- On first render and new tokens/messages, UI auto-scrolls to latest when user is near bottom.
+- If user scrolls up to read history, auto-scroll pauses until user returns near the bottom.
 
 ## Personality Engine
 

@@ -220,3 +220,51 @@ Checklist:
 - Confirm app was restarted after env changes.
 - Confirm simulator has outbound internet access.
 - Check Metro logs for `[Chat] Generation failed:` details.
+
+## 11) AI says user is repeating input (same turn sent twice)
+
+Symptom:
+
+- Replies mention that user repeated themselves even when only one message was sent.
+
+Cause:
+
+- Running an older build where conversation history was captured after appending the current user turn.
+
+Fix:
+
+1. Pull latest `main` and reinstall if needed:
+
+```bash
+cd /Users/laurentbernier/Documents/HAHA_app
+git pull
+npm install
+```
+
+2. Restart Metro with clean cache:
+
+```bash
+npm run start -- --clear
+```
+
+3. Reopen app in simulator/device.
+
+## 12) Mode list does not scroll or shows repeated default icons
+
+Symptom:
+
+- Cannot scroll to lower modes in mode selection.
+- New modes all show the same default icon.
+
+Cause:
+
+- Old JS bundle still cached.
+
+Fix:
+
+```bash
+cd /Users/laurentbernier/Documents/HAHA_app
+npm run start -- --clear
+```
+
+Then reload app (`Cmd + R` on iOS simulator).
