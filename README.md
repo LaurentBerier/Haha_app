@@ -59,6 +59,7 @@ Runtime behavior:
 - In React Native runtime (Expo Go/dev-client), Claude calls are executed in non-stream mode for compatibility.
 - In non-React Native runtime, SSE streaming is used.
 - UI still renders token/appended content through the same message pipeline.
+- If Claude request fails at runtime, chat automatically falls back to mock generation for resilience.
 
 ## Run
 

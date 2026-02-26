@@ -92,6 +92,15 @@ export function useChat(conversationId: string) {
     activeMessageIdRef.current = artistMessageId;
     streamingConversationIdRef.current = conversationId;
     isCancelledRef.current = false;
+    let fallbackStarted = false;
+
+    const resetStreamState = () => {
+      isStreamingRef.current = false;
+      activeMessageIdRef.current = null;
+      streamingConversationIdRef.current = null;
+      isCancelledRef.current = false;
+      cancelRef.current = null;
+    };
 
     const onToken = (token: string) => {
       if (isCancelledRef.current) {
@@ -109,43 +118,52 @@ export function useChat(conversationId: string) {
         metadata: { tokensUsed }
       });
       incrementUsage(tokensUsed);
-      isStreamingRef.current = false;
-      activeMessageIdRef.current = null;
-      streamingConversationIdRef.current = null;
-      isCancelledRef.current = false;
-      cancelRef.current = null;
+      resetStreamState();
       runNext();
     };
 
-    const onError = (error: Error) => {
+    const failStream = (error: Error) => {
       console.error('[Chat] Generation failed:', error.message);
       updateMessage(conversationId, artistMessageId, { status: 'error' });
-      isStreamingRef.current = false;
-      activeMessageIdRef.current = null;
-      streamingConversationIdRef.current = null;
-      isCancelledRef.current = false;
-      cancelRef.current = null;
+      resetStreamState();
       runNext();
     };
 
-    const rawCancel = USE_MOCK_LLM
-      ? streamMockReply({
-          systemPrompt,
-          userTurn,
-          language,
-          modeFewShots,
-          modeId,
-          onToken,
-          onComplete,
-          onError
-        })
-      : streamClaudeResponse({
-          systemPrompt,
-          messages: [...history, { role: 'user', content: userTurn }],
-          onToken,
-          onComplete,
-          onError
-        });
+    const startMockStream = () =>
+      streamMockReply({
+        systemPrompt,
+        userTurn,
+        language,
+        modeFewShots,
+        modeId,
+        onToken,
+        onComplete,
+        onError: failStream
+      });
+
+    const startClaudeStream = () =>
+      streamClaudeResponse({
+        systemPrompt,
+        messages: [...history, { role: 'user', content: userTurn }],
+        onToken,
+        onComplete,
+        onError: (error) => {
+          if (fallbackStarted || isCancelledRef.current) {
+            return;
+          }
+
+          fallbackStarted = true;
+          console.warn('[Chat] Claude failed, falling back to mock:', error.message);
+          updateMessage(conversationId, artistMessageId, { content: '', status: 'pending' });
+          const fallbackCancel = startMockStream();
+          cancelRef.current = () => {
+            isCancelledRef.current = true;
+            fallbackCancel();
+          };
+        }
+      });
+
+    const rawCancel = USE_MOCK_LLM ? startMockStream() : startClaudeStream();
 
     cancelRef.current = () => {
       isCancelledRef.current = true;
@@ -163,6 +181,8 @@ export function useChat(conversationId: string) {
     }
 
     const now = new Date().toISOString();
+    const historyBeforeSend = formatConversationHistory(getMessages(conversationId));
+
     const userMessage: Message = {
       id: generateId('msg'),
       conversationId,
@@ -186,15 +206,13 @@ export function useChat(conversationId: string) {
     addMessage(conversationId, placeholder);
 
     const modeId = currentConversation.modeId || 'default';
-    const priorMessages = getMessages(conversationId);
     const systemPrompt = buildSystemPrompt(modeId);
-    const history = formatConversationHistory(priorMessages);
 
     queueRef.current.push({
       artistMessageId,
       userTurn: trimmed,
       systemPrompt,
-      history,
+      history: historyBeforeSend,
       language: currentConversation.language,
       modeFewShots,
       modeId

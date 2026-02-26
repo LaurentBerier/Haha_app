@@ -1,9 +1,10 @@
 import { useLocalSearchParams, router } from 'expo-router';
-import { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo } from 'react';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { ModeCard } from '../../components/mode/ModeCard';
 import { getModeById } from '../../config/modes';
 import { t } from '../../i18n';
+import type { Mode } from '../../models/Mode';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 
@@ -40,34 +41,50 @@ export default function ModeSelectScreen() {
     );
   }
 
-  const handleModeSelect = (modeId: string) => {
-    const hasActiveForMode =
-      !!activeConversationId &&
-      (conversations[artist.id] ?? []).some(
-        (conversation) => conversation.id === activeConversationId && conversation.modeId === modeId
-      );
+  const handleModeSelect = useCallback(
+    (modeId: string) => {
+      const hasActiveForMode =
+        !!activeConversationId &&
+        (conversations[artist.id] ?? []).some(
+          (conversation) => conversation.id === activeConversationId && conversation.modeId === modeId
+        );
 
-    if (hasActiveForMode && activeConversationId) {
-      setActiveConversation(activeConversationId);
-      router.push(`/chat/${activeConversationId}`);
-      return;
-    }
+      if (hasActiveForMode && activeConversationId) {
+        setActiveConversation(activeConversationId);
+        router.push(`/chat/${activeConversationId}`);
+        return;
+      }
 
-    const nextConversation = createConversation(artist.id, artist.defaultLanguage, modeId);
-    setActiveConversation(nextConversation.id);
-    router.push(`/chat/${nextConversation.id}`);
-  };
+      const nextConversation = createConversation(artist.id, artist.defaultLanguage, modeId);
+      setActiveConversation(nextConversation.id);
+      router.push(`/chat/${nextConversation.id}`);
+    },
+    [activeConversationId, artist.defaultLanguage, artist.id, conversations, createConversation, setActiveConversation]
+  );
+
+  const renderMode = useCallback(
+    ({ item }: { item: Mode }) => <ModeCard mode={item} onPress={() => handleModeSelect(item.id)} />,
+    [handleModeSelect]
+  );
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} testID="mode-select-screen">
-      <Text style={styles.title}>{t('modeSelectTitle')}</Text>
-      <Text style={styles.subtitle}>{artist.name}</Text>
-      <View style={styles.grid}>
-        {modeOptions.map((mode) => (
-          <ModeCard key={mode.id} mode={mode} onPress={() => handleModeSelect(mode.id)} />
-        ))}
-      </View>
-    </ScrollView>
+    <View style={styles.screen}>
+      <FlatList
+        testID="mode-select-screen"
+        data={modeOptions}
+        keyExtractor={(item) => item.id}
+        renderItem={renderMode}
+        ItemSeparatorComponent={() => <View style={styles.separator} />}
+        ListHeaderComponent={
+          <View style={styles.header}>
+            <Text style={styles.title}>{t('modeSelectTitle')}</Text>
+            <Text style={styles.subtitle}>{artist.name}</Text>
+          </View>
+        }
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator
+      />
+    </View>
   );
 }
 
@@ -78,7 +95,11 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: theme.spacing.lg,
-    gap: theme.spacing.md
+    paddingBottom: theme.spacing.xl * 2
+  },
+  header: {
+    gap: theme.spacing.xs,
+    marginBottom: theme.spacing.md
   },
   title: {
     color: theme.colors.textPrimary,
@@ -89,8 +110,8 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 14
   },
-  grid: {
-    gap: theme.spacing.md
+  separator: {
+    height: theme.spacing.md
   },
   center: {
     flex: 1,

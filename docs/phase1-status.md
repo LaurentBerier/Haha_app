@@ -12,11 +12,14 @@
 - Dynamic personality system prompt assembly service (`personalityEngineService.ts`).
 - Live Claude API service (`claudeApiService.ts`) with runtime-compatible streaming/non-stream handling.
 - Mock token streaming service retained as fallback and offline path.
+- Claude-to-mock runtime fallback on generation failures (resilience path without feature flag toggle).
 - Chat orchestration with queued stream handling, safe token appends, cancellation guards, and unmount cleanup.
 - Structured chat validation errors (`ChatError`) surfaced from hook to UI.
 - i18n layer (`fr-CA` and `en-CA` dictionaries).
 - Theme tokens and reusable components.
 - Mode selection UX (home -> mode-select -> chat).
+- Scrollable mode selection list for large mode catalogs.
+- Auto-scroll to latest message while preserving manual scroll position when user scrolls up.
 - XLSX import pipeline for modes/few-shots (`npm run import:modes`).
 - Hybrid persistence and startup hydration (`AsyncStorage` + `SecureStore`).
 - Conversation-level mode persistence (`conversation.modeId`).

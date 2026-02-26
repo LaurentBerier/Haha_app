@@ -84,6 +84,7 @@ Hook: `src/hooks/useChat.ts`
 8. Choose execution path:
    - `USE_MOCK_LLM=true` -> `streamMockReply`
    - `USE_MOCK_LLM=false` -> `streamClaudeResponse`
+   - If Claude fails, hook retries the same turn with `streamMockReply` automatically.
 9. Stream/append text into placeholder via `appendMessageContent` (`streaming`).
 10. Complete with usage metadata (`complete`) or mark error (`error`).
 

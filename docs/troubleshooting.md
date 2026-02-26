@@ -173,6 +173,7 @@ Common causes:
 - `EXPO_PUBLIC_USE_MOCK_LLM=false` but no Anthropic key configured.
 - Invalid/expired Anthropic key.
 - Device/network issue during API call.
+- Mock fallback also failed (rare), so message remains in error.
 
 Fix:
 
@@ -196,7 +197,7 @@ EXPO_PUBLIC_ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
 npm run start
 ```
 
-4. If needed, switch to mock mode for local validation:
+4. If needed, force mock mode for local validation:
 
 ```bash
 EXPO_PUBLIC_USE_MOCK_LLM=true
