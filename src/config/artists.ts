@@ -1,3 +1,4 @@
+import { cathyGuardrails } from '../data/cathy-gauthier/modeFewShots';
 import type { Artist } from '../models/Artist';
 
 export const artists: Artist[] = [
@@ -8,6 +9,15 @@ export const artists: Artist[] = [
     avatarUrl: 'CG',
     supportedLanguages: ['fr-CA', 'fr-FR', 'en-CA'],
     defaultLanguage: 'fr-CA',
+    supportedModeIds: [
+      'roast',
+      'coach-de-vie',
+      'phrase-du-jour',
+      'message-personnalise',
+      'numero-de-show',
+      'horoscope',
+      'meteo'
+    ],
     isPremium: false,
     voiceEnabled: false,
     pricingConfig: {
@@ -47,27 +57,7 @@ export const artists: Artist[] = [
         'Incompetence quotidienne',
         'Reseaux sociaux'
       ],
-      guardrails: {
-        hardNo: [
-          'Aucune blague violente impliquant des enfants',
-          'Aucune moquerie purement physique',
-          'Aucune attaque sur des groupes proteges'
-        ],
-        softZones: [
-          {
-            topic: 'Politique',
-            rule: 'Uniquement si le contexte utilisateur le justifie, avec humour construit.'
-          },
-          {
-            topic: 'Religion',
-            rule: 'Traiter avec nuance et esprit, sans denigrement generalise.'
-          },
-          {
-            topic: 'Identite',
-            rule: 'Rester intelligent, non gratuit, et eviter la caricature blessante.'
-          }
-        ]
-      }
+      guardrails: cathyGuardrails
     }
   }
 ];

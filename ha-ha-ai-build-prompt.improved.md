@@ -1,7 +1,9 @@
 # Ha-Ha.ai — Implementation Prompt (Improved)
 
+> Note: This document is kept as a build prompt reference. The current codebase has evolved and now includes live Claude integration (`claudeApiService.ts`) in addition to mock mode.
+
 ## Role and Objective
-You are a senior React Native engineer. Build **Phase 1** of Ha-Ha.ai as a production-grade Expo app with clean architecture, strict TypeScript, and a mock streaming backend.
+You are a senior React Native engineer. Build **Phase 1** of Ha-Ha.ai as a production-grade Expo app with clean architecture, strict TypeScript, and a dual backend strategy (live Claude + mock fallback).
 
 Primary outcome: a user can select Cathy Gauthier and chat with a high-fidelity AI persona through streamed responses.
 
@@ -22,7 +24,7 @@ Primary outcome: a user can select Cathy Gauthier and chat with a high-fidelity 
 - Local storage:
   - sensitive: `expo-secure-store`
   - non-sensitive: `@react-native-async-storage/async-storage`
-- Backend in Phase 1: mock service with token streaming simulation.
+- Backend in Phase 1: live Claude service with mock fallback.
 
 ## Required Folder Structure
 ```text
@@ -30,6 +32,8 @@ Primary outcome: a user can select Cathy Gauthier and chat with a high-fidelity 
   /app
     _layout.tsx
     index.tsx
+    /mode-select
+      [artistId].tsx
     /chat
       [conversationId].tsx
     /settings
@@ -66,6 +70,8 @@ Primary outcome: a user can select Cathy Gauthier and chat with a high-fidelity 
     Usage.ts
   /services
     personalityEngine.ts
+    personalityEngineService.ts
+    claudeApiService.ts
     mockLlmService.ts
     voiceEngine.ts
     subscriptionService.ts
@@ -86,8 +92,14 @@ Primary outcome: a user can select Cathy Gauthier and chat with a high-fidelity 
     localization.ts
   /config
     artists.ts
+    env.ts
     constants.ts
     featureFlags.ts
+  /data
+    /cathy-gauthier
+      personalityBlueprint.ts
+      modePrompts.ts
+      modeFewShots.ts
   /i18n
     fr.ts
     en.ts
@@ -103,6 +115,7 @@ export interface Artist {
   avatarUrl: string;
   supportedLanguages: string[];
   defaultLanguage: string;
+  supportedModeIds: string[];
   isPremium: boolean;
   voiceEnabled: boolean;
   personalityProfile: PersonalityProfile;
@@ -145,6 +158,7 @@ export interface Conversation {
   artistId: string;
   title: string;
   language: string;
+  modeId: string;
   createdAt: string;
   updatedAt: string;
   lastMessagePreview: string;
@@ -194,13 +208,14 @@ Implement 7 slices and merge into `useStore.ts`.
 - `conversationSlice`
   - `conversations: Record<string, Conversation[]>`
   - `activeConversationId: string | null`
-  - `createConversation(artistId, language)`
+  - `createConversation(artistId, language, modeId)`
   - `setActiveConversation(id)`
   - `updateConversation(id, updates)`
 - `messageSlice`
-  - `messagesByConversation: Record<string, Message[]>`
+  - `messagesByConversation: Record<string, MessagePage>`
   - `addMessage(conversationId, message)`
   - `updateMessage(conversationId, messageId, updates)`
+  - `appendMessageContent(conversationId, messageId, token)`
   - `getMessages(conversationId)`
 - `subscriptionSlice`
   - `subscription: Subscription`
@@ -223,7 +238,10 @@ Implement 7 slices and merge into `useStore.ts`.
   - `setLoading(val)`
 
 ## Personality Engine Requirements
-File: `/src/services/personalityEngine.ts`
+Files:
+
+- `/src/services/personalityEngineService.ts` (active)
+- `/src/services/personalityEngine.ts` (retained for compatibility)
 
 Implement a **pure** function:
 ```ts
@@ -254,8 +272,10 @@ Rules:
 ## Streaming Requirements
 1. User message added as `complete`.
 2. Insert placeholder artist message as `pending`.
-3. Start mock stream.
-4. On each token, append content and set `streaming`.
+3. Choose backend by flag:
+   - `USE_MOCK_LLM=true`: mock stream path
+   - `USE_MOCK_LLM=false`: Claude API path
+4. On each token/chunk, append content and set `streaming`.
 5. On completion, set `complete`.
 6. On failure, set `error` and keep partial content.
 
@@ -269,7 +289,6 @@ Build:
 - Loading and error states.
 
 Do not build yet:
-- real LLM integration
 - voice
 - payments
 - cloud sync
@@ -294,7 +313,7 @@ When done, return:
 2. Implement models and config (Cathy profile included).
 3. Implement Zustand slices + merged store.
 4. Implement personality assembly engine.
-5. Implement mock streaming service.
+5. Implement live Claude service + mock fallback service.
 6. Build home/chat/settings screens.
 7. Wire hooks and UI components.
 8. Add i18n + theme.
@@ -303,7 +322,9 @@ When done, return:
 ## Acceptance Criteria
 - App launches and navigates between home and chat.
 - User can start a conversation and send a message.
-- Mock artist response streams token-by-token in real time.
+- Artist response path works in both modes:
+  - live Claude API path
+  - mock fallback path
 - Prompt assembly is dynamic and pure.
 - No business logic in components.
 - No TypeScript errors in strict mode.

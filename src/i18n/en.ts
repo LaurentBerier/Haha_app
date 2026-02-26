@@ -4,6 +4,7 @@ export const en = {
   startChat: 'Start',
   locked: 'Locked',
   chatTitle: 'Chat',
+  modeSelectTitle: 'Mode selection',
   chatPlaceholder: 'Type your message...',
   send: 'Send',
   thinking: 'Thinking...',

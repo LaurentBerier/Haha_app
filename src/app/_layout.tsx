@@ -13,7 +13,7 @@ export default function RootLayout() {
 
   if (!hasHydrated) {
     return (
-      <View style={styles.loadingScreen}>
+      <View style={styles.loadingScreen} testID="loading-screen">
         <LoadingSpinner />
       </View>
     );
@@ -30,6 +30,7 @@ export default function RootLayout() {
         }}
       >
         <Stack.Screen name="index" options={{ title: t('appName') }} />
+        <Stack.Screen name="mode-select/[artistId]" options={{ title: t('modeSelectTitle') }} />
         <Stack.Screen name="chat/[conversationId]" options={{ title: t('chatTitle') }} />
         <Stack.Screen name="settings/index" options={{ title: t('settingsTitle') }} />
       </Stack>

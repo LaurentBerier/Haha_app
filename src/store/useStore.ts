@@ -1,13 +1,14 @@
 import { create } from 'zustand';
+import type { Conversation } from '../models/Conversation';
+import type { PersistedStoreSnapshot } from '../models/Persistence';
+import type { Message, MessagePage } from '../models/Message';
+import { createArtistAccessSlice, type ArtistAccessSlice } from './slices/artistAccessSlice';
 import { createArtistSlice, type ArtistSlice } from './slices/artistSlice';
 import { createConversationSlice, type ConversationSlice } from './slices/conversationSlice';
 import { createMessageSlice, type MessageSlice } from './slices/messageSlice';
 import { createSubscriptionSlice, type SubscriptionSlice } from './slices/subscriptionSlice';
-import { createArtistAccessSlice, type ArtistAccessSlice } from './slices/artistAccessSlice';
-import { createUsageSlice, type UsageSlice } from './slices/usageSlice';
 import { createUiSlice, type UiSlice } from './slices/uiSlice';
-import type { PersistedStoreSnapshot } from '../models/Persistence';
-import type { Message, MessagePage } from '../models/Message';
+import { createUsageSlice, type UsageSlice } from './slices/usageSlice';
 
 export type StoreState = ArtistSlice &
   ConversationSlice &
@@ -20,6 +21,19 @@ export type StoreState = ArtistSlice &
     hydrateStore: (snapshot: PersistedStoreSnapshot) => void;
     markHydrated: () => void;
   };
+
+function normalizeConversations(input: Record<string, Conversation[]>): Record<string, Conversation[]> {
+  const normalized: Record<string, Conversation[]> = {};
+
+  Object.entries(input).forEach(([artistId, conversations]) => {
+    normalized[artistId] = (conversations ?? []).map((conversation) => ({
+      ...conversation,
+      modeId: conversation.modeId ?? 'radar-attitude'
+    }));
+  });
+
+  return normalized;
+}
 
 function normalizeMessagesByConversation(
   input: Record<string, MessagePage | Message[]>
@@ -67,7 +81,7 @@ export const useStore = create<StoreState>()((...a) => ({
   hydrateStore: (snapshot) =>
     a[0]({
       selectedArtistId: snapshot.selectedArtistId,
-      conversations: snapshot.conversations,
+      conversations: normalizeConversations(snapshot.conversations),
       activeConversationId: snapshot.activeConversationId,
       messagesByConversation: normalizeMessagesByConversation(snapshot.messagesByConversation),
       subscription: snapshot.subscription,

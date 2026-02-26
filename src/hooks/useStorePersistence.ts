@@ -3,6 +3,7 @@ import { loadPersistedSnapshot, savePersistedSnapshot } from '../services/persis
 import { selectPersistedSnapshot, useStore } from '../store/useStore';
 
 const SAVE_DEBOUNCE_MS = 500;
+const HYDRATION_TIMEOUT_MS = 4000;
 
 export function useStorePersistence(): void {
   const hydrateStore = useStore((state) => state.hydrateStore);
@@ -11,10 +12,22 @@ export function useStorePersistence(): void {
 
   useEffect(() => {
     let mounted = true;
+    let finished = false;
+
+    const fallbackTimer = setTimeout(() => {
+      if (!mounted || finished) {
+        return;
+      }
+      finished = true;
+      if (__DEV__) {
+        console.warn('[persistenceService] hydration timeout reached, continuing without snapshot');
+      }
+      markHydrated();
+    }, HYDRATION_TIMEOUT_MS);
 
     (async () => {
       const snapshot = await loadPersistedSnapshot();
-      if (!mounted) {
+      if (!mounted || finished) {
         return;
       }
 
@@ -22,11 +35,14 @@ export function useStorePersistence(): void {
         hydrateStore(snapshot);
       }
 
+      finished = true;
+      clearTimeout(fallbackTimer);
       markHydrated();
     })();
 
     return () => {
       mounted = false;
+      clearTimeout(fallbackTimer);
     };
   }, [hydrateStore, markHydrated]);
 

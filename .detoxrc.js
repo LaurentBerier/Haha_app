@@ -12,9 +12,9 @@ module.exports = {
   apps: {
     'ios.debug': {
       type: 'ios.app',
-      binaryPath: 'ios/build/Build/Products/Debug-iphonesimulator/HaHaai.app',
+      binaryPath: 'ios/build/Build/Products/Release-iphonesimulator/HaHaai.app',
       build:
-        'xcodebuild -workspace ios/HaHaai.xcworkspace -scheme HaHaai -configuration Debug -sdk iphonesimulator -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.0.1" ONLY_ACTIVE_ARCH=YES -derivedDataPath ios/build'
+        'xcodebuild -workspace ios/HaHaai.xcworkspace -scheme HaHaai -configuration Release -sdk iphonesimulator -destination "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.0.1" ONLY_ACTIVE_ARCH=YES -derivedDataPath ios/build'
     }
   },
   devices: {

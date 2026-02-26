@@ -2,7 +2,12 @@
 
 ## Scope
 
-Phase 1 implements text chat with one artist and mock streaming, while preserving multi-artist-ready architecture.
+Phase 1 implements text chat with one artist and dual backend execution:
+
+- live Claude API path
+- local mock fallback path
+
+Architecture remains multi-artist-ready.
 
 ## Folder Map
 
@@ -46,18 +51,41 @@ Persistence helpers were added in store root:
 - `hasHydrated`
 - `selectPersistedSnapshot(state)`
 
+
+## Mode System
+
+Core files:
+
+- `src/models/Mode.ts`
+- `src/config/modes.ts` (generated)
+- `src/data/cathy-gauthier/modeFewShots.ts` (generated)
+- `src/app/mode-select/[artistId].tsx`
+
+Behavior:
+
+- User selects artist on home screen, then selects mode on mode-select screen.
+- Conversation is created with `modeId`.
+- `useChat` resolves active mode and dedicated mode few-shots.
+- If a mode has no dedicated few-shots, `useChat` falls back to `getAllCathyFewShots()`.
+- Mock path uses mode few-shots for response selection and recency filtering.
+- Live path uses mode id to build system instructions (`personalityEngineService.ts` + `modePrompts.ts`).
+
 ## Chat Flow
 
 Hook: `src/hooks/useChat.ts`
 
 1. Validate input and conversation id.
 2. Enforce max input length (`MAX_MESSAGE_LENGTH`) and return structured `ChatError` when invalid.
-3. Add user message (`complete`).
-4. Add placeholder artist message (`pending`).
-5. Assemble prompt from artist profile + history.
-6. Queue stream jobs (prevents overlapping streams on rapid sends).
-7. Stream tokens into placeholder via `appendMessageContent` (`streaming`).
-8. Complete with usage metadata (`complete`) or mark error (`error`).
+3. Resolve active conversation mode (`modeId`) and associated mode few-shots.
+4. Add user message (`complete`).
+5. Add placeholder artist message (`pending`).
+6. Build `systemPrompt` (`buildSystemPrompt(modeId)`) and format conversation history.
+7. Queue stream jobs (prevents overlapping streams on rapid sends).
+8. Choose execution path:
+   - `USE_MOCK_LLM=true` -> `streamMockReply`
+   - `USE_MOCK_LLM=false` -> `streamClaudeResponse`
+9. Stream/append text into placeholder via `appendMessageContent` (`streaming`).
+10. Complete with usage metadata (`complete`) or mark error (`error`).
 
 Unmount behavior:
 
@@ -67,12 +95,23 @@ Unmount behavior:
 
 ## Personality Engine
 
-File: `src/services/personalityEngine.ts`
+Files:
 
-- Pure prompt assembly function.
-- Deterministic block composition.
-- Reads artist profile + history + user input + language + optional context signals.
+- `src/services/personalityEngineService.ts` (active in chat flow)
+- `src/services/personalityEngine.ts` (legacy prompt assembler retained)
+
+Current active engine:
+
+- Assembles system prompt from Cathy blueprint + mode-specific prompt rules.
+- Formats conversation history into Anthropic-compatible role/content messages.
 - No network side effects.
+
+Live transport:
+
+- `src/services/claudeApiService.ts`
+- Uses Anthropic Messages API (`/v1/messages`).
+- React Native runtime uses non-stream fallback for compatibility.
+- Non-RN runtime uses SSE stream parsing.
 
 ## Persistence
 
@@ -111,8 +150,13 @@ Behavior:
 Implemented:
 
 - `mockLlmService.ts`
-- `personalityEngine.ts`
+- `personalityEngineService.ts`
+- `claudeApiService.ts`
 - `persistenceService.ts`
+
+Retained for compatibility:
+
+- `personalityEngine.ts`
 
 Stubs for later phases:
 

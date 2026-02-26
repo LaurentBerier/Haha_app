@@ -19,7 +19,7 @@ Fix used in this project:
 Commands:
 
 ```bash
-cd /Users/laurentbernier/Documents/HAHA
+cd /Users/laurentbernier/Documents/HAHA_app
 npm install
 npm run ios
 ```
@@ -42,7 +42,7 @@ Fix used in this project:
 Commands:
 
 ```bash
-cd /Users/laurentbernier/Documents/HAHA
+cd /Users/laurentbernier/Documents/HAHA_app
 npm install
 npm run ios
 ```
@@ -124,7 +124,7 @@ Causes:
 Fix:
 
 ```bash
-cd /Users/laurentbernier/Documents/HAHA
+cd /Users/laurentbernier/Documents/HAHA_app
 rm -rf ios/build
 npm run e2e:build:ios
 npm run e2e:ios
@@ -132,5 +132,90 @@ npm run e2e:ios
 
 If still failing:
 
-- Open `ios/build/Build/Products/Debug-iphonesimulator/HaHaai.app/Info.plist`
+- Open `ios/build/Build/Products/Release-iphonesimulator/HaHaai.app/Info.plist`
 - Confirm `CFBundleIdentifier` is present.
+
+
+## 8) Detox red screen: `No script URL provided`
+
+Symptom:
+
+- Detox launches app but shows redbox error with `unsanitizedScriptURLString = (null)`.
+
+Cause:
+
+- Detox is running a Debug binary without Metro attached.
+
+Fix used in this project:
+
+- Build Detox app in `Release` so JS bundle is embedded in the app binary.
+
+Verify in `.detoxrc.js`:
+
+- `binaryPath` points to `Release-iphonesimulator/HaHaai.app`
+- `xcodebuild` uses `-configuration Release`
+
+Then retry:
+
+```bash
+npm run e2e:build:ios
+npm run e2e:ios
+```
+
+## 9) Chat bubble shows `Erreur pendant la generation`
+
+Symptom:
+
+- User message is sent, artist placeholder appears, then message becomes error.
+
+Common causes:
+
+- `EXPO_PUBLIC_USE_MOCK_LLM=false` but no Anthropic key configured.
+- Invalid/expired Anthropic key.
+- Device/network issue during API call.
+
+Fix:
+
+1. Ensure `.env` exists in project root:
+
+```bash
+cp .env.example .env
+```
+
+2. Verify values:
+
+```bash
+EXPO_PUBLIC_USE_MOCK_LLM=false
+EXPO_PUBLIC_ANTHROPIC_API_KEY=sk-ant-...
+EXPO_PUBLIC_ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
+```
+
+3. Restart Expo after changing env:
+
+```bash
+npm run start
+```
+
+4. If needed, switch to mock mode for local validation:
+
+```bash
+EXPO_PUBLIC_USE_MOCK_LLM=true
+```
+
+## 10) Claude mode works in terminal but fails on device
+
+Symptom:
+
+- Direct script tests pass, but simulator/device chat fails.
+
+Notes:
+
+- The app uses a runtime-compatible strategy:
+  - React Native runtime: non-stream request path
+  - non-RN runtime: SSE stream path
+
+Checklist:
+
+- Confirm app was restarted after env changes.
+- Confirm simulator has outbound internet access.
+- Check Metro logs for `[Chat] Generation failed:` details.

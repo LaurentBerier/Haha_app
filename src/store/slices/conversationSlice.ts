@@ -6,7 +6,7 @@ import type { StoreState } from '../useStore';
 export interface ConversationSlice {
   conversations: Record<string, Conversation[]>;
   activeConversationId: string | null;
-  createConversation: (artistId: string, language: string) => Conversation;
+  createConversation: (artistId: string, language: string, modeId: string) => Conversation;
   setActiveConversation: (id: string) => void;
   updateConversation: (id: string, updates: Partial<Conversation>) => void;
 }
@@ -14,13 +14,14 @@ export interface ConversationSlice {
 export const createConversationSlice: StateCreator<StoreState, [], [], ConversationSlice> = (set, get) => ({
   conversations: {},
   activeConversationId: null,
-  createConversation: (artistId, language) => {
+  createConversation: (artistId, language, modeId) => {
     const now = new Date().toISOString();
     const conversation: Conversation = {
       id: generateId('conv'),
       artistId,
       title: 'Nouvelle conversation',
       language,
+      modeId,
       createdAt: now,
       updatedAt: now,
       lastMessagePreview: ''

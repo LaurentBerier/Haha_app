@@ -1,12 +1,15 @@
+import { MAX_HISTORY_MESSAGES } from '../config/constants';
 import type { Artist } from '../models/Artist';
 import type { Message } from '../models/Message';
-import { MAX_HISTORY_MESSAGES } from '../config/constants';
+import type { FewShotExample, Mode } from '../models/Mode';
 
 export interface AssemblePromptParams {
   artist: Artist;
   conversationHistory: Message[];
   userMessage: string;
   language: string;
+  mode?: Mode;
+  modeFewShots?: FewShotExample[];
   contextSignals?: Record<string, unknown>;
 }
 
@@ -21,11 +24,41 @@ function formatHistory(history: Message[]): string {
     .join('\n');
 }
 
+function formatModeBlock(mode?: Mode, modeFewShots: FewShotExample[] = []): string | null {
+  if (!mode) {
+    return null;
+  }
+
+  const modeHeader = [`MODE: ${mode.name}`, `Description: ${mode.description}`].join('\n');
+
+  if (!modeFewShots.length) {
+    return modeHeader;
+  }
+
+  const fewShotsBlock = modeFewShots
+    .slice(0, 8)
+    .map((example) => {
+      const lines = [`USER: ${example.input}`, `CATHY: ${example.response}`];
+      if (example.context) {
+        lines.unshift(`CONTEXTE: ${example.context}`);
+      }
+      if (example.variables) {
+        lines.unshift(`VARIABLES: ${example.variables}`);
+      }
+      return lines.join('\n');
+    })
+    .join('\n\n');
+
+  return [modeHeader, 'EXEMPLES DE REPONSES (few-shots):', fewShotsBlock].join('\n\n');
+}
+
 export function assemblePrompt(params: AssemblePromptParams): { systemPrompt: string; userTurn: string } {
-  const { artist, conversationHistory, userMessage, language, contextSignals } = params;
+  const { artist, conversationHistory, userMessage, language, mode, modeFewShots = [], contextSignals } = params;
   const profile = artist.personalityProfile;
 
   const identityBlock = `IDENTITE:\nTu es ${artist.name}, artiste de scene en mode conversationnel authentique.`;
+  const modeBlock = formatModeBlock(mode, modeFewShots);
+
   const toneBlock = [
     'TON:',
     `- Agressivite: ${profile.toneMetrics.aggression}/10`,
@@ -81,6 +114,7 @@ export function assemblePrompt(params: AssemblePromptParams): { systemPrompt: st
 
   const blocks = [
     identityBlock,
+    modeBlock,
     toneBlock,
     humorBlock,
     speechBlock,
@@ -90,7 +124,7 @@ export function assemblePrompt(params: AssemblePromptParams): { systemPrompt: st
     conversationContextBlock,
     signalBlock,
     responseDirectiveBlock
-  ];
+  ].filter(Boolean);
 
   return {
     systemPrompt: blocks.join('\n\n'),

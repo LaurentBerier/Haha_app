@@ -42,6 +42,7 @@ export interface Artist {
   avatarUrl: string;
   supportedLanguages: string[];
   defaultLanguage: string;
+  supportedModeIds: string[];
   isPremium: boolean;
   voiceEnabled: boolean;
   personalityProfile: PersonalityProfile;
