@@ -13,6 +13,7 @@
 - Zustand multi-slice store and selectors.
 - Dynamic personality system prompt assembly service (`personalityEngineService.ts`).
 - Live Claude proxy client service (`claudeApiService.ts`) with runtime-compatible streaming/non-stream handling.
+- Expo env loading hardened for production bundles (`src/config/env.ts` uses direct `process.env.EXPO_PUBLIC_*` reads).
 - Serverless backend proxy endpoint (`api/claude.js`) for secure Anthropic key handling.
 - Mock token streaming service retained as fallback and offline path.
 - Claude-to-mock runtime fallback on generation failures (resilience path without feature flag toggle).
@@ -79,3 +80,4 @@
 
 - Native `ios/` directory exists due to `expo run:ios` prebuild.
 - Dependency versions were aligned to Expo SDK 53 compatibility during integration.
+- iOS `AppDelegate.swift` includes debug JS bundle URL fallback (`ip.txt` -> localhost) to reduce physical-device `No script URL provided` failures.

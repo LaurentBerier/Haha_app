@@ -552,3 +552,72 @@ Then retry:
 cd /Users/laurentbernier/Documents/HAHA_app
 npx expo run:ios --device
 ```
+
+## 24) Device app launches but responses are mock-like / unrelated
+
+Symptom:
+
+- App is installed and runs, but answers are generic and ignore context.
+
+Common cause in Expo production builds:
+
+- `EXPO_PUBLIC_*` values are not being inlined because env vars were read through dynamic objects instead of direct `process.env.EXPO_PUBLIC_*`.
+- App then falls back to defaults (`USE_MOCK_LLM=true`) and uses mock replies.
+
+Fix used in this project:
+
+1. Ensure `src/config/env.ts` uses direct reads:
+   - `process.env.EXPO_PUBLIC_USE_MOCK_LLM`
+   - `process.env.EXPO_PUBLIC_CLAUDE_PROXY_URL`
+   - `process.env.EXPO_PUBLIC_ANTHROPIC_MODEL`
+2. Rebuild and reinstall app (especially Release builds):
+
+```bash
+cd /Users/laurentbernier/Documents/HAHA_app
+npx expo run:ios --device --configuration Release
+```
+
+3. Verify backend quickly:
+
+```bash
+curl -sS -X POST "https://<your-project>.vercel.app/api/claude" \
+  -H "Content-Type: application/json" \
+  --data '{"model":"claude-sonnet-4-5-20250929","maxTokens":64,"temperature":0.2,"stream":false,"systemPrompt":"Reply in one short sentence.","messages":[{"role":"user","content":"Say hello in French."}]}'
+```
+
+## 25) Physical iPhone shows red screen `No script URL provided`
+
+Symptom:
+
+- On device debug builds, redbox shows `unsanitizedScriptURLString = (null)`.
+
+Cause:
+
+- Debug app could not resolve Metro URL at launch.
+
+Fix used in this project:
+
+- `ios/HaHaai/AppDelegate.swift` includes a debug fallback:
+  - tries default `RCTBundleURLProvider` URL
+  - then tries host from bundled `ip.txt`
+  - then falls back to `http://localhost:8081`
+
+Operational guidance:
+
+1. Keep Metro running:
+
+```bash
+npm run start -- --clear
+```
+
+2. Rebuild/run on device:
+
+```bash
+npx expo run:ios --device
+```
+
+3. If you want no Metro dependency, install Release build:
+
+```bash
+npx expo run:ios --device --configuration Release
+```

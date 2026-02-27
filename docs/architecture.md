@@ -24,6 +24,11 @@ Architecture remains multi-artist-ready.
 - `src/types/assets.d.ts`: TypeScript image module declarations (`png/jpg/jpeg`)
 - `src/components/common/AmbientGlow.tsx`: animated menu background glow layer
 
+Env loading note:
+
+- `src/config/env.ts` reads Expo public vars via direct `process.env.EXPO_PUBLIC_*`.
+- This is required so Expo can inline env values in production bundles.
+
 ## State Design
 
 Store entrypoint: `src/store/useStore.ts`
@@ -101,6 +106,7 @@ Hook: `src/hooks/useChat.ts`
    - `USE_MOCK_LLM=true` -> `streamMockReply`
    - `USE_MOCK_LLM=false` -> `streamClaudeResponse`
    - If Claude fails before completion, hook retries the same turn with `streamMockReply` automatically while preserving any already-streamed content.
+   - This fallback is resilience behavior, so apparent "dumb" replies can indicate live Claude path failures.
 11. Stream/append text into placeholder via `appendMessageContent` (`streaming`).
 12. Complete with usage metadata (`complete`) or mark error (`error`).
 

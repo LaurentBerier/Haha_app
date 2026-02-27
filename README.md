@@ -61,6 +61,12 @@ Environment variables:
 - `EXPO_PUBLIC_CLAUDE_PROXY_URL=https://<your-backend>/api/claude`
 - `EXPO_PUBLIC_ANTHROPIC_MODEL=claude-sonnet-4-5-20250929`
 
+Important:
+
+- In Expo apps, `EXPO_PUBLIC_*` values must be read via direct `process.env.EXPO_PUBLIC_*` access.
+- This project implements that in `src/config/env.ts`.
+- If this is refactored to dynamic env lookups, production builds can silently fall back to mock mode.
+
 Backend secret (server-side only, never in Expo public env):
 
 - `ANTHROPIC_API_KEY=sk-ant-...`
@@ -79,6 +85,14 @@ Runtime behavior:
 - Proxy validates image formats (`image/jpeg`, `image/png`, `image/webp`, `image/gif`) and enforces a ~3MB max image size.
 - If Claude request fails at runtime, chat automatically falls back to mock generation for resilience.
 - Conversation history is captured before appending the current user turn to avoid duplicate-turn payloads.
+
+Quick live Claude check:
+
+```bash
+curl -sS -X POST "https://<your-vercel-project>.vercel.app/api/claude" \
+  -H "Content-Type: application/json" \
+  --data '{"model":"claude-sonnet-4-5-20250929","maxTokens":64,"temperature":0.2,"stream":false,"systemPrompt":"Reply in one short sentence.","messages":[{"role":"user","content":"Say hello in French."}]}'
+```
 
 ## Deploy Claude Proxy (Vercel)
 
@@ -137,7 +151,18 @@ npm run start
 
 # Launch iOS build + simulator app
 npm run ios
+
+# Launch on connected iPhone/iPad
+npx expo run:ios --device
+
+# Build/install Release on device (embedded JS bundle, no Metro dependency)
+npx expo run:ios --device --configuration Release
 ```
+
+Physical device notes:
+
+- Keep the phone unlocked during install/launch.
+- If iOS asks to trust developer profile: `Settings -> General -> VPN & Device Management`.
 
 ## Validation
 

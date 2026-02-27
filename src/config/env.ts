@@ -1,10 +1,3 @@
-type EnvMap = Record<string, string | undefined>;
-
-function getEnv(): EnvMap {
-  const globalWithProcess = globalThis as { process?: { env?: EnvMap } };
-  return globalWithProcess.process?.env ?? {};
-}
-
 function readBoolean(value: string | undefined, fallback: boolean): boolean {
   if (typeof value !== 'string') {
     return fallback;
@@ -21,8 +14,12 @@ function readBoolean(value: string | undefined, fallback: boolean): boolean {
   return fallback;
 }
 
-const env = getEnv();
+// Expo only inlines EXPO_PUBLIC_* values when accessed via direct
+// process.env.EXPO_PUBLIC_* property reads.
+const EXPO_PUBLIC_USE_MOCK_LLM = process.env.EXPO_PUBLIC_USE_MOCK_LLM;
+const EXPO_PUBLIC_CLAUDE_PROXY_URL = process.env.EXPO_PUBLIC_CLAUDE_PROXY_URL;
+const EXPO_PUBLIC_ANTHROPIC_MODEL = process.env.EXPO_PUBLIC_ANTHROPIC_MODEL;
 
-export const USE_MOCK_LLM = readBoolean(env.EXPO_PUBLIC_USE_MOCK_LLM, true);
-export const CLAUDE_PROXY_URL = env.EXPO_PUBLIC_CLAUDE_PROXY_URL ?? '';
-export const ANTHROPIC_MODEL = env.EXPO_PUBLIC_ANTHROPIC_MODEL ?? 'claude-sonnet-4-5-20250929';
+export const USE_MOCK_LLM = readBoolean(EXPO_PUBLIC_USE_MOCK_LLM, true);
+export const CLAUDE_PROXY_URL = EXPO_PUBLIC_CLAUDE_PROXY_URL ?? '';
+export const ANTHROPIC_MODEL = EXPO_PUBLIC_ANTHROPIC_MODEL ?? 'claude-sonnet-4-5-20250929';
