@@ -1,5 +1,11 @@
 # Phase 1 Status
 
+## Phase 1 Closure
+
+- Status: closed
+- Closed on: 2026-02-27
+- Closure rule: core MVP chat experience is stable on iOS (simulator + physical device), live Claude path is functional, and remaining items are intentionally deferred to Phase 2+.
+
 ## Implemented
 
 - Expo project with strict TypeScript.
@@ -56,7 +62,7 @@
 - subscription service
 - analytics service
 
-## Not Implemented Yet
+## Deferred To Phase 2+
 
 - proxy auth/rate limiting and abuse protection
 - full discussion feature flow (current UI button shows coming-soon message)
@@ -74,7 +80,7 @@
 - `npm run lint`: passing
 - `npx expo install --check`: passing
 - iOS build: passing
-- `npm run e2e:ios`: passing
+- `npm run e2e:ios`: requires local build/cache prep (`npm run e2e:build:ios`; if needed `npx detox clean-framework-cache && npx detox build-framework-cache`)
 
 ## Notes
 

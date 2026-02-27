@@ -1,12 +1,14 @@
-# Ha-Ha.ai (Phase 1)
+# Ha-Ha.ai (Phase 1 Closed)
 
 Ha-Ha.ai is a React Native Expo app for chatting with AI comedian personas.
-Phase 1 currently ships one artist (`Cathy Gauthier`) with dual chat backends:
+Phase 1 is closed (as of 2026-02-27) and ships one artist (`Cathy Gauthier`) with dual chat backends:
 
 - live Anthropic Claude integration
 - local mock generator fallback
 
 ## Current Status
+
+- Phase status: closed; remaining non-MVP items are deferred to Phase 2+.
 
 - Platform: Expo SDK 53, React Native 0.79.6, TypeScript strict.
 - Routing: Expo Router with app root at `src/app`.
