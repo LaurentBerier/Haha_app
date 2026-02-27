@@ -10,6 +10,7 @@ export interface Mode {
   name: string;
   description: string;
   emoji?: string;
+  kind?: 'chat' | 'history';
 }
 
 export interface ArtistModeData {

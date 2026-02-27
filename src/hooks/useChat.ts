@@ -2,19 +2,23 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { MAX_MESSAGE_LENGTH } from '../config/constants';
 import { USE_MOCK_LLM } from '../config/env';
 import { getAllCathyFewShots, getCathyModeFewShots } from '../data/cathy-gauthier/modeFewShots';
+import { getLanguage, setLanguage } from '../i18n';
 import type { ChatError } from '../models/ChatError';
+import type { ChatSendPayload } from '../models/ChatSendPayload';
 import type { Conversation } from '../models/Conversation';
 import type { Message } from '../models/Message';
-import type { ClaudeMessage } from '../services/claudeApiService';
+import type { ClaudeContentBlock, ClaudeMessage } from '../services/claudeApiService';
 import { streamClaudeResponse } from '../services/claudeApiService';
 import { streamMockReply } from '../services/mockLlmService';
 import { buildSystemPrompt, formatConversationHistory } from '../services/personalityEngineService';
 import { useStore } from '../store/useStore';
+import { shouldAutoSwitchToEnglish } from '../utils/languageDetection';
 import { generateId } from '../utils/generateId';
 
 interface StreamJob {
   artistMessageId: string;
-  userTurn: string;
+  mockUserTurn: string;
+  claudeUserMessage: ClaudeMessage;
   systemPrompt: string;
   history: ClaudeMessage[];
   language: string;
@@ -35,6 +39,36 @@ function findConversationById(conversations: Record<string, Conversation[]>, con
   }
 
   return null;
+}
+
+function createClaudeUserContent(text: string, payload: ChatSendPayload): string | ClaudeContentBlock[] {
+  if (!payload.image) {
+    return text;
+  }
+
+  const blocks: ClaudeContentBlock[] = [];
+  if (text) {
+    blocks.push({ type: 'text', text });
+  }
+
+  blocks.push({
+    type: 'image',
+    source: {
+      type: 'base64',
+      media_type: payload.image.mediaType,
+      data: payload.image.base64
+    }
+  });
+
+  return blocks;
+}
+
+function createMockUserTurn(text: string, hasImage: boolean): string {
+  if (!hasImage) {
+    return text;
+  }
+
+  return text ? `${text}\n[Image jointe]` : '[Image jointe]';
 }
 
 export function useChat(conversationId: string) {
@@ -72,116 +106,149 @@ export function useChat(conversationId: string) {
 
   const queueRef = useRef<StreamJob[]>([]);
   const isStreamingRef = useRef(false);
+  const runNextLockRef = useRef(false);
   const activeMessageIdRef = useRef<string | null>(null);
   const streamingConversationIdRef = useRef<string | null>(null);
   const isCancelledRef = useRef(false);
   const cancelRef = useRef<null | (() => void)>(null);
 
   const runNext = useCallback(() => {
-    if (!conversationId || isStreamingRef.current) {
+    if (!conversationId || runNextLockRef.current) {
       return;
     }
 
-    const nextJob = queueRef.current.shift();
-    if (!nextJob) {
-      return;
-    }
+    runNextLockRef.current = true;
 
-    const { artistMessageId, userTurn, systemPrompt, history, language, modeFewShots, modeId } = nextJob;
-    isStreamingRef.current = true;
-    activeMessageIdRef.current = artistMessageId;
-    streamingConversationIdRef.current = conversationId;
-    isCancelledRef.current = false;
-    let fallbackStarted = false;
-
-    const resetStreamState = () => {
-      isStreamingRef.current = false;
-      activeMessageIdRef.current = null;
-      streamingConversationIdRef.current = null;
-      isCancelledRef.current = false;
-      cancelRef.current = null;
-    };
-
-    const onToken = (token: string) => {
-      if (isCancelledRef.current) {
+    try {
+      if (isStreamingRef.current) {
         return;
       }
-      if (streamingConversationIdRef.current !== conversationId) {
+
+      const nextJob = queueRef.current.shift();
+      if (!nextJob) {
         return;
       }
-      appendMessageContent(conversationId, artistMessageId, token);
-    };
 
-    const onComplete = ({ tokensUsed }: { tokensUsed: number }) => {
-      updateMessage(conversationId, artistMessageId, {
-        status: 'complete',
-        metadata: { tokensUsed }
-      });
-      incrementUsage(tokensUsed);
-      resetStreamState();
-      runNext();
-    };
-
-    const failStream = (error: Error) => {
-      console.error('[Chat] Generation failed:', error.message);
-      updateMessage(conversationId, artistMessageId, { status: 'error' });
-      resetStreamState();
-      runNext();
-    };
-
-    const startMockStream = () =>
-      streamMockReply({
+      const {
+        artistMessageId,
+        mockUserTurn,
+        claudeUserMessage,
         systemPrompt,
-        userTurn,
+        history,
         language,
         modeFewShots,
-        modeId,
-        onToken,
-        onComplete,
-        onError: failStream
-      });
+        modeId
+      } = nextJob;
+      const jobConversationId = conversationId;
+      isStreamingRef.current = true;
+      activeMessageIdRef.current = artistMessageId;
+      streamingConversationIdRef.current = jobConversationId;
+      isCancelledRef.current = false;
+      let fallbackStarted = false;
 
-    const startClaudeStream = () =>
-      streamClaudeResponse({
-        systemPrompt,
-        messages: [...history, { role: 'user', content: userTurn }],
-        onToken,
-        onComplete,
-        onError: (error) => {
-          if (fallbackStarted || isCancelledRef.current) {
-            return;
-          }
+      const resetStreamState = () => {
+        isStreamingRef.current = false;
+        activeMessageIdRef.current = null;
+        streamingConversationIdRef.current = null;
+        isCancelledRef.current = false;
+        cancelRef.current = null;
+      };
 
-          fallbackStarted = true;
-          console.warn('[Chat] Claude failed, falling back to mock:', error.message);
-          updateMessage(conversationId, artistMessageId, { content: '', status: 'pending' });
-          const fallbackCancel = startMockStream();
-          cancelRef.current = () => {
-            isCancelledRef.current = true;
-            fallbackCancel();
-          };
+      const onToken = (token: string) => {
+        if (isCancelledRef.current) {
+          return;
         }
-      });
+        if (streamingConversationIdRef.current !== jobConversationId) {
+          return;
+        }
+        appendMessageContent(jobConversationId, artistMessageId, token);
+      };
 
-    const rawCancel = USE_MOCK_LLM ? startMockStream() : startClaudeStream();
+      const onComplete = ({ tokensUsed }: { tokensUsed: number }) => {
+        updateMessage(jobConversationId, artistMessageId, {
+          status: 'complete',
+          metadata: { tokensUsed }
+        });
+        incrementUsage(tokensUsed);
+        resetStreamState();
+        runNext();
+      };
 
-    cancelRef.current = () => {
-      isCancelledRef.current = true;
-      rawCancel();
-    };
+      const failStream = (error: Error) => {
+        console.error('[Chat] Generation failed:', error.message);
+        updateMessage(jobConversationId, artistMessageId, { status: 'error' });
+        resetStreamState();
+        runNext();
+      };
+
+      const startMockStream = () =>
+        streamMockReply({
+          systemPrompt,
+          userTurn: mockUserTurn,
+          language,
+          modeFewShots,
+          modeId,
+          onToken,
+          onComplete,
+          onError: failStream
+        });
+
+      const startClaudeStream = () =>
+        streamClaudeResponse({
+          systemPrompt,
+          messages: [...history, claudeUserMessage],
+          onToken,
+          onComplete,
+          onError: (error) => {
+            if (fallbackStarted || isCancelledRef.current) {
+              return;
+            }
+
+            fallbackStarted = true;
+            console.warn('[Chat] Claude failed, falling back to mock:', error.message);
+            updateMessage(jobConversationId, artistMessageId, { status: 'pending' });
+            const fallbackCancel = startMockStream();
+            cancelRef.current = () => {
+              isCancelledRef.current = true;
+              fallbackCancel();
+            };
+          }
+        });
+
+      const rawCancel = USE_MOCK_LLM ? startMockStream() : startClaudeStream();
+
+      cancelRef.current = () => {
+        isCancelledRef.current = true;
+        rawCancel();
+      };
+    } finally {
+      runNextLockRef.current = false;
+    }
   }, [appendMessageContent, conversationId, incrementUsage, updateMessage]);
 
-  const sendMessage = (text: string): ChatError | null => {
-    const trimmed = text.trim();
-    if (!trimmed || !conversationId || !currentConversation || !currentArtist) {
+  const sendMessage = (payload: ChatSendPayload): ChatError | null => {
+    const trimmed = payload.text.trim();
+    const hasImage = Boolean(payload.image);
+
+    if ((!trimmed && !hasImage) || !conversationId || !currentConversation || !currentArtist) {
       return null;
     }
+
     if (trimmed.length > MAX_MESSAGE_LENGTH) {
       return { code: 'messageTooLong', maxLength: MAX_MESSAGE_LENGTH };
     }
 
+    const preferredLanguage = currentConversation.language || getLanguage();
+    const shouldSwitchToEnglish = shouldAutoSwitchToEnglish(trimmed, preferredLanguage);
+    const languageForTurn = shouldSwitchToEnglish ? 'en-CA' : preferredLanguage;
+
+    if (shouldSwitchToEnglish) {
+      setLanguage('en-CA');
+    }
+
     const now = new Date().toISOString();
     const historyBeforeSend = formatConversationHistory(getMessages(conversationId));
+    const previewText = trimmed || '[Image]';
 
     const userMessage: Message = {
       id: generateId('msg'),
@@ -189,7 +256,13 @@ export function useChat(conversationId: string) {
       role: 'user',
       content: trimmed,
       status: 'complete',
-      timestamp: now
+      timestamp: now,
+      metadata: payload.image
+        ? {
+            imageUri: payload.image.uri,
+            imageMediaType: payload.image.mediaType
+          }
+        : undefined
     };
 
     const artistMessageId = generateId('msg');
@@ -210,18 +283,23 @@ export function useChat(conversationId: string) {
 
     queueRef.current.push({
       artistMessageId,
-      userTurn: trimmed,
+      mockUserTurn: createMockUserTurn(trimmed, hasImage),
+      claudeUserMessage: {
+        role: 'user',
+        content: createClaudeUserContent(trimmed, payload)
+      },
       systemPrompt,
       history: historyBeforeSend,
-      language: currentConversation.language,
+      language: languageForTurn,
       modeFewShots,
       modeId
     });
     runNext();
 
     updateConversation(conversationId, {
-      lastMessagePreview: trimmed,
-      title: trimmed.slice(0, 30)
+      language: languageForTurn,
+      lastMessagePreview: previewText,
+      title: previewText.slice(0, 30)
     });
 
     return null;
@@ -242,6 +320,7 @@ export function useChat(conversationId: string) {
       });
       queueRef.current = [];
       isStreamingRef.current = false;
+      runNextLockRef.current = false;
       streamingConversationIdRef.current = null;
       isCancelledRef.current = false;
     };

@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingVertical: theme.spacing.sm,
-    paddingBottom: 108
+    paddingBottom: 96
   },
   empty: {
     color: theme.colors.textMuted,

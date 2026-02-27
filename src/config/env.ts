@@ -24,6 +24,5 @@ function readBoolean(value: string | undefined, fallback: boolean): boolean {
 const env = getEnv();
 
 export const USE_MOCK_LLM = readBoolean(env.EXPO_PUBLIC_USE_MOCK_LLM, true);
-export const ANTHROPIC_API_KEY = env.EXPO_PUBLIC_ANTHROPIC_API_KEY ?? '';
+export const CLAUDE_PROXY_URL = env.EXPO_PUBLIC_CLAUDE_PROXY_URL ?? '';
 export const ANTHROPIC_MODEL = env.EXPO_PUBLIC_ANTHROPIC_MODEL ?? 'claude-sonnet-4-5-20250929';
-export const ANTHROPIC_API_VERSION = '2023-06-01';

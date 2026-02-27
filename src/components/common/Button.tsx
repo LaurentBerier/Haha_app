@@ -13,6 +13,8 @@ export function Button({ label, onPress, disabled, testID }: ButtonProps) {
     <Pressable
       testID={testID}
       accessibilityRole="button"
+      accessibilityLabel={label}
+      android_ripple={{ color: 'rgba(255,255,255,0.12)', borderless: false }}
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [styles.button, pressed && styles.pressed, disabled && styles.disabled]}

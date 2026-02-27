@@ -9,29 +9,53 @@ export interface UsageSlice {
   resetQuota: () => void;
 }
 
+function computeNextResetDate(now: Date): string {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0)).toISOString();
+}
+
+function normalizeQuotaWindow(quota: UsageQuota): UsageQuota {
+  const parsedReset = Date.parse(quota.resetDate);
+  if (!Number.isFinite(parsedReset) || Date.now() >= parsedReset) {
+    return {
+      ...quota,
+      used: 0,
+      resetDate: computeNextResetDate(new Date())
+    };
+  }
+
+  return quota;
+}
+
 export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (set, get) => ({
   quota: {
     monthlyCap: 50000,
     used: 0,
-    resetDate: new Date().toISOString()
+    resetDate: computeNextResetDate(new Date())
   },
   incrementUsage: (tokens) =>
-    set((state) => ({
-      quota: {
-        ...state.quota,
-        used: state.quota.used + tokens
-      }
-    })),
+    set((state) => {
+      const normalized = normalizeQuotaWindow(state.quota);
+      return {
+        quota: {
+          ...normalized,
+          used: normalized.used + tokens
+        }
+      };
+    }),
   isQuotaExceeded: () => {
     const { quota } = get();
-    return quota.used >= quota.monthlyCap;
+    const normalized = normalizeQuotaWindow(quota);
+    if (normalized.resetDate !== quota.resetDate || normalized.used !== quota.used) {
+      set({ quota: normalized });
+    }
+    return normalized.used >= normalized.monthlyCap;
   },
   resetQuota: () =>
     set((state) => ({
       quota: {
         ...state.quota,
         used: 0,
-        resetDate: new Date().toISOString()
+        resetDate: computeNextResetDate(new Date())
       }
     }))
 });

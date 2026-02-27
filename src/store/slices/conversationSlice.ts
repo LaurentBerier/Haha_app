@@ -1,7 +1,10 @@
 import type { StateCreator } from 'zustand';
+import { t } from '../../i18n';
 import type { Conversation } from '../../models/Conversation';
 import { generateId } from '../../utils/generateId';
 import type { StoreState } from '../useStore';
+
+const MAX_CONVERSATIONS_PER_ARTIST = 50;
 
 export interface ConversationSlice {
   conversations: Record<string, Conversation[]>;
@@ -19,7 +22,7 @@ export const createConversationSlice: StateCreator<StoreState, [], [], Conversat
     const conversation: Conversation = {
       id: generateId('conv'),
       artistId,
-      title: 'Nouvelle conversation',
+      title: t('newConversation'),
       language,
       modeId,
       createdAt: now,
@@ -27,13 +30,22 @@ export const createConversationSlice: StateCreator<StoreState, [], [], Conversat
       lastMessagePreview: ''
     };
 
-    set((state) => ({
-      conversations: {
-        ...state.conversations,
-        [artistId]: [...(state.conversations[artistId] ?? []), conversation]
-      },
-      activeConversationId: conversation.id
-    }));
+    set((state) => {
+      const existing = state.conversations[artistId] ?? [];
+      const updated = [...existing, conversation];
+      const capped =
+        updated.length > MAX_CONVERSATIONS_PER_ARTIST
+          ? updated.slice(updated.length - MAX_CONVERSATIONS_PER_ARTIST)
+          : updated;
+
+      return {
+        conversations: {
+          ...state.conversations,
+          [artistId]: capped
+        },
+        activeConversationId: conversation.id
+      };
+    });
 
     return conversation;
   },

@@ -2,9 +2,9 @@
 
 ## Scope
 
-Phase 1 implements text chat with one artist and dual backend execution:
+Phase 1 implements chat with one artist (text + optional user image attachment) and dual backend execution:
 
-- live Claude API path
+- live Claude proxy path (`EXPO_PUBLIC_CLAUDE_PROXY_URL`)
 - local mock fallback path
 
 Architecture remains multi-artist-ready.
@@ -20,6 +20,9 @@ Architecture remains multi-artist-ready.
 - `src/config`: seed data/constants/flags
 - `src/i18n`: localization dictionaries
 - `src/theme`: styling tokens
+- `src/config/artistAssets.ts`: static artist avatar source mapping
+- `src/types/assets.d.ts`: TypeScript image module declarations (`png/jpg/jpeg`)
+- `src/components/common/AmbientGlow.tsx`: animated menu background glow layer
 
 ## State Design
 
@@ -50,6 +53,7 @@ Persistence helpers were added in store root:
 - `markHydrated()`
 - `hasHydrated`
 - `selectPersistedSnapshot(state)`
+- `conversationSlice` enforces a cap of 50 conversations per artist (FIFO: oldest removed first).
 
 
 ## Mode System
@@ -60,12 +64,20 @@ Core files:
 - `src/config/modes.ts` (generated)
 - `src/data/cathy-gauthier/modeFewShots.ts` (generated)
 - `src/app/mode-select/[artistId].tsx`
+- `src/app/history/[artistId].tsx`
 
 Behavior:
 
-- User selects artist on home screen, then selects mode on mode-select screen.
+- User selects artist on home screen by tapping the visual artist selector (photo or label zone).
+- Home artist card is a single press target (`artist-start-<id>`) without a secondary CTA button.
+- Home keeps only essential information (avatar + artist name + short genre line), with no helper hint copy and no language row.
 - Mode selector is rendered with `FlatList` to support long mode catalogs.
-- Conversation is created with `modeId`.
+- Home and mode-select screens render an animated ambient glow layer behind content (pointer-events disabled).
+- Ambient glow motion uses continuous 360-degree linear rotation (no ping-pong) with depth-parallax layers at different speeds.
+- Glow visuals use large multi-layer orbs, high-radius halo shadows, and animated pulse to simulate strong blurred light.
+- Selecting any non-history mode always creates a new conversation with `modeId`.
+- Mode list appends a dedicated `history` card (`kind: history`) that routes to `/history/[artistId]`.
+- History screen lists the 20 most recently updated conversations for the artist and resumes an existing chat on tap.
 - `useChat` resolves active mode and dedicated mode few-shots.
 - If a mode has no dedicated few-shots, `useChat` falls back to `getAllCathyFewShots()`.
 - Mock path uses mode few-shots for response selection and recency filtering.
@@ -79,17 +91,18 @@ Hook: `src/hooks/useChat.ts`
 1. Validate input and conversation id.
 2. Enforce max input length (`MAX_MESSAGE_LENGTH`) and return structured `ChatError` when invalid.
 3. Resolve active conversation mode (`modeId`) and associated mode few-shots.
-4. Capture conversation history snapshot before appending the new user turn.
-5. Add user message (`complete`).
-6. Add placeholder artist message (`pending`).
-7. Build `systemPrompt` (`buildSystemPrompt(modeId)`) and queue stream job (prevents overlapping streams on rapid sends).
-8. Choose execution path:
+4. Resolve language for the turn (`conversation.language`) and auto-switch to `en-CA` when user text is detected as mostly English.
+5. Capture conversation history snapshot before appending the new user turn.
+6. Add user message (`complete`).
+7. Add placeholder artist message (`pending`).
+8. Build `systemPrompt` (`buildSystemPrompt(modeId)`) and queue stream job (prevents overlapping streams on rapid sends).
+9. User turn payload supports text-only or text+image (single image attachment from chat `+` button).
+10. Choose execution path:
    - `USE_MOCK_LLM=true` -> `streamMockReply`
    - `USE_MOCK_LLM=false` -> `streamClaudeResponse`
-   - If Claude fails before completion, hook retries the same turn with `streamMockReply` automatically.
-   - During fallback retry, placeholder content is reset and status returns to `pending`.
-9. Stream/append text into placeholder via `appendMessageContent` (`streaming`).
-10. Complete with usage metadata (`complete`) or mark error (`error`).
+   - If Claude fails before completion, hook retries the same turn with `streamMockReply` automatically while preserving any already-streamed content.
+11. Stream/append text into placeholder via `appendMessageContent` (`streaming`).
+12. Complete with usage metadata (`complete`) or mark error (`error`).
 
 Why history snapshot matters:
 
@@ -107,6 +120,11 @@ Message list behavior:
 - On first render and new tokens/messages, UI auto-scrolls to latest when user is near bottom.
 - If user scrolls up to read history, auto-scroll pauses until user returns near the bottom.
 
+Visual system notes:
+
+- Phase 1 UI now uses a denser spacing/typography scale for a more compact layout.
+- Cathy launch image asset is loaded from local bundle (`CathyGauthier.jpg`) through `artistAssets.ts`.
+
 ## Personality Engine
 
 Files:
@@ -118,12 +136,15 @@ Current active engine:
 
 - Assembles system prompt from Cathy blueprint + mode-specific prompt rules.
 - Formats conversation history into Anthropic-compatible role/content messages.
+- Adds `[Image partagée]` marker when formatting completed history containing user image messages.
 - No network side effects.
 
 Live transport:
 
 - `src/services/claudeApiService.ts`
-- Uses Anthropic Messages API (`/v1/messages`).
+- Calls app-configured proxy URL (`EXPO_PUBLIC_CLAUDE_PROXY_URL`) instead of Anthropic directly from the client.
+- Proxy endpoint (`api/claude.js`) holds `ANTHROPIC_API_KEY` server-side and forwards validated requests to Anthropic Messages API (`/v1/messages`).
+- Proxy validates multimodal content blocks (text + image), restricts image media types, and enforces max image size before forwarding upstream.
 - React Native runtime uses non-stream fallback for compatibility.
 - Non-RN runtime uses SSE stream parsing.
 
@@ -157,6 +178,9 @@ Behavior:
 
 - i18n dictionaries: `src/i18n/fr.ts`, `src/i18n/en.ts`
 - resolver: `src/i18n/index.ts`
+- default app language is `fr-CA` (from `APP_DEFAULT_LANGUAGE`)
+- conversation language auto-switches FR -> EN when a user message is detected as English
+- new conversations prefer current app language when supported by the artist
 - theme tokens: `src/theme/*`
 
 ## Services
@@ -167,6 +191,7 @@ Implemented:
 - `personalityEngineService.ts`
 - `claudeApiService.ts`
 - `persistenceService.ts`
+- `voiceEngine.ts` (speech-to-text permission/start/stop orchestration)
 
 Retained for compatibility:
 
@@ -174,6 +199,6 @@ Retained for compatibility:
 
 Stubs for later phases:
 
-- `voiceEngine.ts`
+- voice synthesis/playback path in `voiceEngine.ts`
 - `subscriptionService.ts`
 - `analyticsService.ts`

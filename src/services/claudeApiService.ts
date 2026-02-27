@@ -1,10 +1,26 @@
-import { ANTHROPIC_API_KEY, ANTHROPIC_API_VERSION, ANTHROPIC_MODEL } from '../config/env';
+import { ANTHROPIC_MODEL, CLAUDE_PROXY_URL } from '../config/env';
 
-const API_URL = 'https://api.anthropic.com/v1/messages';
+export type ClaudeImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
+
+export interface ClaudeTextContentBlock {
+  type: 'text';
+  text: string;
+}
+
+export interface ClaudeImageContentBlock {
+  type: 'image';
+  source: {
+    type: 'base64';
+    media_type: ClaudeImageMediaType;
+    data: string;
+  };
+}
+
+export type ClaudeContentBlock = ClaudeTextContentBlock | ClaudeImageContentBlock;
 
 export interface ClaudeMessage {
   role: 'user' | 'assistant';
-  content: string;
+  content: string | ClaudeContentBlock[];
 }
 
 export interface ClaudeStreamParams {
@@ -20,6 +36,9 @@ export interface ClaudeStreamParams {
 interface AnthropicNonStreamResponse {
   content?: Array<{ type?: string; text?: string }>;
   usage?: { output_tokens?: number };
+  text?: string;
+  output?: string;
+  tokensUsed?: number;
 }
 
 function toErrorMessage(errorPayload: unknown): string {
@@ -80,6 +99,14 @@ function isReactNativeRuntime(): boolean {
 }
 
 function extractTextFromAnthropicPayload(payload: AnthropicNonStreamResponse): string {
+  if (typeof payload.text === 'string') {
+    return payload.text;
+  }
+
+  if (typeof payload.output === 'string') {
+    return payload.output;
+  }
+
   if (!Array.isArray(payload.content)) {
     return '';
   }
@@ -90,34 +117,68 @@ function extractTextFromAnthropicPayload(payload: AnthropicNonStreamResponse): s
     .join('');
 }
 
+function extractOutputTokens(payload: AnthropicNonStreamResponse, fullText: string): number {
+  if (typeof payload.tokensUsed === 'number') {
+    return payload.tokensUsed;
+  }
+
+  if (typeof payload.usage?.output_tokens === 'number') {
+    return payload.usage.output_tokens;
+  }
+
+  return estimateTokens(fullText);
+}
+
 export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
   const controller = new AbortController();
   let isCancelled = false;
+  let hasSettled = false;
+  const proxyUrl = CLAUDE_PROXY_URL.trim();
+
+  const emitToken = (token: string): void => {
+    if (isCancelled || hasSettled || !token) {
+      return;
+    }
+    params.onToken(token);
+  };
+
+  const emitComplete = (usage: { tokensUsed: number }): void => {
+    if (isCancelled || hasSettled) {
+      return;
+    }
+    hasSettled = true;
+    params.onComplete(usage);
+  };
+
+  const emitError = (error: Error): void => {
+    if (isCancelled || hasSettled) {
+      return;
+    }
+    hasSettled = true;
+    params.onError(error);
+  };
 
   void (async () => {
-    const { systemPrompt, messages, maxTokens = 300, temperature = 0.9, onToken, onComplete, onError } = params;
+    const { systemPrompt, messages, maxTokens = 300, temperature = 0.9 } = params;
 
-    if (!ANTHROPIC_API_KEY.trim()) {
-      onError(new Error('Missing Anthropic API key. Set EXPO_PUBLIC_ANTHROPIC_API_KEY.'));
+    if (!proxyUrl) {
+      emitError(new Error('Missing Claude proxy URL. Set EXPO_PUBLIC_CLAUDE_PROXY_URL.'));
       return;
     }
 
     try {
       const shouldUseStreaming = !isReactNativeRuntime();
-      const response = await fetch(API_URL, {
+      const response = await fetch(proxyUrl, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': ANTHROPIC_API_KEY,
-          'anthropic-version': ANTHROPIC_API_VERSION,
-          'anthropic-dangerous-direct-browser-access': 'true'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
           model: ANTHROPIC_MODEL,
-          max_tokens: maxTokens,
+          maxTokens,
           temperature,
           stream: shouldUseStreaming,
-          system: systemPrompt,
+          systemPrompt,
           messages
         }),
         signal: controller.signal
@@ -130,7 +191,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
         } catch {
           payload = await response.text();
         }
-        onError(new Error(toErrorMessage(payload)));
+        emitError(new Error(toErrorMessage(payload)));
         return;
       }
 
@@ -138,15 +199,15 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
         const payload = (await response.json()) as AnthropicNonStreamResponse;
         const fullText = extractTextFromAnthropicPayload(payload);
         if (fullText) {
-          onToken(fullText);
+          emitToken(fullText);
         }
-        onComplete({ tokensUsed: payload.usage?.output_tokens ?? estimateTokens(fullText) });
+        emitComplete({ tokensUsed: extractOutputTokens(payload, fullText) });
         return;
       }
 
       const reader = response.body?.getReader();
       if (!reader) {
-        onError(new Error('Streaming unsupported: no response body reader'));
+        emitError(new Error('Streaming unsupported: no response body reader'));
         return;
       }
 
@@ -154,7 +215,6 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
       let buffer = '';
       let fullText = '';
       let outputTokens: number | null = null;
-      let didComplete = false;
 
       while (!isCancelled) {
         const { done, value } = await reader.read();
@@ -193,7 +253,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
             typeof event.delta.text === 'string'
           ) {
             fullText += event.delta.text;
-            onToken(event.delta.text);
+            emitToken(event.delta.text);
           }
 
           if (
@@ -216,10 +276,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
         return;
       }
 
-      if (!didComplete) {
-        didComplete = true;
-        onComplete({ tokensUsed: outputTokens ?? estimateTokens(fullText) });
-      }
+      emitComplete({ tokensUsed: outputTokens ?? estimateTokens(fullText) });
     } catch (error) {
       if (isCancelled) {
         return;
@@ -229,7 +286,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
       if (normalized.name === 'AbortError') {
         return;
       }
-      onError(normalized);
+      emitError(normalized);
     }
   })();
 

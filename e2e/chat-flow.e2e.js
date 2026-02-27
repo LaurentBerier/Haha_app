@@ -33,8 +33,12 @@ describe('Ha-Ha.ai iOS flow', () => {
     await device.sendToHome();
     await device.launchApp({ newInstance: false });
 
-    // If the app relaunches without Detox command errors, we consider this stable.
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await waitFor(element(by.id('home-screen'))).toBeVisible().withTimeout(20000);
+    await element(by.id('artist-start-cathy-gauthier')).tap();
+    await waitFor(element(by.id('mode-select-screen'))).toBeVisible().withTimeout(10000);
+    await element(by.id('mode-card-roast')).tap();
+    await waitFor(element(by.id('chat-screen'))).toBeVisible().withTimeout(10000);
+    await expect(element(by.id('chat-input'))).toBeVisible();
   });
 
   it('persists messages across relaunch', async () => {

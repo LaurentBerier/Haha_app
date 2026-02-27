@@ -44,17 +44,21 @@ function getModeEmoji(mode: Mode): string {
 
 export function ModeCard({ mode, onPress }: ModeCardProps) {
   const emoji = getModeEmoji(mode);
+  const isHistoryMode = mode.kind === 'history';
 
   return (
     <Pressable
       testID={`mode-card-${mode.id}`}
       accessibilityRole="button"
+      accessibilityLabel={mode.name}
       onPress={onPress}
-      style={({ pressed }) => [styles.card, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.card, isHistoryMode && styles.cardHistory, pressed && styles.pressed]}
     >
       <View style={styles.row}>
-        <View style={styles.emojiContainer}>
-          <Text style={styles.emoji}>{emoji}</Text>
+        <View style={[styles.emojiContainer, isHistoryMode && styles.emojiContainerHistory]}>
+          <Text style={styles.emoji} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            {emoji}
+          </Text>
         </View>
         <View style={styles.content}>
           <Text style={styles.title}>{mode.name}</Text>
@@ -69,31 +73,44 @@ export function ModeCard({ mode, onPress }: ModeCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: theme.colors.surface,
+    backgroundColor: '#121a2a',
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 12,
-    padding: theme.spacing.md
+    borderColor: '#2a3955',
+    borderRadius: 14,
+    padding: theme.spacing.md,
+    shadowColor: '#5E7CFF',
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2
+  },
+  cardHistory: {
+    backgroundColor: theme.colors.surface,
+    borderStyle: 'dashed',
+    borderColor: '#3a4f72'
   },
   pressed: {
-    opacity: 0.88
+    opacity: 0.9
   },
   row: {
     flexDirection: 'row',
-    gap: theme.spacing.md,
+    gap: theme.spacing.sm,
     alignItems: 'flex-start'
   },
   emojiContainer: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#2a3145'
+    backgroundColor: '#273146'
+  },
+  emojiContainerHistory: {
+    backgroundColor: '#34425c'
   },
   emoji: {
-    fontSize: 20,
-    lineHeight: 22
+    fontSize: 17,
+    lineHeight: 20
   },
   content: {
     flex: 1,
@@ -101,12 +118,12 @@ const styles = StyleSheet.create({
   },
   title: {
     color: theme.colors.textPrimary,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700'
   },
   description: {
     color: theme.colors.textMuted,
-    fontSize: 13,
-    lineHeight: 18
+    fontSize: 12,
+    lineHeight: 17
   }
 });

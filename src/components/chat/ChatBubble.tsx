@@ -1,8 +1,8 @@
 import { memo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
+import { t } from '../../i18n';
 import type { Message } from '../../models/Message';
 import { theme } from '../../theme';
-import { t } from '../../i18n';
 
 interface ChatBubbleProps {
   message: Message;
@@ -10,6 +10,10 @@ interface ChatBubbleProps {
 
 function ChatBubbleBase({ message }: ChatBubbleProps) {
   const isUser = message.role === 'user';
+  const imageUri = message.metadata?.imageUri;
+  const hasText = message.content.trim().length > 0;
+  const shouldShowPlaceholder = !hasText && !imageUri;
+
   return (
     <View style={[styles.row, isUser ? styles.userRow : styles.artistRow]}>
       <View
@@ -17,9 +21,14 @@ function ChatBubbleBase({ message }: ChatBubbleProps) {
         testID={`chat-bubble-${message.role}-${message.id}`}
         accessibilityLabel={`chat-bubble-${message.role}`}
       >
-        <Text style={styles.content} testID={`chat-bubble-content-${message.id}`}>
-          {message.content || '...'}
-        </Text>
+        {imageUri ? <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" /> : null}
+
+        {hasText || shouldShowPlaceholder ? (
+          <Text style={styles.content} testID={`chat-bubble-content-${message.id}`}>
+            {hasText ? message.content : '...'}
+          </Text>
+        ) : null}
+
         {message.status === 'error' ? (
           <Text style={styles.error} testID={`chat-bubble-error-${message.id}`}>
             {t('errorStreaming')}
@@ -35,7 +44,7 @@ export const ChatBubble = memo(ChatBubbleBase);
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    paddingHorizontal: theme.spacing.md,
+    paddingHorizontal: theme.spacing.sm,
     marginVertical: theme.spacing.xs
   },
   userRow: {
@@ -45,11 +54,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start'
   },
   bubble: {
-    maxWidth: '84%',
-    borderRadius: 12,
+    maxWidth: '82%',
+    borderRadius: 16,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
-    minHeight: 44
+    minHeight: 40
   },
   userBubble: {
     backgroundColor: theme.colors.userBubble
@@ -59,14 +68,22 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border
   },
+  image: {
+    width: 220,
+    height: 220,
+    maxWidth: '100%',
+    borderRadius: 12,
+    marginBottom: theme.spacing.xs,
+    backgroundColor: '#0f1729'
+  },
   content: {
     color: theme.colors.textPrimary,
-    fontSize: 15,
-    lineHeight: 20
+    fontSize: 14,
+    lineHeight: 19
   },
   error: {
     color: theme.colors.error,
     marginTop: theme.spacing.xs,
-    fontSize: 12
+    fontSize: 11
   }
 });

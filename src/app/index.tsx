@@ -2,9 +2,8 @@ import { router } from 'expo-router';
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { ArtistCard } from '../components/artist/ArtistCard';
-import { Header } from '../components/common/Header';
+import { AmbientGlow } from '../components/common/AmbientGlow';
 import { useArtist } from '../hooks/useArtist';
-import { t } from '../i18n';
 import { theme } from '../theme';
 
 export default function HomeScreen() {
@@ -13,23 +12,28 @@ export default function HomeScreen() {
 
   const handleStart = (artistId: string) => {
     selectArtist(artistId);
-    router.push(`/mode-select/${artistId}` as never);
+    router.push({
+      pathname: '/mode-select/[artistId]',
+      params: { artistId }
+    });
   };
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} testID="home-screen">
-      <Header title={t('homeTitle')} subtitle={t('appName')} />
-      <View style={styles.list}>
-        {orderedArtists.map((artist) => (
-          <ArtistCard
-            key={artist.id}
-            artist={artist}
-            locked={!isArtistUnlocked(artist.id)}
-            onStart={() => handleStart(artist.id)}
-          />
-        ))}
-      </View>
-    </ScrollView>
+    <View style={styles.screen}>
+      <AmbientGlow variant="home" />
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.content} testID="home-screen">
+        <View style={styles.list}>
+          {orderedArtists.map((artist) => (
+            <ArtistCard
+              key={artist.id}
+              artist={artist}
+              locked={!isArtistUnlocked(artist.id)}
+              onStart={() => handleStart(artist.id)}
+            />
+          ))}
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
@@ -38,11 +42,19 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background
   },
+  scroll: {
+    flex: 1,
+    backgroundColor: 'transparent'
+  },
   content: {
-    padding: theme.spacing.lg,
-    gap: theme.spacing.md
+    minHeight: '100%',
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.lg,
+    paddingBottom: theme.spacing.xl,
+    justifyContent: 'flex-start'
   },
   list: {
-    gap: theme.spacing.md
+    gap: theme.spacing.md,
+    alignItems: 'stretch'
   }
 });

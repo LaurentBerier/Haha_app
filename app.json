@@ -15,13 +15,33 @@
         {
           "root": "src/app"
         }
+      ],
+      "expo-speech-recognition",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ha-Ha.ai uses your photos so you can share images in chat.",
+          "cameraPermission": "Ha-Ha.ai uses your camera so you can share images in chat."
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true
     },
     "ios": {
-      "bundleIdentifier": "com.anonymous.ha-ha-ai"
+      "bundleIdentifier": "com.anonymous.ha-ha-ai",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Ha-Ha.ai uses your microphone to transcribe voice messages.",
+        "NSSpeechRecognitionUsageDescription": "Ha-Ha.ai converts your spoken words into text messages.",
+        "NSPhotoLibraryUsageDescription": "Ha-Ha.ai uses your photos so you can share images in chat."
+      }
+    },
+    "android": {
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.READ_MEDIA_IMAGES"
+      ],
+      "package": "com.anonymous.hahaai"
     }
   }
 }

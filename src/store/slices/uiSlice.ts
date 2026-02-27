@@ -1,18 +1,18 @@
 import type { StateCreator } from 'zustand';
 import type { StoreState } from '../useStore';
 
+export type VoiceStatus = 'idle' | 'recording' | 'transcribing' | 'error';
+
 export interface UiSlice {
   isLoading: boolean;
-  isSidebarOpen: boolean;
-  currentModal: string | null;
-  keyboardVisible: boolean;
+  voiceStatus: VoiceStatus;
   setLoading: (val: boolean) => void;
+  setVoiceStatus: (status: VoiceStatus) => void;
 }
 
 export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set) => ({
   isLoading: false,
-  isSidebarOpen: false,
-  currentModal: null,
-  keyboardVisible: false,
-  setLoading: (val) => set({ isLoading: val })
+  voiceStatus: 'idle',
+  setLoading: (val) => set({ isLoading: val }),
+  setVoiceStatus: (status) => set({ voiceStatus: status })
 });

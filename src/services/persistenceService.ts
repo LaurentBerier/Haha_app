@@ -85,7 +85,17 @@ export async function loadPersistedSnapshot(): Promise<PersistedStoreSnapshot | 
       return null;
     }
 
-    const parsed = JSON.parse(raw);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      if (__DEV__) {
+        console.warn('[persistenceService] invalid AsyncStorage JSON snapshot, discarding persisted data');
+      }
+      void AsyncStorage.removeItem(STORAGE_KEY);
+      return null;
+    }
+
     if (isValidBaseSnapshot(parsed)) {
       const hydrated: PersistedStoreSnapshot = {
         ...parsed,

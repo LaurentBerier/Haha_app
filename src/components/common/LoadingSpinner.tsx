@@ -1,10 +1,11 @@
 import { ActivityIndicator, View } from 'react-native';
+import { t } from '../../i18n';
 import { theme } from '../../theme';
 
 export function LoadingSpinner() {
   return (
-    <View>
-      <ActivityIndicator color={theme.colors.accent} />
+    <View accessibilityLabel={t('loadingA11y')} testID="loading-spinner">
+      <ActivityIndicator color={theme.colors.accent} accessibilityLabel={t('loadingA11y')} />
     </View>
   );
 }

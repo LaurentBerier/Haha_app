@@ -14,15 +14,19 @@ export function useStorePersistence(): void {
     let mounted = true;
     let finished = false;
 
-    const fallbackTimer = setTimeout(() => {
+    const finalizeHydration = () => {
       if (!mounted || finished) {
         return;
       }
       finished = true;
+      markHydrated();
+    };
+
+    const fallbackTimer = setTimeout(() => {
       if (__DEV__) {
         console.warn('[persistenceService] hydration timeout reached, continuing without snapshot');
       }
-      markHydrated();
+      finalizeHydration();
     }, HYDRATION_TIMEOUT_MS);
 
     (async () => {
@@ -35,9 +39,8 @@ export function useStorePersistence(): void {
         hydrateStore(snapshot);
       }
 
-      finished = true;
       clearTimeout(fallbackTimer);
-      markHydrated();
+      finalizeHydration();
     })();
 
     return () => {

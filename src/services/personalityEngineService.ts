@@ -50,11 +50,23 @@ ${b.guardrails.softZones.map((zone) => `- ${zone.topic} : ${zone.rule}`).join('\
 `.trim();
 }
 
+function toHistoryContent(message: Message): string {
+  const text = message.content.trim();
+  const hasImage = Boolean(message.metadata?.imageUri);
+
+  if (!hasImage) {
+    return text;
+  }
+
+  return text ? `${text}\n[Image partagée]` : '[Image partagée]';
+}
+
 export function formatConversationHistory(messages: Message[]): ChatHistoryMessage[] {
   return messages
     .filter((message) => message.status === 'complete')
-    .map((message) => ({
+    .map((message): ChatHistoryMessage => ({
       role: message.role === 'user' ? 'user' : 'assistant',
-      content: message.content
-    }));
+      content: toHistoryContent(message)
+    }))
+    .filter((message) => message.content.length > 0);
 }

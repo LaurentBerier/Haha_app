@@ -27,7 +27,7 @@ export const createSubscriptionSlice: StateCreator<StoreState, [], [], Subscript
   },
   setSubscription: (sub) => set({ subscription: sub }),
   canAccessFeature: (feature) => {
-    const required = featureToTier[feature] ?? 'free';
+    const required = featureToTier[feature] ?? 'pro';
     const current = get().subscription.tier;
     return tierRank[current] >= tierRank[required];
   }

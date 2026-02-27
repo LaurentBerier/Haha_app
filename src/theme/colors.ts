@@ -1,11 +1,11 @@
 export const colors = {
-  background: '#0F1115',
-  surface: '#171A21',
-  border: '#262B36',
-  textPrimary: '#F3F5F9',
-  textMuted: '#9AA3B2',
-  accent: '#FC5A5A',
-  userBubble: '#2B4EFF',
-  artistBubble: '#232833',
-  error: '#FF6B6B'
+  background: '#090D16',
+  surface: '#111827',
+  border: '#27344D',
+  textPrimary: '#F4F7FF',
+  textMuted: '#98A6BF',
+  accent: '#FF4D5E',
+  userBubble: '#2F63FF',
+  artistBubble: '#1A2436',
+  error: '#FF6A7A'
 } as const;

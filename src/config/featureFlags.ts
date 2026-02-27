@@ -1,5 +1,5 @@
 export const featureFlags = {
-  enableVoice: false,
+  enableVoice: true,
   enableSubscriptions: false,
   enableAnalytics: false
 } as const;

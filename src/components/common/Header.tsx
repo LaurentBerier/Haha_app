@@ -17,15 +17,17 @@ export function Header({ title, subtitle }: HeaderProps) {
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
     gap: theme.spacing.xs
   },
   title: {
     ...theme.typography.title,
-    color: theme.colors.textPrimary
+    color: theme.colors.textPrimary,
+    textAlign: 'center'
   },
   subtitle: {
     ...theme.typography.caption,
-    color: theme.colors.textMuted
+    color: theme.colors.textMuted,
+    textAlign: 'center'
   }
 });

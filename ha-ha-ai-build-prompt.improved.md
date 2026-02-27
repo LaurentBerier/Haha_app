@@ -283,7 +283,7 @@ Rules:
 
 ## UI Scope (Phase 1)
 Build:
-- Home screen with artist list (Cathy only now).
+- Home screen with artist visual selector (Cathy photo in circular avatar, tap photo/name to enter).
 - Chat screen with streaming bubbles.
 - Chat input + send action.
 - Conversation creation/selection.
@@ -324,6 +324,7 @@ When done, return:
 ## Acceptance Criteria
 - App launches and navigates between home and chat.
 - User can start a conversation and send a message.
+- Home entry works via artist visual tap target (without separate start button).
 - Artist response path works in both modes:
   - live Claude API path
   - mock fallback path
