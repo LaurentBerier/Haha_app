@@ -58,7 +58,7 @@ export async function signUpWithEmail(email: string, password: string): Promise<
     email,
     password,
     options: {
-      emailRedirectTo: 'hahaha://'
+      emailRedirectTo: 'hahaha://auth/callback'
     }
   });
   if (error) {
