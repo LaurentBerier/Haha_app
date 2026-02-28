@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ARTIST_IDS } from '../../config/constants';
 import type { Artist } from '../../models/Artist';
 import { theme } from '../../theme';
 import { t } from '../../i18n';
@@ -14,7 +15,7 @@ interface ArtistCardProps {
 
 export function ArtistCard({ artist, locked, onStart }: ArtistCardProps) {
   const avatarSource = getArtistAvatarSource(artist.id);
-  const artistGenre = artist.id === 'cathy-gauthier' ? t('artistGenreCathy') : '';
+  const artistGenre = artist.id === ARTIST_IDS.CATHY_GAUTHIER ? t('artistGenreCathy') : '';
 
   return (
     <Pressable
@@ -45,14 +46,14 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     alignItems: 'center',
-    backgroundColor: '#121826',
+    backgroundColor: theme.colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#273248',
+    borderColor: theme.colors.border,
     borderRadius: 20,
     paddingVertical: theme.spacing.lg,
     paddingHorizontal: theme.spacing.md,
     gap: theme.spacing.sm,
-    shadowColor: '#6C86FF',
+    shadowColor: theme.colors.shadowAccent,
     shadowOpacity: 0.18,
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },

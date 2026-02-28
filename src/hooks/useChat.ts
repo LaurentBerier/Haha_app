@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { MAX_MESSAGE_LENGTH } from '../config/constants';
+import { ARTIST_IDS, MAX_MESSAGE_LENGTH, MODE_IDS } from '../config/constants';
 import { USE_MOCK_LLM } from '../config/env';
 import { getAllCathyFewShots, getCathyModeFewShots } from '../data/cathy-gauthier/modeFewShots';
 import { getLanguage, setLanguage } from '../i18n';
@@ -78,6 +78,7 @@ export function useChat(conversationId: string) {
   const getMessages = useStore((state) => state.getMessages);
   const incrementUsage = useStore((state) => state.incrementUsage);
   const updateConversation = useStore((state) => state.updateConversation);
+  const userProfile = useStore((state) => state.userProfile);
 
   const conversations = useStore((state) => state.conversations);
   const artists = useStore((state) => state.artists);
@@ -96,7 +97,7 @@ export function useChat(conversationId: string) {
   }, [artists, currentConversation]);
 
   const modeFewShots = useMemo(() => {
-    if (!currentConversation?.modeId || currentConversation.artistId !== 'cathy-gauthier') {
+    if (!currentConversation?.modeId || currentConversation.artistId !== ARTIST_IDS.CATHY_GAUTHIER) {
       return [];
     }
 
@@ -175,7 +176,9 @@ export function useChat(conversationId: string) {
       };
 
       const failStream = (error: Error) => {
-        console.error('[Chat] Generation failed:', error.message);
+        if (__DEV__) {
+          console.error('[Chat] Generation failed:', error.message);
+        }
         updateMessage(jobConversationId, artistMessageId, { status: 'error' });
         resetStreamState();
         runNext();
@@ -205,7 +208,9 @@ export function useChat(conversationId: string) {
             }
 
             fallbackStarted = true;
-            console.warn('[Chat] Claude failed, falling back to mock:', error.message);
+            if (__DEV__) {
+              console.warn('[Chat] Claude failed, falling back to mock:', error.message);
+            }
             updateMessage(jobConversationId, artistMessageId, { status: 'pending' });
             const fallbackCancel = startMockStream();
             cancelRef.current = () => {
@@ -278,8 +283,8 @@ export function useChat(conversationId: string) {
     addMessage(conversationId, userMessage);
     addMessage(conversationId, placeholder);
 
-    const modeId = currentConversation.modeId || 'default';
-    const systemPrompt = buildSystemPrompt(modeId);
+    const modeId = currentConversation.modeId || MODE_IDS.DEFAULT;
+    const systemPrompt = buildSystemPrompt(modeId, userProfile);
 
     queueRef.current.push({
       artistMessageId,

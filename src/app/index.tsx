@@ -1,5 +1,4 @@
 import { router } from 'expo-router';
-import { useMemo } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { ArtistCard } from '../components/artist/ArtistCard';
 import { AmbientGlow } from '../components/common/AmbientGlow';
@@ -8,7 +7,6 @@ import { theme } from '../theme';
 
 export default function HomeScreen() {
   const { artists, selectArtist, isArtistUnlocked } = useArtist();
-  const orderedArtists = useMemo(() => artists, [artists]);
 
   const handleStart = (artistId: string) => {
     selectArtist(artistId);
@@ -23,7 +21,7 @@ export default function HomeScreen() {
       <AmbientGlow variant="home" />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} testID="home-screen">
         <View style={styles.list}>
-          {orderedArtists.map((artist) => (
+          {artists.map((artist) => (
             <ArtistCard
               key={artist.id}
               artist={artist}

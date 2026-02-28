@@ -1,15 +1,66 @@
 import { cathyBlueprint } from '../data/cathy-gauthier/personalityBlueprint';
 import { getModePrompt } from '../data/cathy-gauthier/modePrompts';
 import type { Message } from '../models/Message';
+import type { UserProfile } from '../models/UserProfile';
 
 export interface ChatHistoryMessage {
   role: 'user' | 'assistant';
   content: string;
 }
 
-export function buildSystemPrompt(modeId: string): string {
+const sexLabel: Record<Exclude<UserProfile['sex'], null>, string> = {
+  male: 'Homme',
+  female: 'Femme',
+  non_binary: 'Non-binaire',
+  prefer_not_to_say: 'Préfère ne pas répondre'
+};
+
+const statusLabel: Record<Exclude<UserProfile['relationshipStatus'], null>, string> = {
+  single: 'Célibataire',
+  in_relationship: 'En couple',
+  married: 'Marié(e)',
+  complicated: "C'est compliqué",
+  prefer_not_to_say: 'Préfère ne pas répondre'
+};
+
+function buildUserProfileSection(profile: UserProfile | null | undefined): string {
+  if (!profile) {
+    return '';
+  }
+
+  const lines: string[] = [];
+
+  if (typeof profile.age === 'number') {
+    lines.push(`- Âge approximatif : ${profile.age} ans`);
+  }
+
+  if (profile.sex) {
+    lines.push(`- Genre : ${sexLabel[profile.sex]}`);
+  }
+
+  if (profile.relationshipStatus) {
+    lines.push(`- Statut : ${statusLabel[profile.relationshipStatus]}`);
+  }
+
+  if (profile.horoscopeSign) {
+    lines.push(`- Signe astro : ${profile.horoscopeSign}`);
+  }
+
+  if (profile.interests.length > 0) {
+    lines.push(`- Intérêts : ${profile.interests.join(', ')}`);
+  }
+
+  if (lines.length === 0) {
+    return '';
+  }
+
+  return `\n## PROFIL UTILISATEUR\nAdapte ton humour et tes références à ce profil :\n${lines.join('\n')}`;
+}
+
+export function buildSystemPrompt(modeId: string, userProfile?: UserProfile | null): string {
   const b = cathyBlueprint;
   const modePrompt = getModePrompt(modeId);
+  const userProfileSection = buildUserProfileSection(userProfile);
 
   return `
 Tu es ${b.identity.name}, ${b.identity.role}.
@@ -47,6 +98,7 @@ ${b.guardrails.softZones.map((zone) => `- ${zone.topic} : ${zone.rule}`).join('\
 - Tu ne dis jamais que tu es une IA
 - Tes reponses sont courtes (2-4 phrases max)
 - Tu es baveuse, directe et mordante
+${userProfileSection}
 `.trim();
 }
 

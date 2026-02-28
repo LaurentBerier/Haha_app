@@ -1,4 +1,5 @@
 import { ANTHROPIC_MODEL, CLAUDE_PROXY_URL } from '../config/env';
+import { useStore } from '../store/useStore';
 
 export type ClaudeImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
 
@@ -168,10 +169,12 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
 
     try {
       const shouldUseStreaming = !isReactNativeRuntime();
+      const accessToken = useStore.getState().session?.accessToken;
       const response = await fetch(proxyUrl, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
         },
         body: JSON.stringify({
           model: ANTHROPIC_MODEL,

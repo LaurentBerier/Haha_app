@@ -1,5 +1,6 @@
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
+const { createClient } = require('@supabase/supabase-js');
 const DEFAULT_MAX_TOKENS = 300;
 const DEFAULT_MODEL = 'claude-sonnet-4-5-20250929';
 const MAX_MESSAGES = 40;
@@ -240,6 +241,44 @@ function getErrorMessage(payload) {
   return 'Upstream API error';
 }
 
+const supabaseUrl = process.env.SUPABASE_URL;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseAdmin =
+  typeof supabaseUrl === 'string' &&
+  supabaseUrl &&
+  typeof serviceRoleKey === 'string' &&
+  serviceRoleKey
+    ? createClient(supabaseUrl, serviceRoleKey)
+    : null;
+
+async function validateAuthHeader(req) {
+  const tokenHeader = req.headers.authorization;
+  const token = typeof tokenHeader === 'string' ? tokenHeader.replace(/^Bearer\s+/i, '').trim() : '';
+
+  if (!token) {
+    return { userId: null, error: 'No token' };
+  }
+
+  if (!supabaseAdmin) {
+    return { userId: null, error: 'Supabase admin client unavailable' };
+  }
+
+  try {
+    const {
+      data: { user },
+      error
+    } = await supabaseAdmin.auth.getUser(token);
+
+    if (error || !user) {
+      return { userId: null, error: error?.message ?? 'Invalid token' };
+    }
+
+    return { userId: user.id, error: null };
+  } catch {
+    return { userId: null, error: 'Token validation failed' };
+  }
+}
+
 module.exports = async function handler(req, res) {
   const corsOk = setCorsHeaders(req, res);
   if (!corsOk) {
@@ -254,6 +293,12 @@ module.exports = async function handler(req, res) {
 
   if (req.method !== 'POST') {
     res.status(405).json({ error: { message: 'Method not allowed.' } });
+    return;
+  }
+
+  const auth = await validateAuthHeader(req);
+  if (auth.error) {
+    res.status(401).json({ error: { message: 'Unauthorized.' } });
     return;
   }
 

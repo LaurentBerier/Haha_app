@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { AmbientGlow } from '../../components/common/AmbientGlow';
+import { MODE_IDS } from '../../config/constants';
 import { ModeCard } from '../../components/mode/ModeCard';
 import { getModeById } from '../../config/modes';
 import { getLanguage, t } from '../../i18n';
@@ -38,18 +39,18 @@ export default function ModeSelectScreen() {
       return [];
     }
 
-    const radarMode = getModeById('radar-attitude');
+    const radarMode = getModeById(MODE_IDS.RADAR_ATTITUDE);
     const supported = artist.supportedModeIds
       .map((modeId) => getModeById(modeId))
       .filter((mode): mode is Mode => mode !== null);
 
     const base = radarMode ? [radarMode, ...supported] : supported;
     const historyMode: Mode = {
-      id: 'history',
+      id: MODE_IDS.HISTORY,
       name: t('historyModeTitle'),
       description: t('historyModeDescription'),
       emoji: '🕐',
-      kind: 'history'
+      kind: MODE_IDS.HISTORY
     };
 
     return [...base, historyMode];
@@ -65,7 +66,7 @@ export default function ModeSelectScreen() {
 
   const handleModeSelect = useCallback(
     (modeId: string) => {
-      if (modeId === 'history') {
+      if (modeId === MODE_IDS.HISTORY) {
         router.push(`/history/${artist.id}`);
         return;
       }

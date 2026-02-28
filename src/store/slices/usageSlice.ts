@@ -26,6 +26,11 @@ function normalizeQuotaWindow(quota: UsageQuota): UsageQuota {
   return quota;
 }
 
+/*
+ * Phase 2 migration note:
+ * After Supabase auth, source of truth moves to user_profiles table.
+ * Hydrate via authService post-login, then update optimistically.
+ */
 export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (set, get) => ({
   quota: {
     monthlyCap: 50000,

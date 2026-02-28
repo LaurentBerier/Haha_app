@@ -1,11 +1,12 @@
 import { cathyGuardrails } from '../data/cathy-gauthier/modeFewShots';
+import { ARTIST_IDS } from './constants';
 import type { Artist } from '../models/Artist';
 
 export const artists: Artist[] = [
   {
-    id: 'cathy-gauthier',
+    id: ARTIST_IDS.CATHY_GAUTHIER,
     name: 'Cathy Gauthier',
-    slug: 'cathy-gauthier',
+    slug: ARTIST_IDS.CATHY_GAUTHIER,
     avatarUrl: 'CG',
     supportedLanguages: ['fr-CA', 'fr-FR', 'en-CA'],
     defaultLanguage: 'fr-CA',

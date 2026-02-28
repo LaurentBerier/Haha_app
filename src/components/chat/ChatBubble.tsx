@@ -74,7 +74,7 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
     borderRadius: 12,
     marginBottom: theme.spacing.xs,
-    backgroundColor: '#0f1729'
+    backgroundColor: theme.colors.surfaceSunken
   },
   content: {
     color: theme.colors.textPrimary,

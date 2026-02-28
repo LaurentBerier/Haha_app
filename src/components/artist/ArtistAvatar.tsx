@@ -26,8 +26,8 @@ export function ArtistAvatar({ label, size = 36, source = null }: ArtistAvatarPr
 const styles = StyleSheet.create({
   outer: {
     borderWidth: 1,
-    borderColor: '#2c364d',
-    backgroundColor: '#1a2233',
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.artistBubble,
     justifyContent: 'center',
     alignItems: 'center'
   },

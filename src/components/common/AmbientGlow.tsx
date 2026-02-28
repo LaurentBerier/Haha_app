@@ -84,29 +84,18 @@ function AmbientGlowBase({ variant = 'home' }: AmbientGlowProps) {
     <View pointerEvents="none" style={styles.container}>
       <Animated.View style={[styles.layer, styles.layerFar, isHome ? styles.homeFar : styles.modeFar, farLayerStyle]}>
         <Animated.View style={[styles.orb, styles.orbBlue, styles.orbHuge, { opacity: pulseOpacity }]} />
-        <View style={[styles.orb, styles.orbBlueTint, styles.orbMid]} />
       </Animated.View>
 
       <Animated.View style={[styles.layer, styles.layerMid, isHome ? styles.homeMid : styles.modeMid, midLayerStyle]}>
-        <Animated.View style={[styles.orb, styles.orbViolet, styles.orbLarge, { opacity: pulseOpacity }]} />
         <Animated.View
-          style={[
-            styles.orb,
-            styles.orbVioletTint,
-            styles.orbSmall,
-            {
-              opacity: pulseOpacity,
-              transform: [{ scale: pulseScale }]
-            }
-          ]}
+          style={[styles.orb, styles.orbViolet, styles.orbLarge, { opacity: pulseOpacity, transform: [{ scale: pulseScale }] }]}
         />
       </Animated.View>
 
       <Animated.View
         style={[styles.layer, styles.layerNear, isHome ? styles.homeNear : styles.modeNear, nearLayerStyle]}
       >
-        <Animated.View style={[styles.orb, styles.orbIndigo, styles.orbLarge, { opacity: pulseOpacity }]} />
-        <View style={[styles.orb, styles.orbIndigoTint, styles.orbSmall]} />
+        <Animated.View style={[styles.orb, styles.orbIndigo, styles.orbMid, { opacity: pulseOpacity }]} />
       </Animated.View>
 
       <View style={styles.vignette} />
@@ -123,98 +112,74 @@ const styles = StyleSheet.create({
   },
   layer: {
     position: 'absolute',
-    width: 620,
-    height: 620
+    width: 440,
+    height: 440
   },
   layerFar: {
-    opacity: 0.34
+    opacity: 0.24
   },
   layerMid: {
-    opacity: 0.28
+    opacity: 0.2
   },
   layerNear: {
-    opacity: 0.22
+    opacity: 0.17
   },
   homeFar: {
-    top: -270,
-    right: -260
+    top: -210,
+    right: -200
   },
   homeMid: {
-    top: '12%',
-    left: -290
+    top: '14%',
+    left: -220
   },
   homeNear: {
-    bottom: -340,
-    right: -300
+    bottom: -250,
+    right: -220
   },
   modeFar: {
-    top: -300,
-    left: -300
+    top: -220,
+    left: -220
   },
   modeMid: {
-    top: '16%',
-    right: -290
+    top: '18%',
+    right: -220
   },
   modeNear: {
-    bottom: -320,
-    left: -280
+    bottom: -240,
+    left: -220
   },
   orb: {
     position: 'absolute',
-    borderRadius: 999,
-    shadowOpacity: 0.9,
-    shadowRadius: 110,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 8
+    borderRadius: 999
   },
   orbHuge: {
-    width: 600,
-    height: 600
+    width: 420,
+    height: 420
   },
   orbLarge: {
-    width: 500,
-    height: 500,
-    left: 70,
+    width: 360,
+    height: 360,
+    left: 46,
     top: 40
   },
   orbMid: {
-    width: 360,
-    height: 360,
-    left: 140,
-    top: 120
-  },
-  orbSmall: {
     width: 300,
     height: 300,
-    left: 170,
-    top: 160
+    left: 86,
+    top: 72
   },
+  // Decorative orb colors - intentionally not in theme.
   orbBlue: {
-    backgroundColor: 'rgba(75, 112, 255, 0.28)',
-    shadowColor: '#6A92FF'
-  },
-  orbBlueTint: {
-    backgroundColor: 'rgba(94, 133, 255, 0.22)',
-    shadowColor: '#86A8FF'
+    backgroundColor: 'rgba(75, 112, 255, 0.2)'
   },
   orbViolet: {
-    backgroundColor: 'rgba(125, 86, 255, 0.26)',
-    shadowColor: '#A579FF'
-  },
-  orbVioletTint: {
-    backgroundColor: 'rgba(159, 98, 255, 0.2)',
-    shadowColor: '#C196FF'
+    backgroundColor: 'rgba(125, 86, 255, 0.18)'
   },
   orbIndigo: {
-    backgroundColor: 'rgba(47, 82, 219, 0.24)',
-    shadowColor: '#5C88FF'
-  },
-  orbIndigoTint: {
-    backgroundColor: 'rgba(72, 109, 240, 0.19)',
-    shadowColor: '#7DA2FF'
+    backgroundColor: 'rgba(47, 82, 219, 0.16)'
   },
   vignette: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(9, 13, 22, 0.22)'
+    backgroundColor: 'rgba(9, 13, 22, 0.16)'
   }
 });

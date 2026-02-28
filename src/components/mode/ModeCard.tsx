@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { MODE_IDS } from '../../config/constants';
 import type { Mode } from '../../models/Mode';
 import { theme } from '../../theme';
 
@@ -8,14 +9,14 @@ interface ModeCardProps {
 }
 
 const MODE_EMOJI_BY_ID: Record<string, string> = {
-  'radar-attitude': '🔥',
-  roast: '😈',
-  'coach-de-vie': '🧭',
-  'phrase-du-jour': '💬',
-  'message-personnalise': '🎁',
-  'numero-de-show': '🎤',
-  horoscope: '🔮',
-  meteo: '⛅'
+  [MODE_IDS.RADAR_ATTITUDE]: '🔥',
+  [MODE_IDS.ROAST]: '😈',
+  [MODE_IDS.COACH_DE_VIE]: '🧭',
+  [MODE_IDS.PHRASE_DU_JOUR]: '💬',
+  [MODE_IDS.MESSAGE_PERSONNALISE]: '🎁',
+  [MODE_IDS.NUMERO_DE_SHOW]: '🎤',
+  [MODE_IDS.HOROSCOPE]: '🔮',
+  [MODE_IDS.METEO]: '⛅'
 };
 
 const MODE_EMOJI_FALLBACK_POOL = ['🎭', '🎯', '⚡', '🧨', '🗣️', '🧠', '🎬', '🤹', '🧩', '🎪'];
@@ -44,7 +45,7 @@ function getModeEmoji(mode: Mode): string {
 
 export function ModeCard({ mode, onPress }: ModeCardProps) {
   const emoji = getModeEmoji(mode);
-  const isHistoryMode = mode.kind === 'history';
+  const isHistoryMode = mode.kind === MODE_IDS.HISTORY;
 
   return (
     <Pressable
@@ -73,12 +74,12 @@ export function ModeCard({ mode, onPress }: ModeCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#121a2a',
+    backgroundColor: theme.colors.surfaceRaised,
     borderWidth: 1,
-    borderColor: '#2a3955',
+    borderColor: theme.colors.border,
     borderRadius: 14,
     padding: theme.spacing.md,
-    shadowColor: '#5E7CFF',
+    shadowColor: theme.colors.shadowMode,
     shadowOpacity: 0.12,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
@@ -87,7 +88,7 @@ const styles = StyleSheet.create({
   cardHistory: {
     backgroundColor: theme.colors.surface,
     borderStyle: 'dashed',
-    borderColor: '#3a4f72'
+    borderColor: theme.colors.border
   },
   pressed: {
     opacity: 0.9
@@ -103,10 +104,10 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#273146'
+    backgroundColor: theme.colors.surfaceButton
   },
   emojiContainerHistory: {
-    backgroundColor: '#34425c'
+    backgroundColor: theme.colors.border
   },
   emoji: {
     fontSize: 17,

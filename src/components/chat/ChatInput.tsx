@@ -160,7 +160,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'] as ImagePicker.MediaType[],
         allowsEditing: false,
         quality: 0.7,
         base64: true,
@@ -236,7 +236,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
           accessibilityRole="button"
           accessibilityLabel={t('addButtonA11y')}
         >
-          <Text style={styles.leftActionText}>+</Text>
+          {isPickingImage ? <ActivityIndicator color={theme.colors.textDisabled} /> : <Text style={styles.leftActionText}>+</Text>}
         </Pressable>
 
         <View style={styles.inputShell}>
@@ -255,7 +255,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
                   ? t('voiceTranscribing')
                   : t('chatPlaceholder')
             }
-            placeholderTextColor="#6b7280"
+            placeholderTextColor={theme.colors.textDisabled}
             multiline
             maxLength={MAX_MESSAGE_LENGTH}
             editable={!disabled}
@@ -276,7 +276,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
                 accessibilityLabel={voiceStatus === 'recording' ? t('micButtonStop') : t('micButtonLabel')}
               >
                 {voiceStatus === 'transcribing' ? (
-                  <ActivityIndicator color="#94a3b8" />
+                  <ActivityIndicator color={theme.colors.textDisabled} />
                 ) : (
                   <Text style={styles.micText}>{voiceStatus === 'recording' ? '■' : '🎤'}</Text>
                 )}
@@ -317,17 +317,17 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
 const styles = StyleSheet.create({
   wrapper: {
     borderTopWidth: 1,
-    borderTopColor: '#1b263b',
-    backgroundColor: '#0b1220'
+    borderTopColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSunken
   },
   attachmentRow: {
     marginHorizontal: theme.spacing.sm,
     marginTop: theme.spacing.sm,
     marginBottom: theme.spacing.xs,
     borderRadius: 14,
-    backgroundColor: '#111827',
+    backgroundColor: theme.colors.surface,
     borderWidth: 1,
-    borderColor: '#25314a',
+    borderColor: theme.colors.border,
     padding: theme.spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
@@ -337,11 +337,11 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 10,
-    backgroundColor: '#1f2937'
+    backgroundColor: theme.colors.surfaceButton
   },
   attachmentText: {
     flex: 1,
-    color: '#cbd5e1',
+    color: theme.colors.textSecondary,
     fontSize: 13,
     fontWeight: '600'
   },
@@ -351,10 +351,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#1f2937'
+    backgroundColor: theme.colors.surfaceButton
   },
   removeAttachmentText: {
-    color: '#e2e8f0',
+    color: theme.colors.textPrimary,
     fontSize: 12,
     fontWeight: '700'
   },
@@ -365,22 +365,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.sm,
     paddingTop: theme.spacing.sm,
     paddingBottom: theme.spacing.sm,
-    backgroundColor: '#0b1220'
+    backgroundColor: theme.colors.surfaceSunken
   },
   leftAction: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#1f2937',
+    backgroundColor: theme.colors.surfaceButton,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#334155'
+    borderColor: theme.colors.border
   },
   leftActionText: {
     fontSize: 34,
     lineHeight: 36,
-    color: '#cbd5e1',
+    color: theme.colors.textSecondary,
     fontWeight: '300'
   },
   inputShell: {
@@ -388,9 +388,9 @@ const styles = StyleSheet.create({
     minHeight: 56,
     maxHeight: 120,
     borderRadius: 28,
-    backgroundColor: '#111827',
+    backgroundColor: theme.colors.surface,
     borderWidth: 1,
-    borderColor: '#2b3953',
+    borderColor: theme.colors.border,
     paddingLeft: theme.spacing.md,
     paddingRight: theme.spacing.sm,
     flexDirection: 'row',
@@ -400,7 +400,7 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 40,
     maxHeight: 104,
-    color: '#e2e8f0',
+    color: theme.colors.textPrimary,
     fontSize: 16,
     paddingVertical: theme.spacing.sm
   },
@@ -412,22 +412,22 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   micRecording: {
-    backgroundColor: '#7f1d1d'
+    backgroundColor: theme.colors.recordingActive
   },
   micText: {
-    color: '#94a3b8',
+    color: theme.colors.textDisabled,
     fontSize: 20
   },
   rightAction: {
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#060606',
+    backgroundColor: theme.colors.surfaceDeep,
     justifyContent: 'center',
     alignItems: 'center'
   },
   rightActionText: {
-    color: '#ffffff',
+    color: theme.colors.textPrimary,
     fontSize: 22,
     fontWeight: '700'
   },

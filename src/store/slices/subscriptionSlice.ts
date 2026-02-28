@@ -19,6 +19,11 @@ const tierRank: Record<Subscription['tier'], number> = {
   pro: 2
 };
 
+/*
+ * Phase 2 migration note:
+ * After Supabase auth, source of truth moves to user_profiles table.
+ * Hydrate via authService post-login, then update optimistically.
+ */
 export const createSubscriptionSlice: StateCreator<StoreState, [], [], SubscriptionSlice> = (set, get) => ({
   subscription: {
     tier: 'free',

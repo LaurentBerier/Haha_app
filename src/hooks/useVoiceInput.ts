@@ -14,11 +14,19 @@ export function useVoiceInput() {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const transcriptRef = useRef('');
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const transcribingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resetErrorState = useCallback(() => {
     if (resetTimerRef.current) {
       clearTimeout(resetTimerRef.current);
       resetTimerRef.current = null;
+    }
+  }, []);
+
+  const resetTranscribingTimer = useCallback(() => {
+    if (transcribingTimerRef.current) {
+      clearTimeout(transcribingTimerRef.current);
+      transcribingTimerRef.current = null;
     }
   }, []);
 
@@ -42,10 +50,11 @@ export function useVoiceInput() {
 
     return () => {
       resetErrorState();
+      resetTranscribingTimer();
       stopListening();
       setVoiceStatus('idle');
     };
-  }, [resetErrorState, setVoiceStatus]);
+  }, [resetErrorState, resetTranscribingTimer, setVoiceStatus]);
 
   const startRecording = useCallback(async () => {
     if (voiceStatus === 'recording') {
@@ -89,10 +98,16 @@ export function useVoiceInput() {
     setVoiceStatus('transcribing');
     stopListening();
 
-    await new Promise((resolve) => setTimeout(resolve, TRANSCRIBING_DELAY_MS));
+    resetTranscribingTimer();
+    await new Promise<void>((resolve) => {
+      transcribingTimerRef.current = setTimeout(() => {
+        transcribingTimerRef.current = null;
+        resolve();
+      }, TRANSCRIBING_DELAY_MS);
+    });
     setVoiceStatus('idle');
     return transcriptRef.current;
-  }, [setVoiceStatus, voiceStatus]);
+  }, [resetTranscribingTimer, setVoiceStatus, voiceStatus]);
 
   return {
     voiceStatus,
