@@ -273,7 +273,12 @@ async function validateAuthHeader(req) {
       return { userId: null, error: error?.message ?? 'Invalid token' };
     }
 
-    return { userId: user.id, error: null };
+    return {
+      userId: user.id,
+      role: typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : null,
+      accountType: typeof user.app_metadata?.account_type === 'string' ? user.app_metadata.account_type : null,
+      error: null
+    };
   } catch {
     return { userId: null, error: 'Token validation failed' };
   }

@@ -1,4 +1,4 @@
-export type SubscriptionTier = 'free' | 'core' | 'pro';
+export type SubscriptionTier = string;
 
 export interface Subscription {
   tier: SubscriptionTier;

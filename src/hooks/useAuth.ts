@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from 'react';
+import { hasPermission } from '../config/accountTypes';
 import { getStoredSession, onAuthStateChange } from '../services/authService';
 import { clearLegacySecureStoreData } from '../services/persistenceService';
 import { useStore } from '../store/useStore';
@@ -64,6 +65,9 @@ export function useAuth() {
   }, [clearSession, clearUserProfile, setAuthStatus, setSession]);
 
   const user = getCurrentUser();
+  const accountType = user?.accountType ?? null;
+  const role = user?.role ?? null;
+  const isAdmin = hasPermission(accountType, 'admin:all') || role === 'admin';
   const isAuthenticated = authStatus === 'authenticated' && Boolean(session);
   const isLoading = authStatus === 'loading';
 
@@ -74,10 +78,25 @@ export function useAuth() {
       isAuthenticated,
       isLoading,
       user,
+      accountType,
+      role,
+      isAdmin,
       userProfile,
       setSession,
       clearSession
     }),
-    [authStatus, clearSession, isAuthenticated, isLoading, session, setSession, user, userProfile]
+    [
+      accountType,
+      authStatus,
+      clearSession,
+      isAdmin,
+      isAuthenticated,
+      isLoading,
+      role,
+      session,
+      setSession,
+      user,
+      userProfile
+    ]
   );
 }

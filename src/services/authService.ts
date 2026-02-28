@@ -6,6 +6,14 @@ import { assertSupabaseConfigured, supabase } from './supabaseClient';
 export type AuthStateChangeCallback = (event: AuthChangeEvent, session: AuthSession) => void;
 
 function toAuthUser(sessionUser: Session['user']): AuthUser {
+  const role = typeof sessionUser.app_metadata?.role === 'string' ? sessionUser.app_metadata.role : null;
+  const accountType =
+    typeof sessionUser.app_metadata?.account_type === 'string'
+      ? sessionUser.app_metadata.account_type
+      : typeof sessionUser.user_metadata?.account_type === 'string'
+        ? sessionUser.user_metadata.account_type
+        : null;
+
   return {
     id: sessionUser.id,
     email: sessionUser.email ?? '',
@@ -16,6 +24,8 @@ function toAuthUser(sessionUser: Session['user']): AuthUser {
           ? sessionUser.user_metadata.full_name
           : null,
     avatarUrl: typeof sessionUser.user_metadata?.avatar_url === 'string' ? sessionUser.user_metadata.avatar_url : null,
+    role,
+    accountType,
     createdAt: sessionUser.created_at
   };
 }

@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import { getAccountTypeRank } from '../../config/accountTypes';
 import type { Subscription } from '../../models/Subscription';
 import type { StoreState } from '../useStore';
 
@@ -9,14 +10,9 @@ export interface SubscriptionSlice {
 }
 
 const featureToTier: Record<string, Subscription['tier']> = {
-  proArtist: 'pro',
-  unlimited: 'core'
-};
-
-const tierRank: Record<Subscription['tier'], number> = {
-  free: 0,
-  core: 1,
-  pro: 2
+  proArtist: 'premium',
+  unlimited: 'regular',
+  adminConsole: 'admin'
 };
 
 /*
@@ -32,8 +28,8 @@ export const createSubscriptionSlice: StateCreator<StoreState, [], [], Subscript
   },
   setSubscription: (sub) => set({ subscription: sub }),
   canAccessFeature: (feature) => {
-    const required = featureToTier[feature] ?? 'pro';
+    const required = featureToTier[feature] ?? 'premium';
     const current = get().subscription.tier;
-    return tierRank[current] >= tierRank[required];
+    return getAccountTypeRank(current) >= getAccountTypeRank(required);
   }
 });
