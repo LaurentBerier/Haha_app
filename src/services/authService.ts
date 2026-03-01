@@ -1,5 +1,7 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
+import { CLAUDE_PROXY_URL } from '../config/env';
+import type { AccountTypeId } from '../config/accountTypes';
 import type { AuthSession, AuthUser } from '../models/AuthUser';
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
 
@@ -9,9 +11,9 @@ function toAuthUser(sessionUser: Session['user']): AuthUser {
   const role = typeof sessionUser.app_metadata?.role === 'string' ? sessionUser.app_metadata.role : null;
   const accountType =
     typeof sessionUser.app_metadata?.account_type === 'string'
-      ? sessionUser.app_metadata.account_type
+      ? (sessionUser.app_metadata.account_type as AccountTypeId)
       : typeof sessionUser.user_metadata?.account_type === 'string'
-        ? sessionUser.user_metadata.account_type
+        ? (sessionUser.user_metadata.account_type as AccountTypeId)
         : null;
 
   return {
@@ -94,6 +96,46 @@ export async function signOut(): Promise<void> {
   const { error } = await supabase.auth.signOut();
   if (error) {
     throw error;
+  }
+}
+
+function toBackendBaseUrl(): string {
+  return CLAUDE_PROXY_URL.trim().replace(/\/claude\/?$/, '');
+}
+
+export async function deleteAccount(accessToken: string): Promise<void> {
+  const baseUrl = toBackendBaseUrl();
+  if (!baseUrl) {
+    throw new Error('Missing Claude proxy URL. Set EXPO_PUBLIC_CLAUDE_PROXY_URL.');
+  }
+
+  const response = await fetch(`${baseUrl}/delete-account`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    let message = 'Impossible de supprimer le compte.';
+    try {
+      const payload = await response.json();
+      if (
+        payload &&
+        typeof payload === 'object' &&
+        'error' in payload &&
+        payload.error &&
+        typeof payload.error === 'object' &&
+        'message' in payload.error &&
+        typeof payload.error.message === 'string'
+      ) {
+        message = payload.error.message;
+      }
+    } catch {
+      // Keep default message.
+    }
+
+    throw new Error(message);
   }
 }
 

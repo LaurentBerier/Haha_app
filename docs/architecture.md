@@ -21,6 +21,7 @@ Supabase is the system of record for:
 - Auth group: `/(auth)/login`, `/(auth)/signup`, `/(auth)/onboarding`
 - Callback route: `/auth/callback`
 - Main app routes: home, mode-select, history, chat, settings
+- Settings sub-routes: `/settings/edit-profile`, `/settings/subscription`
 
 ### State (`src/store`)
 
@@ -42,7 +43,7 @@ Slices:
 
 - `supabaseClient.ts`: Supabase client with AsyncStorage auth persistence
 - `authService.ts`: sign-in/up/out, session restore, auth state listener
-- `profileService.ts`: profile fetch/update + onboarding complete/skip
+- `profileService.ts`: profile fetch/update + onboarding complete/skip + account type lookup
 - `claudeApiService.ts`: mobile client for proxy calls (+ bearer token header)
 - `personalityEngineService.ts`: system prompt + profile section injection
 - `persistenceService.ts`: local snapshot persistence for conversation/message cache
@@ -72,6 +73,23 @@ Responsibilities:
 - validate target account type exists in `account_types`
 - update `profiles.account_type_id`
 - update `auth.users.app_metadata` (`account_type`, `role`)
+
+### `api/delete-account.js`
+
+Responsibilities:
+
+- user bearer token validation
+- authenticated user deletion via Supabase admin API
+- relies on DB cascading deletes for profile-linked data
+
+### `api/payment-webhook.js`
+
+Responsibilities:
+
+- webhook auth check (`REVENUECAT_WEBHOOK_SECRET` in production)
+- persist raw events to `payment_events`
+- map payment products to account types
+- update profile tier + JWT metadata claims
 
 ## Auth and Identity Model
 
@@ -110,6 +128,7 @@ Legacy aliases for compatibility:
 - `pro`
 
 Feature gating in `subscriptionSlice` uses dynamic rank lookup via this registry.
+The slice reads account type from authenticated session claims first, then falls back to local subscription state.
 
 ## Persistence Strategy
 
@@ -139,4 +158,3 @@ Vercel functions depend on Node dependencies from `package.json`, so `.vercelign
 
 - `package.json`
 - `package-lock.json`
-

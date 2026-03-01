@@ -64,6 +64,8 @@ export default function RootLayout() {
             <Stack.Screen name="history/[artistId]" options={{ title: t('historyScreenTitle') }} />
             <Stack.Screen name="chat/[conversationId]" options={{ title: t('chatTitle') }} />
             <Stack.Screen name="settings/index" options={{ title: t('settingsTitle') }} />
+            <Stack.Screen name="settings/edit-profile" options={{ title: t('settingsEditProfile') }} />
+            <Stack.Screen name="settings/subscription" options={{ title: t('settingsSubscription') }} />
           </Stack>
         </>
       )}

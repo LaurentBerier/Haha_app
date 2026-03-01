@@ -225,3 +225,37 @@ select auth.admin_update_user_by_id(
   '{"app_metadata":{"account_type":"admin","role":"admin"}}'::jsonb
 );
 ```
+
+## 12) `POST /api/delete-account` returns 401
+
+Checklist:
+
+- Ensure app sends `Authorization: Bearer <session.accessToken>`.
+- Confirm `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set in Vercel.
+- If token is stale, sign out and sign back in.
+
+## 13) `POST /api/payment-webhook` returns 401
+
+Checklist:
+
+- Set `REVENUECAT_WEBHOOK_SECRET` in Vercel.
+- Send webhook header `Authorization: Bearer <REVENUECAT_WEBHOOK_SECRET>`.
+- In local/dev, endpoint allows unsigned requests unless `NODE_ENV=production`.
+
+## 14) `payment_events` insert fails
+
+Symptom:
+
+- Webhook fails with table/constraint errors.
+
+Fix:
+
+- Re-run `/Users/laurentbernier/Documents/HAHA_app/docs/supabase-account-types.sql`.
+- Verify table exists:
+
+```sql
+select id, provider, event_type, product_id, created_at
+from public.payment_events
+order by created_at desc
+limit 20;
+```

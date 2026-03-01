@@ -9,9 +9,12 @@ Implemented in this repository:
 - Mobile app (`src/`) with Expo Router, Zustand, strict TypeScript.
 - Supabase auth integration (email/password + Apple Sign-In).
 - Auth gate and onboarding flow in app routing.
+- Settings flow (profile edit, subscription stub, sign out, account deletion).
 - User profile model and profile personalization injection in system prompts.
 - Claude proxy (`api/claude.js`) with JWT validation via Supabase service role.
 - Admin endpoint (`api/admin-account-type.js`) for account type assignment.
+- Account deletion endpoint (`api/delete-account.js`).
+- Payment webhook scaffold (`api/payment-webhook.js`) for tier sync from billing events.
 - Extensible account type model (`free`, `regular`, `premium`, `admin`, plus custom).
 
 ## Stack
@@ -60,6 +63,7 @@ Notes:
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (server-only, required for JWT/user validation)
+- `REVENUECAT_WEBHOOK_SECRET` (required in production if using `api/payment-webhook.js`)
 - Optional: `ALLOWED_ORIGINS`
 
 ## Supabase Setup
@@ -79,6 +83,9 @@ This creates:
 - `public.account_types`
 - `public.profiles.account_type_id`
 - seed account types: `free`, `regular`, `premium`, `admin`
+- RLS hardening for account type safety
+- JWT metadata sync trigger on account type changes
+- `public.payment_events` ledger table
 
 ## App Auth Flow
 
@@ -88,6 +95,9 @@ Routes:
 - `/(auth)/signup`
 - `/(auth)/onboarding`
 - `/auth/callback`
+- `/settings`
+- `/settings/edit-profile`
+- `/settings/subscription`
 
 Behavior:
 
@@ -130,6 +140,31 @@ Security:
 - Requires `Authorization: Bearer <access_token>`
 - Validates token using Supabase admin client
 - Rejects invalid/missing token with `401`
+
+## Account Deletion Endpoint
+
+Endpoint:
+
+- `POST /api/delete-account`
+
+Security:
+
+- Requires `Authorization: Bearer <access_token>`
+- Validates token using Supabase admin client
+- Deletes authenticated user via `auth.admin.deleteUser`
+- Cascading FK cleanup handles profile-linked tables
+
+## Payment Webhook Scaffold
+
+Endpoint:
+
+- `POST /api/payment-webhook`
+
+Notes:
+
+- Designed for RevenueCat-style payloads.
+- Persists incoming events in `public.payment_events`.
+- Maps product IDs to account types, updates `profiles.account_type_id`, and syncs JWT metadata.
 
 ## Run
 

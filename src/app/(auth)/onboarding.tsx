@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import {
   HOROSCOPE_OPTIONS,
   INTEREST_OPTIONS,
@@ -28,6 +28,8 @@ export default function OnboardingScreen() {
 
   const [step, setStep] = useState(0);
   const [ageInput, setAgeInput] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [answers, setAnswers] = useState<OnboardingAnswers>({
     age: null,
     sex: null,
@@ -39,6 +41,10 @@ export default function OnboardingScreen() {
   const progress = useMemo(() => `${Math.min(step + 1, TOTAL_STEPS)} / ${TOTAL_STEPS}`, [step]);
 
   const goNext = () => {
+    if (isSubmitting) {
+      return;
+    }
+
     if (step < TOTAL_STEPS - 1) {
       setStep((value) => value + 1);
       return;
@@ -48,6 +54,12 @@ export default function OnboardingScreen() {
   };
 
   const skipCurrent = () => {
+    if (isSubmitting) {
+      return;
+    }
+
+    setErrorMessage(null);
+
     if (step === 0) {
       setAnswers((prev) => ({ ...prev, age: null }));
       setAgeInput('');
@@ -69,37 +81,66 @@ export default function OnboardingScreen() {
   };
 
   const skipAll = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
     if (!userId) {
       router.replace('/(auth)/login');
       return;
     }
 
-    const profile = await skipOnboarding(userId);
-    if (profile) {
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const profile = await skipOnboarding(userId);
+      if (!profile) {
+        setErrorMessage("Impossible de sauvegarder ton choix pour l'instant. Réessaie.");
+        return;
+      }
+
       setUserProfile(profile);
+      router.replace('/');
+    } catch {
+      setErrorMessage("Une erreur réseau est survenue. Vérifie ta connexion et réessaie.");
+    } finally {
+      setIsSubmitting(false);
     }
-    router.replace('/');
   };
 
   const finishOnboarding = async () => {
+    if (isSubmitting) {
+      return;
+    }
+
     if (!userId) {
       router.replace('/(auth)/login');
       return;
     }
 
-    const profile = await completeOnboarding(userId, {
-      age: answers.age,
-      sex: answers.sex,
-      relationshipStatus: answers.relationshipStatus,
-      horoscopeSign: answers.horoscopeSign,
-      interests: answers.interests
-    });
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const profile = await completeOnboarding(userId, {
+        age: answers.age,
+        sex: answers.sex,
+        relationshipStatus: answers.relationshipStatus,
+        horoscopeSign: answers.horoscopeSign,
+        interests: answers.interests
+      });
 
-    if (profile) {
+      if (!profile) {
+        setErrorMessage("Impossible de sauvegarder ton profil pour l'instant. Réessaie.");
+        return;
+      }
+
       setUserProfile(profile);
+      router.replace('/');
+    } catch {
+      setErrorMessage("Une erreur réseau est survenue. Vérifie ta connexion et réessaie.");
+    } finally {
+      setIsSubmitting(false);
     }
-
-    router.replace('/');
   };
 
   const toggleInterest = (interest: string) => {
@@ -125,9 +166,12 @@ export default function OnboardingScreen() {
     <ScrollView contentContainerStyle={styles.screen} testID="onboarding-screen">
       <Text style={styles.progress}>{progress}</Text>
       <Text style={styles.title}>Personnalisation</Text>
-      <Text style={styles.privacy}>
-        Ces questions nous permettent de personnaliser ton expérience avec Cathy. Tes réponses ne seront jamais partagées avec des tiers.
-      </Text>
+      {step === 0 ? (
+        <Text style={styles.privacy}>
+          Ces questions nous permettent de personnaliser ton expérience avec Cathy. Tes réponses ne seront jamais partagées avec des tiers.
+        </Text>
+      ) : null}
+      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
       {step === 0 ? (
         <View style={styles.stepBlock}>
@@ -140,8 +184,12 @@ export default function OnboardingScreen() {
             placeholderTextColor={theme.colors.textDisabled}
             style={styles.input}
           />
-          <Pressable style={styles.primaryButton} onPress={onAgeNext}>
-            <Text style={styles.primaryLabel}>Continuer</Text>
+          <Pressable
+            style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
+            onPress={onAgeNext}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? <ActivityIndicator color={theme.colors.textPrimary} /> : <Text style={styles.primaryLabel}>Continuer</Text>}
           </Pressable>
         </View>
       ) : null}
@@ -155,9 +203,13 @@ export default function OnboardingScreen() {
                 key={option.value}
                 style={[styles.optionButton, answers.sex === option.value && styles.optionButtonSelected]}
                 onPress={() => {
+                  if (isSubmitting) {
+                    return;
+                  }
                   setAnswers((prev) => ({ ...prev, sex: option.value }));
                   goNext();
                 }}
+                disabled={isSubmitting}
               >
                 <Text style={styles.optionLabel}>{option.label}</Text>
               </Pressable>
@@ -178,9 +230,13 @@ export default function OnboardingScreen() {
                   answers.relationshipStatus === option.value && styles.optionButtonSelected
                 ]}
                 onPress={() => {
+                  if (isSubmitting) {
+                    return;
+                  }
                   setAnswers((prev) => ({ ...prev, relationshipStatus: option.value }));
                   goNext();
                 }}
+                disabled={isSubmitting}
               >
                 <Text style={styles.optionLabel}>{option.label}</Text>
               </Pressable>
@@ -201,9 +257,13 @@ export default function OnboardingScreen() {
                   answers.horoscopeSign === option.value && styles.optionButtonSelected
                 ]}
                 onPress={() => {
+                  if (isSubmitting) {
+                    return;
+                  }
                   setAnswers((prev) => ({ ...prev, horoscopeSign: option.value }));
                   goNext();
                 }}
+                disabled={isSubmitting}
               >
                 <Text style={styles.optionLabel}>{option.label}</Text>
               </Pressable>
@@ -224,22 +284,31 @@ export default function OnboardingScreen() {
                   answers.interests.includes(interest) && styles.optionButtonSelected
                 ]}
                 onPress={() => toggleInterest(interest)}
+                disabled={isSubmitting}
               >
                 <Text style={styles.optionLabel}>{interest}</Text>
               </Pressable>
             ))}
           </View>
 
-          <Pressable style={styles.primaryButton} onPress={finishOnboarding}>
-            <Text style={styles.primaryLabel}>Tout est prêt ! Bienvenue chez Ha-Ha.</Text>
+          <Pressable
+            style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
+            onPress={finishOnboarding}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color={theme.colors.textPrimary} />
+            ) : (
+              <Text style={styles.primaryLabel}>Tout est prêt ! Bienvenue chez Ha-Ha.</Text>
+            )}
           </Pressable>
         </View>
       ) : null}
 
-      <Pressable onPress={skipCurrent}>
+      <Pressable onPress={skipCurrent} disabled={isSubmitting}>
         <Text style={styles.secondaryLink}>Passer</Text>
       </Pressable>
-      <Pressable onPress={() => void skipAll()}>
+      <Pressable onPress={() => void skipAll()} disabled={isSubmitting}>
         <Text style={styles.secondaryLink}>Passer toutes les questions</Text>
       </Pressable>
     </ScrollView>
@@ -268,6 +337,10 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontSize: 14,
     lineHeight: 20
+  },
+  errorText: {
+    color: theme.colors.error,
+    fontSize: 14
   },
   stepBlock: {
     marginTop: theme.spacing.md,
@@ -330,6 +403,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: theme.spacing.md
+  },
+  primaryButtonDisabled: {
+    opacity: 0.75
   },
   primaryLabel: {
     color: theme.colors.textPrimary,

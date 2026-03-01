@@ -5,8 +5,11 @@ export type AccountTypePermission =
   | 'artists:premium'
   | 'billing:manage';
 
+export type KnownAccountTypeId = 'free' | 'regular' | 'premium' | 'admin' | 'core' | 'pro';
+export type AccountTypeId = KnownAccountTypeId | (string & {});
+
 export interface AccountTypeConfig {
-  id: string;
+  id: AccountTypeId;
   label: string;
   rank: number;
   permissions: AccountTypePermission[];
@@ -56,7 +59,7 @@ export const accountTypesById = Object.fromEntries(
   DEFAULT_ACCOUNT_TYPES.map((type) => [type.id, type])
 ) as Record<string, AccountTypeConfig>;
 
-export function getAccountTypeRank(id: string | null | undefined): number {
+export function getAccountTypeRank(id: AccountTypeId | null | undefined): number {
   if (!id) {
     return 0;
   }
@@ -64,7 +67,7 @@ export function getAccountTypeRank(id: string | null | undefined): number {
   return accountTypesById[id]?.rank ?? 0;
 }
 
-export function hasPermission(accountTypeId: string | null | undefined, permission: AccountTypePermission): boolean {
+export function hasPermission(accountTypeId: AccountTypeId | null | undefined, permission: AccountTypePermission): boolean {
   if (!accountTypeId) {
     return false;
   }

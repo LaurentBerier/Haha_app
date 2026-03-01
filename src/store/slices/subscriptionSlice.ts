@@ -29,7 +29,7 @@ export const createSubscriptionSlice: StateCreator<StoreState, [], [], Subscript
   setSubscription: (sub) => set({ subscription: sub }),
   canAccessFeature: (feature) => {
     const required = featureToTier[feature] ?? 'premium';
-    const current = get().subscription.tier;
+    const current = get().session?.user.accountType ?? get().subscription.tier;
     return getAccountTypeRank(current) >= getAccountTypeRank(required);
   }
 });

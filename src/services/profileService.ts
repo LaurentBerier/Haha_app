@@ -69,6 +69,21 @@ export async function fetchProfile(userId: string): Promise<UserProfile | null> 
   return data ? toUserProfile(data) : null;
 }
 
+export async function fetchAccountType(userId: string): Promise<string | null> {
+  assertSupabaseConfigured();
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('account_type_id')
+    .eq('id', userId)
+    .maybeSingle<{ account_type_id: string | null }>();
+
+  if (error) {
+    throw error;
+  }
+
+  return data?.account_type_id ?? null;
+}
+
 export async function updateProfile(userId: string, partial: Partial<UserProfile>): Promise<UserProfile | null> {
   assertSupabaseConfigured();
   const patch = toProfilePatch(partial);

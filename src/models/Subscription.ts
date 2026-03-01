@@ -1,4 +1,6 @@
-export type SubscriptionTier = string;
+import type { AccountTypeId } from '../config/accountTypes';
+
+export type SubscriptionTier = AccountTypeId;
 
 export interface Subscription {
   tier: SubscriptionTier;
