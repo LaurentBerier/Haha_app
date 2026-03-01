@@ -1,89 +1,43 @@
-# Phase 1 Status
+# Project Status
 
-## Phase 1 Closure
+## Historical Phase 1
 
-- Status: closed
-- Closed on: 2026-02-27
-- Closure rule: core MVP chat experience is stable on iOS (simulator + physical device), live Claude path is functional, and remaining items are intentionally deferred to Phase 2+.
+- Phase 1 closure date: 2026-02-27
+- Scope closed as initially planned (single-artist MVP chat).
 
-## Implemented
+## Current State (after Phase 1)
 
-- Expo project with strict TypeScript.
-- Expo Router screens:
-  - home
-  - mode-select by artist id
-  - history by artist id
-  - chat by conversation id
-  - settings
-- Domain models for artist, message, conversation, subscription, usage, persistence.
-- Zustand multi-slice store and selectors.
-- Dynamic personality system prompt assembly service (`personalityEngineService.ts`).
-- Live Claude proxy client service (`claudeApiService.ts`) with runtime-compatible streaming/non-stream handling.
-- Expo env loading hardened for production bundles (`src/config/env.ts` uses direct `process.env.EXPO_PUBLIC_*` reads).
-- Serverless backend proxy endpoint (`api/claude.js`) for secure Anthropic key handling.
-- Mock token streaming service retained as fallback and offline path.
-- Claude-to-mock runtime fallback on generation failures (resilience path without feature flag toggle).
-- Chat orchestration with queued stream handling, safe token appends, cancellation guards, and unmount cleanup.
-- Duplicate-turn prevention in live Claude path (history snapshot before current user message append).
-- Structured chat validation errors (`ChatError`) surfaced from hook to UI.
-- Voice-to-text input flow with mic/stop controls, permissions handling, and transcript insertion into chat input.
-- Dark chat composer redesign with `+` button, integrated mic, and right-side action button.
-- User image attachment flow (`expo-image-picker`): gallery pick, inline preview/remove, and send with message.
-- Multimodal Claude proxy support for image+text user turns with server-side validation.
-- i18n layer (`fr-CA` and `en-CA` dictionaries).
-- Default app language set to `fr-CA` with per-message FR -> EN auto-switch detection when user writes in English.
-- Theme tokens and reusable components.
-- Refined compact visual theme (spacing/typography/colors) for denser, modern UI.
-- Mode selection UX (home -> mode-select -> chat).
-- Dedicated History mode card in mode-select opens `/history/[artistId]` and resumes existing conversations.
-- Scrollable mode selection list for large mode catalogs.
-- Deterministic icon fallback variety for new/unknown modes.
-- Auto-scroll to latest message while preserving manual scroll position when user scrolls up.
-- Home artist selection updated to visual tap target with Cathy circular photo avatar (no start button).
-- Home artist selector simplified for minimal UI (avatar + name + short genre line, no helper text, no language line).
-- Continuous parallax ambient light/glow effects added to artist and mode selection menus (stronger blurred glow + animated pulse).
-- XLSX import pipeline for modes/few-shots (`npm run import:modes`).
-- Hybrid persistence and startup hydration (`AsyncStorage` + `SecureStore`).
-- Conversation-level mode persistence (`conversation.modeId`).
-- Non-history mode taps always create a new conversation (no mode-based reuse).
-- Conversation storage capped to 50 items per artist (FIFO eviction), with history view limited to latest 20.
-- Persistence runtime validation + backward-compatible message-shape normalization during hydration.
-- Input validation with inline chat errors (max message length).
-- Pagination-ready message storage shape (`MessagePage`) in Zustand + persisted snapshot.
-- Detox iOS E2E suite for chat flow and persistence.
-- Mode few-shot robustness improvements:
-  - dedicated `radar-attitude` few-shots
-  - global few-shot fallback when a mode has no dedicated examples
-  - recency-aware mock response selection per mode
+The repository now includes major Phase 2 groundwork and implementation:
 
-## Implemented But Stubbed
+- Supabase auth client integration in mobile app
+- Auth session bootstrap and store integration
+- Auth screens (login/signup) and onboarding flow
+- User profile model and profile service
+- Prompt personalization from user profile
+- Claude proxy auth enforcement via Supabase JWT validation
+- Extensible account-type model (`free`, `regular`, `premium`, `admin` + custom)
+- Admin-only endpoint for assigning account types
 
-- voice synthesis service (TTS)
-- subscription service
-- analytics service
+## Still Pending / Follow-up
 
-## Deferred To Phase 2+
+- Full website (`ha-ha.ai`) migration to Supabase in its own repository
+- Production onboarding UX refinements and validation polish
+- Robust automated integration tests for auth + profile + admin endpoint
+- Potential discussion around transport hardening for physical-device dev workflows
 
-- proxy auth/rate limiting and abuse protection
-- full discussion feature flow (current UI button shows coming-soon message)
-- auth and secure token lifecycle
-- voice synthesis/playback
-- payment/subscription purchase flow
-- cloud sync and multi-device data
-- unit/integration test suite
-- Android E2E coverage
-- automatic mode switching implementation for `radar-attitude`
+## Quality Gates
 
-## Quality Gates (Current)
+Current checks expected to pass:
 
-- `npm run typecheck`: passing
-- `npm run lint`: passing
-- `npx expo install --check`: passing
-- iOS build: passing
-- `npm run e2e:ios`: requires local build/cache prep (`npm run e2e:build:ios`; if needed `npx detox clean-framework-cache && npx detox build-framework-cache`)
+```bash
+npm run typecheck
+npm run lint
+```
 
-## Notes
+## Release Notes Context
 
-- Native `ios/` directory exists due to `expo run:ios` prebuild.
-- Dependency versions were aligned to Expo SDK 53 compatibility during integration.
-- iOS `AppDelegate.swift` includes debug JS bundle URL fallback (`ip.txt` -> localhost) to reduce physical-device `No script URL provided` failures.
+Recent high-impact fixes:
+
+- Vercel runtime dependency issue resolved by including package manifests in `.vercelignore`
+- Supabase URL/key guard added to prevent hard crash when env vars are missing
+- Auth callback route standardized to `hahaha://auth/callback`
