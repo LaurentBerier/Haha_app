@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import {
   HOROSCOPE_OPTIONS,
@@ -24,6 +24,7 @@ const TOTAL_STEPS = 5;
 
 export default function OnboardingScreen() {
   const userId = useStore((state) => state.session?.user.id ?? null);
+  const userProfile = useStore((state) => state.userProfile);
   const setUserProfile = useStore((state) => state.setUserProfile);
 
   const [step, setStep] = useState(0);
@@ -39,6 +40,16 @@ export default function OnboardingScreen() {
   });
 
   const progress = useMemo(() => `${Math.min(step + 1, TOTAL_STEPS)} / ${TOTAL_STEPS}`, [step]);
+
+  useEffect(() => {
+    if (!userProfile) {
+      return;
+    }
+
+    if (userProfile.onboardingCompleted || userProfile.onboardingSkipped) {
+      router.replace('/');
+    }
+  }, [userProfile]);
 
   const goNext = () => {
     if (isSubmitting) {
