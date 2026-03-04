@@ -6,16 +6,27 @@ import { theme } from '../../theme';
 
 interface ChatBubbleProps {
   message: Message;
+  userDisplayName: string;
+  artistDisplayName: string;
 }
 
-function ChatBubbleBase({ message }: ChatBubbleProps) {
+function ChatBubbleBase({ message, userDisplayName, artistDisplayName }: ChatBubbleProps) {
   const isUser = message.role === 'user';
   const imageUri = message.metadata?.imageUri;
   const hasText = message.content.trim().length > 0;
   const shouldShowPlaceholder = !hasText && !imageUri;
+  const senderName = isUser ? userDisplayName : artistDisplayName;
 
   return (
     <View style={[styles.row, isUser ? styles.userRow : styles.artistRow]}>
+      <View style={[styles.block, isUser ? styles.userBlock : styles.artistBlock]}>
+        <Text
+          style={[styles.senderName, isUser ? styles.userSenderName : styles.artistSenderName]}
+          numberOfLines={1}
+          testID={`chat-bubble-sender-${message.id}`}
+        >
+          {senderName}
+        </Text>
       <View
         style={[styles.bubble, isUser ? styles.userBubble : styles.artistBubble]}
         testID={`chat-bubble-${message.role}-${message.id}`}
@@ -35,6 +46,7 @@ function ChatBubbleBase({ message }: ChatBubbleProps) {
           </Text>
         ) : null}
       </View>
+      </View>
     </View>
   );
 }
@@ -53,8 +65,28 @@ const styles = StyleSheet.create({
   artistRow: {
     justifyContent: 'flex-start'
   },
+  block: {
+    maxWidth: '82%'
+  },
+  userBlock: {
+    alignItems: 'flex-end'
+  },
+  artistBlock: {
+    alignItems: 'flex-start'
+  },
+  senderName: {
+    color: theme.colors.textDisabled,
+    fontSize: 11,
+    marginBottom: 4
+  },
+  userSenderName: {
+    textAlign: 'right'
+  },
+  artistSenderName: {
+    textAlign: 'left'
+  },
   bubble: {
-    maxWidth: '82%',
+    maxWidth: '100%',
     borderRadius: 16,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,

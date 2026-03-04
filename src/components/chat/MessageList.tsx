@@ -7,9 +7,11 @@ import { ChatBubble } from './ChatBubble';
 
 interface MessageListProps {
   messages: Message[];
+  userDisplayName: string;
+  artistDisplayName: string;
 }
 
-function MessageListBase({ messages }: MessageListProps) {
+function MessageListBase({ messages, userDisplayName, artistDisplayName }: MessageListProps) {
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottomRef = useRef(true);
   const hasScrolledInitiallyRef = useRef(false);
@@ -51,7 +53,12 @@ function MessageListBase({ messages }: MessageListProps) {
     isNearBottomRef.current = distanceFromBottom < 80;
   }, []);
 
-  const renderItem = useCallback(({ item }: { item: Message }) => <ChatBubble message={item} />, []);
+  const renderItem = useCallback(
+    ({ item }: { item: Message }) => (
+      <ChatBubble message={item} userDisplayName={userDisplayName} artistDisplayName={artistDisplayName} />
+    ),
+    [artistDisplayName, userDisplayName]
+  );
 
   return (
     <FlatList
