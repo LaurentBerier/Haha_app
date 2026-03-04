@@ -10,6 +10,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
+    "verify:profile-prompt": "tsx scripts/verifyProfilePrompt.ts",
     "e2e:build:ios": "detox build -c ios.sim.debug",
     "e2e:ios": "detox test -c ios.sim.debug --cleanup",
     "import:modes": "tsx scripts/importModes.ts"

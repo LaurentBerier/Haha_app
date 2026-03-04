@@ -284,7 +284,8 @@ export function useChat(conversationId: string) {
     addMessage(conversationId, placeholder);
 
     const modeId = currentConversation.modeId || MODE_IDS.DEFAULT;
-    const systemPrompt = buildSystemPrompt(modeId, userProfile);
+    const latestProfile = useStore.getState().userProfile ?? userProfile;
+    const systemPrompt = buildSystemPrompt(modeId, latestProfile);
 
     queueRef.current.push({
       artistMessageId,
