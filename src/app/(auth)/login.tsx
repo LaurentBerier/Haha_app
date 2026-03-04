@@ -90,6 +90,12 @@ export default function LoginScreen() {
         />
       ) : null}
 
+      <Link href="/(auth)/forgot-password" asChild>
+        <Pressable>
+          <Text style={styles.link}>Mot de passe oublié ?</Text>
+        </Pressable>
+      </Link>
+
       <Link href="/(auth)/signup" asChild>
         <Pressable>
           <Text style={styles.link}>Créer un compte</Text>

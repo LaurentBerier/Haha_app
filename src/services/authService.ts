@@ -69,6 +69,25 @@ export async function signUpWithEmail(email: string, password: string): Promise<
   return toAuthSession(data.session);
 }
 
+export async function requestPasswordReset(email: string): Promise<void> {
+  assertSupabaseConfigured();
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: 'hahaha://auth/callback?flow=recovery'
+  });
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function updatePassword(password: string): Promise<void> {
+  assertSupabaseConfigured();
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) {
+    throw error;
+  }
+}
+
 export async function signInWithApple(): Promise<AuthSession> {
   assertSupabaseConfigured();
   const credential = await AppleAuthentication.signInAsync({
