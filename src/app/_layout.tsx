@@ -1,7 +1,7 @@
 import { Stack, router, useSegments } from 'expo-router';
 import { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useAuth } from '../hooks/useAuth';
@@ -19,6 +19,7 @@ export default function RootLayout() {
   const isOnboardingRoute = segments[1] === 'onboarding';
   const needsOnboarding =
     isAuthenticated && userProfile ? !userProfile.onboardingCompleted && !userProfile.onboardingSkipped : false;
+  const showSettingsShortcut = isAuthenticated && !inAuthGroup;
 
   useEffect(() => {
     if (!hasHydrated || authStatus === 'loading') {
@@ -55,7 +56,18 @@ export default function RootLayout() {
             screenOptions={{
               headerStyle: { backgroundColor: theme.colors.background },
               headerTintColor: theme.colors.textPrimary,
-              contentStyle: { backgroundColor: theme.colors.background }
+              contentStyle: { backgroundColor: theme.colors.background },
+              headerRight: () =>
+                showSettingsShortcut ? (
+                  <Pressable
+                    onPress={() => router.push('/settings')}
+                    style={styles.headerSettingsButton}
+                    accessibilityRole="button"
+                    testID="header-settings-button"
+                  >
+                    <Text style={styles.headerSettingsLabel}>{t('settingsTitle')}</Text>
+                  </Pressable>
+                ) : null
             }}
           >
             <Stack.Screen name="(auth)" options={{ headerShown: false }} />
@@ -79,5 +91,18 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
     justifyContent: 'center',
     alignItems: 'center'
+  },
+  headerSettingsButton: {
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceButton,
+    backgroundColor: theme.colors.surfaceSunken,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6
+  },
+  headerSettingsLabel: {
+    color: theme.colors.textPrimary,
+    fontWeight: '700',
+    fontSize: 12
   }
 });
