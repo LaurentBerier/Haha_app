@@ -5,7 +5,7 @@ export type AccountTypePermission =
   | 'artists:premium'
   | 'billing:manage';
 
-export type KnownAccountTypeId = 'free' | 'regular' | 'premium' | 'admin' | 'core' | 'pro';
+export type KnownAccountTypeId = 'free' | 'regular' | 'premium' | 'admin';
 export type AccountTypeId = KnownAccountTypeId | (string & {});
 
 export interface AccountTypeConfig {
@@ -39,19 +39,6 @@ export const DEFAULT_ACCOUNT_TYPES: AccountTypeConfig[] = [
     label: 'Admin',
     rank: 99,
     permissions: ['admin:all', 'billing:manage', 'chat:basic', 'chat:unlimited', 'artists:premium']
-  },
-  // Backward-compatible aliases for legacy rows.
-  {
-    id: 'core',
-    label: 'Core (legacy)',
-    rank: 1,
-    permissions: ['chat:basic', 'chat:unlimited']
-  },
-  {
-    id: 'pro',
-    label: 'Pro (legacy)',
-    rank: 2,
-    permissions: ['chat:basic', 'chat:unlimited', 'artists:premium']
   }
 ];
 

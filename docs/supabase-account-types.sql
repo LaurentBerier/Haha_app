@@ -25,6 +25,19 @@ set
   is_system = excluded.is_system,
   updated_at = now();
 
+-- Remove legacy account types completely.
+-- 1) Remap users that still have legacy values.
+update public.profiles
+set account_type_id = case account_type_id
+  when 'core' then 'regular'
+  when 'pro' then 'premium'
+  else account_type_id
+end
+where account_type_id in ('core', 'pro');
+
+-- 2) Delete legacy rows from account_types table.
+delete from public.account_types where id in ('core', 'pro');
+
 alter table public.profiles
   add column if not exists account_type_id text not null default 'free' references public.account_types(id);
 

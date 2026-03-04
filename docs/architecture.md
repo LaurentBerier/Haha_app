@@ -144,11 +144,6 @@ Built-in tiers:
 - `premium`
 - `admin`
 
-Compatibility aliases:
-
-- `core` -> `regular`
-- `pro` -> `premium`
-
 `subscriptionSlice` evaluates access via rank/permissions from this registry.
 
 ## Persistence Strategy
