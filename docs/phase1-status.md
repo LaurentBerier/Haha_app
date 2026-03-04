@@ -1,43 +1,50 @@
 # Project Status
 
-## Historical Phase 1
+## Baseline
 
-- Phase 1 closure date: 2026-02-27
-- Scope closed as initially planned (single-artist MVP chat).
+- Phase 1 closed on **2026-02-27**
+- Original MVP scope (single-artist chat) delivered
+- Current execution tracking moved to `docs/phase2-status.md`
 
-## Current State (after Phase 1)
+## Current State (2026-03-04)
 
-The repository now includes major Phase 2 groundwork and implementation:
+Implemented in this repository:
 
-- Supabase auth client integration in mobile app
-- Auth session bootstrap and store integration
-- Auth screens (login/signup) and onboarding flow
-- User profile model and profile service
-- Prompt personalization from user profile
-- Claude proxy auth enforcement via Supabase JWT validation
-- Extensible account-type model (`free`, `regular`, `premium`, `admin` + custom)
-- Admin-only endpoint for assigning account types
+- Supabase auth in mobile app:
+  - email/password
+  - Apple Sign-In
+  - session restore
+  - auth state sync with store
+- Complete auth route set:
+  - login, signup, forgot-password, reset-password, onboarding, callback
+- Onboarding persisted to `public.profiles`
+- Settings flows:
+  - edit profile
+  - subscription placeholder
+  - sign out
+  - account deletion
+- Claude proxy bearer-token enforcement with Supabase validation
+- Account type infrastructure:
+  - extensible tier model (`free`, `regular`, `premium`, `admin`, custom)
+  - admin endpoint to assign account type
+- Payment webhook scaffold for tier updates
 
-## Still Pending / Follow-up
-
-- Full website (`ha-ha.ai`) migration to Supabase in its own repository
-- Production onboarding UX refinements and validation polish
-- Robust automated integration tests for auth + profile + admin endpoint
-- Potential discussion around transport hardening for physical-device dev workflows
-
-## Quality Gates
-
-Current checks expected to pass:
+## Validation Commands
 
 ```bash
 npm run typecheck
 npm run lint
 ```
 
-## Release Notes Context
+## Cross-Repo Context
 
-Recent high-impact fixes:
+The website repo (`ha-ha.ai`) now has Supabase auth + onboarding + reset password flows and should be validated/deployed in lockstep with this mobile repo.
 
-- Vercel runtime dependency issue resolved by including package manifests in `.vercelignore`
-- Supabase URL/key guard added to prevent hard crash when env vars are missing
-- Auth callback route standardized to `hahaha://auth/callback`
+## Next Priorities
+
+- Expand automated integration/e2e coverage for:
+  - signup/confirm/login
+  - forgot-password/recovery
+  - onboarding completion and skip
+  - claude proxy 401/200 auth behavior
+- Harden production observability for serverless endpoints

@@ -93,6 +93,8 @@ Routes:
 
 - `/(auth)/login`
 - `/(auth)/signup`
+- `/(auth)/forgot-password`
+- `/(auth)/reset-password`
 - `/(auth)/onboarding`
 - `/auth/callback`
 - `/settings`
@@ -104,6 +106,13 @@ Behavior:
 - Unauthenticated users are redirected to login.
 - Authenticated users without completed/skipped onboarding are redirected to onboarding.
 - Onboarding completion writes profile data to Supabase.
+- Password recovery links (`flow=recovery`) are handled by `/auth/callback` and routed to `/(auth)/reset-password`.
+
+Supabase URL configuration should include:
+
+- `hahaha://auth/callback`
+- `https://www.ha-ha.ai/auth/callback`
+- `https://ha-ha.ai/auth/callback`
 
 ## Account Types and Admin
 
@@ -215,4 +224,5 @@ This is required so function dependencies (for example `@supabase/supabase-js`) 
 
 - `docs/architecture.md`
 - `docs/phase1-status.md`
+- `docs/phase2-status.md`
 - `docs/troubleshooting.md`

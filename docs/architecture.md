@@ -7,128 +7,149 @@ This repository contains:
 - Expo React Native mobile app (`src/`)
 - Vercel serverless backend endpoints (`api/`)
 
-Supabase is the system of record for:
+Supabase is the source of truth for:
 
-- auth users
-- user profiles
-- account type data
+- authentication
+- user profile data
+- account type / entitlement data
 
-## Mobile App Layers
+## Mobile App
 
 ### Routing (`src/app`)
 
-- Root layout: hydration + auth gate + onboarding redirect
-- Auth group: `/(auth)/login`, `/(auth)/signup`, `/(auth)/onboarding`
-- Callback route: `/auth/callback`
-- Main app routes: home, mode-select, history, chat, settings
-- Settings sub-routes: `/settings/edit-profile`, `/settings/subscription`
+- Root layout (`_layout.tsx`): hydration, error boundary, auth/onboarding gate
+- Auth routes:
+  - `/(auth)/login`
+  - `/(auth)/signup`
+  - `/(auth)/forgot-password`
+  - `/(auth)/reset-password`
+  - `/(auth)/onboarding`
+- Auth callback route:
+  - `/auth/callback` (handles signup + recovery links)
+- Main app routes:
+  - `/`
+  - `/mode-select/[artistId]`
+  - `/chat/[conversationId]`
+  - `/history/[artistId]`
+  - `/settings`
+  - `/settings/edit-profile`
+  - `/settings/subscription`
 
 ### State (`src/store`)
 
-Store root: `src/store/useStore.ts`
+Root store: `src/store/useStore.ts`
 
-Slices:
+Active slices:
 
 - `artistSlice`
+- `artistAccessSlice`
+- `authSlice`
 - `conversationSlice`
 - `messageSlice`
 - `subscriptionSlice`
-- `artistAccessSlice`
-- `usageSlice`
 - `uiSlice`
-- `authSlice`
+- `usageSlice`
 - `userProfileSlice`
 
 ### Services (`src/services`)
 
-- `supabaseClient.ts`: Supabase client with AsyncStorage auth persistence
-- `authService.ts`: sign-in/up/out, session restore, auth state listener
-- `profileService.ts`: profile fetch/update + onboarding complete/skip + account type lookup
-- `claudeApiService.ts`: mobile client for proxy calls (+ bearer token header)
-- `personalityEngineService.ts`: system prompt + profile section injection
-- `persistenceService.ts`: local snapshot persistence for conversation/message cache
+- `supabaseClient.ts`: Supabase client initialization (AsyncStorage session persistence)
+- `authService.ts`:
+  - `signInWithEmail`
+  - `signUpWithEmail`
+  - `signInWithApple`
+  - `requestPasswordReset`
+  - `updatePassword`
+  - `signOut`
+  - `getStoredSession`
+  - `refreshSession`
+  - `onAuthStateChange`
+- `profileService.ts`: fetch/update profile, onboarding complete/skip
+- `claudeApiService.ts`: proxy calls with Bearer token
+- `personalityEngineService.ts`: prompt generation + profile personalization
+- `persistenceService.ts`: local cache persistence (conversations/messages/ui selections)
 
 ### Hooks (`src/hooks`)
 
-- `useAuth`: bootstraps session from Supabase and syncs store
-- `useChat`: chat orchestration, queueing, streaming/fallback
-- `useStorePersistence`: hydrate/debounce-save persisted snapshot
+- `useAuth`: bootstraps stored session + subscribes to Supabase auth changes
+- `useChat`: handles prompt build + Claude proxy orchestration
+- `useStorePersistence`: hydration/debounced persistence
 
 ## Backend Endpoints (`api`)
 
-### `api/claude.js`
-
-Responsibilities:
+### `POST /api/claude` (`api/claude.js`)
 
 - CORS handling
-- auth header validation via Supabase admin
-- payload validation (including multimodal image content)
-- relay to Anthropic Messages API
+- Bearer token validation via Supabase admin API
+- payload validation
+- forwards request to Anthropic API
 
-### `api/admin-account-type.js`
+### `POST /api/admin-account-type` (`api/admin-account-type.js`)
 
-Responsibilities:
+- admin-only bearer token check
+- validates target account type
+- updates `profiles.account_type_id`
+- syncs `auth.users.app_metadata` (`account_type`, `role`)
 
-- admin-only bearer token validation
-- validate target account type exists in `account_types`
-- update `profiles.account_type_id`
-- update `auth.users.app_metadata` (`account_type`, `role`)
+### `POST /api/delete-account` (`api/delete-account.js`)
 
-### `api/delete-account.js`
+- validates bearer token
+- deletes authenticated Supabase user with admin API
+- relies on DB cascade (`ON DELETE CASCADE`) for related records
 
-Responsibilities:
+### `POST /api/payment-webhook` (`api/payment-webhook.js`)
 
-- user bearer token validation
-- authenticated user deletion via Supabase admin API
-- relies on DB cascading deletes for profile-linked data
+- validates webhook auth in production (`REVENUECAT_WEBHOOK_SECRET`)
+- stores events in `payment_events`
+- maps products to account types
+- updates profile tier + metadata claims
 
-### `api/payment-webhook.js`
+## Auth and Profile Model
 
-Responsibilities:
+### Session/User (`src/models/AuthUser.ts`)
 
-- webhook auth check (`REVENUECAT_WEBHOOK_SECRET` in production)
-- persist raw events to `payment_events`
-- map payment products to account types
-- update profile tier + JWT metadata claims
+`AuthUser` exposes:
 
-## Auth and Identity Model
+- `id`
+- `email`
+- `displayName`
+- `avatarUrl`
+- `role`
+- `accountType`
+- `createdAt`
 
-### Client-side user shape
+`AuthSession` wraps `user`, access/refresh token, expiry.
 
-`AuthUser` includes:
+### Profile (`src/models/UserProfile.ts`)
 
-- `id`, `email`, `displayName`, `avatarUrl`
-- `role` (from `app_metadata.role`)
-- `accountType` (from `app_metadata.account_type` / user metadata fallback)
+`UserProfile` fields:
 
-### Profile model
+- `id`
+- `age`
+- `sex`
+- `relationshipStatus`
+- `horoscopeSign`
+- `interests`
+- `onboardingCompleted`
+- `onboardingSkipped`
 
-`UserProfile` includes:
+## Account Type and Feature Gating
 
-- demographic fields
-- interests
-- onboarding flags
+Registry: `src/config/accountTypes.ts`
 
-## Account Type System
-
-Config registry:
-
-- `src/config/accountTypes.ts`
-
-Default types:
+Built-in tiers:
 
 - `free`
 - `regular`
 - `premium`
 - `admin`
 
-Legacy aliases for compatibility:
+Compatibility aliases:
 
-- `core`
-- `pro`
+- `core` -> `regular`
+- `pro` -> `premium`
 
-Feature gating in `subscriptionSlice` uses dynamic rank lookup via this registry.
-The slice reads account type from authenticated session claims first, then falls back to local subscription state.
+`subscriptionSlice` evaluates access via rank/permissions from this registry.
 
 ## Persistence Strategy
 
@@ -136,25 +157,21 @@ Persisted locally:
 
 - selected artist
 - conversations
+- messages
 - active conversation id
-- messages by conversation
 
 Not persisted locally:
 
-- Supabase session (Supabase SDK storage)
-- server-sourced account state intended to be hydrated from backend source of truth
+- Supabase auth session (managed by Supabase SDK)
+- server-sourced account type truth
 
 ## Prompt Personalization
 
-`buildSystemPrompt(modeId, userProfile)` appends:
+`buildSystemPrompt(modeId, userProfile)` appends `## PROFIL UTILISATEUR` when profile data exists.
 
-- `## PROFIL UTILISATEUR`
+## Deployment Notes
 
-when profile fields are available. This lets generation adapt tone/references to known profile context.
+Vercel functions require project dependencies at runtime; `.vercelignore` must include:
 
-## Deployment
-
-Vercel functions depend on Node dependencies from `package.json`, so `.vercelignore` must include both:
-
-- `package.json`
-- `package-lock.json`
+- `!package.json`
+- `!package-lock.json`

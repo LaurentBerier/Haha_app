@@ -2,13 +2,9 @@
 
 ## 1) `supabaseUrl is required`
 
-Symptom:
-
-- App crashes at startup when loading `supabaseClient.ts`.
-
 Cause:
 
-- `EXPO_PUBLIC_SUPABASE_URL` or `EXPO_PUBLIC_SUPABASE_ANON_KEY` is empty.
+- `EXPO_PUBLIC_SUPABASE_URL` and/or `EXPO_PUBLIC_SUPABASE_ANON_KEY` is missing.
 
 Fix:
 
@@ -16,94 +12,105 @@ Fix:
 
 ```env
 EXPO_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=<sb_publishable_or_anon_key>
+EXPO_PUBLIC_SUPABASE_ANON_KEY=<sb_publishable_key_or_anon_key>
 ```
 
-2. Rebuild app:
+2. Restart Expo/Metro and rebuild if needed:
 
 ```bash
+npm run start
 npm run ios
 ```
 
-## 2) Signup email link opens but does not complete in app
+## 2) Signup confirmation link opens but app does not complete auth
 
-Symptom:
+Checklist in Supabase `Authentication -> URL Configuration`:
 
-- Browser opens Supabase verify URL and nothing happens in app.
+- Site URL set to your canonical web domain (for web)
+- Redirect URLs include:
+  - `hahaha://auth/callback`
+  - `https://www.ha-ha.ai/auth/callback`
+  - `https://ha-ha.ai/auth/callback`
 
-Checks:
+Also ensure the email template uses `{{ .ConfirmationURL }}`.
 
-1. Supabase `Authentication -> URL Configuration` must include redirect URLs:
+## 3) Password reset link opens but does not reach reset screen
 
-- `hahaha://auth/callback`
-- `hahaha://`
-- your web callback (if used)
+Expected mobile flow:
 
-2. App uses `emailRedirectTo: hahaha://auth/callback` in `authService.ts`.
+- App sends reset with `redirectTo=hahaha://auth/callback?flow=recovery`
+- Callback route resolves recovery and redirects to `/(auth)/reset-password`
 
-3. Use the latest email link only. Older links can show `otp_expired`.
+If it fails:
 
-## 3) `Network request failed` on login screen
+- Verify reset template uses `{{ .ConfirmationURL }}`
+- Verify redirect URL list includes `hahaha://auth/callback`
+- Use a fresh recovery email (old links expire)
 
-Symptom:
+## 4) `Network request failed` on login/signup
 
-- Login action fails with generic network error.
+Common causes:
 
-Likely causes:
-
-- wrong Supabase key type
-- invalid base URL
-- transient device network path issue
+- wrong key type (using secret/service role key in app)
+- malformed URL
+- stale build after env change
 
 Fix:
 
-- Ensure key from Supabase `API Keys` is publishable/anon public key (not secret/service role).
-- Verify URL format: `https://<project-ref>.supabase.co`
-- Rebuild app after env changes.
+- App must use publishable/anon key only
+- URL must match `https://<project-ref>.supabase.co`
+- rebuild app after env update
 
-## 4) Vercel function returns `FUNCTION_INVOCATION_FAILED`
+## 5) Device build cannot connect to development server
 
 Symptom:
 
-- `POST /api/claude` returns 500 with invocation failure.
+- red screen with `Could not connect to development server`
+
+Fix options:
+
+- run Release build (bundled JS):
+
+```bash
+npx expo run:ios --device --configuration Release
+```
+
+- or debug build with Metro on same network:
+  - same Wi-Fi
+  - developer mode on
+  - local network permission granted
+
+## 6) Vercel function `FUNCTION_INVOCATION_FAILED`
 
 Common cause:
 
-- Function cannot resolve dependencies (`@supabase/supabase-js`).
+- runtime dependencies unavailable in deployment bundle
 
-Fix:
-
-Ensure `.vercelignore` includes:
+Required `.vercelignore` entries:
 
 ```text
 !api
 !api/**
-!vercel.json
 !package.json
 !package-lock.json
+!vercel.json
 ```
 
-Then redeploy:
+Redeploy:
 
 ```bash
 npx vercel --prod --yes
 ```
 
-## 5) `/api/claude` should return 401 but returns 500
+## 7) `/api/claude` returns 500 instead of 401
 
-Symptom:
+Verify Vercel env vars:
 
-- Unauthorized requests crash instead of returning auth error.
+- `ANTHROPIC_API_KEY`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
-Checklist:
-
-- Vercel envs set for project:
-  - `SUPABASE_URL`
-  - `SUPABASE_SERVICE_ROLE_KEY`
-  - `ANTHROPIC_API_KEY`
-- Confirm deployment includes latest `api/claude.js`.
-
-Quick test:
+No-auth smoke test should return `401`:
 
 ```bash
 curl -i -X POST "https://<alias>.vercel.app/api/claude" \
@@ -111,111 +118,45 @@ curl -i -X POST "https://<alias>.vercel.app/api/claude" \
   -d '{"systemPrompt":"test","messages":[{"role":"user","content":"hi"}]}'
 ```
 
-Expected:
-
-- `401 Unauthorized` when no bearer token.
-
-## 6) `relation "profiles" does not exist` in Supabase SQL
-
-Symptom:
-
-- Running account type SQL fails on `profiles` table missing.
+## 8) SQL error `relation "profiles" does not exist`
 
 Cause:
 
-- Base profile schema not created yet.
+- account-type SQL was run before base profile schema.
 
 Fix order:
 
-1. Create `public.profiles` + auth trigger.
-2. Backfill existing users into profiles.
-3. Run `docs/supabase-account-types.sql`.
+1. create `public.profiles` + signup trigger
+2. backfill existing users if needed
+3. run [`docs/supabase-account-types.sql`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-account-types.sql)
 
-## 7) `relation "account_types" does not exist`
-
-Symptom:
-
-- Account type verification query fails.
+## 9) SQL error `relation "account_types" does not exist`
 
 Fix:
 
-- Run `docs/supabase-account-types.sql` in Supabase SQL editor.
-- Verify:
+- run [`docs/supabase-account-types.sql`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-account-types.sql)
+
+Verify:
 
 ```sql
 select id, label, rank from public.account_types order by rank;
 ```
 
-## 8) Cannot launch debug build on physical iPhone (red screen)
-
-Symptom:
-
-- `Could not connect to development server`
-- URL points to `http://192.168.x.x:8081/...`
-
-Cause:
-
-- Device cannot reach Metro bundle endpoint.
-
-Pragmatic fix:
-
-- Install a Release build (bundled JS, no Metro dependency):
-
-```bash
-npx expo run:ios --device --configuration Release
-```
-
-Debug-mode checklist:
-
-- iPhone + Mac same Wi-Fi
-- trust developer cert on iPhone
-- Developer Mode enabled
-- Local Network permission granted
-- Metro URL advertised with LAN host
-
-## 9) Tunnel mode prompts repeatedly for `@expo/ngrok`
-
-Symptom:
-
-- `expo start --tunnel` keeps requesting ngrok install.
-
-Workaround:
-
-- Prefer LAN mode or Release build for device testing:
-
-```bash
-npx expo start --dev-client --host lan --port 8081
-```
-
-or
-
-```bash
-npx expo run:ios --device --configuration Release
-```
-
-## 10) Admin account type endpoint returns 401/403
-
-Endpoint:
-
-- `POST /api/admin-account-type`
+## 10) `POST /api/admin-account-type` returns 401/403
 
 Requirements:
 
-- Bearer token for user with either:
-  - `app_metadata.role = 'admin'`
+- Bearer token from user with:
+  - `app_metadata.role = 'admin'`, or
   - `app_metadata.account_type = 'admin'`
 
 If user was just promoted, sign out/in to refresh token claims.
 
 ## 11) Promote first admin user
 
-Get user UUID by email:
-
 ```sql
 select id, email from auth.users where email = 'you@example.com';
 ```
-
-Promote:
 
 ```sql
 update public.profiles set account_type_id = 'admin' where id = '<uuid>';
@@ -230,28 +171,26 @@ select auth.admin_update_user_by_id(
 
 Checklist:
 
-- Ensure app sends `Authorization: Bearer <session.accessToken>`.
-- Confirm `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are set in Vercel.
-- If token is stale, sign out and sign back in.
+- app sends `Authorization: Bearer <session.accessToken>`
+- Vercel has:
+  - `SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY`
+- token not expired (re-login if needed)
 
 ## 13) `POST /api/payment-webhook` returns 401
 
 Checklist:
 
-- Set `REVENUECAT_WEBHOOK_SECRET` in Vercel.
-- Send webhook header `Authorization: Bearer <REVENUECAT_WEBHOOK_SECRET>`.
-- In local/dev, endpoint allows unsigned requests unless `NODE_ENV=production`.
+- `REVENUECAT_WEBHOOK_SECRET` set in Vercel
+- webhook sends `Authorization: Bearer <REVENUECAT_WEBHOOK_SECRET>`
 
 ## 14) `payment_events` insert fails
 
-Symptom:
-
-- Webhook fails with table/constraint errors.
-
 Fix:
 
-- Re-run `/Users/laurentbernier/Documents/HAHA_app/docs/supabase-account-types.sql`.
-- Verify table exists:
+- rerun [`docs/supabase-account-types.sql`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-account-types.sql)
+
+Verify:
 
 ```sql
 select id, provider, event_type, product_id, created_at
