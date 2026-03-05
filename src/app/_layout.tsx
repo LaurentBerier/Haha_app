@@ -1,7 +1,8 @@
 import { Stack, router, useSegments } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { BrandMark } from '../components/common/BrandMark';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useAuth } from '../hooks/useAuth';
@@ -10,16 +11,38 @@ import { t } from '../i18n';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme';
 
+type AccountMenuRoute = '/settings' | '/settings/edit-profile' | '/settings/subscription';
+
 export default function RootLayout() {
   useStorePersistence();
   const hasHydrated = useStore((state) => state.hasHydrated);
   const { authStatus, isAuthenticated, userProfile } = useAuth();
   const segments = useSegments();
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const inAuthGroup = segments[0] === '(auth)';
   const isOnboardingRoute = segments[1] === 'onboarding';
   const needsOnboarding =
     isAuthenticated && userProfile ? !userProfile.onboardingCompleted && !userProfile.onboardingSkipped : false;
-  const showSettingsShortcut = isAuthenticated && !inAuthGroup;
+  const showAccountMenu = isAuthenticated && !inAuthGroup;
+
+  const accountMenuItems = [
+    { label: t('settingsTitle'), route: '/settings' as const },
+    { label: t('settingsEditProfile'), route: '/settings/edit-profile' as const },
+    { label: t('settingsSubscription'), route: '/settings/subscription' as const }
+  ];
+
+  const toggleAccountMenu = () => {
+    setIsAccountMenuOpen((current) => !current);
+  };
+
+  const closeAccountMenu = () => {
+    setIsAccountMenuOpen(false);
+  };
+
+  const navigateFromAccountMenu = (route: AccountMenuRoute) => {
+    closeAccountMenu();
+    router.push(route);
+  };
 
   useEffect(() => {
     if (!hasHydrated || authStatus === 'loading') {
@@ -43,6 +66,18 @@ export default function RootLayout() {
     }
   }, [authStatus, hasHydrated, inAuthGroup, isAuthenticated, isOnboardingRoute, needsOnboarding]);
 
+  useEffect(() => {
+    if (!showAccountMenu && isAccountMenuOpen) {
+      setIsAccountMenuOpen(false);
+    }
+  }, [isAccountMenuOpen, showAccountMenu]);
+
+  useEffect(() => {
+    if (isAccountMenuOpen) {
+      setIsAccountMenuOpen(false);
+    }
+  }, [segments]);
+
   return (
     <ErrorBoundary>
       {!hasHydrated || authStatus === 'loading' ? (
@@ -57,15 +92,19 @@ export default function RootLayout() {
               headerStyle: { backgroundColor: theme.colors.background },
               headerTintColor: theme.colors.textPrimary,
               contentStyle: { backgroundColor: theme.colors.background },
+              headerTitleAlign: 'left',
+              headerTitle: ({ children }) => <BrandMark compact title={typeof children === 'string' ? children : undefined} />,
               headerRight: () =>
-                showSettingsShortcut ? (
+                showAccountMenu ? (
                   <Pressable
-                    onPress={() => router.push('/settings')}
-                    style={styles.headerSettingsButton}
+                    onPress={toggleAccountMenu}
+                    style={styles.headerMenuButton}
                     accessibilityRole="button"
-                    testID="header-settings-button"
+                    testID="header-menu-button"
                   >
-                    <Text style={styles.headerSettingsLabel}>{t('settingsTitle')}</Text>
+                    <View style={styles.menuBar} />
+                    <View style={styles.menuBar} />
+                    <View style={styles.menuBar} />
                   </Pressable>
                 ) : null
             }}
@@ -79,6 +118,24 @@ export default function RootLayout() {
             <Stack.Screen name="settings/edit-profile" options={{ title: t('settingsEditProfile') }} />
             <Stack.Screen name="settings/subscription" options={{ title: t('settingsSubscription') }} />
           </Stack>
+          <Modal transparent visible={isAccountMenuOpen} animationType="fade" onRequestClose={closeAccountMenu}>
+            <View style={styles.menuOverlay}>
+              <Pressable style={styles.menuBackdrop} onPress={closeAccountMenu} testID="account-menu-backdrop" />
+              <View style={styles.menuPanel}>
+                <Text style={styles.menuTitle}>{t('settingsAccount')}</Text>
+                {accountMenuItems.map((item) => (
+                  <Pressable
+                    key={item.route}
+                    onPress={() => navigateFromAccountMenu(item.route)}
+                    style={styles.menuItem}
+                    testID={`account-menu-item-${item.route.replace(/\//g, '-')}`}
+                  >
+                    <Text style={styles.menuItemLabel}>{item.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          </Modal>
         </>
       )}
     </ErrorBoundary>
@@ -92,17 +149,66 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center'
   },
-  headerSettingsButton: {
+  headerMenuButton: {
     borderWidth: 1,
     borderColor: theme.colors.surfaceButton,
     backgroundColor: theme.colors.surfaceSunken,
     borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 6
+    width: 38,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3
   },
-  headerSettingsLabel: {
-    color: theme.colors.textPrimary,
+  menuBar: {
+    width: 16,
+    height: 2,
+    borderRadius: 999,
+    backgroundColor: theme.colors.textPrimary
+  },
+  menuOverlay: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end'
+  },
+  menuBackdrop: {
+    ...StyleSheet.absoluteFillObject
+  },
+  menuPanel: {
+    marginTop: Platform.select({ ios: 96, default: 86 }),
+    marginRight: theme.spacing.md,
+    minWidth: 230,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.sm,
+    gap: theme.spacing.xs,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 10
+  },
+  menuTitle: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
     fontWeight: '700',
-    fontSize: 12
+    textTransform: 'uppercase',
+    paddingHorizontal: theme.spacing.sm,
+    paddingTop: 2
+  },
+  menuItem: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSunken,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm
+  },
+  menuItemLabel: {
+    color: theme.colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '600'
   }
 });
