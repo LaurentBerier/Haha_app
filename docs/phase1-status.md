@@ -38,7 +38,7 @@ npm run lint
 
 ## Cross-Repo Context
 
-The website repo (`ha-ha.ai`) now has Supabase auth + onboarding + reset password flows and should be validated/deployed in lockstep with this mobile repo.
+The website repo (`ha-ha.ai`) now has Supabase auth + onboarding + reset password flows and bridges `/app*` routes to the real Expo web build from this mobile repo (`HAHA_app`). Both repos should be validated/deployed in lockstep.
 
 ## Next Priorities
 

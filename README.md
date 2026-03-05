@@ -16,6 +16,7 @@ Implemented in this repository:
 - Account deletion endpoint (`api/delete-account.js`).
 - Payment webhook scaffold (`api/payment-webhook.js`) for tier sync from billing events.
 - Extensible account type model (`free`, `regular`, `premium`, `admin`, plus custom).
+- Web integration target: website repo (`ha-ha.ai`) routes `/app*` into this app's Expo web build.
 
 ## Stack
 
@@ -107,6 +108,7 @@ Behavior:
 - Authenticated users without completed/skipped onboarding are redirected to onboarding.
 - Onboarding completion writes profile data to Supabase.
 - Password recovery links (`flow=recovery`) are handled by `/auth/callback` and routed to `/(auth)/reset-password`.
+- `Paramètres` (`/settings`) stays reachable from authenticated screens via header shortcut.
 
 Supabase URL configuration should include:
 
@@ -181,6 +183,9 @@ Notes:
 # Start Expo dev server
 npm run start
 
+# Launch React Native app on web (Expo web)
+npm run web
+
 # Launch simulator build
 npm run ios
 
@@ -189,6 +194,9 @@ npx expo run:ios --device
 
 # Install/run Release build on device (bundled JS, Metro not required)
 npx expo run:ios --device --configuration Release
+
+# Produce static web build artifacts
+npx expo export --platform web --output-dir dist-web
 ```
 
 ## Verify

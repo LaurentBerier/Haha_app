@@ -170,3 +170,7 @@ Vercel functions require project dependencies at runtime; `.vercelignore` must i
 
 - `!package.json`
 - `!package-lock.json`
+
+## Cross-Repo Web Integration
+
+The website repo (`ha-ha.ai`) keeps the landing/auth experience and bridges `/app*` routes to this Expo app's web build URL (configured there via `VITE_HAHA_APP_WEB_URL`).

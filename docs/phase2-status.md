@@ -25,11 +25,13 @@ Core targets:
 - auth callback handling for signup and recovery flows
 - auth gate + onboarding redirect in root routing
 - onboarding data persisted to `public.profiles`
+- global header shortcut keeps settings/user-space reachable on authenticated app screens
 - settings flows:
   - edit profile
   - subscription placeholder
   - sign out
   - delete account
+- website integration: `ha-ha.ai` now bridges authenticated `/app*` routes to this Expo app's web build
 - `POST /api/claude` protected with bearer token validation
 - `POST /api/delete-account` endpoint
 - account type infrastructure:
