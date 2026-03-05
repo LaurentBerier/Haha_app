@@ -1,32 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
-
-function setCorsHeaders(req, res) {
-  const origin = req.headers.origin;
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  const hasAllowList = allowedOrigins.length > 0;
-  const allowOrigin = !hasAllowList
-    ? origin || '*'
-    : origin && allowedOrigins.includes(origin)
-      ? origin
-      : '';
-
-  if (!allowOrigin && hasAllowList) {
-    return false;
-  }
-
-  if (allowOrigin) {
-    res.setHeader('Access-Control-Allow-Origin', allowOrigin);
-    res.setHeader('Vary', 'Origin');
-  }
-
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization');
-  return true;
-}
+const { attachRequestId, extractBearerToken, getMissingEnv, sendError, setCorsHeaders } = require('./_utils');
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -38,15 +11,19 @@ const supabaseAdmin =
     ? createClient(supabaseUrl, serviceRoleKey)
     : null;
 
-function readBearerToken(req) {
-  const tokenHeader = req.headers.authorization;
-  return typeof tokenHeader === 'string' ? tokenHeader.replace(/^Bearer\s+/i, '').trim() : '';
-}
-
 module.exports = async function handler(req, res) {
-  const corsOk = setCorsHeaders(req, res);
-  if (!corsOk) {
-    res.status(403).json({ error: { message: 'Origin not allowed.' } });
+  const requestId = attachRequestId(req, res);
+  const corsResult = setCorsHeaders(req, res);
+  if (!corsResult.ok) {
+    if (corsResult.reason === 'cors_not_configured') {
+      sendError(res, 500, 'Server misconfigured: ALLOWED_ORIGINS missing.', {
+        code: 'SERVER_MISCONFIGURED',
+        requestId
+      });
+      return;
+    }
+
+    sendError(res, 403, 'Origin not allowed.', { code: 'ORIGIN_NOT_ALLOWED', requestId });
     return;
   }
 
@@ -56,18 +33,22 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method !== 'POST') {
-    res.status(405).json({ error: { message: 'Method not allowed.' } });
+    sendError(res, 405, 'Method not allowed.', { code: 'METHOD_NOT_ALLOWED', requestId });
     return;
   }
 
-  if (!supabaseAdmin) {
-    res.status(500).json({ error: { message: 'Server misconfigured.' } });
+  const missingEnv = getMissingEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  if (missingEnv.length > 0 || !supabaseAdmin) {
+    if (missingEnv.length > 0) {
+      console.error(`[api/delete-account][${requestId}] Missing env vars: ${missingEnv.join(', ')}`);
+    }
+    sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
   }
 
-  const token = readBearerToken(req);
+  const token = extractBearerToken(req.headers.authorization);
   if (!token) {
-    res.status(401).json({ error: { message: 'Missing bearer token.' } });
+    sendError(res, 401, 'Missing bearer token.', { code: 'UNAUTHORIZED', requestId });
     return;
   }
 
@@ -78,19 +59,20 @@ module.exports = async function handler(req, res) {
     } = await supabaseAdmin.auth.getUser(token);
 
     if (getUserError || !user) {
-      res.status(401).json({ error: { message: 'Unauthorized.' } });
+      sendError(res, 401, 'Unauthorized.', { code: 'UNAUTHORIZED', requestId });
       return;
     }
 
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(user.id);
     if (deleteError) {
-      res.status(500).json({ error: { message: deleteError.message } });
+      sendError(res, 500, deleteError.message, { code: 'SERVER_ERROR', requestId });
       return;
     }
 
     res.status(200).json({ ok: true, deletedUserId: user.id });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown server error';
-    res.status(500).json({ error: { message } });
+    console.error(`[api/delete-account][${requestId}] Unhandled error`, error);
+    sendError(res, 500, message, { code: 'SERVER_ERROR', requestId });
   }
 };

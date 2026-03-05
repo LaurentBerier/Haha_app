@@ -109,6 +109,7 @@ Verify Vercel env vars:
 - `ANTHROPIC_API_KEY`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+- if request comes from a browser origin: `ALLOWED_ORIGINS` must include that origin
 
 No-auth smoke test should return `401`:
 
@@ -183,6 +184,8 @@ Checklist:
 
 - `REVENUECAT_WEBHOOK_SECRET` set in Vercel
 - webhook sends `Authorization: Bearer <REVENUECAT_WEBHOOK_SECRET>`
+
+If `REVENUECAT_WEBHOOK_SECRET` is missing, endpoint returns `500` (`SERVER_MISCONFIGURED`) by design.
 
 ## 14) `payment_events` insert fails
 

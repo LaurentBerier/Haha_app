@@ -79,10 +79,12 @@ Active slices:
 
 ### `POST /api/claude` (`api/claude.js`)
 
-- CORS handling
+- CORS allowlist handling via shared `api/_utils.js` (`ALLOWED_ORIGINS`)
 - Bearer token validation via Supabase admin API
 - payload validation
 - forwards request to Anthropic API
+- `X-Request-Id` response header for tracing
+- standardized error payload `{ error: { message, code, requestId } }`
 
 ### `POST /api/admin-account-type` (`api/admin-account-type.js`)
 
@@ -90,16 +92,18 @@ Active slices:
 - validates target account type
 - updates `profiles.account_type_id`
 - syncs `auth.users.app_metadata` (`account_type`, `role`)
+- shared CORS/auth/error/request-id utilities
 
 ### `POST /api/delete-account` (`api/delete-account.js`)
 
 - validates bearer token
 - deletes authenticated Supabase user with admin API
 - relies on DB cascade (`ON DELETE CASCADE`) for related records
+- shared CORS/auth/error/request-id utilities
 
 ### `POST /api/payment-webhook` (`api/payment-webhook.js`)
 
-- validates webhook auth in production (`REVENUECAT_WEBHOOK_SECRET`)
+- validates webhook auth in all environments (`REVENUECAT_WEBHOOK_SECRET`)
 - stores events in `payment_events`
 - maps products to account types
 - updates profile tier + metadata claims
@@ -170,6 +174,13 @@ Vercel functions require project dependencies at runtime; `.vercelignore` must i
 
 - `!package.json`
 - `!package-lock.json`
+
+## Unit Tests
+
+- Jest unit config: `jest.unit.config.cjs`
+- API tests: `api/__tests__/`
+- Store slice tests: `src/store/slices/*.test.ts`
+- Command: `npm run test:unit`
 
 ## Cross-Repo Web Integration
 

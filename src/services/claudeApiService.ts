@@ -159,7 +159,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
     params.onError(error);
   };
 
-  void (async () => {
+  const runStream = async () => {
     const { systemPrompt, messages, maxTokens = 300, temperature = 0.9 } = params;
 
     if (!proxyUrl) {
@@ -291,7 +291,19 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
       }
       emitError(normalized);
     }
-  })();
+  };
+
+  runStream().catch((error) => {
+    if (isCancelled || hasSettled) {
+      return;
+    }
+
+    const normalized = normalizeError(error);
+    if (normalized.name === 'AbortError') {
+      return;
+    }
+    emitError(normalized);
+  });
 
   return () => {
     isCancelled = true;

@@ -36,6 +36,8 @@ export const en = {
   accountTypeAdmin: 'Admin',
   premiumLabel: 'PRO',
   invalidConversation: 'Invalid conversation',
+  chatUserFallbackName: 'You',
+  chatDefaultArtistName: 'Cathy AI Gauthier',
   messageTooLong: 'Message is too long',
   newConversation: 'New conversation',
   noMessages: 'Start the conversation',

@@ -30,6 +30,22 @@ export default tseslint.config(
       }
     }
   },
+  {
+    files: ['**/*.test.{js,ts,tsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.jest
+      }
+    }
+  },
+  {
+    files: ['**/*.cjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node
+      }
+    }
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

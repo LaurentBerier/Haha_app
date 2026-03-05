@@ -1,40 +1,14 @@
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 const { createClient } = require('@supabase/supabase-js');
+const { attachRequestId, extractBearerToken, getMissingEnv, sendError, setCorsHeaders } = require('./_utils');
 const DEFAULT_MAX_TOKENS = 300;
-const DEFAULT_MODEL = 'claude-sonnet-4-5-20250929';
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const MAX_MESSAGES = 40;
 const MAX_MESSAGE_CHARS = 10000;
 const MAX_SYSTEM_PROMPT_CHARS = 12000;
 const MAX_IMAGE_BYTES = 3_000_000;
 const ALLOWED_IMAGE_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
-
-function setCorsHeaders(req, res) {
-  const origin = req.headers.origin;
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  const hasAllowList = allowedOrigins.length > 0;
-  const allowOrigin = !hasAllowList
-    ? origin || '*'
-    : origin && allowedOrigins.includes(origin)
-      ? origin
-      : '';
-
-  if (!allowOrigin && hasAllowList) {
-    return false;
-  }
-
-  if (allowOrigin) {
-    res.setHeader('Access-Control-Allow-Origin', allowOrigin);
-    res.setHeader('Vary', 'Origin');
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  return true;
-}
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -195,18 +169,17 @@ function parsePayload(body) {
   };
 }
 
-async function relaySseResponse(upstreamResponse, res) {
+async function relaySseResponse(upstreamResponse, res, requestId) {
+  const reader = upstreamResponse.body?.getReader();
+  if (!reader) {
+    sendError(res, 502, 'No streaming body from Anthropic.', { code: 'UPSTREAM_STREAM_MISSING', requestId });
+    return;
+  }
+
   res.statusCode = 200;
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
-
-  const reader = upstreamResponse.body?.getReader();
-  if (!reader) {
-    res.statusCode = 502;
-    res.end(JSON.stringify({ error: { message: 'No streaming body from Anthropic.' } }));
-    return;
-  }
 
   const decoder = new TextDecoder();
 
@@ -219,7 +192,8 @@ async function relaySseResponse(upstreamResponse, res) {
       res.write(decoder.decode(value, { stream: true }));
     }
     res.end();
-  } catch {
+  } catch (error) {
+    console.error(`[api/claude][${requestId}] SSE relay failed`, error);
     res.end();
   }
 }
@@ -251,9 +225,8 @@ const supabaseAdmin =
     ? createClient(supabaseUrl, serviceRoleKey)
     : null;
 
-async function validateAuthHeader(req) {
-  const tokenHeader = req.headers.authorization;
-  const token = typeof tokenHeader === 'string' ? tokenHeader.replace(/^Bearer\s+/i, '').trim() : '';
+async function validateAuthHeader(req, requestId) {
+  const token = extractBearerToken(req.headers.authorization);
 
   if (!token) {
     return { userId: null, error: 'No token' };
@@ -279,15 +252,25 @@ async function validateAuthHeader(req) {
       accountType: typeof user.app_metadata?.account_type === 'string' ? user.app_metadata.account_type : null,
       error: null
     };
-  } catch {
+  } catch (error) {
+    console.error(`[api/claude][${requestId}] Token validation failed`, error);
     return { userId: null, error: 'Token validation failed' };
   }
 }
 
 module.exports = async function handler(req, res) {
-  const corsOk = setCorsHeaders(req, res);
-  if (!corsOk) {
-    res.status(403).json({ error: { message: 'Origin not allowed.' } });
+  const requestId = attachRequestId(req, res);
+  const corsResult = setCorsHeaders(req, res);
+  if (!corsResult.ok) {
+    if (corsResult.reason === 'cors_not_configured') {
+      sendError(res, 500, 'Server misconfigured: ALLOWED_ORIGINS missing.', {
+        code: 'SERVER_MISCONFIGURED',
+        requestId
+      });
+      return;
+    }
+
+    sendError(res, 403, 'Origin not allowed.', { code: 'ORIGIN_NOT_ALLOWED', requestId });
     return;
   }
 
@@ -297,19 +280,29 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method !== 'POST') {
-    res.status(405).json({ error: { message: 'Method not allowed.' } });
+    sendError(res, 405, 'Method not allowed.', { code: 'METHOD_NOT_ALLOWED', requestId });
     return;
   }
 
-  const auth = await validateAuthHeader(req);
+  const missingEnv = getMissingEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'ANTHROPIC_API_KEY']);
+  if (missingEnv.length > 0) {
+    console.error(`[api/claude][${requestId}] Missing env vars: ${missingEnv.join(', ')}`);
+    sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
+    return;
+  }
+
+  const auth = await validateAuthHeader(req, requestId);
   if (auth.error) {
-    res.status(401).json({ error: { message: 'Unauthorized.' } });
+    sendError(res, 401, 'Unauthorized.', { code: 'UNAUTHORIZED', requestId });
     return;
   }
 
   const apiKey = (process.env.ANTHROPIC_API_KEY ?? '').trim();
   if (!apiKey) {
-    res.status(500).json({ error: { message: 'Server misconfigured: ANTHROPIC_API_KEY missing.' } });
+    sendError(res, 500, 'Server misconfigured: ANTHROPIC_API_KEY missing.', {
+      code: 'SERVER_MISCONFIGURED',
+      requestId
+    });
     return;
   }
 
@@ -318,7 +311,7 @@ module.exports = async function handler(req, res) {
     payload = parsePayload(req.body);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid request payload.';
-    res.status(400).json({ error: { message } });
+    sendError(res, 400, message, { code: 'INVALID_REQUEST', requestId });
     return;
   }
 
@@ -333,8 +326,9 @@ module.exports = async function handler(req, res) {
       },
       body: JSON.stringify(payload)
     });
-  } catch {
-    res.status(502).json({ error: { message: 'Failed to reach Anthropic API.' } });
+  } catch (error) {
+    console.error(`[api/claude][${requestId}] Failed to reach Anthropic`, error);
+    sendError(res, 502, 'Failed to reach Anthropic API.', { code: 'UPSTREAM_UNREACHABLE', requestId });
     return;
   }
 
@@ -346,24 +340,24 @@ module.exports = async function handler(req, res) {
       upstreamError = await upstreamResponse.text();
     }
 
-    res.status(upstreamResponse.status).json({
-      error: {
-        message: getErrorMessage(upstreamError)
-      }
+    sendError(res, upstreamResponse.status, getErrorMessage(upstreamError), {
+      code: 'UPSTREAM_ERROR',
+      requestId
     });
     return;
   }
 
   if (payload.stream) {
-    await relaySseResponse(upstreamResponse, res);
+    await relaySseResponse(upstreamResponse, res, requestId);
     return;
   }
 
   let responseBody;
   try {
     responseBody = await upstreamResponse.json();
-  } catch {
-    res.status(502).json({ error: { message: 'Invalid JSON from Anthropic API.' } });
+  } catch (error) {
+    console.error(`[api/claude][${requestId}] Invalid upstream JSON`, error);
+    sendError(res, 502, 'Invalid JSON from Anthropic API.', { code: 'UPSTREAM_INVALID_JSON', requestId });
     return;
   }
 

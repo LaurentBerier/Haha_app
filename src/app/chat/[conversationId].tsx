@@ -6,24 +6,9 @@ import { MessageList } from '../../components/chat/MessageList';
 import { StreamingIndicator } from '../../components/chat/StreamingIndicator';
 import { useChat } from '../../hooks/useChat';
 import { t } from '../../i18n';
-import type { Conversation } from '../../models/Conversation';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
-
-function findConversationById(conversations: Record<string, Conversation[]>, conversationId: string): Conversation | null {
-  if (!conversationId) {
-    return null;
-  }
-
-  for (const list of Object.values(conversations)) {
-    const found = list.find((conversation) => conversation.id === conversationId);
-    if (found) {
-      return found;
-    }
-  }
-
-  return null;
-}
+import { findConversationById } from '../../utils/conversationUtils';
 
 function formatUserDisplayName(displayName: string | null, email: string): string {
   const trimmed = displayName?.trim();
@@ -32,16 +17,16 @@ function formatUserDisplayName(displayName: string | null, email: string): strin
   }
 
   const emailPrefix = email.split('@')[0]?.trim();
-  return emailPrefix || 'Toi';
+  return emailPrefix || t('chatUserFallbackName');
 }
 
 function formatArtistDisplayName(artistName: string | null): string {
   if (!artistName) {
-    return 'Cathy IA Gauthier';
+    return t('chatDefaultArtistName');
   }
 
   if (artistName === 'Cathy Gauthier') {
-    return 'Cathy IA Gauthier';
+    return t('chatDefaultArtistName');
   }
 
   return artistName;

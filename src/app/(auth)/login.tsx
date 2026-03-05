@@ -13,7 +13,12 @@ export default function LoginScreen() {
   const [appleAvailable, setAppleAvailable] = useState(false);
 
   useEffect(() => {
-    void AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => setAppleAvailable(false));
+    const checkAppleAvailability = async () => {
+      const available = await AppleAuthentication.isAvailableAsync();
+      setAppleAvailable(available);
+    };
+
+    checkAppleAvailability().catch(() => setAppleAvailable(false));
   }, []);
 
   const onSubmit = async () => {

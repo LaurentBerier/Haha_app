@@ -38,7 +38,12 @@ export function useAuth() {
       }
     };
 
-    void bootstrap();
+    bootstrap().catch((error) => {
+      console.error('[useAuth] bootstrap failed', error);
+      if (isMounted) {
+        clearSession();
+      }
+    });
 
     const unsubscribe = onAuthStateChange((event, nextSession) => {
       if (!isMounted) {
@@ -51,10 +56,15 @@ export function useAuth() {
         return;
       }
 
-      void setSession(nextSession).then(() => {
+      const syncSession = async () => {
+        await setSession(nextSession);
         if (nextSession?.user?.id) {
-          void clearLegacySecureStoreData();
+          await clearLegacySecureStoreData();
         }
+      };
+
+      syncSession().catch((error) => {
+        console.error('[useAuth] auth state sync failed', error);
       });
     });
 

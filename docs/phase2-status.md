@@ -1,6 +1,6 @@
 # Phase 2 Status (Mobile + API)
 
-Last updated: **2026-03-04**
+Last updated: **2026-03-05**
 
 ## Scope
 
@@ -42,6 +42,15 @@ Core targets:
   - `POST /api/admin-account-type`
 - payment webhook scaffold:
   - `POST /api/payment-webhook`
+- API hardening pass:
+  - shared utility module (`api/_utils.js`) for CORS/auth/error/request-id
+  - browser CORS fail-closed behavior when `ALLOWED_ORIGINS` is missing or origin is not allowlisted
+  - webhook auth fail-closed in all environments when `REVENUECAT_WEBHOOK_SECRET` is missing
+  - standardized API error format with error codes and request IDs
+- unit test baseline:
+  - `npm run test:unit`
+  - API tests for `claude`, `delete-account`, `admin-account-type`, `payment-webhook`, and shared utils
+  - store slice tests for `subscriptionSlice` and `usageSlice`
 
 ## In Progress
 
@@ -65,6 +74,7 @@ Core targets:
 ```bash
 npm run typecheck
 npm run lint
+npm run test:unit
 ```
 
 Manual checks:
@@ -89,7 +99,8 @@ Required backend env:
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `ANTHROPIC_API_KEY`
-- optional: `REVENUECAT_WEBHOOK_SECRET`
+- `REVENUECAT_WEBHOOK_SECRET` (required when webhook endpoint is enabled)
+- `ALLOWED_ORIGINS` (required for browser clients that send `Origin`)
 
 Supabase URL config must include:
 

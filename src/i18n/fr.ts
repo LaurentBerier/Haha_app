@@ -36,6 +36,8 @@ export const fr = {
   accountTypeAdmin: 'Admin',
   premiumLabel: 'PRO',
   invalidConversation: 'Conversation invalide',
+  chatUserFallbackName: 'Toi',
+  chatDefaultArtistName: 'Cathy IA Gauthier',
   messageTooLong: 'Message trop long',
   newConversation: 'Nouvelle conversation',
   noMessages: 'Commence la conversation',

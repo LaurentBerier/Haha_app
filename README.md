@@ -15,7 +15,9 @@ Implemented in this repository:
 - Admin endpoint (`api/admin-account-type.js`) for account type assignment.
 - Account deletion endpoint (`api/delete-account.js`).
 - Payment webhook scaffold (`api/payment-webhook.js`) for tier sync from billing events.
+- Shared API utilities (`api/_utils.js`) for CORS, bearer token extraction, request IDs, env checks, and standardized errors.
 - Extensible account type model (`free`, `regular`, `premium`, `admin`, plus custom).
+- Unit test baseline (Jest) for API security contracts and core store slices.
 - Web integration target: website repo (`ha-ha.ai`) routes `/app*` into this app's Expo web build.
 
 ## Stack
@@ -57,6 +59,7 @@ Notes:
 
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY` should use Supabase publishable/anon public key.
 - These are public client vars; they are not server secrets.
+- Current default Claude model: `claude-sonnet-4-6`.
 
 ### Vercel backend vars
 
@@ -64,8 +67,8 @@ Notes:
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY` (server-only, required for JWT/user validation)
-- `REVENUECAT_WEBHOOK_SECRET` (required in production if using `api/payment-webhook.js`)
-- Optional: `ALLOWED_ORIGINS`
+- `REVENUECAT_WEBHOOK_SECRET` (required if using `api/payment-webhook.js`; endpoint fails closed when missing)
+- `ALLOWED_ORIGINS` (required for browser callers that send `Origin`; comma-separated allowlist)
 
 ## Supabase Setup
 
@@ -151,6 +154,9 @@ Security:
 - Requires `Authorization: Bearer <access_token>`
 - Validates token using Supabase admin client
 - Rejects invalid/missing token with `401`
+- Browser-origin requests are fail-closed when `ALLOWED_ORIGINS` is missing or origin is not allowlisted
+- Adds `X-Request-Id` response header for log correlation
+- Error envelope: `{ "error": { "message": string, "code": string, "requestId": string } }`
 
 ## Account Deletion Endpoint
 
@@ -176,6 +182,7 @@ Notes:
 - Designed for RevenueCat-style payloads.
 - Persists incoming events in `public.payment_events`.
 - Maps product IDs to account types, updates `profiles.account_type_id`, and syncs JWT metadata.
+- Fails closed in every environment when `REVENUECAT_WEBHOOK_SECRET` is missing.
 
 ## Run
 
@@ -204,6 +211,13 @@ npm run export:web
 ```bash
 npm run typecheck
 npm run lint
+npm run test:unit
+```
+
+API smoke tests:
+
+```bash
+./scripts/smoke-auth.sh
 ```
 
 ## Deploy to Vercel

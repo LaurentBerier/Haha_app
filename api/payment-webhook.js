@@ -1,14 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
-
-function setCorsHeaders(req, res) {
-  const origin = req.headers.origin;
-  if (origin) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Vary', 'Origin');
-  }
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-}
+const { attachRequestId, extractBearerToken, getMissingEnv, sendError, setCorsHeaders } = require('./_utils');
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -89,39 +80,55 @@ const supabaseAdmin =
 function isAuthorized(req) {
   const sharedSecret = process.env.REVENUECAT_WEBHOOK_SECRET;
   if (!sharedSecret) {
-    // Fail open in dev until secret is configured.
-    return process.env.NODE_ENV !== 'production';
+    return false;
   }
 
-  const header = req.headers.authorization;
-  const token = typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
+  const token = extractBearerToken(req.headers.authorization);
   return token === sharedSecret;
 }
 
 module.exports = async function handler(req, res) {
-  setCorsHeaders(req, res);
+  const requestId = attachRequestId(req, res);
+  const corsResult = setCorsHeaders(req, res);
+  if (!corsResult.ok) {
+    if (corsResult.reason === 'cors_not_configured') {
+      sendError(res, 500, 'Server misconfigured: ALLOWED_ORIGINS missing.', {
+        code: 'SERVER_MISCONFIGURED',
+        requestId
+      });
+      return;
+    }
+
+    sendError(res, 403, 'Origin not allowed.', { code: 'ORIGIN_NOT_ALLOWED', requestId });
+    return;
+  }
+
   if (req.method === 'OPTIONS') {
     res.status(204).end();
     return;
   }
 
   if (req.method !== 'POST') {
-    res.status(405).json({ error: { message: 'Method not allowed.' } });
+    sendError(res, 405, 'Method not allowed.', { code: 'METHOD_NOT_ALLOWED', requestId });
     return;
   }
 
-  if (!supabaseAdmin) {
-    res.status(500).json({ error: { message: 'Server misconfigured.' } });
+  const missingEnv = getMissingEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'REVENUECAT_WEBHOOK_SECRET']);
+  if (missingEnv.length > 0 || !supabaseAdmin) {
+    if (missingEnv.length > 0) {
+      console.error(`[api/payment-webhook][${requestId}] Missing env vars: ${missingEnv.join(', ')}`);
+    }
+    sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
   }
 
   if (!isAuthorized(req)) {
-    res.status(401).json({ error: { message: 'Unauthorized webhook call.' } });
+    sendError(res, 401, 'Unauthorized webhook call.', { code: 'UNAUTHORIZED', requestId });
     return;
   }
 
   if (!isRecord(req.body)) {
-    res.status(400).json({ error: { message: 'JSON body is required.' } });
+    sendError(res, 400, 'JSON body is required.', { code: 'INVALID_REQUEST', requestId });
     return;
   }
 
@@ -132,7 +139,7 @@ module.exports = async function handler(req, res) {
   const accountTypeId = mapProductToAccountType(productId, eventType);
 
   if (!userId) {
-    res.status(400).json({ error: { message: 'Webhook payload missing app_user_id.' } });
+    sendError(res, 400, 'Webhook payload missing app_user_id.', { code: 'INVALID_REQUEST', requestId });
     return;
   }
 
@@ -147,7 +154,7 @@ module.exports = async function handler(req, res) {
     });
 
     if (eventError) {
-      res.status(500).json({ error: { message: eventError.message } });
+      sendError(res, 500, eventError.message, { code: 'SERVER_ERROR', requestId });
       return;
     }
 
@@ -158,7 +165,7 @@ module.exports = async function handler(req, res) {
         .eq('id', userId);
 
       if (profileError) {
-        res.status(500).json({ error: { message: profileError.message } });
+        sendError(res, 500, profileError.message, { code: 'SERVER_ERROR', requestId });
         return;
       }
 
@@ -170,7 +177,7 @@ module.exports = async function handler(req, res) {
       });
 
       if (metadataError) {
-        res.status(500).json({ error: { message: metadataError.message } });
+        sendError(res, 500, metadataError.message, { code: 'SERVER_ERROR', requestId });
         return;
       }
     }
@@ -178,6 +185,7 @@ module.exports = async function handler(req, res) {
     res.status(200).json({ ok: true, userId: userId || null, accountTypeId });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown server error';
-    res.status(500).json({ error: { message } });
+    console.error(`[api/payment-webhook][${requestId}] Unhandled error`, error);
+    sendError(res, 500, message, { code: 'SERVER_ERROR', requestId });
   }
 };

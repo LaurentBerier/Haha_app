@@ -43,10 +43,17 @@ export function useVoiceInput() {
   );
 
   useEffect(() => {
-    void (async () => {
+    const initializePermission = async () => {
       const granted = await requestVoicePermission();
       setHasPermission(granted);
-    })();
+    };
+
+    initializePermission().catch((error) => {
+      if (__DEV__) {
+        console.warn('[useVoiceInput] permission check failed', error);
+      }
+      setHasPermission(false);
+    });
 
     return () => {
       resetErrorState();

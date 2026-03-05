@@ -1,32 +1,5 @@
 const { createClient } = require('@supabase/supabase-js');
-
-function setCorsHeaders(req, res) {
-  const origin = req.headers.origin;
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-
-  const hasAllowList = allowedOrigins.length > 0;
-  const allowOrigin = !hasAllowList
-    ? origin || '*'
-    : origin && allowedOrigins.includes(origin)
-      ? origin
-      : '';
-
-  if (!allowOrigin && hasAllowList) {
-    return false;
-  }
-
-  if (allowOrigin) {
-    res.setHeader('Access-Control-Allow-Origin', allowOrigin);
-    res.setHeader('Vary', 'Origin');
-  }
-
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  return true;
-}
+const { attachRequestId, extractBearerToken, getMissingEnv, sendError, setCorsHeaders } = require('./_utils');
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -42,9 +15,8 @@ const supabaseAdmin =
     ? createClient(supabaseUrl, serviceRoleKey)
     : null;
 
-async function validateAdmin(req) {
-  const tokenHeader = req.headers.authorization;
-  const token = typeof tokenHeader === 'string' ? tokenHeader.replace(/^Bearer\s+/i, '').trim() : '';
+async function validateAdmin(req, requestId) {
+  const token = extractBearerToken(req.headers.authorization);
 
   if (!token) {
     return { ok: false, error: 'Missing bearer token', status: 401 };
@@ -73,7 +45,8 @@ async function validateAdmin(req) {
     }
 
     return { ok: true, userId: user.id };
-  } catch {
+  } catch (error) {
+    console.error(`[api/admin-account-type][${requestId}] Token validation failed`, error);
     return { ok: false, error: 'Token validation failed', status: 401 };
   }
 }
@@ -93,9 +66,18 @@ async function accountTypeExists(accountTypeId) {
 }
 
 module.exports = async function handler(req, res) {
-  const corsOk = setCorsHeaders(req, res);
-  if (!corsOk) {
-    res.status(403).json({ error: { message: 'Origin not allowed.' } });
+  const requestId = attachRequestId(req, res);
+  const corsResult = setCorsHeaders(req, res);
+  if (!corsResult.ok) {
+    if (corsResult.reason === 'cors_not_configured') {
+      sendError(res, 500, 'Server misconfigured: ALLOWED_ORIGINS missing.', {
+        code: 'SERVER_MISCONFIGURED',
+        requestId
+      });
+      return;
+    }
+
+    sendError(res, 403, 'Origin not allowed.', { code: 'ORIGIN_NOT_ALLOWED', requestId });
     return;
   }
 
@@ -105,23 +87,30 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method !== 'POST') {
-    res.status(405).json({ error: { message: 'Method not allowed.' } });
+    sendError(res, 405, 'Method not allowed.', { code: 'METHOD_NOT_ALLOWED', requestId });
     return;
   }
 
-  if (!supabaseAdmin) {
-    res.status(500).json({ error: { message: 'Server misconfigured.' } });
+  const missingEnv = getMissingEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  if (missingEnv.length > 0 || !supabaseAdmin) {
+    if (missingEnv.length > 0) {
+      console.error(`[api/admin-account-type][${requestId}] Missing env vars: ${missingEnv.join(', ')}`);
+    }
+    sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
   }
 
-  const auth = await validateAdmin(req);
+  const auth = await validateAdmin(req, requestId);
   if (!auth.ok) {
-    res.status(auth.status).json({ error: { message: auth.error } });
+    sendError(res, auth.status, auth.error, {
+      code: auth.status === 403 ? 'FORBIDDEN' : 'UNAUTHORIZED',
+      requestId
+    });
     return;
   }
 
   if (!isRecord(req.body)) {
-    res.status(400).json({ error: { message: 'JSON body is required.' } });
+    sendError(res, 400, 'JSON body is required.', { code: 'INVALID_REQUEST', requestId });
     return;
   }
 
@@ -129,14 +118,14 @@ module.exports = async function handler(req, res) {
   const accountTypeId = typeof req.body.accountTypeId === 'string' ? req.body.accountTypeId.trim() : '';
 
   if (!userId || !accountTypeId) {
-    res.status(400).json({ error: { message: 'userId and accountTypeId are required.' } });
+    sendError(res, 400, 'userId and accountTypeId are required.', { code: 'INVALID_REQUEST', requestId });
     return;
   }
 
   try {
     const exists = await accountTypeExists(accountTypeId);
     if (!exists) {
-      res.status(400).json({ error: { message: `Unknown account type: ${accountTypeId}` } });
+      sendError(res, 400, `Unknown account type: ${accountTypeId}`, { code: 'INVALID_REQUEST', requestId });
       return;
     }
 
@@ -146,7 +135,7 @@ module.exports = async function handler(req, res) {
       .eq('id', userId);
 
     if (profileError) {
-      res.status(500).json({ error: { message: profileError.message } });
+      sendError(res, 500, profileError.message, { code: 'SERVER_ERROR', requestId });
       return;
     }
 
@@ -158,7 +147,7 @@ module.exports = async function handler(req, res) {
     });
 
     if (metadataError) {
-      res.status(500).json({ error: { message: metadataError.message } });
+      sendError(res, 500, metadataError.message, { code: 'SERVER_ERROR', requestId });
       return;
     }
 
@@ -170,6 +159,7 @@ module.exports = async function handler(req, res) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown server error';
-    res.status(500).json({ error: { message } });
+    console.error(`[api/admin-account-type][${requestId}] Unhandled error`, error);
+    sendError(res, 500, message, { code: 'SERVER_ERROR', requestId });
   }
 };

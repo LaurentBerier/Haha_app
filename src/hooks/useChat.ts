@@ -5,13 +5,13 @@ import { getAllCathyFewShots, getCathyModeFewShots } from '../data/cathy-gauthie
 import { getLanguage, setLanguage } from '../i18n';
 import type { ChatError } from '../models/ChatError';
 import type { ChatSendPayload } from '../models/ChatSendPayload';
-import type { Conversation } from '../models/Conversation';
 import type { Message } from '../models/Message';
 import type { ClaudeContentBlock, ClaudeMessage } from '../services/claudeApiService';
 import { streamClaudeResponse } from '../services/claudeApiService';
 import { streamMockReply } from '../services/mockLlmService';
 import { buildSystemPrompt, formatConversationHistory } from '../services/personalityEngineService';
 import { useStore } from '../store/useStore';
+import { findConversationById } from '../utils/conversationUtils';
 import { shouldAutoSwitchToEnglish } from '../utils/languageDetection';
 import { generateId } from '../utils/generateId';
 
@@ -24,21 +24,6 @@ interface StreamJob {
   language: string;
   modeFewShots: ReturnType<typeof getCathyModeFewShots>;
   modeId: string;
-}
-
-function findConversationById(conversations: Record<string, Conversation[]>, conversationId: string): Conversation | null {
-  if (!conversationId) {
-    return null;
-  }
-
-  for (const conversationList of Object.values(conversations)) {
-    const found = conversationList.find((conversation) => conversation.id === conversationId);
-    if (found) {
-      return found;
-    }
-  }
-
-  return null;
 }
 
 function createClaudeUserContent(text: string, payload: ChatSendPayload): string | ClaudeContentBlock[] {
