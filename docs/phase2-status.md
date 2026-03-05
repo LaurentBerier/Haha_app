@@ -32,6 +32,9 @@ Core targets:
   - sign out
   - delete account
 - website integration: `ha-ha.ai` now bridges authenticated `/app*` routes to this Expo app's web build
+- web deployment pipeline stabilized:
+  - `npm run export:web` applies module-script compatibility patch
+  - `npm run deploy:web` targets Vercel project `haha-app-web`
 - `POST /api/claude` protected with bearer token validation
 - `POST /api/delete-account` endpoint
 - account type infrastructure:
@@ -71,6 +74,7 @@ Manual checks:
 3. Unauthenticated user is redirected to login.
 4. Authenticated user without onboarding is redirected to onboarding.
 5. `POST /api/claude` returns `401` without bearer token.
+6. `npm run deploy:web` publishes a working web app (no white-screen bootstrap crash).
 
 ## Dependencies and Config
 

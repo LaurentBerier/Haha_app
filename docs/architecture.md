@@ -174,3 +174,22 @@ Vercel functions require project dependencies at runtime; `.vercelignore` must i
 ## Cross-Repo Web Integration
 
 The website repo (`ha-ha.ai`) keeps the landing/auth experience and bridges `/app*` routes to this Expo app's web build URL (configured there via `VITE_HAHA_APP_WEB_URL`).
+
+Web bridge mapping:
+
+- `/app` -> `HAHA_app` web `/`
+- `/app/chat/cathy-gauthier` -> `HAHA_app` web `/mode-select/cathy-gauthier`
+- `/app/account` -> `HAHA_app` web `/settings`
+
+## Web Build Pipeline (`HAHA_app`)
+
+Scripts:
+
+- `npm run export:web`:
+  - runs Expo web export into `dist-web`
+  - patches exported `index.html` script tag to `type="module"` for browser compatibility
+  - writes `dist-web/vercel.web.json` for SPA fallback on Vercel
+- `npm run deploy:web`:
+  - calls `export:web`
+  - links `dist-web` to Vercel project `haha-app-web`
+  - deploys production static build

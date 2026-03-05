@@ -198,3 +198,37 @@ from public.payment_events
 order by created_at desc
 limit 20;
 ```
+
+## 15) Web app shows a white page after onboarding redirect
+
+Symptom:
+
+- redirect to `https://haha-app-web.vercel.app/` succeeds
+- page stays blank
+
+Cause:
+
+- exported web `index.html` loaded the bundle as classic script
+- bundle uses `import.meta`, causing browser bootstrap crash
+
+Fix:
+
+```bash
+cd /Users/laurentbernier/Documents/HAHA_app
+npm run deploy:web
+```
+
+This rebuilds and patches `dist-web/index.html` with `type="module"` before deployment.
+
+## 16) Redirect to web app asks login again
+
+This is expected when crossing domains (for example `www.ha-ha.ai` -> `haha-app-web.vercel.app`).
+
+Reason:
+
+- Supabase browser session storage is origin-scoped.
+
+Mitigation:
+
+- keep a stable dedicated domain for web app
+- avoid unnecessary domain changes (`www` vs non-`www`, preview vs production)

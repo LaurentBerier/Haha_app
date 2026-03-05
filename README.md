@@ -195,8 +195,8 @@ npx expo run:ios --device
 # Install/run Release build on device (bundled JS, Metro not required)
 npx expo run:ios --device --configuration Release
 
-# Produce static web build artifacts
-npx expo export --platform web --output-dir dist-web
+# Produce static web build artifacts (includes web compatibility patch)
+npm run export:web
 ```
 
 ## Verify
@@ -211,6 +211,30 @@ npm run lint
 ```bash
 npx vercel --prod --yes
 ```
+
+Deploy web app static build (recommended in separate Vercel project, e.g. `haha-app-web`):
+
+```bash
+npm run deploy:web
+```
+
+This command:
+
+- exports Expo web to `dist-web`
+- patches `dist-web/index.html` to load JS as module
+- writes `dist-web/vercel.web.json` (SPA fallback)
+- links `dist-web` to Vercel project `haha-app-web`
+- deploys `dist-web` to Vercel production
+
+After deployment, set this URL in the website repo (`ha-ha.ai`) as:
+
+- `VITE_HAHA_APP_WEB_URL=https://<your-haha-app-web-domain>`
+
+Important behavior:
+
+- when redirected from `www.ha-ha.ai` to `haha-app-web.vercel.app`, the browser origin changes
+- Supabase session storage is origin-scoped, so user may need to sign in again on first arrival
+- to reduce this friction, use a stable custom domain for the app web project and keep it consistent
 
 Current `.vercelignore` intentionally includes:
 

@@ -8,6 +8,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "export:web": "node scripts/exportWeb.mjs",
+    "deploy:web": "npm run export:web && npx vercel link --cwd dist-web --yes --project haha-app-web && npx vercel deploy --cwd dist-web --prod --yes --local-config dist-web/vercel.web.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx",
     "verify:profile-prompt": "tsx scripts/verifyProfilePrompt.ts",
