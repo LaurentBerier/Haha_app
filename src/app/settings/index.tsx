@@ -1,10 +1,11 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import { SettingsRow } from '../../components/common/SettingsRow';
 import { useAuth } from '../../hooks/useAuth';
 import { t } from '../../i18n';
 import { deleteAccount, signOut } from '../../services/authService';
+import type { AppLanguage, DisplayMode } from '../../store/slices/uiSlice';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 
@@ -38,6 +39,11 @@ function initialsFromIdentity(value: string | null | undefined): string {
 export default function SettingsScreen() {
   const { user, session } = useAuth();
   const clearSession = useStore((state) => state.clearSession);
+  const language = useStore((state) => state.language);
+  const displayMode = useStore((state) => state.displayMode);
+  const setLanguagePreference = useStore((state) => state.setLanguagePreference);
+  const setDisplayMode = useStore((state) => state.setDisplayMode);
+  const systemColorScheme = useColorScheme();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -45,6 +51,16 @@ export default function SettingsScreen() {
   const identity = user?.displayName ?? email;
   const initials = useMemo(() => initialsFromIdentity(identity), [identity]);
   const accountTypeLabel = getAccountTypeLabel(user?.accountType);
+  const languageOptions: Array<{ value: AppLanguage; label: string }> = [
+    { value: 'fr-CA', label: t('settingsLanguageFr') },
+    { value: 'en-CA', label: t('settingsLanguageEn') }
+  ];
+  const displayModeOptions: Array<{ value: DisplayMode; label: string }> = [
+    { value: 'dark', label: t('settingsDisplayDark') },
+    { value: 'light', label: t('settingsDisplayLight') },
+    { value: 'system', label: t('settingsDisplaySystem') }
+  ];
+  const effectiveDisplayMode = displayMode === 'system' ? (systemColorScheme === 'light' ? 'light' : 'dark') : displayMode;
 
   const doLogout = async () => {
     setIsSubmitting(true);
@@ -113,6 +129,47 @@ export default function SettingsScreen() {
             onPress={() => router.push('/settings/edit-profile' as never)}
             testID="settings-edit-profile"
           />
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>{t('settingsPreferences')}</Text>
+        <View style={styles.preferenceCard}>
+          <Text style={styles.preferenceLabel}>{t('settingsLanguage')}</Text>
+          <View style={styles.choiceRow}>
+            {languageOptions.map((option) => (
+              <Pressable
+                key={option.value}
+                onPress={() => setLanguagePreference(option.value)}
+                style={[styles.choiceChip, language === option.value ? styles.choiceChipActive : null]}
+                testID={`settings-language-${option.value}`}
+              >
+                <Text style={[styles.choiceChipLabel, language === option.value ? styles.choiceChipLabelActive : null]}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+        <View style={styles.preferenceCard}>
+          <Text style={styles.preferenceLabel}>{t('settingsDisplayMode')}</Text>
+          <View style={styles.choiceRow}>
+            {displayModeOptions.map((option) => (
+              <Pressable
+                key={option.value}
+                onPress={() => setDisplayMode(option.value)}
+                style={[styles.choiceChip, displayMode === option.value ? styles.choiceChipActive : null]}
+                testID={`settings-display-${option.value}`}
+              >
+                <Text style={[styles.choiceChipLabel, displayMode === option.value ? styles.choiceChipLabelActive : null]}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {displayMode === 'system' ? (
+            <Text style={styles.preferenceHint}>{`${t('settingsDisplaySystem')} (${effectiveDisplayMode})`}</Text>
+          ) : null}
         </View>
       </View>
 
@@ -217,6 +274,50 @@ const styles = StyleSheet.create({
   },
   group: {
     gap: theme.spacing.sm
+  },
+  preferenceCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.md,
+    gap: theme.spacing.sm
+  },
+  preferenceLabel: {
+    color: theme.colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  preferenceHint: {
+    color: theme.colors.textMuted,
+    fontSize: 12
+  },
+  choiceRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.xs
+  },
+  choiceChip: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSunken,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: theme.spacing.xs
+  },
+  choiceChipActive: {
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.surfaceButton
+  },
+  choiceChipLabel: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  choiceChipLabelActive: {
+    color: theme.colors.textPrimary
   },
   errorText: {
     color: theme.colors.error,

@@ -15,6 +15,7 @@ export const fr = {
   thinking: 'Réflexion en cours...',
   settingsTitle: 'Paramètres',
   settingsPhase: 'Phase 1',
+  settingsPreferences: 'Préférences',
   settingsAccount: 'Mon compte',
   settingsSubscription: 'Abonnement',
   settingsLanguage: 'Langue',

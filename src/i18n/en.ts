@@ -15,6 +15,7 @@ export const en = {
   thinking: 'Thinking...',
   settingsTitle: 'Settings',
   settingsPhase: 'Phase 1',
+  settingsPreferences: 'Preferences',
   settingsAccount: 'Account',
   settingsSubscription: 'Subscription',
   settingsLanguage: 'Language',
