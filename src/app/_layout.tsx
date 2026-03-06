@@ -8,6 +8,7 @@ import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useAuth } from '../hooks/useAuth';
 import { useStorePersistence } from '../hooks/useStorePersistence';
 import { t } from '../i18n';
+import { signOut } from '../services/authService';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme';
 
@@ -18,6 +19,7 @@ export default function RootLayout() {
   const hasHydrated = useStore((state) => state.hasHydrated);
   const language = useStore((state) => state.language);
   const displayMode = useStore((state) => state.displayMode);
+  const clearSession = useStore((state) => state.clearSession);
   const { authStatus, isAuthenticated, userProfile } = useAuth();
   const segments = useSegments();
   const systemColorScheme = useColorScheme();
@@ -33,6 +35,11 @@ export default function RootLayout() {
     { label: t('settingsEditProfile'), route: '/settings/edit-profile' as const },
     { label: t('settingsSubscription'), route: '/settings/subscription' as const }
   ];
+  const authMenuLabel = isAuthenticated
+    ? t('settingsLogout')
+    : segments[1] === 'login'
+      ? t('menuAuthSignUp')
+      : t('menuAuthSignIn');
   const effectiveDisplayMode = displayMode === 'system' ? (systemColorScheme === 'light' ? 'light' : 'dark') : displayMode;
 
   const toggleAccountMenu = () => {
@@ -53,6 +60,28 @@ export default function RootLayout() {
   const navigateHome = () => {
     closeAccountMenu();
     router.replace('/');
+  };
+
+  const handleAuthMenuAction = async () => {
+    closeAccountMenu();
+    if (isAuthenticated) {
+      try {
+        await signOut();
+      } catch (error) {
+        console.error('[RootLayout] signOut failed', error);
+      } finally {
+        clearSession();
+        router.replace('/(auth)/login');
+      }
+      return;
+    }
+
+    if (segments[1] === 'login') {
+      router.replace('/(auth)/signup');
+      return;
+    }
+
+    router.replace('/(auth)/login');
   };
 
   useEffect(() => {
@@ -155,6 +184,16 @@ export default function RootLayout() {
                     <Text style={styles.menuItemLabel}>{item.label}</Text>
                   </Pressable>
                 ))}
+                <View style={styles.menuDivider} />
+                <Pressable
+                  onPress={() => void handleAuthMenuAction()}
+                  style={[styles.menuItem, isAuthenticated ? styles.menuItemDestructive : null]}
+                  testID="account-menu-auth-action"
+                >
+                  <Text style={[styles.menuItemLabel, isAuthenticated ? styles.menuItemLabelDestructive : null]}>
+                    {authMenuLabel}
+                  </Text>
+                </Pressable>
               </View>
             </View>
           ) : null}
@@ -235,9 +274,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm
   },
+  menuItemDestructive: {
+    borderColor: theme.colors.error
+  },
   menuItemLabel: {
     color: theme.colors.textPrimary,
     fontSize: 14,
     fontWeight: '600'
+  },
+  menuItemLabelDestructive: {
+    color: theme.colors.error
+  },
+  menuDivider: {
+    height: 1,
+    marginVertical: 2,
+    backgroundColor: theme.colors.border
   }
 });

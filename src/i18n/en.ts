@@ -49,6 +49,8 @@ export const en = {
   settingsSubscriptionProviderUnavailableBody: 'Add the checkout URL in EXPO_PUBLIC_* variables and restart the app.',
   settingsSubscriptionCheckoutErrorTitle: 'Cannot open checkout',
   settingsSubscriptionCheckoutErrorBody: 'Could not open the payment page right now.',
+  menuAuthSignIn: 'Sign in',
+  menuAuthSignUp: 'Sign up',
   cancel: 'Cancel',
   accountTypeFree: 'Free',
   accountTypeRegular: 'Regular',
