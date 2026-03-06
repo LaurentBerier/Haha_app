@@ -19,6 +19,8 @@ export default function RootLayout() {
   const hasHydrated = useStore((state) => state.hasHydrated);
   const language = useStore((state) => state.language);
   const displayMode = useStore((state) => state.displayMode);
+  const selectedArtistId = useStore((state) => state.selectedArtistId);
+  const activeConversationId = useStore((state) => state.activeConversationId);
   const clearSession = useStore((state) => state.clearSession);
   const { authStatus, isAuthenticated, userProfile } = useAuth();
   const segments = useSegments();
@@ -41,6 +43,50 @@ export default function RootLayout() {
       ? t('menuAuthSignUp')
       : t('menuAuthSignIn');
   const effectiveDisplayMode = displayMode === 'system' ? (systemColorScheme === 'light' ? 'light' : 'dark') : displayMode;
+  const routeKey = segments.join('/');
+  const showWebTopNav = Platform.OS === 'web' && showAccountMenu;
+
+  const webTopNavItems = [
+    {
+      key: 'artists',
+      label: t('topNavArtists'),
+      active: routeKey.length === 0,
+      onPress: () => router.replace('/'),
+      disabled: false
+    },
+    {
+      key: 'history',
+      label: t('topNavHistory'),
+      active: routeKey.startsWith('history/'),
+      onPress: () => router.replace(selectedArtistId ? `/history/${selectedArtistId}` : '/'),
+      disabled: !selectedArtistId
+    },
+    {
+      key: 'chat',
+      label: t('topNavChat'),
+      active: routeKey.startsWith('chat/'),
+      onPress: () => {
+        if (activeConversationId) {
+          router.replace(`/chat/${activeConversationId}`);
+        }
+      },
+      disabled: !activeConversationId
+    },
+    {
+      key: 'settings',
+      label: t('topNavSettings'),
+      active: routeKey === 'settings' || routeKey === 'settings/index' || routeKey === 'settings/edit-profile',
+      onPress: () => router.replace('/settings'),
+      disabled: false
+    },
+    {
+      key: 'subscription',
+      label: t('topNavSubscription'),
+      active: routeKey === 'settings/subscription',
+      onPress: () => router.replace('/settings/subscription'),
+      disabled: false
+    }
+  ];
 
   const toggleAccountMenu = () => {
     setIsAccountMenuOpen((current) => !current);
@@ -133,7 +179,36 @@ export default function RootLayout() {
               headerStyle: { backgroundColor: theme.colors.background },
               headerTintColor: theme.colors.textPrimary,
               contentStyle: { backgroundColor: theme.colors.background },
-              headerTitleAlign: 'left',
+              headerTitleAlign: showWebTopNav ? 'center' : 'left',
+              headerTitle: showWebTopNav
+                ? () => (
+                    <View style={styles.webTopNav} testID="web-top-nav">
+                      {webTopNavItems.map((item) => (
+                        <Pressable
+                          key={item.key}
+                          onPress={item.onPress}
+                          disabled={item.disabled}
+                          style={[
+                            styles.webTopNavItem,
+                            item.active ? styles.webTopNavItemActive : null,
+                            item.disabled ? styles.webTopNavItemDisabled : null
+                          ]}
+                          testID={`web-top-nav-${item.key}`}
+                        >
+                          <Text
+                            style={[
+                              styles.webTopNavItemLabel,
+                              item.active ? styles.webTopNavItemLabelActive : null,
+                              item.disabled ? styles.webTopNavItemLabelDisabled : null
+                            ]}
+                          >
+                            {item.label}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )
+                : undefined,
               headerLeft: () =>
                 showAccountMenu ? (
                   <Pressable
@@ -224,6 +299,37 @@ const styles = StyleSheet.create({
   headerBrandButton: {
     marginRight: theme.spacing.sm,
     paddingVertical: 2
+  },
+  webTopNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs
+  },
+  webTopNavItem: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSunken,
+    paddingHorizontal: 10,
+    paddingVertical: 6
+  },
+  webTopNavItemActive: {
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.surfaceButton
+  },
+  webTopNavItemDisabled: {
+    opacity: 0.4
+  },
+  webTopNavItemLabel: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  webTopNavItemLabelActive: {
+    color: theme.colors.textPrimary
+  },
+  webTopNavItemLabelDisabled: {
+    color: theme.colors.textDisabled
   },
   menuBar: {
     width: 16,
