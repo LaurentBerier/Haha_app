@@ -44,6 +44,11 @@ export default function RootLayout() {
     router.push(route);
   };
 
+  const navigateHome = () => {
+    closeAccountMenu();
+    router.replace('/');
+  };
+
   useEffect(() => {
     if (!hasHydrated || authStatus === 'loading') {
       return;
@@ -93,7 +98,17 @@ export default function RootLayout() {
               headerTintColor: theme.colors.textPrimary,
               contentStyle: { backgroundColor: theme.colors.background },
               headerTitleAlign: 'left',
-              headerTitle: ({ children }) => <BrandMark compact title={typeof children === 'string' ? children : undefined} />,
+              headerLeft: () =>
+                showAccountMenu ? (
+                  <Pressable
+                    onPress={navigateHome}
+                    style={styles.headerBrandButton}
+                    accessibilityRole="button"
+                    testID="header-home-button"
+                  >
+                    <BrandMark compact />
+                  </Pressable>
+                ) : null,
               headerRight: () =>
                 showAccountMenu ? (
                   <Pressable
@@ -159,6 +174,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 3
+  },
+  headerBrandButton: {
+    marginRight: theme.spacing.sm,
+    paddingVertical: 2
   },
   menuBar: {
     width: 16,

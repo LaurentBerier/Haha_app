@@ -2,7 +2,6 @@ import { router } from 'expo-router';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { ArtistCard } from '../components/artist/ArtistCard';
 import { AmbientGlow } from '../components/common/AmbientGlow';
-import { BrandMark } from '../components/common/BrandMark';
 import { useArtist } from '../hooks/useArtist';
 import { theme } from '../theme';
 
@@ -21,9 +20,6 @@ export default function HomeScreen() {
     <View style={styles.screen}>
       <AmbientGlow variant="home" />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} testID="home-screen">
-        <View style={styles.brandBlock}>
-          <BrandMark />
-        </View>
         <View style={styles.list}>
           {artists.map((artist) => (
             <ArtistCard
@@ -54,9 +50,6 @@ const styles = StyleSheet.create({
     paddingTop: theme.spacing.md,
     paddingBottom: theme.spacing.xl,
     justifyContent: 'flex-start'
-  },
-  brandBlock: {
-    marginBottom: theme.spacing.lg
   },
   list: {
     gap: theme.spacing.md,

@@ -1,7 +1,6 @@
 import { memo } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
-import logoFull from '../../../assets/branding/logo-neon.png';
-import logoIcon from '../../../assets/branding/logo-neon-icon.png';
+import logoMark from '../../../assets/branding/logo-neon_NoText_BIG.png';
 import { theme } from '../../theme';
 
 interface BrandMarkProps {
@@ -12,18 +11,12 @@ interface BrandMarkProps {
 function BrandMarkBase({ compact = false, title }: BrandMarkProps) {
   return (
     <View style={[styles.row, compact ? styles.rowCompact : styles.rowRegular]}>
-      {compact ? (
-        <>
-          <Image source={logoIcon} style={styles.logoCompact} resizeMode="cover" />
-          {title ? (
-            <Text style={styles.title} numberOfLines={1}>
-              {title}
-            </Text>
-          ) : null}
-        </>
-      ) : (
-        <Image source={logoFull} style={styles.logoRegular} resizeMode="contain" />
-      )}
+      <Image source={logoMark} style={compact ? styles.logoCompact : styles.logoRegular} resizeMode="contain" />
+      {compact && title ? (
+        <Text style={styles.title} numberOfLines={1}>
+          {title}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -42,15 +35,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   logoCompact: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: theme.colors.border
+    width: 30,
+    height: 30
   },
   logoRegular: {
-    width: '100%',
-    maxWidth: 320,
+    width: 132,
+    height: 132,
     aspectRatio: 1
   },
   title: {

@@ -60,5 +60,97 @@ export const artists: Artist[] = [
       ],
       guardrails: cathyGuardrails
     }
+  },
+  {
+    id: ARTIST_IDS.MYSTERY_ARTIST_ONE,
+    name: '???',
+    slug: ARTIST_IDS.MYSTERY_ARTIST_ONE,
+    avatarUrl: '?',
+    supportedLanguages: ['fr-CA', 'en-CA'],
+    defaultLanguage: 'fr-CA',
+    supportedModeIds: [],
+    isPremium: true,
+    voiceEnabled: false,
+    pricingConfig: {
+      monthlyPriceCents: 999,
+      yearlyPriceCents: 9999,
+      currency: 'CAD'
+    },
+    personalityProfile: {
+      toneMetrics: {
+        aggression: 5,
+        warmth: 5,
+        sarcasm: 5,
+        absurdity: 5,
+        vulgarityTolerance: 5,
+        judgmentIntensity: 5,
+        selfDeprecation: 5
+      },
+      humorMechanics: {
+        escalationStyle: 'Inconnu',
+        punchlineDelay: 'Inconnu',
+        repetitionUsage: 'Inconnu',
+        exaggerationLevel: 5,
+        contrastHumor: 'Inconnu',
+        audienceConfrontation: 'Inconnu'
+      },
+      speechPattern: {
+        averageSentenceLength: 'Inconnu',
+        interruptionStyle: false,
+        rhythmStyle: 'Inconnu',
+        regionalisms: 'Inconnu'
+      },
+      thematicAnchors: ['A venir'],
+      guardrails: {
+        hardNo: [],
+        softZones: []
+      }
+    }
+  },
+  {
+    id: ARTIST_IDS.MYSTERY_ARTIST_TWO,
+    name: '????',
+    slug: ARTIST_IDS.MYSTERY_ARTIST_TWO,
+    avatarUrl: '?',
+    supportedLanguages: ['fr-CA', 'en-CA'],
+    defaultLanguage: 'fr-CA',
+    supportedModeIds: [],
+    isPremium: true,
+    voiceEnabled: false,
+    pricingConfig: {
+      monthlyPriceCents: 999,
+      yearlyPriceCents: 9999,
+      currency: 'CAD'
+    },
+    personalityProfile: {
+      toneMetrics: {
+        aggression: 5,
+        warmth: 5,
+        sarcasm: 5,
+        absurdity: 5,
+        vulgarityTolerance: 5,
+        judgmentIntensity: 5,
+        selfDeprecation: 5
+      },
+      humorMechanics: {
+        escalationStyle: 'Inconnu',
+        punchlineDelay: 'Inconnu',
+        repetitionUsage: 'Inconnu',
+        exaggerationLevel: 5,
+        contrastHumor: 'Inconnu',
+        audienceConfrontation: 'Inconnu'
+      },
+      speechPattern: {
+        averageSentenceLength: 'Inconnu',
+        interruptionStyle: false,
+        rhythmStyle: 'Inconnu',
+        regionalisms: 'Inconnu'
+      },
+      thematicAnchors: ['A venir'],
+      guardrails: {
+        hardNo: [],
+        softZones: []
+      }
+    }
   }
 ];

@@ -5,7 +5,9 @@ export const MAX_MESSAGE_LENGTH = 2000;
 export const MAX_IMAGE_UPLOAD_BYTES = 3_000_000;
 
 export const ARTIST_IDS = {
-  CATHY_GAUTHIER: 'cathy-gauthier'
+  CATHY_GAUTHIER: 'cathy-gauthier',
+  MYSTERY_ARTIST_ONE: 'mystery-artist-one',
+  MYSTERY_ARTIST_TWO: 'mystery-artist-two'
 } as const;
 
 export const MODE_IDS = {
