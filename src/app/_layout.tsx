@@ -1,7 +1,7 @@
 import { Stack, router, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { BrandMark } from '../components/common/BrandMark';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
@@ -133,7 +133,7 @@ export default function RootLayout() {
             <Stack.Screen name="settings/edit-profile" options={{ title: t('settingsEditProfile') }} />
             <Stack.Screen name="settings/subscription" options={{ title: t('settingsSubscription') }} />
           </Stack>
-          <Modal transparent visible={isAccountMenuOpen} animationType="fade" onRequestClose={closeAccountMenu}>
+          {isAccountMenuOpen ? (
             <View style={styles.menuOverlay}>
               <Pressable style={styles.menuBackdrop} onPress={closeAccountMenu} testID="account-menu-backdrop" />
               <View style={styles.menuPanel}>
@@ -150,7 +150,7 @@ export default function RootLayout() {
                 ))}
               </View>
             </View>
-          </Modal>
+          ) : null}
         </>
       )}
     </ErrorBoundary>
