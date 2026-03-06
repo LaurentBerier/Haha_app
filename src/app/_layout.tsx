@@ -57,7 +57,9 @@ export default function RootLayout() {
 
   const navigateFromAccountMenu = (route: AccountMenuRoute) => {
     closeAccountMenu();
-    router.push(route);
+    requestAnimationFrame(() => {
+      router.replace(route);
+    });
   };
 
   const navigateHome = () => {
@@ -247,7 +249,8 @@ const styles = StyleSheet.create({
   },
   menuBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'transparent'
+    backgroundColor: 'transparent',
+    zIndex: 1
   },
   menuPanel: {
     position: 'absolute',
@@ -264,7 +267,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 14,
     shadowOffset: { width: 0, height: 8 },
-    elevation: 10
+    elevation: 10,
+    zIndex: 2
   },
   menuTitle: {
     color: theme.colors.textMuted,
