@@ -1,13 +1,14 @@
 import { Stack, router, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import { BrandMark } from '../components/common/BrandMark';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useAuth } from '../hooks/useAuth';
 import { useStorePersistence } from '../hooks/useStorePersistence';
 import { t } from '../i18n';
+import type { AppLanguage, DisplayMode } from '../store/slices/uiSlice';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme';
 
@@ -16,8 +17,13 @@ type AccountMenuRoute = '/settings' | '/settings/edit-profile' | '/settings/subs
 export default function RootLayout() {
   useStorePersistence();
   const hasHydrated = useStore((state) => state.hasHydrated);
+  const language = useStore((state) => state.language);
+  const displayMode = useStore((state) => state.displayMode);
+  const setLanguagePreference = useStore((state) => state.setLanguagePreference);
+  const setDisplayMode = useStore((state) => state.setDisplayMode);
   const { authStatus, isAuthenticated, userProfile } = useAuth();
   const segments = useSegments();
+  const systemColorScheme = useColorScheme();
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const inAuthGroup = segments[0] === '(auth)';
   const isOnboardingRoute = segments[1] === 'onboarding';
@@ -30,6 +36,16 @@ export default function RootLayout() {
     { label: t('settingsEditProfile'), route: '/settings/edit-profile' as const },
     { label: t('settingsSubscription'), route: '/settings/subscription' as const }
   ];
+  const languageOptions: Array<{ value: AppLanguage; label: string }> = [
+    { value: 'fr-CA', label: t('settingsLanguageFr') },
+    { value: 'en-CA', label: t('settingsLanguageEn') }
+  ];
+  const displayModeOptions: Array<{ value: DisplayMode; label: string }> = [
+    { value: 'dark', label: t('settingsDisplayDark') },
+    { value: 'light', label: t('settingsDisplayLight') },
+    { value: 'system', label: t('settingsDisplaySystem') }
+  ];
+  const effectiveDisplayMode = displayMode === 'system' ? (systemColorScheme === 'light' ? 'light' : 'dark') : displayMode;
 
   const toggleAccountMenu = () => {
     setIsAccountMenuOpen((current) => !current);
@@ -91,8 +107,9 @@ export default function RootLayout() {
         </View>
       ) : (
         <>
-          <StatusBar style="light" />
+          <StatusBar style={effectiveDisplayMode === 'light' ? 'dark' : 'light'} />
           <Stack
+            key={language}
             screenOptions={{
               headerStyle: { backgroundColor: theme.colors.background },
               headerTintColor: theme.colors.textPrimary,
@@ -148,6 +165,45 @@ export default function RootLayout() {
                     <Text style={styles.menuItemLabel}>{item.label}</Text>
                   </Pressable>
                 ))}
+                <View style={styles.menuSection}>
+                  <Text style={styles.menuSectionTitle}>{t('settingsLanguage')}</Text>
+                  <View style={styles.choiceRow}>
+                    {languageOptions.map((option) => (
+                      <Pressable
+                        key={option.value}
+                        onPress={() => setLanguagePreference(option.value)}
+                        style={[styles.choiceChip, language === option.value ? styles.choiceChipActive : null]}
+                        testID={`account-menu-language-${option.value}`}
+                      >
+                        <Text style={[styles.choiceChipLabel, language === option.value ? styles.choiceChipLabelActive : null]}>
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+                <View style={styles.menuSection}>
+                  <Text style={styles.menuSectionTitle}>{t('settingsDisplayMode')}</Text>
+                  <View style={styles.choiceRow}>
+                    {displayModeOptions.map((option) => (
+                      <Pressable
+                        key={option.value}
+                        onPress={() => setDisplayMode(option.value)}
+                        style={[styles.choiceChip, displayMode === option.value ? styles.choiceChipActive : null]}
+                        testID={`account-menu-display-${option.value}`}
+                      >
+                        <Text
+                          style={[
+                            styles.choiceChipLabel,
+                            displayMode === option.value ? styles.choiceChipLabelActive : null
+                          ]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
               </View>
             </View>
           ) : null}
@@ -186,17 +242,18 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.textPrimary
   },
   menuOverlay: {
-    flex: 1,
-    justifyContent: 'flex-start',
-    alignItems: 'flex-end'
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 40
   },
   menuBackdrop: {
-    ...StyleSheet.absoluteFillObject
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'transparent'
   },
   menuPanel: {
-    marginTop: Platform.select({ ios: 96, default: 86 }),
-    marginRight: theme.spacing.md,
-    minWidth: 230,
+    position: 'absolute',
+    top: Platform.select({ ios: 96, default: 86 }),
+    right: theme.spacing.md,
+    minWidth: 300,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -229,5 +286,43 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
     fontSize: 14,
     fontWeight: '600'
+  },
+  menuSection: {
+    marginTop: theme.spacing.xs,
+    gap: 6
+  },
+  menuSectionTitle: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    paddingHorizontal: theme.spacing.sm
+  },
+  choiceRow: {
+    flexDirection: 'row',
+    gap: theme.spacing.xs
+  },
+  choiceChip: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSunken,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: theme.spacing.xs
+  },
+  choiceChipActive: {
+    borderColor: theme.colors.accent,
+    backgroundColor: theme.colors.surfaceButton
+  },
+  choiceChipLabel: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  choiceChipLabelActive: {
+    color: theme.colors.textPrimary
   }
 });

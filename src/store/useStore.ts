@@ -1,5 +1,7 @@
-import { create } from 'zustand';
+/* eslint-disable-next-line @typescript-eslint/no-require-imports */
+const { create } = require('zustand') as typeof import('zustand');
 import { MODE_IDS } from '../config/constants';
+import { setLanguage as setI18nLanguage } from '../i18n';
 import type { Conversation } from '../models/Conversation';
 import type { PersistedStoreSnapshot } from '../models/Persistence';
 import type { Message, MessagePage } from '../models/Message';
@@ -85,13 +87,25 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createUsageSlice(...a),
   ...createUiSlice(...a),
   hasHydrated: false,
-  hydrateStore: (snapshot) =>
+  hydrateStore: (snapshot) => {
+    const current = a[1]();
+    const nextLanguage = snapshot.preferences?.language === 'en-CA' ? 'en-CA' : 'fr-CA';
+    const nextDisplayMode =
+      snapshot.preferences?.displayMode === 'light' || snapshot.preferences?.displayMode === 'system'
+        ? snapshot.preferences.displayMode
+        : 'dark';
+
+    setI18nLanguage(nextLanguage);
+
     a[0]({
       selectedArtistId: snapshot.selectedArtistId,
       conversations: normalizeConversations(snapshot.conversations),
       activeConversationId: snapshot.activeConversationId,
-      messagesByConversation: normalizeMessagesByConversation(snapshot.messagesByConversation)
-    }),
+      messagesByConversation: normalizeMessagesByConversation(snapshot.messagesByConversation),
+      language: snapshot.preferences?.language ? nextLanguage : current.language,
+      displayMode: snapshot.preferences?.displayMode ? nextDisplayMode : current.displayMode
+    });
+  },
   markHydrated: () => a[0]({ hasHydrated: true })
 }));
 
@@ -100,6 +114,10 @@ export function selectPersistedSnapshot(state: StoreState): PersistedStoreSnapsh
     selectedArtistId: state.selectedArtistId,
     conversations: state.conversations,
     activeConversationId: state.activeConversationId,
-    messagesByConversation: state.messagesByConversation
+    messagesByConversation: state.messagesByConversation,
+    preferences: {
+      language: state.language,
+      displayMode: state.displayMode
+    }
   };
 }

@@ -10,6 +10,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function isValidPreferences(value: unknown): boolean {
+  if (value === undefined) {
+    return true;
+  }
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const language = value.language;
+  const displayMode = value.displayMode;
+  const hasValidLanguage =
+    language === undefined || language === 'fr-CA' || language === 'en-CA' || language === 'fr-FR' || language === 'en';
+  const hasValidDisplayMode = displayMode === undefined || displayMode === 'dark' || displayMode === 'light' || displayMode === 'system';
+  return hasValidLanguage && hasValidDisplayMode;
+}
+
 function isValidSnapshot(data: unknown): data is PersistedStoreSnapshot {
   if (!isRecord(data)) {
     return false;
@@ -19,7 +35,8 @@ function isValidSnapshot(data: unknown): data is PersistedStoreSnapshot {
     (typeof data.selectedArtistId === 'string' || data.selectedArtistId === null) &&
     isRecord(data.conversations) &&
     (typeof data.activeConversationId === 'string' || data.activeConversationId === null) &&
-    isRecord(data.messagesByConversation)
+    isRecord(data.messagesByConversation) &&
+    isValidPreferences(data.preferences)
   );
 }
 
