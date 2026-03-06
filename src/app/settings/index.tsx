@@ -2,7 +2,6 @@ import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import { SettingsRow } from '../../components/common/SettingsRow';
-import { useAuth } from '../../hooks/useAuth';
 import { t } from '../../i18n';
 import { deleteAccount, signOut } from '../../services/authService';
 import type { AppLanguage, DisplayMode } from '../../store/slices/uiSlice';
@@ -37,7 +36,8 @@ function initialsFromIdentity(value: string | null | undefined): string {
 }
 
 export default function SettingsScreen() {
-  const { user, session } = useAuth();
+  const session = useStore((state) => state.session);
+  const user = session?.user ?? null;
   const clearSession = useStore((state) => state.clearSession);
   const language = useStore((state) => state.language);
   const displayMode = useStore((state) => state.displayMode);

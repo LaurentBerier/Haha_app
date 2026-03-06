@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useAuth } from '../../hooks/useAuth';
 import { t } from '../../i18n';
 import {
   getBillingProviderOptions,
@@ -8,6 +7,7 @@ import {
   type BillingProviderId,
   type BillingProviderOption
 } from '../../services/subscriptionService';
+import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 
 function getAccountTypeLabel(accountType: string | null | undefined): string {
@@ -24,7 +24,8 @@ function getAccountTypeLabel(accountType: string | null | undefined): string {
 }
 
 export default function SubscriptionScreen() {
-  const { user } = useAuth();
+  const session = useStore((state) => state.session);
+  const user = session?.user ?? null;
   const [isOpeningProvider, setIsOpeningProvider] = useState<BillingProviderId | null>(null);
   const accountTypeLabel = getAccountTypeLabel(user?.accountType);
   const providerOptions = useMemo(() => getBillingProviderOptions(), []);
