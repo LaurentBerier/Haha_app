@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, StyleSheet, Text, View } from 'react-native';
 import logoMark from '../../../assets/branding/logo-neon_NoText_BIG.png';
 import { theme } from '../../theme';
 
@@ -13,7 +13,7 @@ function BrandMarkBase({ compact = false, title }: BrandMarkProps) {
     <View style={[styles.row, compact ? styles.rowCompact : styles.rowRegular]}>
       <Image source={logoMark} style={compact ? styles.logoCompact : styles.logoRegular} resizeMode="contain" />
       {compact && title ? (
-        <Text style={styles.title} numberOfLines={1}>
+        <Text style={[styles.title, Platform.OS === 'web' ? styles.titleWeb : null]} numberOfLines={1}>
           {title}
         </Text>
       ) : null}
@@ -29,14 +29,14 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   rowCompact: {
-    gap: 7
+    gap: 10
   },
   rowRegular: {
     justifyContent: 'center'
   },
   logoCompact: {
-    width: 30,
-    height: 30
+    width: 32,
+    height: 32
   },
   logoRegular: {
     width: 132,
@@ -45,9 +45,12 @@ const styles = StyleSheet.create({
   },
   title: {
     marginLeft: 4,
-    color: theme.colors.textSecondary,
-    fontSize: 12,
+    color: theme.colors.textPrimary,
+    fontSize: 19,
     fontWeight: '700',
-    textTransform: 'uppercase'
+    letterSpacing: 0.2
+  },
+  titleWeb: {
+    fontSize: 23
   }
 });

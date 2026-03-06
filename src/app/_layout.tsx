@@ -130,10 +130,14 @@ export default function RootLayout() {
           <Stack
             key={language}
             screenOptions={{
-              headerStyle: { backgroundColor: theme.colors.background },
+              headerStyle: {
+                backgroundColor: theme.colors.background
+              },
               headerTintColor: theme.colors.textPrimary,
               contentStyle: { backgroundColor: theme.colors.background },
               headerTitleAlign: 'left',
+              headerTitle: showAccountMenu ? '' : undefined,
+              headerShadowVisible: false,
               headerLeft: () =>
                 showAccountMenu ? (
                   <Pressable
@@ -142,7 +146,7 @@ export default function RootLayout() {
                     accessibilityRole="button"
                     testID="header-home-button"
                   >
-                    <BrandMark compact />
+                    <BrandMark compact title={t('appName')} />
                   </Pressable>
                 ) : null,
               headerRight: () =>
@@ -214,16 +218,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.surfaceButton,
     backgroundColor: theme.colors.surfaceSunken,
-    borderRadius: 10,
-    width: 38,
-    height: 32,
+    borderRadius: 12,
+    width: 44,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 3
+    gap: 4
   },
   headerBrandButton: {
     marginRight: theme.spacing.sm,
-    paddingVertical: 2
+    paddingVertical: 4
   },
   menuBar: {
     width: 16,
@@ -232,7 +236,11 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.textPrimary
   },
   menuOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: Platform.OS === 'web' ? 'fixed' : 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     zIndex: 40
   },
   menuBackdrop: {
@@ -241,8 +249,8 @@ const styles = StyleSheet.create({
     zIndex: 1
   },
   menuPanel: {
-    position: 'absolute',
-    top: Platform.select({ ios: 96, default: 86 }),
+    position: Platform.OS === 'web' ? 'fixed' : 'absolute',
+    top: Platform.OS === 'web' ? 76 : Platform.select({ ios: 96, default: 86 }),
     right: theme.spacing.md,
     minWidth: 230,
     borderRadius: 14,
