@@ -34,6 +34,13 @@ Checklist in Supabase `Authentication -> URL Configuration`:
 
 Also ensure the email template uses `{{ .ConfirmationURL }}`.
 
+User guidance:
+
+- After signup, users should be told to check spam/junk for the Ha-Ha.ai confirmation email.
+- If callback opens with an expired/invalid link, the app now shows recovery actions:
+  - `Se connecter pour reprendre`
+  - `Recommencer l'inscription`
+
 ## 3) Password reset link opens but does not reach reset screen
 
 Expected mobile flow:
@@ -235,3 +242,23 @@ Mitigation:
 
 - keep a stable dedicated domain for web app
 - avoid unnecessary domain changes (`www` vs non-`www`, preview vs production)
+
+## 17) Stuck after interrupting profile creation and re-clicking confirmation email
+
+Symptom:
+
+- Callback page shows `Validation du compte en cours...`
+- Then displays `Email link is invalid or has expired`
+
+Expected behavior:
+
+- This no longer blocks account creation flow.
+- Callback screen offers:
+  - sign in to resume onboarding/profile creation
+  - restart signup to receive a fresh confirmation email
+
+If still blocked:
+
+1. Open `/(auth)/login` and sign in with the same email/password.
+2. If password unknown, use `/(auth)/forgot-password`.
+3. If signup was never finalized, restart from `/(auth)/signup` and use the newest email link only.

@@ -139,6 +139,26 @@ create policy "payment_events: service-role only"
   using (false)
   with check (false);
 
+-- Usage event ledger for server-side quota/rate limiting (Claude proxy).
+create table if not exists public.usage_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  endpoint text not null,
+  request_id text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists usage_events_user_endpoint_created_at_idx
+  on public.usage_events (user_id, endpoint, created_at desc);
+
+alter table public.usage_events enable row level security;
+drop policy if exists "usage_events: service-role only" on public.usage_events;
+create policy "usage_events: service-role only"
+  on public.usage_events
+  for all
+  using (false)
+  with check (false);
+
 -- Manual admin promotion helper.
 -- update public.profiles set account_type_id = 'admin' where id = '<user-uuid>';
 

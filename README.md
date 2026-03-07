@@ -9,7 +9,8 @@ Implemented in this repository:
 - Mobile app (`src/`) with Expo Router, Zustand, strict TypeScript.
 - Supabase auth integration (email/password + Apple Sign-In).
 - Auth gate and onboarding flow in app routing.
-- Settings flow (profile edit, subscription stub, sign out, account deletion).
+- Settings flow (profile edit, language/display preferences, subscription provider scaffold, sign out, account deletion).
+- Unified app-style top bar (logo + hamburger menu) across mobile/web app screens.
 - User profile model and profile personalization injection in system prompts.
 - Claude proxy (`api/claude.js`) with JWT validation via Supabase service role.
 - Admin endpoint (`api/admin-account-type.js`) for account type assignment.
@@ -51,14 +52,19 @@ cp .env.example .env
 
 - `EXPO_PUBLIC_USE_MOCK_LLM`
 - `EXPO_PUBLIC_CLAUDE_PROXY_URL`
+- `EXPO_PUBLIC_API_BASE_URL` (recommended for non-Claude backend endpoints such as `/delete-account`)
 - `EXPO_PUBLIC_ANTHROPIC_MODEL`
 - `EXPO_PUBLIC_SUPABASE_URL`
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL`
+- `EXPO_PUBLIC_PAYPAL_CHECKOUT_URL`
+- `EXPO_PUBLIC_APPLE_PAY_CHECKOUT_URL`
 
 Notes:
 
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY` should use Supabase publishable/anon public key.
 - These are public client vars; they are not server secrets.
+- `EXPO_PUBLIC_USE_MOCK_LLM` defaults to `false` and should stay disabled in production.
 - Current default Claude model: `claude-sonnet-4-6`.
 
 ### Vercel backend vars
@@ -69,6 +75,9 @@ Notes:
 - `SUPABASE_SERVICE_ROLE_KEY` (server-only, required for JWT/user validation)
 - `REVENUECAT_WEBHOOK_SECRET` (required if using `api/payment-webhook.js`; endpoint fails closed when missing)
 - `ALLOWED_ORIGINS` (required for browser callers that send `Origin`; comma-separated allowlist)
+- `CLAUDE_RATE_LIMIT_MAX_REQUESTS` (optional, default `30`, per user)
+- `CLAUDE_RATE_LIMIT_WINDOW_MS` (optional, default `60000`)
+- `ANTHROPIC_FETCH_TIMEOUT_MS` (optional, default `25000`)
 
 ## Supabase Setup
 
@@ -110,8 +119,11 @@ Behavior:
 - Unauthenticated users are redirected to login.
 - Authenticated users without completed/skipped onboarding are redirected to onboarding.
 - Onboarding completion writes profile data to Supabase.
+- Signup confirmation screen instructs users to check spam/junk for Ha-Ha.ai confirmation emails.
 - Password recovery links (`flow=recovery`) are handled by `/auth/callback` and routed to `/(auth)/reset-password`.
+- Expired/invalid callback links now show a recovery screen with explicit actions to either sign in (resume onboarding) or restart signup.
 - `Paramètres` (`/settings`) stays reachable from authenticated screens via header shortcut.
+- Header logo returns to artist selection (`/`) and hamburger menu includes account routes plus auth action (sign in/sign up/sign out depending on state).
 
 Supabase URL configuration should include:
 
@@ -154,6 +166,8 @@ Security:
 - Requires `Authorization: Bearer <access_token>`
 - Validates token using Supabase admin client
 - Rejects invalid/missing token with `401`
+- Enforces server-side model whitelist (only approved models are accepted)
+- Enforces server-side per-user rate limit using `public.usage_events`
 - Browser-origin requests are fail-closed when `ALLOWED_ORIGINS` is missing or origin is not allowlisted
 - Adds `X-Request-Id` response header for log correlation
 - Error envelope: `{ "error": { "message": string, "code": string, "requestId": string } }`
@@ -272,3 +286,4 @@ This is required so function dependencies (for example `@supabase/supabase-js`) 
 - `docs/phase1-status.md`
 - `docs/phase2-status.md`
 - `docs/troubleshooting.md`
+- `ha-ha-ai-build-prompt.improved.md`

@@ -18,6 +18,7 @@ Supabase is the source of truth for:
 ### Routing (`src/app`)
 
 - Root layout (`_layout.tsx`): hydration, error boundary, auth/onboarding gate
+- Root layout also owns the global app top bar (brand logo left, hamburger menu right) and account menu overlay for authenticated users.
 - Auth routes:
   - `/(auth)/login`
   - `/(auth)/signup`
@@ -25,7 +26,7 @@ Supabase is the source of truth for:
   - `/(auth)/reset-password`
   - `/(auth)/onboarding`
 - Auth callback route:
-  - `/auth/callback` (handles signup + recovery links)
+  - `/auth/callback` (handles signup + recovery links, detects expired/invalid links, and renders resume/restart actions)
 - Main app routes:
   - `/`
   - `/mode-select/[artistId]`
@@ -67,6 +68,7 @@ Active slices:
 - `profileService.ts`: fetch/update profile, onboarding complete/skip
 - `claudeApiService.ts`: proxy calls with Bearer token
 - `personalityEngineService.ts`: prompt generation + profile personalization
+- `subscriptionService.ts`: subscription provider option registry + checkout URL launcher (Stripe/PayPal/Apple)
 - `persistenceService.ts`: local cache persistence (conversations/messages/ui selections)
 
 ### Hooks (`src/hooks`)
@@ -81,8 +83,11 @@ Active slices:
 
 - CORS allowlist handling via shared `api/_utils.js` (`ALLOWED_ORIGINS`)
 - Bearer token validation via Supabase admin API
+- strict server-side model whitelist
+- server-side per-user rate limiting backed by `public.usage_events`
 - payload validation
 - forwards request to Anthropic API
+- upstream timeout protection with `AbortController`
 - `X-Request-Id` response header for tracing
 - standardized error payload `{ error: { message, code, requestId } }`
 
@@ -124,6 +129,14 @@ Active slices:
 
 `AuthSession` wraps `user`, access/refresh token, expiry.
 
+Signup confirmation UX:
+
+- after signup, app shows explicit "check your email" confirmation text
+- confirmation screen reminds users to check spam/junk for Ha-Ha.ai email
+- callback route handles stale links without dead-end loops by offering:
+  - sign in to resume onboarding
+  - restart signup
+
 ### Profile (`src/models/UserProfile.ts`)
 
 `UserProfile` fields:
@@ -148,7 +161,7 @@ Built-in tiers:
 - `premium`
 - `admin`
 
-`subscriptionSlice` evaluates access via rank/permissions from this registry.
+`subscriptionSlice` evaluates access via `session.user.accountType` (authoritative JWT claim) and rank/permissions from this registry.
 
 ## Persistence Strategy
 
@@ -184,7 +197,7 @@ Vercel functions require project dependencies at runtime; `.vercelignore` must i
 
 ## Cross-Repo Web Integration
 
-The website repo (`ha-ha.ai`) keeps the landing/auth experience and bridges `/app*` routes to this Expo app's web build URL (configured there via `VITE_HAHA_APP_WEB_URL`).
+The website repo (`ha-ha.ai`) keeps the marketing landing page and bridges `/app*` routes to this Expo app's web build URL (configured there via `VITE_HAHA_APP_WEB_URL`).
 
 Web bridge mapping:
 

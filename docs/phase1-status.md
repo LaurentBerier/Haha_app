@@ -6,7 +6,7 @@
 - Original MVP scope (single-artist chat) delivered
 - Current execution tracking moved to `docs/phase2-status.md`
 
-## Current State (2026-03-04)
+## Current State (2026-03-07)
 
 Implemented in this repository:
 
@@ -17,12 +17,16 @@ Implemented in this repository:
   - auth state sync with store
 - Complete auth route set:
   - login, signup, forgot-password, reset-password, onboarding, callback
+- Signup confirmation UX now explicitly instructs users to check spam/junk for Ha-Ha.ai confirmation email
+- Auth callback now handles expired/invalid links with recovery actions (resume via login or restart signup)
 - Onboarding persisted to `public.profiles`
 - Settings flows:
   - edit profile
-  - subscription placeholder
+  - language and display preferences
+  - subscription provider scaffold (Stripe/PayPal/Apple checkout URLs)
   - sign out
   - account deletion
+- Global app top bar/hamburger UI is unified across web and mobile app routes
 - Claude proxy bearer-token enforcement with Supabase validation
 - Account type infrastructure:
   - extensible tier model (`free`, `regular`, `premium`, `admin`, custom)

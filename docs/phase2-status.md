@@ -1,6 +1,6 @@
 # Phase 2 Status (Mobile + API)
 
-Last updated: **2026-03-05**
+Last updated: **2026-03-07**
 
 ## Scope
 
@@ -23,12 +23,15 @@ Core targets:
   - reset password
 - Apple Sign-In support
 - auth callback handling for signup and recovery flows
+- auth callback recovery UX for expired/invalid links (resume via login or restart signup)
+- signup confirmation copy includes spam/junk reminder for Ha-Ha.ai email delivery
 - auth gate + onboarding redirect in root routing
 - onboarding data persisted to `public.profiles`
-- global header shortcut keeps settings/user-space reachable on authenticated app screens
+- global app-style header (brand logo + hamburger) keeps settings/user-space reachable on authenticated app screens (web + mobile)
 - settings flows:
   - edit profile
-  - subscription placeholder
+  - language + display preferences
+  - subscription provider scaffold (Stripe, PayPal, Apple checkout links)
   - sign out
   - delete account
 - website integration: `ha-ha.ai` now bridges authenticated `/app*` routes to this Expo app's web build
@@ -80,11 +83,12 @@ npm run test:unit
 Manual checks:
 
 1. Sign up -> confirmation email -> callback -> onboarding.
-2. Forgot password -> recovery email -> reset password -> login succeeds.
-3. Unauthenticated user is redirected to login.
-4. Authenticated user without onboarding is redirected to onboarding.
-5. `POST /api/claude` returns `401` without bearer token.
-6. `npm run deploy:web` publishes a working web app (no white-screen bootstrap crash).
+2. Re-open an old/consumed confirmation link -> callback shows recovery actions (login or restart signup) instead of dead-end loop.
+3. Forgot password -> recovery email -> reset password -> login succeeds.
+4. Unauthenticated user is redirected to login.
+5. Authenticated user without onboarding is redirected to onboarding.
+6. `POST /api/claude` returns `401` without bearer token.
+7. `npm run deploy:web` publishes a working web app (no white-screen bootstrap crash).
 
 ## Dependencies and Config
 
@@ -93,6 +97,10 @@ Required app env:
 - `EXPO_PUBLIC_SUPABASE_URL`
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 - `EXPO_PUBLIC_CLAUDE_PROXY_URL`
+- `EXPO_PUBLIC_API_BASE_URL` (recommended for non-Claude API routes like `/delete-account`)
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL` (optional, enables Stripe CTA in subscription screen)
+- `EXPO_PUBLIC_PAYPAL_CHECKOUT_URL` (optional, enables PayPal CTA in subscription screen)
+- `EXPO_PUBLIC_APPLE_PAY_CHECKOUT_URL` (optional, enables Apple Pay CTA in subscription screen)
 
 Required backend env:
 
