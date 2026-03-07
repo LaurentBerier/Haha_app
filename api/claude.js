@@ -13,8 +13,8 @@ const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 30;
 const DEFAULT_MONTHLY_CAPS = {
   free: 15,
-  regular: 200,
-  premium: 250
+  regular: 45,
+  premium: 110
   // admin intentionally omitted => unlimited
 };
 const DEFAULT_MAX_TOKENS_BY_TIER = {

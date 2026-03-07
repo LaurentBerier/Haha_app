@@ -41,7 +41,7 @@ describe('usageSlice', () => {
 
     slice.hydrateQuota(42, 'regular');
 
-    expect(slice.quota.messagesCap).toBe(200);
+    expect(slice.quota.messagesCap).toBe(45);
     expect(slice.quota.messagesUsed).toBe(42);
   });
 });

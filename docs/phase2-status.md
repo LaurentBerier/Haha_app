@@ -31,9 +31,10 @@ Core targets:
 - settings flows:
   - edit profile
   - language + display preferences
-  - subscription provider scaffold (Stripe, PayPal, Apple checkout links)
+  - subscription provider scaffold (Stripe regular/premium links, PayPal, Apple checkout links)
   - sign out
   - delete account
+- paid-tier voice direction set to ElevenLabs (strategy-level decision)
 - website integration: `ha-ha.ai` now bridges authenticated `/app*` routes to this Expo app's web build
 - web deployment pipeline stabilized:
   - `npm run export:web` applies module-script compatibility patch
@@ -98,7 +99,9 @@ Required app env:
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 - `EXPO_PUBLIC_CLAUDE_PROXY_URL`
 - `EXPO_PUBLIC_API_BASE_URL` (recommended for non-Claude API routes like `/delete-account`)
-- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL` (optional, enables Stripe CTA in subscription screen)
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL` (legacy fallback)
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_REGULAR` (optional, Stripe regular plan link)
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_PREMIUM` (optional, Stripe premium plan link)
 - `EXPO_PUBLIC_PAYPAL_CHECKOUT_URL` (optional, enables PayPal CTA in subscription screen)
 - `EXPO_PUBLIC_APPLE_PAY_CHECKOUT_URL` (optional, enables Apple Pay CTA in subscription screen)
 

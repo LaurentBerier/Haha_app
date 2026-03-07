@@ -3,9 +3,11 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { t } from '../../i18n';
 import {
   getBillingProviderOptions,
+  isCheckoutConfigured,
   startSubscriptionCheckout,
   type BillingProviderId,
-  type BillingProviderOption
+  type BillingProviderOption,
+  type SubscriptionPlanId
 } from '../../services/subscriptionService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
@@ -26,7 +28,7 @@ function getAccountTypeLabel(accountType: string | null | undefined): string {
 export default function SubscriptionScreen() {
   const session = useStore((state) => state.session);
   const user = session?.user ?? null;
-  const [isOpeningProvider, setIsOpeningProvider] = useState<BillingProviderId | null>(null);
+  const [activeCheckoutKey, setActiveCheckoutKey] = useState<string | null>(null);
   const accountTypeLabel = getAccountTypeLabel(user?.accountType);
   const providerOptions = useMemo(() => getBillingProviderOptions(), []);
 
@@ -40,17 +42,21 @@ export default function SubscriptionScreen() {
     return t('settingsSubscriptionProviderApple');
   };
 
-  const handleProviderPress = async (provider: BillingProviderOption) => {
-    setIsOpeningProvider(provider.id);
+  const toCheckoutKey = (providerId: BillingProviderId, planId?: SubscriptionPlanId): string =>
+    `${providerId}:${planId ?? 'default'}`;
+
+  const handleProviderPress = async (provider: BillingProviderOption, planId?: SubscriptionPlanId) => {
+    const checkoutKey = toCheckoutKey(provider.id, planId);
+    setActiveCheckoutKey(checkoutKey);
     try {
-      const opened = await startSubscriptionCheckout(provider.id);
+      const opened = await startSubscriptionCheckout(provider.id, planId);
       if (!opened) {
         Alert.alert(t('settingsSubscriptionProviderUnavailableTitle'), t('settingsSubscriptionProviderUnavailableBody'));
       }
     } catch {
       Alert.alert(t('settingsSubscriptionCheckoutErrorTitle'), t('settingsSubscriptionCheckoutErrorBody'));
     } finally {
-      setIsOpeningProvider(null);
+      setActiveCheckoutKey(null);
     }
   };
 
@@ -80,14 +86,46 @@ export default function SubscriptionScreen() {
               </View>
             </View>
 
-            <Pressable
-              style={[styles.providerButton, isOpeningProvider === provider.id ? styles.providerButtonDisabled : null]}
-              onPress={() => void handleProviderPress(provider)}
-              disabled={isOpeningProvider !== null}
-              testID={`subscription-provider-${provider.id}-cta`}
-            >
-              <Text style={styles.providerButtonLabel}>{t('settingsSubscriptionConnectProvider')}</Text>
-            </Pressable>
+            {provider.id === 'stripe' ? (
+              <View style={styles.planButtonsRow}>
+                <Pressable
+                  style={[
+                    styles.providerButton,
+                    activeCheckoutKey === toCheckoutKey('stripe', 'regular') ? styles.providerButtonDisabled : null,
+                    !isCheckoutConfigured('stripe', 'regular') ? styles.providerButtonDisabled : null
+                  ]}
+                  onPress={() => void handleProviderPress(provider, 'regular')}
+                  disabled={activeCheckoutKey !== null || !isCheckoutConfigured('stripe', 'regular')}
+                  testID="subscription-provider-stripe-regular-cta"
+                >
+                  <Text style={styles.providerButtonLabel}>{`${t('accountTypeRegular')} · ${t('settingsSubscriptionConnectProvider')}`}</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.providerButton,
+                    activeCheckoutKey === toCheckoutKey('stripe', 'premium') ? styles.providerButtonDisabled : null,
+                    !isCheckoutConfigured('stripe', 'premium') ? styles.providerButtonDisabled : null
+                  ]}
+                  onPress={() => void handleProviderPress(provider, 'premium')}
+                  disabled={activeCheckoutKey !== null || !isCheckoutConfigured('stripe', 'premium')}
+                  testID="subscription-provider-stripe-premium-cta"
+                >
+                  <Text style={styles.providerButtonLabel}>{`${t('accountTypePremium')} · ${t('settingsSubscriptionConnectProvider')}`}</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                style={[
+                  styles.providerButton,
+                  activeCheckoutKey === toCheckoutKey(provider.id) ? styles.providerButtonDisabled : null
+                ]}
+                onPress={() => void handleProviderPress(provider)}
+                disabled={activeCheckoutKey !== null}
+                testID={`subscription-provider-${provider.id}-cta`}
+              >
+                <Text style={styles.providerButtonLabel}>{t('settingsSubscriptionConnectProvider')}</Text>
+              </Pressable>
+            )}
           </View>
         ))}
       </View>
@@ -143,6 +181,9 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.md,
     gap: theme.spacing.sm
+  },
+  planButtonsRow: {
+    gap: theme.spacing.xs
   },
   providerHeader: {
     flexDirection: 'row',

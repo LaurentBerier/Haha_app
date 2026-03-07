@@ -11,6 +11,7 @@ Implemented in this repository:
 - Auth gate and onboarding flow in app routing.
 - Settings flow (profile edit, language/display preferences, subscription provider scaffold, sign out, account deletion).
 - Unified app-style top bar (logo + hamburger menu) across mobile/web app screens.
+- Paid-tier voice strategy currently targets ElevenLabs.
 - User profile model and profile personalization injection in system prompts.
 - Claude proxy (`api/claude.js`) with JWT validation via Supabase service role.
 - Admin endpoint (`api/admin-account-type.js`) for account type assignment.
@@ -56,7 +57,9 @@ cp .env.example .env
 - `EXPO_PUBLIC_ANTHROPIC_MODEL`
 - `EXPO_PUBLIC_SUPABASE_URL`
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
-- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL`
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL` (legacy single Stripe URL, fallback)
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_REGULAR`
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_PREMIUM`
 - `EXPO_PUBLIC_PAYPAL_CHECKOUT_URL`
 - `EXPO_PUBLIC_APPLE_PAY_CHECKOUT_URL`
 
@@ -283,6 +286,7 @@ This is required so function dependencies (for example `@supabase/supabase-js`) 
 ## Additional Docs
 
 - `docs/architecture.md`
+- `docs/economics.md`
 - `docs/phase1-status.md`
 - `docs/phase2-status.md`
 - `docs/troubleshooting.md`

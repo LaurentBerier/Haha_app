@@ -363,12 +363,12 @@ describe('api/claude', () => {
       expect(res.statusCode).toBe(200);
     });
 
-    it('returns 429 MONTHLY_QUOTA_EXCEEDED for regular user at 200 messages', async () => {
+    it('returns 429 MONTHLY_QUOTA_EXCEEDED for regular user at 45 messages', async () => {
       jest.doMock('@supabase/supabase-js', () => ({
         createClient: jest.fn(() =>
           buildSupabaseClient({
             user: { id: 'regular-user', app_metadata: { account_type: 'regular' } },
-            initialUsageCount: 200
+            initialUsageCount: 45
           })
         )
       }));
@@ -385,12 +385,12 @@ describe('api/claude', () => {
       expect(res.payload.error.code).toBe('MONTHLY_QUOTA_EXCEEDED');
     });
 
-    it('returns 429 MONTHLY_QUOTA_EXCEEDED for premium user at 250 messages', async () => {
+    it('returns 429 MONTHLY_QUOTA_EXCEEDED for premium user at 110 messages', async () => {
       jest.doMock('@supabase/supabase-js', () => ({
         createClient: jest.fn(() =>
           buildSupabaseClient({
             user: { id: 'premium-user', app_metadata: { account_type: 'premium' } },
-            initialUsageCount: 250
+            initialUsageCount: 110
           })
         )
       }));

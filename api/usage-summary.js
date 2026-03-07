@@ -7,7 +7,7 @@ const {
   setCorsHeaders
 } = require('./_utils');
 
-const MONTHLY_CAPS = { free: 15, regular: 200, premium: 250 };
+const MONTHLY_CAPS = { free: 15, regular: 45, premium: 110 };
 
 function getMonthStartIso() {
   const now = new Date();

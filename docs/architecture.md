@@ -68,7 +68,7 @@ Active slices:
 - `profileService.ts`: fetch/update profile, onboarding complete/skip
 - `claudeApiService.ts`: proxy calls with Bearer token
 - `personalityEngineService.ts`: prompt generation + profile personalization
-- `subscriptionService.ts`: subscription provider option registry + checkout URL launcher (Stripe/PayPal/Apple)
+- `subscriptionService.ts`: subscription provider option registry + checkout URL launcher (Stripe regular/premium plan links, PayPal, Apple)
 - `persistenceService.ts`: local cache persistence (conversations/messages/ui selections)
 
 ### Hooks (`src/hooks`)
@@ -162,6 +162,12 @@ Built-in tiers:
 - `admin`
 
 `subscriptionSlice` evaluates access via `session.user.accountType` (authoritative JWT claim) and rank/permissions from this registry.
+
+## Billing and Voice Strategy
+
+- Paid tiers (`regular`, `premium`) currently target an ElevenLabs voice path.
+- Stripe checkout is configured with per-plan links (`regular`, `premium`) in client env vars.
+- Artist pool share is modeled at a fixed `15%` across paid tiers.
 
 ## Persistence Strategy
 

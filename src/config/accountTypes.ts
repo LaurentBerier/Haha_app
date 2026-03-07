@@ -29,14 +29,14 @@ export const DEFAULT_ACCOUNT_TYPES: AccountTypeConfig[] = [
     label: 'Regular',
     rank: 1,
     permissions: ['chat:basic', 'chat:unlimited'],
-    monthlyMessageCap: 200
+    monthlyMessageCap: 45
   },
   {
     id: 'premium',
     label: 'Premium',
     rank: 2,
     permissions: ['chat:basic', 'chat:unlimited', 'artists:premium'],
-    monthlyMessageCap: 250
+    monthlyMessageCap: 110
   },
   {
     id: 'admin',
