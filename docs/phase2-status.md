@@ -31,7 +31,7 @@ Core targets:
 - settings flows:
   - edit profile
   - language + display preferences
-  - subscription provider scaffold (Stripe regular/premium links, PayPal, Apple checkout links)
+  - subscription provider integration (Stripe regular/premium links, PayPal, Apple checkout links)
   - sign out
   - delete account
 - paid-tier voice direction set to ElevenLabs (strategy-level decision)
@@ -46,6 +46,7 @@ Core targets:
   - `POST /api/admin-account-type`
 - payment webhook scaffold:
   - `POST /api/payment-webhook`
+  - `POST /api/stripe-webhook`
 - API hardening pass:
   - shared utility module (`api/_utils.js`) for CORS/auth/error/request-id
   - browser CORS fail-closed behavior when `ALLOWED_ORIGINS` is missing or origin is not allowlisted
@@ -60,11 +61,13 @@ Core targets:
 
 - end-to-end production validation of full auth/recovery flow on physical devices
 - payment provider integration (webhook currently scaffolded)
+- Stripe webhook deployment and dashboard event wiring in production
 - stronger automated integration coverage
 
 ## Planned Next
 
 - integrate billing provider (RevenueCat/Stripe decision path)
+- connect Stripe customer portal / self-serve cancel flow
 - complete entitlement hydration from backend source of truth post-login
 - add integration/e2e tests for:
   - signup confirm callback
@@ -111,6 +114,9 @@ Required backend env:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `ANTHROPIC_API_KEY`
 - `REVENUECAT_WEBHOOK_SECRET` (required when webhook endpoint is enabled)
+- `STRIPE_WEBHOOK_SECRET` (required for `POST /api/stripe-webhook`)
+- `STRIPE_PAYMENT_LINK_ID_REGULAR` / `STRIPE_PAYMENT_LINK_ID_PREMIUM` (recommended)
+- `STRIPE_PRICE_ID_REGULAR_MONTHLY` / `STRIPE_PRICE_ID_PREMIUM_MONTHLY` (recommended)
 - `ALLOWED_ORIGINS` (required for browser clients that send `Origin`)
 
 Supabase URL config must include:

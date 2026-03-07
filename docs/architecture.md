@@ -113,6 +113,14 @@ Active slices:
 - maps products to account types
 - updates profile tier + metadata claims
 
+### `POST /api/stripe-webhook` (`api/stripe-webhook.js`)
+
+- verifies `Stripe-Signature` using `STRIPE_WEBHOOK_SECRET`
+- supports `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
+- stores events in `payment_events`
+- persists Stripe customer/subscription mapping in `stripe_customer_links`
+- updates profile tier + metadata claims
+
 ## Auth and Profile Model
 
 ### Session/User (`src/models/AuthUser.ts`)

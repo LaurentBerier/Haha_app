@@ -209,7 +209,40 @@ order by created_at desc
 limit 20;
 ```
 
-## 15) Web app shows a white page after onboarding redirect
+## 15) `POST /api/stripe-webhook` returns 401
+
+Checklist:
+
+- `STRIPE_WEBHOOK_SECRET` is set in Vercel.
+- Stripe endpoint uses this URL:
+  - `https://<your-domain>/api/stripe-webhook`
+- Stripe sends the `Stripe-Signature` header (default behavior).
+
+Recommended Stripe events:
+
+- `checkout.session.completed`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+
+## 16) Stripe webhook processed but account type did not change
+
+Checklist:
+
+- `STRIPE_PAYMENT_LINK_ID_REGULAR` / `STRIPE_PAYMENT_LINK_ID_PREMIUM` configured.
+- `STRIPE_PRICE_ID_REGULAR_MONTHLY` / `STRIPE_PRICE_ID_PREMIUM_MONTHLY` configured.
+- app sends `client_reference_id=<supabase_user_id>` in Stripe checkout URL.
+- `public.stripe_customer_links` table exists (run latest SQL in `docs/supabase-account-types.sql`).
+
+Verification query:
+
+```sql
+select user_id, stripe_customer_id, stripe_subscription_id, updated_at
+from public.stripe_customer_links
+order by updated_at desc
+limit 20;
+```
+
+## 17) Web app shows a white page after onboarding redirect
 
 Symptom:
 
@@ -230,7 +263,7 @@ npm run deploy:web
 
 This rebuilds and patches `dist-web/index.html` with `type="module"` before deployment.
 
-## 16) Redirect to web app asks login again
+## 18) Redirect to web app asks login again
 
 This is expected when crossing domains (for example `www.ha-ha.ai` -> `haha-app-web.vercel.app`).
 
@@ -243,7 +276,7 @@ Mitigation:
 - keep a stable dedicated domain for web app
 - avoid unnecessary domain changes (`www` vs non-`www`, preview vs production)
 
-## 17) Stuck after interrupting profile creation and re-clicking confirmation email
+## 19) Stuck after interrupting profile creation and re-clicking confirmation email
 
 Symptom:
 

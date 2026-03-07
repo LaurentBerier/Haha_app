@@ -49,7 +49,10 @@ export default function SubscriptionScreen() {
     const checkoutKey = toCheckoutKey(provider.id, planId);
     setActiveCheckoutKey(checkoutKey);
     try {
-      const opened = await startSubscriptionCheckout(provider.id, planId);
+      const opened = await startSubscriptionCheckout(provider.id, planId, {
+        userId: user?.id,
+        email: user?.email
+      });
       if (!opened) {
         Alert.alert(t('settingsSubscriptionProviderUnavailableTitle'), t('settingsSubscriptionProviderUnavailableBody'));
       }

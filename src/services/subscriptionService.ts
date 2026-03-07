@@ -8,6 +8,10 @@ import {
 
 export type BillingProviderId = 'stripe' | 'paypal' | 'apple';
 export type SubscriptionPlanId = 'regular' | 'premium';
+export interface StartCheckoutOptions {
+  userId?: string;
+  email?: string;
+}
 
 export interface BillingProviderOption {
   id: BillingProviderId;
@@ -53,8 +57,32 @@ export function getBillingProviderOptions(): BillingProviderOption[] {
   });
 }
 
-export async function startSubscriptionCheckout(providerId: BillingProviderId, planId?: SubscriptionPlanId): Promise<boolean> {
-  const checkoutUrl = getCheckoutUrl(providerId, planId);
+function buildStripeCheckoutUrl(baseUrl: string, options?: StartCheckoutOptions): string {
+  if (!baseUrl) {
+    return '';
+  }
+
+  try {
+    const url = new URL(baseUrl);
+    if (options?.userId && !url.searchParams.has('client_reference_id')) {
+      url.searchParams.set('client_reference_id', options.userId);
+    }
+    if (options?.email && !url.searchParams.has('prefilled_email')) {
+      url.searchParams.set('prefilled_email', options.email);
+    }
+    return url.toString();
+  } catch {
+    return baseUrl;
+  }
+}
+
+export async function startSubscriptionCheckout(
+  providerId: BillingProviderId,
+  planId?: SubscriptionPlanId,
+  options?: StartCheckoutOptions
+): Promise<boolean> {
+  const rawUrl = getCheckoutUrl(providerId, planId);
+  const checkoutUrl = providerId === 'stripe' ? buildStripeCheckoutUrl(rawUrl, options) : rawUrl;
   if (!checkoutUrl) {
     return false;
   }

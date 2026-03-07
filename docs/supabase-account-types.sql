@@ -131,10 +131,31 @@ create table if not exists public.payment_events (
   created_at timestamptz not null default now()
 );
 
+-- Stripe customer/subscription linkage for webhook entitlement sync.
+create table if not exists public.stripe_customer_links (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  stripe_customer_id text not null unique,
+  stripe_subscription_id text unique,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists stripe_customer_links_user_idx
+  on public.stripe_customer_links (user_id);
+
 alter table public.payment_events enable row level security;
 drop policy if exists "payment_events: service-role only" on public.payment_events;
 create policy "payment_events: service-role only"
   on public.payment_events
+  for all
+  using (false)
+  with check (false);
+
+alter table public.stripe_customer_links enable row level security;
+drop policy if exists "stripe_customer_links: service-role only" on public.stripe_customer_links;
+create policy "stripe_customer_links: service-role only"
+  on public.stripe_customer_links
   for all
   using (false)
   with check (false);
