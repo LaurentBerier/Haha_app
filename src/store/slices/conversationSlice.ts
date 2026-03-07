@@ -11,7 +11,7 @@ export interface ConversationSlice {
   activeConversationId: string | null;
   createConversation: (artistId: string, language: string, modeId: string) => Conversation;
   setActiveConversation: (id: string) => void;
-  updateConversation: (id: string, updates: Partial<Conversation>) => void;
+  updateConversation: (id: string, updates: Partial<Conversation>, artistId?: string) => void;
 }
 
 export const createConversationSlice: StateCreator<StoreState, [], [], ConversationSlice> = (set, get) => ({
@@ -50,10 +50,28 @@ export const createConversationSlice: StateCreator<StoreState, [], [], Conversat
     return conversation;
   },
   setActiveConversation: (id) => set({ activeConversationId: id }),
-  updateConversation: (id, updates) => {
+  updateConversation: (id, updates, artistId) => {
     const current = get().conversations;
-    const next: Record<string, Conversation[]> = {};
+    if (artistId) {
+      const list = current[artistId] ?? [];
+      set({
+        conversations: {
+          ...current,
+          [artistId]: list.map((conversation) =>
+            conversation.id === id
+              ? {
+                  ...conversation,
+                  ...updates,
+                  updatedAt: new Date().toISOString()
+                }
+              : conversation
+          )
+        }
+      });
+      return;
+    }
 
+    const next: Record<string, Conversation[]> = {};
     Object.entries(current).forEach(([artistId, list]) => {
       next[artistId] = list.map((conversation) =>
         conversation.id === id

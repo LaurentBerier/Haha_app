@@ -23,44 +23,78 @@ const statusLabel: Record<Exclude<UserProfile['relationshipStatus'], null>, stri
   prefer_not_to_say: 'Préfère ne pas répondre'
 };
 
-function buildUserProfileSection(profile: UserProfile | null | undefined): string {
+const sexLabelEn: Record<Exclude<UserProfile['sex'], null>, string> = {
+  male: 'Male',
+  female: 'Female',
+  non_binary: 'Non-binary',
+  prefer_not_to_say: 'Prefer not to say'
+};
+
+const statusLabelEn: Record<Exclude<UserProfile['relationshipStatus'], null>, string> = {
+  single: 'Single',
+  in_relationship: 'In a relationship',
+  married: 'Married',
+  complicated: "It's complicated",
+  prefer_not_to_say: 'Prefer not to say'
+};
+
+function resolvePromptLanguage(language: string | undefined): 'fr' | 'en' {
+  if (typeof language === 'string' && language.toLowerCase().startsWith('en')) {
+    return 'en';
+  }
+
+  return 'fr';
+}
+
+function buildUserProfileSection(profile: UserProfile | null | undefined, language: 'fr' | 'en'): string {
   if (!profile) {
     return '';
   }
 
   const lines: string[] = [];
+  const localizedSexLabel = language === 'en' ? sexLabelEn : sexLabel;
+  const localizedStatusLabel = language === 'en' ? statusLabelEn : statusLabel;
 
   if (typeof profile.age === 'number') {
-    lines.push(`- Âge approximatif : ${profile.age} ans`);
+    lines.push(language === 'en' ? `- Approximate age: ${profile.age}` : `- Âge approximatif : ${profile.age} ans`);
   }
 
   if (profile.sex) {
-    lines.push(`- Genre : ${sexLabel[profile.sex]}`);
+    lines.push(language === 'en' ? `- Gender: ${localizedSexLabel[profile.sex]}` : `- Genre : ${localizedSexLabel[profile.sex]}`);
   }
 
   if (profile.relationshipStatus) {
-    lines.push(`- Statut : ${statusLabel[profile.relationshipStatus]}`);
+    lines.push(
+      language === 'en'
+        ? `- Relationship status: ${localizedStatusLabel[profile.relationshipStatus]}`
+        : `- Statut : ${localizedStatusLabel[profile.relationshipStatus]}`
+    );
   }
 
   if (profile.horoscopeSign) {
-    lines.push(`- Signe astro : ${profile.horoscopeSign}`);
+    lines.push(language === 'en' ? `- Horoscope sign: ${profile.horoscopeSign}` : `- Signe astro : ${profile.horoscopeSign}`);
   }
 
   if (profile.interests.length > 0) {
-    lines.push(`- Intérêts : ${profile.interests.join(', ')}`);
+    lines.push(language === 'en' ? `- Interests: ${profile.interests.join(', ')}` : `- Intérêts : ${profile.interests.join(', ')}`);
   }
 
   if (lines.length === 0) {
     return '';
   }
 
+  if (language === 'en') {
+    return `\n## USER PROFILE\nAdapt your humor and references to this profile:\n${lines.join('\n')}`;
+  }
+
   return `\n## PROFIL UTILISATEUR\nAdapte ton humour et tes références à ce profil :\n${lines.join('\n')}`;
 }
 
-export function buildSystemPrompt(modeId: string, userProfile?: UserProfile | null): string {
+export function buildSystemPrompt(modeId: string, userProfile?: UserProfile | null, language?: string): string {
   const b = cathyBlueprint;
   const modePrompt = getModePrompt(modeId);
-  const userProfileSection = buildUserProfileSection(userProfile);
+  const promptLanguage = resolvePromptLanguage(language);
+  const userProfileSection = buildUserProfileSection(userProfile, promptLanguage);
 
   return `
 Tu es ${b.identity.name}, ${b.identity.role}.
