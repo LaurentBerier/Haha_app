@@ -1,21 +1,10 @@
-const { createClient } = require('@supabase/supabase-js');
-const { attachRequestId, extractBearerToken, getMissingEnv, sendError, setCorsHeaders } = require('./_utils');
+const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
 }
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAdmin =
-  typeof supabaseUrl === 'string' &&
-  supabaseUrl &&
-  typeof serviceRoleKey === 'string' &&
-  serviceRoleKey
-    ? createClient(supabaseUrl, serviceRoleKey)
-    : null;
-
-async function validateAdmin(req, requestId) {
+async function validateAdmin(supabaseAdmin, req, requestId) {
   const token = extractBearerToken(req.headers.authorization);
 
   if (!token) {
@@ -51,7 +40,7 @@ async function validateAdmin(req, requestId) {
   }
 }
 
-async function accountTypeExists(accountTypeId) {
+async function accountTypeExists(supabaseAdmin, accountTypeId) {
   const { data, error } = await supabaseAdmin
     .from('account_types')
     .select('id')
@@ -63,6 +52,30 @@ async function accountTypeExists(accountTypeId) {
   }
 
   return Boolean(data?.id);
+}
+
+async function updateAppMetadata(supabaseAdmin, userId, accountTypeId) {
+  const {
+    data: userLookup,
+    error: userLookupError
+  } = await supabaseAdmin.auth.admin.getUserById(userId);
+
+  if (userLookupError) {
+    return { error: userLookupError };
+  }
+
+  const existingMetadata =
+    userLookup && userLookup.user && typeof userLookup.user.app_metadata === 'object' && userLookup.user.app_metadata
+      ? userLookup.user.app_metadata
+      : {};
+
+  return supabaseAdmin.auth.admin.updateUserById(userId, {
+    app_metadata: {
+      ...existingMetadata,
+      account_type: accountTypeId,
+      role: accountTypeId === 'admin' ? 'admin' : 'user'
+    }
+  });
 }
 
 module.exports = async function handler(req, res) {
@@ -92,6 +105,7 @@ module.exports = async function handler(req, res) {
   }
 
   const missingEnv = getMissingEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  const supabaseAdmin = getSupabaseAdmin();
   if (missingEnv.length > 0 || !supabaseAdmin) {
     if (missingEnv.length > 0) {
       console.error(`[api/admin-account-type][${requestId}] Missing env vars: ${missingEnv.join(', ')}`);
@@ -100,7 +114,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const auth = await validateAdmin(req, requestId);
+  const auth = await validateAdmin(supabaseAdmin, req, requestId);
   if (!auth.ok) {
     sendError(res, auth.status, auth.error, {
       code: auth.status === 403 ? 'FORBIDDEN' : 'UNAUTHORIZED',
@@ -123,7 +137,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const exists = await accountTypeExists(accountTypeId);
+    const exists = await accountTypeExists(supabaseAdmin, accountTypeId);
     if (!exists) {
       sendError(res, 400, `Unknown account type: ${accountTypeId}`, { code: 'INVALID_REQUEST', requestId });
       return;
@@ -139,12 +153,7 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const { error: metadataError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-      app_metadata: {
-        account_type: accountTypeId,
-        role: accountTypeId === 'admin' ? 'admin' : 'user'
-      }
-    });
+    const { error: metadataError } = await updateAppMetadata(supabaseAdmin, userId, accountTypeId);
 
     if (metadataError) {
       sendError(res, 500, metadataError.message, { code: 'SERVER_ERROR', requestId });

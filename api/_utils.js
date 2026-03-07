@@ -1,4 +1,7 @@
 const { randomUUID } = require('node:crypto');
+const { createClient } = require('@supabase/supabase-js');
+
+let supabaseAdminCache = undefined;
 
 function parseAllowedOrigins() {
   return (process.env.ALLOWED_ORIGINS ?? '')
@@ -47,12 +50,32 @@ function getMissingEnv(names) {
 
 function attachRequestId(req, res) {
   const incoming = req.headers['x-request-id'];
-  const requestId =
-    (Array.isArray(incoming) ? incoming[0] : incoming) && typeof (Array.isArray(incoming) ? incoming[0] : incoming) === 'string'
-      ? (Array.isArray(incoming) ? incoming[0] : incoming).trim() || randomUUID()
-      : randomUUID();
+  const raw = Array.isArray(incoming) ? incoming[0] : incoming;
+  const requestId = typeof raw === 'string' && raw.trim() ? raw.trim() : randomUUID();
   res.setHeader('X-Request-Id', requestId);
   return requestId;
+}
+
+function getSupabaseAdmin() {
+  if (supabaseAdminCache !== undefined) {
+    return supabaseAdminCache;
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (
+    typeof supabaseUrl === 'string' &&
+    supabaseUrl &&
+    typeof serviceRoleKey === 'string' &&
+    serviceRoleKey
+  ) {
+    supabaseAdminCache = createClient(supabaseUrl, serviceRoleKey);
+    return supabaseAdminCache;
+  }
+
+  supabaseAdminCache = null;
+  return supabaseAdminCache;
 }
 
 function sendError(res, status, message, options = {}) {
@@ -78,5 +101,6 @@ module.exports = {
   extractBearerToken,
   getMissingEnv,
   attachRequestId,
-  sendError
+  sendError,
+  getSupabaseAdmin
 };

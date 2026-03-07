@@ -91,4 +91,58 @@ describe('api/payment-webhook', () => {
       })
     );
   });
+
+  it('merges existing app_metadata when syncing account type', async () => {
+    process.env.REVENUECAT_WEBHOOK_SECRET = 'top-secret';
+    const insert = jest.fn().mockResolvedValue({ error: null });
+    const updateProfileEq = jest.fn().mockResolvedValue({ error: null });
+    const getUserById = jest.fn().mockResolvedValue({
+      data: { user: { app_metadata: { locale: 'fr-CA' } } },
+      error: null
+    });
+    const updateUserById = jest.fn().mockResolvedValue({ error: null });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => ({
+        from: jest.fn((table) => {
+          if (table === 'payment_events') {
+            return { insert };
+          }
+
+          if (table === 'profiles') {
+            return {
+              update: () => ({
+                eq: updateProfileEq
+              })
+            };
+          }
+
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+        auth: {
+          admin: {
+            getUserById,
+            updateUserById
+          }
+        }
+      }))
+    }));
+
+    const handler = require('../payment-webhook');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer top-secret' },
+      body: { event: { type: 'INITIAL_PURCHASE', app_user_id: 'user-1', product_id: 'haha_premium_monthly' } }
+    });
+
+    await handler(req, res);
+
+    expect(updateUserById).toHaveBeenCalledWith('user-1', {
+      app_metadata: {
+        locale: 'fr-CA',
+        account_type: 'premium',
+        role: 'user'
+      }
+    });
+    expect(res.statusCode).toBe(200);
+  });
 });

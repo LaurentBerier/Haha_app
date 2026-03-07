@@ -1,5 +1,4 @@
-const { createClient } = require('@supabase/supabase-js');
-const { attachRequestId, extractBearerToken, getMissingEnv, sendError, setCorsHeaders } = require('./_utils');
+const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -67,16 +66,6 @@ function mapProductToAccountType(productId, eventType) {
   return map[productId] ?? null;
 }
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAdmin =
-  typeof supabaseUrl === 'string' &&
-  supabaseUrl &&
-  typeof serviceRoleKey === 'string' &&
-  serviceRoleKey
-    ? createClient(supabaseUrl, serviceRoleKey)
-    : null;
-
 function isAuthorized(req) {
   const sharedSecret = process.env.REVENUECAT_WEBHOOK_SECRET;
   if (!sharedSecret) {
@@ -87,8 +76,33 @@ function isAuthorized(req) {
   return token === sharedSecret;
 }
 
+async function updateAppMetadata(supabaseAdmin, userId, accountTypeId) {
+  const {
+    data: userLookup,
+    error: userLookupError
+  } = await supabaseAdmin.auth.admin.getUserById(userId);
+
+  if (userLookupError) {
+    return { error: userLookupError };
+  }
+
+  const existingMetadata =
+    userLookup && userLookup.user && typeof userLookup.user.app_metadata === 'object' && userLookup.user.app_metadata
+      ? userLookup.user.app_metadata
+      : {};
+
+  return supabaseAdmin.auth.admin.updateUserById(userId, {
+    app_metadata: {
+      ...existingMetadata,
+      account_type: accountTypeId,
+      role: accountTypeId === 'admin' ? 'admin' : 'user'
+    }
+  });
+}
+
 module.exports = async function handler(req, res) {
   const requestId = attachRequestId(req, res);
+  const supabaseAdmin = getSupabaseAdmin();
   const corsResult = setCorsHeaders(req, res);
   if (!corsResult.ok) {
     if (corsResult.reason === 'cors_not_configured') {
@@ -169,12 +183,7 @@ module.exports = async function handler(req, res) {
         return;
       }
 
-      const { error: metadataError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-        app_metadata: {
-          account_type: accountTypeId,
-          role: accountTypeId === 'admin' ? 'admin' : 'user'
-        }
-      });
+      const { error: metadataError } = await updateAppMetadata(supabaseAdmin, userId, accountTypeId);
 
       if (metadataError) {
         sendError(res, 500, metadataError.message, { code: 'SERVER_ERROR', requestId });

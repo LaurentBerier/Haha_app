@@ -2,6 +2,7 @@ const { createReqRes } = require('./testHelpers');
 
 function buildSupabaseMock({
   user = { id: 'admin-1', app_metadata: { role: 'admin', account_type: 'admin' } },
+  targetUser = { id: 'user-2', app_metadata: { locale: 'fr-CA' } },
   accountTypeExists = true,
   profileUpdateError = null,
   metadataUpdateError = null
@@ -16,6 +17,10 @@ function buildSupabaseMock({
   });
   const profileUpdateEq = jest.fn().mockResolvedValue({ error: profileUpdateError });
   const updateUserById = jest.fn().mockResolvedValue({ error: metadataUpdateError });
+  const getUserById = jest.fn().mockResolvedValue({
+    data: { user: targetUser },
+    error: null
+  });
 
   const from = jest.fn((table) => {
     if (table === 'account_types') {
@@ -44,12 +49,13 @@ function buildSupabaseMock({
       auth: {
         getUser,
         admin: {
-          updateUserById
+          updateUserById,
+          getUserById
         }
       },
       from
     },
-    spies: { getUser, maybeSingle, profileUpdateEq, updateUserById }
+    spies: { getUser, maybeSingle, profileUpdateEq, updateUserById, getUserById }
   };
 }
 
@@ -178,8 +184,10 @@ describe('api/admin-account-type', () => {
     await handler(req, res);
 
     expect(supabase.spies.profileUpdateEq).toHaveBeenCalledWith('id', 'user-2');
+    expect(supabase.spies.getUserById).toHaveBeenCalledWith('user-2');
     expect(supabase.spies.updateUserById).toHaveBeenCalledWith('user-2', {
       app_metadata: {
+        locale: 'fr-CA',
         account_type: 'premium',
         role: 'user'
       }

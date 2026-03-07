@@ -1,18 +1,8 @@
-const { createClient } = require('@supabase/supabase-js');
-const { attachRequestId, extractBearerToken, getMissingEnv, sendError, setCorsHeaders } = require('./_utils');
-
-const supabaseUrl = process.env.SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAdmin =
-  typeof supabaseUrl === 'string' &&
-  supabaseUrl &&
-  typeof serviceRoleKey === 'string' &&
-  serviceRoleKey
-    ? createClient(supabaseUrl, serviceRoleKey)
-    : null;
+const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
 
 module.exports = async function handler(req, res) {
   const requestId = attachRequestId(req, res);
+  const supabaseAdmin = getSupabaseAdmin();
   const corsResult = setCorsHeaders(req, res);
   if (!corsResult.ok) {
     if (corsResult.reason === 'cors_not_configured') {
