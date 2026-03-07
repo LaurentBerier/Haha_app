@@ -10,6 +10,96 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+function isStringOrNull(value: unknown): value is string | null {
+  return typeof value === 'string' || value === null;
+}
+
+function isValidConversation(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.id === 'string' &&
+    typeof value.artistId === 'string' &&
+    typeof value.title === 'string' &&
+    typeof value.language === 'string' &&
+    typeof value.modeId === 'string' &&
+    typeof value.createdAt === 'string' &&
+    typeof value.updatedAt === 'string' &&
+    typeof value.lastMessagePreview === 'string'
+  );
+}
+
+function isValidConversationsMap(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return Object.values(value).every(
+    (entry) => Array.isArray(entry) && entry.every((conversation) => isValidConversation(conversation))
+  );
+}
+
+function isValidMessageMetadata(value: unknown): boolean {
+  if (value === undefined) {
+    return true;
+  }
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const tokensUsedValid = value.tokensUsed === undefined || typeof value.tokensUsed === 'number';
+  const voiceUrlValid = value.voiceUrl === undefined || typeof value.voiceUrl === 'string';
+  const imageUriValid = value.imageUri === undefined || typeof value.imageUri === 'string';
+  const imageMediaTypeValid = value.imageMediaType === undefined || typeof value.imageMediaType === 'string';
+  return tokensUsedValid && voiceUrlValid && imageUriValid && imageMediaTypeValid;
+}
+
+function isValidMessage(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const roleValid = value.role === 'user' || value.role === 'artist';
+  const statusValid =
+    value.status === 'pending' ||
+    value.status === 'streaming' ||
+    value.status === 'complete' ||
+    value.status === 'error';
+
+  return (
+    typeof value.id === 'string' &&
+    typeof value.conversationId === 'string' &&
+    roleValid &&
+    typeof value.content === 'string' &&
+    statusValid &&
+    typeof value.timestamp === 'string' &&
+    isValidMessageMetadata(value.metadata)
+  );
+}
+
+function isValidMessagePage(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    Array.isArray(value.messages) &&
+    value.messages.every((message) => isValidMessage(message)) &&
+    typeof value.hasMore === 'boolean' &&
+    isStringOrNull(value.cursor)
+  );
+}
+
+function isValidMessagesMap(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return Object.values(value).every((entry) => isValidMessagePage(entry));
+}
+
 function isValidPreferences(value: unknown): boolean {
   if (value === undefined) {
     return true;
@@ -32,10 +122,10 @@ function isValidSnapshot(data: unknown): data is PersistedStoreSnapshot {
   }
 
   return (
-    (typeof data.selectedArtistId === 'string' || data.selectedArtistId === null) &&
-    isRecord(data.conversations) &&
-    (typeof data.activeConversationId === 'string' || data.activeConversationId === null) &&
-    isRecord(data.messagesByConversation) &&
+    isStringOrNull(data.selectedArtistId) &&
+    isValidConversationsMap(data.conversations) &&
+    isStringOrNull(data.activeConversationId) &&
+    isValidMessagesMap(data.messagesByConversation) &&
     isValidPreferences(data.preferences)
   );
 }

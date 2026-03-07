@@ -5,6 +5,7 @@ import type { StoreState } from '../useStore';
 
 export interface SubscriptionSlice {
   subscription: Subscription;
+  // Deprecated in Phase 2: account type is authoritative from session.user.accountType.
   setSubscription: (sub: Subscription) => void;
   canAccessFeature: (feature: string) => boolean;
 }
@@ -29,7 +30,7 @@ export const createSubscriptionSlice: StateCreator<StoreState, [], [], Subscript
   setSubscription: (sub) => set({ subscription: sub }),
   canAccessFeature: (feature) => {
     const required = featureToTier[feature] ?? 'premium';
-    const current = get().session?.user.accountType ?? get().subscription.tier;
+    const current = get().session?.user.accountType ?? 'free';
     return getAccountTypeRank(current) >= getAccountTypeRank(required);
   }
 });

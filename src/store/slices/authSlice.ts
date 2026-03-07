@@ -39,7 +39,8 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
         authStatus: 'authenticated',
         userProfile: profile
       });
-    } catch {
+    } catch (error) {
+      console.error('[authSlice] Failed to fetch profile for authenticated session', error);
       set({
         session,
         authStatus: 'authenticated'

@@ -23,14 +23,10 @@ describe('subscriptionSlice', () => {
     expect(slice.canAccessFeature('adminConsole')).toBe(false);
   });
 
-  it('grants premium feature after upgrading tier', () => {
+  it('grants premium feature from session account type', () => {
     const slice = createSliceHarness((set, get) => createSubscriptionSlice(set as never, get as never, undefined as never));
 
-    slice.setSubscription({
-      tier: 'premium',
-      isActive: true,
-      renewalDate: null
-    });
+    slice.session = { user: { accountType: 'premium' } };
 
     expect(slice.canAccessFeature('proArtist')).toBe(true);
   });
