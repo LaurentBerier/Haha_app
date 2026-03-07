@@ -34,8 +34,8 @@ export default function SignupScreen() {
     setIsSubmitting(true);
 
     try {
-      const session = await signUpWithEmail(email.trim(), password);
-      if (session) {
+      const result = await signUpWithEmail(email.trim(), password);
+      if (result.session && !result.confirmationRequired) {
         router.replace('/');
       } else {
         setShowVerifyMessage(true);
@@ -68,7 +68,8 @@ export default function SignupScreen() {
       <View style={styles.screen} testID="signup-screen">
         <Text style={styles.title}>Vérifie ton email</Text>
         <Text style={styles.subtitle}>
-          Un lien de confirmation vient d&apos;être envoyé. Ouvre-le pour activer ton compte.
+          Un lien de confirmation vient d&apos;être envoyé. Ouvre-le pour activer ton compte. Pense aussi à vérifier ton
+          dossier spam/courrier indésirable pour trouver l&apos;email de Ha-Ha.ai.
         </Text>
         <Link href="/(auth)/login" asChild>
           <Pressable>

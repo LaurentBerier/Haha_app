@@ -116,7 +116,7 @@ export default function RootLayout() {
     if (isAccountMenuOpen) {
       setIsAccountMenuOpen(false);
     }
-  }, [segments]);
+  }, [isAccountMenuOpen, segments]);
 
   return (
     <ErrorBoundary>
