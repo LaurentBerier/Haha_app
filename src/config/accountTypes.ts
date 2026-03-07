@@ -13,6 +13,7 @@ export interface AccountTypeConfig {
   label: string;
   rank: number;
   permissions: AccountTypePermission[];
+  monthlyMessageCap: number | null;
 }
 
 export const DEFAULT_ACCOUNT_TYPES: AccountTypeConfig[] = [
@@ -20,25 +21,29 @@ export const DEFAULT_ACCOUNT_TYPES: AccountTypeConfig[] = [
     id: 'free',
     label: 'Free',
     rank: 0,
-    permissions: ['chat:basic']
+    permissions: ['chat:basic'],
+    monthlyMessageCap: 15
   },
   {
     id: 'regular',
     label: 'Regular',
     rank: 1,
-    permissions: ['chat:basic', 'chat:unlimited']
+    permissions: ['chat:basic', 'chat:unlimited'],
+    monthlyMessageCap: 200
   },
   {
     id: 'premium',
     label: 'Premium',
     rank: 2,
-    permissions: ['chat:basic', 'chat:unlimited', 'artists:premium']
+    permissions: ['chat:basic', 'chat:unlimited', 'artists:premium'],
+    monthlyMessageCap: 250
   },
   {
     id: 'admin',
     label: 'Admin',
     rank: 99,
-    permissions: ['admin:all', 'billing:manage', 'chat:basic', 'chat:unlimited', 'artists:premium']
+    permissions: ['admin:all', 'billing:manage', 'chat:basic', 'chat:unlimited', 'artists:premium'],
+    monthlyMessageCap: null
   }
 ];
 

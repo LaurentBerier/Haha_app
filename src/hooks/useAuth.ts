@@ -1,7 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { hasPermission } from '../config/accountTypes';
-import { getStoredSession, onAuthStateChange } from '../services/authService';
-import { clearLegacySecureStoreData } from '../services/persistenceService';
+import { getStoredSession, getUsageSummary, onAuthStateChange } from '../services/authService';
 import { useStore } from '../store/useStore';
 
 export function useAuth() {
@@ -12,6 +11,8 @@ export function useAuth() {
   const setAuthStatus = useStore((state) => state.setAuthStatus);
   const clearSession = useStore((state) => state.clearSession);
   const clearUserProfile = useStore((state) => state.clearUserProfile);
+  const hydrateQuota = useStore((state) => state.hydrateQuota);
+  const resetQuota = useStore((state) => state.resetQuota);
   const getCurrentUser = useStore((state) => state.getCurrentUser);
 
   useEffect(() => {
@@ -26,15 +27,30 @@ export function useAuth() {
         }
 
         await setSession(storedSession);
+        if (!storedSession) {
+          resetQuota();
+          return;
+        }
 
-        if (storedSession?.user?.id) {
-          await clearLegacySecureStoreData();
+        const accountType = storedSession.user.accountType ?? 'free';
+        try {
+          const usageSummary = await getUsageSummary(storedSession.accessToken);
+          if (!isMounted) {
+            return;
+          }
+          hydrateQuota(usageSummary.messagesUsed, accountType);
+        } catch (error) {
+          console.error('[useAuth] usage summary bootstrap failed', error);
+          if (isMounted) {
+            hydrateQuota(0, accountType);
+          }
         }
       } catch {
         if (!isMounted) {
           return;
         }
         clearSession();
+        resetQuota();
       }
     };
 
@@ -53,13 +69,29 @@ export function useAuth() {
       if (event === 'SIGNED_OUT') {
         clearSession();
         clearUserProfile();
+        resetQuota();
         return;
       }
 
       const syncSession = async () => {
         await setSession(nextSession);
-        if (nextSession?.user?.id) {
-          await clearLegacySecureStoreData();
+        if (!nextSession) {
+          resetQuota();
+          return;
+        }
+
+        const accountType = nextSession.user.accountType ?? 'free';
+        try {
+          const usageSummary = await getUsageSummary(nextSession.accessToken);
+          if (!isMounted) {
+            return;
+          }
+          hydrateQuota(usageSummary.messagesUsed, accountType);
+        } catch (error) {
+          console.error('[useAuth] usage summary auth sync failed', error);
+          if (isMounted) {
+            hydrateQuota(0, accountType);
+          }
         }
       };
 
@@ -72,7 +104,7 @@ export function useAuth() {
       isMounted = false;
       unsubscribe();
     };
-  }, [clearSession, clearUserProfile, setAuthStatus, setSession]);
+  }, [clearSession, clearUserProfile, hydrateQuota, resetQuota, setAuthStatus, setSession]);
 
   const user = getCurrentUser();
   const accountType = user?.accountType ?? null;

@@ -1,5 +1,5 @@
 export interface UsageQuota {
-  monthlyCap: number;
-  used: number;
+  messagesCap: number | null;
+  messagesUsed: number;
   resetDate: string;
 }

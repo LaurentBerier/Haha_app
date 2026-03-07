@@ -1,11 +1,21 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
-import { CLAUDE_PROXY_URL } from '../config/env';
+import { API_BASE_URL, CLAUDE_PROXY_URL } from '../config/env';
 import type { AccountTypeId } from '../config/accountTypes';
+import { AUTH_CALLBACK_SCHEME_URL } from '../config/constants';
 import type { AuthSession, AuthUser } from '../models/AuthUser';
 import { assertSupabaseConfigured, supabase } from './supabaseClient';
 
 export type AuthStateChangeCallback = (event: AuthChangeEvent, session: AuthSession) => void;
+export interface SignUpResult {
+  session: AuthSession;
+  confirmationRequired: boolean;
+}
+export interface UsageSummary {
+  messagesUsed: number;
+  messagesCap: number | null;
+  resetDate: string;
+}
 
 function toAuthUser(sessionUser: Session['user']): AuthUser {
   const role = typeof sessionUser.app_metadata?.role === 'string' ? sessionUser.app_metadata.role : null;
@@ -54,25 +64,29 @@ export async function signInWithEmail(email: string, password: string): Promise<
   return toAuthSession(data.session);
 }
 
-export async function signUpWithEmail(email: string, password: string): Promise<AuthSession> {
+export async function signUpWithEmail(email: string, password: string): Promise<SignUpResult> {
   assertSupabaseConfigured();
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      emailRedirectTo: 'hahaha://auth/callback'
+      emailRedirectTo: AUTH_CALLBACK_SCHEME_URL
     }
   });
   if (error) {
     throw error;
   }
-  return toAuthSession(data.session);
+  const session = toAuthSession(data.session);
+  return {
+    session,
+    confirmationRequired: !session
+  };
 }
 
 export async function requestPasswordReset(email: string): Promise<void> {
   assertSupabaseConfigured();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: 'hahaha://auth/callback?flow=recovery'
+    redirectTo: `${AUTH_CALLBACK_SCHEME_URL}?flow=recovery`
   });
 
   if (error) {
@@ -119,13 +133,32 @@ export async function signOut(): Promise<void> {
 }
 
 function toBackendBaseUrl(): string {
-  return CLAUDE_PROXY_URL.trim().replace(/\/claude\/?$/, '');
+  const explicitBase = API_BASE_URL.trim().replace(/\/+$/, '');
+  if (explicitBase) {
+    return explicitBase;
+  }
+
+  const proxyUrl = CLAUDE_PROXY_URL.trim();
+  if (!proxyUrl) {
+    return '';
+  }
+
+  if (proxyUrl.startsWith('/')) {
+    return proxyUrl.replace(/\/claude\/?$/, '');
+  }
+
+  try {
+    const parsed = new URL(proxyUrl);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return '';
+  }
 }
 
 export async function deleteAccount(accessToken: string): Promise<void> {
   const baseUrl = toBackendBaseUrl();
   if (!baseUrl) {
-    throw new Error('Missing Claude proxy URL. Set EXPO_PUBLIC_CLAUDE_PROXY_URL.');
+    throw new Error('Missing backend API base URL. Set EXPO_PUBLIC_API_BASE_URL or EXPO_PUBLIC_CLAUDE_PROXY_URL.');
   }
 
   const response = await fetch(`${baseUrl}/delete-account`, {
@@ -156,6 +189,57 @@ export async function deleteAccount(accessToken: string): Promise<void> {
 
     throw new Error(message);
   }
+}
+
+function toNonNegativeInteger(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+}
+
+export async function getUsageSummary(accessToken: string): Promise<UsageSummary> {
+  const baseUrl = toBackendBaseUrl();
+  if (!baseUrl) {
+    throw new Error('Missing backend API base URL. Set EXPO_PUBLIC_API_BASE_URL or EXPO_PUBLIC_CLAUDE_PROXY_URL.');
+  }
+
+  const response = await fetch(`${baseUrl}/usage-summary`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  if (!response.ok) {
+    let message = 'Impossible de récupérer le quota mensuel.';
+    try {
+      const payload = await response.json();
+      if (
+        payload &&
+        typeof payload === 'object' &&
+        'error' in payload &&
+        payload.error &&
+        typeof payload.error === 'object' &&
+        'message' in payload.error &&
+        typeof payload.error.message === 'string'
+      ) {
+        message = payload.error.message;
+      }
+    } catch {
+      // Keep default message.
+    }
+    throw new Error(message);
+  }
+
+  const payload: unknown = await response.json();
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Invalid usage summary payload.');
+  }
+
+  const asRecord = payload as { messagesUsed?: unknown; messagesCap?: unknown; resetDate?: unknown };
+  return {
+    messagesUsed: toNonNegativeInteger(asRecord.messagesUsed),
+    messagesCap: typeof asRecord.messagesCap === 'number' && Number.isFinite(asRecord.messagesCap) ? asRecord.messagesCap : null,
+    resetDate: typeof asRecord.resetDate === 'string' ? asRecord.resetDate : ''
+  };
 }
 
 export async function refreshSession(): Promise<AuthSession> {

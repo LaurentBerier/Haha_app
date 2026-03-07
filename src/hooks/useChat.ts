@@ -131,8 +131,41 @@ export function useChat(conversationId: string) {
       streamingConversationIdRef.current = jobConversationId;
       isCancelledRef.current = false;
       let fallbackStarted = false;
+      let bufferedTokens = '';
+      let flushFrame: number | null = null;
+
+      const flushBufferedTokens = () => {
+        if (!bufferedTokens) {
+          return;
+        }
+
+        appendMessageContent(jobConversationId, artistMessageId, bufferedTokens);
+        bufferedTokens = '';
+      };
+
+      const scheduleFlush = () => {
+        if (flushFrame !== null) {
+          return;
+        }
+
+        if (typeof requestAnimationFrame !== 'function') {
+          flushBufferedTokens();
+          return;
+        }
+
+        flushFrame = requestAnimationFrame(() => {
+          flushFrame = null;
+          flushBufferedTokens();
+        });
+      };
 
       const resetStreamState = () => {
+        if (flushFrame !== null && typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(flushFrame);
+          flushFrame = null;
+        }
+
+        flushBufferedTokens();
         isStreamingRef.current = false;
         activeMessageIdRef.current = null;
         streamingConversationIdRef.current = null;
@@ -147,7 +180,8 @@ export function useChat(conversationId: string) {
         if (streamingConversationIdRef.current !== jobConversationId) {
           return;
         }
-        appendMessageContent(jobConversationId, artistMessageId, token);
+        bufferedTokens += token;
+        scheduleFlush();
       };
 
       const onComplete = ({ tokensUsed }: { tokensUsed: number }) => {
@@ -155,7 +189,7 @@ export function useChat(conversationId: string) {
           status: 'complete',
           metadata: { tokensUsed }
         });
-        incrementUsage(tokensUsed);
+        incrementUsage();
         resetStreamState();
         runNext();
       };
@@ -270,7 +304,7 @@ export function useChat(conversationId: string) {
 
     const modeId = currentConversation.modeId || MODE_IDS.DEFAULT;
     const latestProfile = useStore.getState().userProfile ?? userProfile;
-    const systemPrompt = buildSystemPrompt(modeId, latestProfile);
+    const systemPrompt = buildSystemPrompt(modeId, latestProfile, languageForTurn);
 
     queueRef.current.push({
       artistMessageId,
@@ -291,7 +325,7 @@ export function useChat(conversationId: string) {
       language: languageForTurn,
       lastMessagePreview: previewText,
       title: previewText.slice(0, 30)
-    });
+    }, currentConversation.artistId);
 
     return null;
   };

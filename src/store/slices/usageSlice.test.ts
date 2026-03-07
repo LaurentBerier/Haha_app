@@ -17,23 +17,31 @@ function createSliceHarness<T>(initializer: (set: (partial: unknown) => void, ge
 }
 
 describe('usageSlice', () => {
-  it('increments used quota tokens', () => {
+  it('increments used quota messages by one', () => {
     const slice = createSliceHarness((set, get) => createUsageSlice(set as never, get as never, undefined as never));
 
-    slice.incrementUsage(123);
+    slice.incrementUsage();
 
-    expect(slice.quota.used).toBe(123);
+    expect(slice.quota.messagesUsed).toBe(1);
   });
 
-  it('resets expired quota window when checking limits', () => {
+  it('keeps isQuotaExceeded pure when quota window is expired', () => {
     const slice = createSliceHarness((set, get) => createUsageSlice(set as never, get as never, undefined as never));
-    slice.quota.used = 999;
+    slice.quota.messagesUsed = 999;
     slice.quota.resetDate = new Date(Date.now() - 1000).toISOString();
 
     const exceeded = slice.isQuotaExceeded();
 
     expect(exceeded).toBe(false);
-    expect(slice.quota.used).toBe(0);
-    expect(Date.parse(slice.quota.resetDate)).toBeGreaterThan(Date.now());
+    expect(slice.quota.messagesUsed).toBe(999);
+  });
+
+  it('hydrates quota with account tier cap', () => {
+    const slice = createSliceHarness((set, get) => createUsageSlice(set as never, get as never, undefined as never));
+
+    slice.hydrateQuota(42, 'regular');
+
+    expect(slice.quota.messagesCap).toBe(200);
+    expect(slice.quota.messagesUsed).toBe(42);
   });
 });

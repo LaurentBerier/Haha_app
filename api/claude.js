@@ -1,13 +1,28 @@
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
-const { createClient } = require('@supabase/supabase-js');
-const { attachRequestId, extractBearerToken, getMissingEnv, sendError, setCorsHeaders } = require('./_utils');
+const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
 const DEFAULT_MAX_TOKENS = 300;
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
+const ALLOWED_MODELS = new Set([DEFAULT_MODEL]);
 const MAX_MESSAGES = 40;
 const MAX_MESSAGE_CHARS = 10000;
 const MAX_SYSTEM_PROMPT_CHARS = 12000;
 const MAX_IMAGE_BYTES = 3_000_000;
+const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
+const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
+const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 30;
+const DEFAULT_MONTHLY_CAPS = {
+  free: 15,
+  regular: 200,
+  premium: 250
+  // admin intentionally omitted => unlimited
+};
+const DEFAULT_MAX_TOKENS_BY_TIER = {
+  free: 200,
+  regular: 200,
+  premium: 300,
+  admin: 300
+};
 const ALLOWED_IMAGE_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 function isRecord(value) {
@@ -133,7 +148,7 @@ function normalizeMessages(rawMessages) {
   });
 }
 
-function parsePayload(body) {
+function parsePayload(body, tierMaxTokens = DEFAULT_MAX_TOKENS) {
   if (!isRecord(body)) {
     throw new Error('JSON body is required.');
   }
@@ -147,17 +162,21 @@ function parsePayload(body) {
   }
 
   const messages = normalizeMessages(body.messages);
-  const model = typeof body.model === 'string' && body.model.trim() ? body.model.trim() : DEFAULT_MODEL;
+  const requestedModel = typeof body.model === 'string' ? body.model.trim() : '';
+  if (requestedModel && !ALLOWED_MODELS.has(requestedModel)) {
+    throw new Error('Unsupported model.');
+  }
+
+  const model = requestedModel || DEFAULT_MODEL;
   const stream = body.stream === true;
   const temperature =
     typeof body.temperature === 'number' && Number.isFinite(body.temperature) ? body.temperature : 0.9;
   const maxTokens =
     typeof body.maxTokens === 'number' &&
     Number.isInteger(body.maxTokens) &&
-    body.maxTokens > 0 &&
-    body.maxTokens <= 4096
-      ? body.maxTokens
-      : DEFAULT_MAX_TOKENS;
+    body.maxTokens > 0
+      ? Math.min(body.maxTokens, tierMaxTokens)
+      : tierMaxTokens;
 
   return {
     model,
@@ -167,6 +186,135 @@ function parsePayload(body) {
     temperature,
     max_tokens: maxTokens
   };
+}
+
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getMonthStartIso() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+}
+
+function getNextMonthStartIso() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
+}
+
+function getMonthlyCap(accountType) {
+  const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
+  const key = `CLAUDE_MONTHLY_CAP_${normalizedAccountType.toUpperCase()}`;
+  const fromEnv = parsePositiveInt(process.env[key], 0);
+  if (fromEnv > 0) {
+    return fromEnv;
+  }
+
+  const cap = DEFAULT_MONTHLY_CAPS[normalizedAccountType];
+  return cap ?? DEFAULT_MONTHLY_CAPS.free;
+}
+
+function getMaxTokensForTier(accountType) {
+  const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
+  return DEFAULT_MAX_TOKENS_BY_TIER[normalizedAccountType] ?? DEFAULT_MAX_TOKENS_BY_TIER.free;
+}
+
+function getRetryAfterUntilNextMonthSeconds() {
+  const nextMonthStartMs = Date.parse(getNextMonthStartIso());
+  return Math.max(1, Math.ceil((nextMonthStartMs - Date.now()) / 1000));
+}
+
+async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId) {
+  const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
+  if (normalizedAccountType === 'admin') {
+    return { ok: true };
+  }
+
+  const effectiveCap = getMonthlyCap(normalizedAccountType);
+  const monthStartIso = getMonthStartIso();
+
+  const { count, error } = await supabaseAdmin
+    .from('usage_events')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('endpoint', 'claude')
+    .gte('created_at', monthStartIso);
+
+  if (error) {
+    console.error(`[api/claude][${requestId}] Failed to read monthly usage`, error);
+    return {
+      ok: false,
+      status: 500,
+      code: 'SERVER_MISCONFIGURED',
+      message: 'Usage store unavailable.'
+    };
+  }
+
+  if ((count ?? 0) >= effectiveCap) {
+    return {
+      ok: false,
+      status: 429,
+      code: 'MONTHLY_QUOTA_EXCEEDED',
+      message: `Monthly message quota exceeded. Limit: ${effectiveCap} messages.`
+    };
+  }
+
+  return { ok: true };
+}
+
+async function enforceUserRateLimit(supabaseAdmin, userId, requestId) {
+  const now = Date.now();
+  const windowMs = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_WINDOW_MS, DEFAULT_RATE_LIMIT_WINDOW_MS);
+  const maxRequests = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS, DEFAULT_RATE_LIMIT_MAX_REQUESTS);
+  const windowStartIso = new Date(now - windowMs).toISOString();
+  const nowIso = new Date(now).toISOString();
+
+  const { count, error: countError } = await supabaseAdmin
+    .from('usage_events')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('endpoint', 'claude')
+    .gte('created_at', windowStartIso);
+
+  if (countError) {
+    console.error(`[api/claude][${requestId}] Failed to read usage_events`, countError);
+    return {
+      ok: false,
+      status: 500,
+      code: 'SERVER_MISCONFIGURED',
+      message: 'Rate limit store unavailable.'
+    };
+  }
+
+  if ((count ?? 0) >= maxRequests) {
+    return {
+      ok: false,
+      status: 429,
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Rate limit exceeded.',
+      retryAfterSeconds: Math.max(1, Math.ceil(windowMs / 1000))
+    };
+  }
+
+  const { error: insertError } = await supabaseAdmin.from('usage_events').insert({
+    user_id: userId,
+    endpoint: 'claude',
+    request_id: requestId,
+    created_at: nowIso
+  });
+
+  if (insertError) {
+    console.error(`[api/claude][${requestId}] Failed to write usage_events`, insertError);
+    return {
+      ok: false,
+      status: 500,
+      code: 'SERVER_MISCONFIGURED',
+      message: 'Rate limit store unavailable.'
+    };
+  }
+
+  return { ok: true, retryAfterSeconds: 0 };
 }
 
 async function relaySseResponse(upstreamResponse, res, requestId) {
@@ -215,17 +363,7 @@ function getErrorMessage(payload) {
   return 'Upstream API error';
 }
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabaseAdmin =
-  typeof supabaseUrl === 'string' &&
-  supabaseUrl &&
-  typeof serviceRoleKey === 'string' &&
-  serviceRoleKey
-    ? createClient(supabaseUrl, serviceRoleKey)
-    : null;
-
-async function validateAuthHeader(req, requestId) {
+async function validateAuthHeader(supabaseAdmin, req, requestId) {
   const token = extractBearerToken(req.headers.authorization);
 
   if (!token) {
@@ -260,6 +398,7 @@ async function validateAuthHeader(req, requestId) {
 
 module.exports = async function handler(req, res) {
   const requestId = attachRequestId(req, res);
+  const supabaseAdmin = getSupabaseAdmin();
   const corsResult = setCorsHeaders(req, res);
   if (!corsResult.ok) {
     if (corsResult.reason === 'cors_not_configured') {
@@ -291,9 +430,27 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const auth = await validateAuthHeader(req, requestId);
+  const auth = await validateAuthHeader(supabaseAdmin, req, requestId);
   if (auth.error) {
     sendError(res, 401, 'Unauthorized.', { code: 'UNAUTHORIZED', requestId });
+    return;
+  }
+
+  const monthlyQuota = await enforceMonthlyQuota(supabaseAdmin, auth.userId, auth.accountType, requestId);
+  if (!monthlyQuota.ok) {
+    if (monthlyQuota.status === 429) {
+      res.setHeader('Retry-After', String(getRetryAfterUntilNextMonthSeconds()));
+    }
+    sendError(res, monthlyQuota.status, monthlyQuota.message, { code: monthlyQuota.code, requestId });
+    return;
+  }
+
+  const rateLimit = await enforceUserRateLimit(supabaseAdmin, auth.userId, requestId);
+  if (!rateLimit.ok) {
+    if (rateLimit.status === 429) {
+      res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
+    }
+    sendError(res, rateLimit.status, rateLimit.message, { code: rateLimit.code, requestId });
     return;
   }
 
@@ -306,9 +463,11 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  const tierMaxTokens = getMaxTokensForTier(auth.accountType);
+
   let payload;
   try {
-    payload = parsePayload(req.body);
+    payload = parsePayload(req.body, tierMaxTokens);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid request payload.';
     sendError(res, 400, message, { code: 'INVALID_REQUEST', requestId });
@@ -316,6 +475,9 @@ module.exports = async function handler(req, res) {
   }
 
   let upstreamResponse;
+  const fetchTimeoutMs = parsePositiveInt(process.env.ANTHROPIC_FETCH_TIMEOUT_MS, DEFAULT_FETCH_TIMEOUT_MS);
+  const timeoutController = new AbortController();
+  const timeout = setTimeout(() => timeoutController.abort(), fetchTimeoutMs);
   try {
     upstreamResponse = await fetch(ANTHROPIC_API_URL, {
       method: 'POST',
@@ -324,12 +486,20 @@ module.exports = async function handler(req, res) {
         'x-api-key': apiKey,
         'anthropic-version': ANTHROPIC_VERSION
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: timeoutController.signal
     });
   } catch (error) {
+    if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
+      sendError(res, 504, 'Anthropic API timed out.', { code: 'UPSTREAM_TIMEOUT', requestId });
+      return;
+    }
+
     console.error(`[api/claude][${requestId}] Failed to reach Anthropic`, error);
     sendError(res, 502, 'Failed to reach Anthropic API.', { code: 'UPSTREAM_UNREACHABLE', requestId });
     return;
+  } finally {
+    clearTimeout(timeout);
   }
 
   if (!upstreamResponse.ok) {
