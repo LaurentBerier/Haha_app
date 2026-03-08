@@ -91,6 +91,7 @@ export default function HistoryScreen() {
   const artists = useStore((state) => state.artists);
   const conversationsByArtist = useStore((state) => state.conversations);
   const setActiveConversation = useStore((state) => state.setActiveConversation);
+  const hasHydrated = useStore((state) => state.hasHydrated);
 
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
 
@@ -163,18 +164,30 @@ export default function HistoryScreen() {
       </View>
 
       <SectionList
-        sections={historySections}
+        sections={hasHydrated ? historySections : []}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
         contentContainerStyle={styles.listContent}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyEmoji}>🗂️</Text>
-            <Text style={styles.emptyTitle}>{t('historyEmptyHeadline')}</Text>
-            <Text style={styles.emptyText}>{t('historyEmptySubtext')}</Text>
-          </View>
+          hasHydrated ? (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyEmoji}>🗂️</Text>
+              <Text style={styles.emptyTitle}>{t('historyEmptyHeadline')}</Text>
+              <Text style={styles.emptyText}>{t('historyEmptySubtext')}</Text>
+            </View>
+          ) : (
+            <View style={styles.skeletonList}>
+              {Array.from({ length: 4 }).map((_, index) => (
+                <View key={`history-skeleton-${index}`} style={styles.skeletonCard}>
+                  <View style={styles.skeletonHeader} />
+                  <View style={styles.skeletonLine} />
+                  <View style={styles.skeletonTimestamp} />
+                </View>
+              ))}
+            </View>
+          )
         }
       />
     </View>
@@ -272,6 +285,36 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: theme.spacing.xs,
     paddingHorizontal: theme.spacing.lg
+  },
+  skeletonList: {
+    gap: theme.spacing.sm,
+    paddingTop: theme.spacing.sm
+  },
+  skeletonCard: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 12,
+    backgroundColor: theme.colors.artistBubble,
+    padding: theme.spacing.md,
+    gap: theme.spacing.xs
+  },
+  skeletonHeader: {
+    width: '42%',
+    height: 14,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surfaceButton
+  },
+  skeletonLine: {
+    width: '75%',
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surfaceSunken
+  },
+  skeletonTimestamp: {
+    width: '25%',
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surfaceSunken
   },
   emptyEmoji: {
     fontSize: 28

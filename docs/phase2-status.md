@@ -80,6 +80,7 @@ Core targets:
   - Claude handler now overlaps prompt profile fetch with quota/rate-limit checks to reduce pre-stream latency
 - history UX polish:
   - conversations grouped by recency (`Today`, `Yesterday`, `This week`, `Earlier`)
+  - history screen now shows loading skeleton cards while persisted store hydration is in progress
 - safety/empty-state polish:
   - delete-account flow now requires typed confirmation (`DELETE`) before irreversible action
   - richer chat empty state card (headline + guidance)
