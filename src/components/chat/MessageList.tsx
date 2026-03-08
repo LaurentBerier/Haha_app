@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
-import { FlatList, type NativeScrollEvent, type NativeSyntheticEvent, StyleSheet, Text } from 'react-native';
+import { FlatList, type NativeScrollEvent, type NativeSyntheticEvent, StyleSheet, Text, View } from 'react-native';
 import type { Message } from '../../models/Message';
 import { t } from '../../i18n';
 import { theme } from '../../theme';
@@ -81,9 +81,11 @@ function MessageListBase({ messages, userDisplayName, artistDisplayName, onRetry
       onScroll={handleScroll}
       scrollEventThrottle={16}
       ListEmptyComponent={
-        <Text style={styles.empty} testID="message-list-empty">
-          {t('noMessages')}
-        </Text>
+        <View style={styles.emptyState} testID="message-list-empty">
+          <Text style={styles.emptyEmoji}>🎤</Text>
+          <Text style={styles.emptyTitle}>{t('chatEmptyHeadline')}</Text>
+          <Text style={styles.emptySubtitle}>{t('chatEmptySubtext')}</Text>
+        </View>
       }
     />
   );
@@ -99,9 +101,25 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
     paddingBottom: 96
   },
-  empty: {
+  emptyState: {
+    marginTop: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.lg
+  },
+  emptyEmoji: {
+    fontSize: 28
+  },
+  emptyTitle: {
+    color: theme.colors.textPrimary,
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '700'
+  },
+  emptySubtitle: {
     color: theme.colors.textMuted,
     textAlign: 'center',
-    marginTop: 40
+    fontSize: 13
   }
 });

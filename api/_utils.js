@@ -116,11 +116,46 @@ function sendError(res, status, message, options = {}) {
   res.status(status).json(payload);
 }
 
+function getClientIp(req) {
+  const forwardedFor = req && req.headers ? req.headers['x-forwarded-for'] : null;
+  const raw = Array.isArray(forwardedFor) ? forwardedFor[0] : forwardedFor;
+  if (typeof raw === 'string' && raw.trim()) {
+    return raw.split(',')[0]?.trim() ?? null;
+  }
+  return null;
+}
+
+async function logAuditEvent(supabaseAdmin, req, entry, requestId) {
+  if (!supabaseAdmin || !entry || typeof entry.action !== 'string' || !entry.action) {
+    return;
+  }
+
+  const payload = {
+    actor_id: typeof entry.actorId === 'string' && entry.actorId ? entry.actorId : null,
+    action: entry.action,
+    resource_type: typeof entry.resourceType === 'string' && entry.resourceType ? entry.resourceType : null,
+    resource_id: typeof entry.resourceId === 'string' && entry.resourceId ? entry.resourceId : null,
+    changes: entry.changes && typeof entry.changes === 'object' ? entry.changes : null,
+    ip_address: getClientIp(req)
+  };
+
+  try {
+    const { error } = await supabaseAdmin.from('audit_logs').insert(payload);
+    if (error) {
+      console.error(`[api/audit][${requestId}] Failed to write audit log`, error);
+    }
+  } catch (error) {
+    // Best-effort: do not break primary request path if audit table isn't available yet.
+    console.error(`[api/audit][${requestId}] Failed to write audit log`, error);
+  }
+}
+
 module.exports = {
   setCorsHeaders,
   extractBearerToken,
   getMissingEnv,
   attachRequestId,
   sendError,
-  getSupabaseAdmin
+  getSupabaseAdmin,
+  logAuditEvent
 };

@@ -178,6 +178,32 @@ create policy "stripe_customer_links: service-role only"
   using (false)
   with check (false);
 
+-- Audit ledger for privileged operations and webhook-driven entitlement updates.
+create table if not exists public.audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  actor_id uuid references auth.users(id),
+  action text not null,
+  resource_type text,
+  resource_id text,
+  changes jsonb,
+  ip_address inet,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists audit_logs_created_at_idx
+  on public.audit_logs (created_at desc);
+
+create index if not exists audit_logs_action_created_at_idx
+  on public.audit_logs (action, created_at desc);
+
+alter table public.audit_logs enable row level security;
+drop policy if exists "audit_logs: service-role only" on public.audit_logs;
+create policy "audit_logs: service-role only"
+  on public.audit_logs
+  for all
+  using (false)
+  with check (false);
+
 -- Usage event ledger for server-side quota/rate limiting (Claude proxy).
 create table if not exists public.usage_events (
   id uuid primary key default gen_random_uuid(),

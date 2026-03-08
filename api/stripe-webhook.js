@@ -1,5 +1,5 @@
 const { createHmac, timingSafeEqual } = require('node:crypto');
-const { attachRequestId, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
+const { attachRequestId, getMissingEnv, getSupabaseAdmin, logAuditEvent, sendError, setCorsHeaders } = require('./_utils');
 
 const STRIPE_SIGNATURE_TOLERANCE_SECONDS = 300;
 
@@ -477,6 +477,25 @@ module.exports = async function handler(req, res) {
         sendError(res, 500, metadataError.message, { code: 'SERVER_ERROR', requestId });
         return;
       }
+
+      await logAuditEvent(
+        supabaseAdmin,
+        req,
+        {
+          actorId: null,
+          action: 'webhook_account_type_change',
+          resourceType: 'profile',
+          resourceId: userId,
+          changes: {
+            provider: 'stripe',
+            eventType: stripeEvent.eventType,
+            providerEventId: providerEventId || null,
+            productId: stripeEvent.productId,
+            to: stripeEvent.accountTypeId
+          }
+        },
+        requestId
+      );
     }
 
     res.status(200).json({

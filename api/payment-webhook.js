@@ -1,5 +1,5 @@
 const { timingSafeEqual } = require('node:crypto');
-const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
+const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, logAuditEvent, sendError, setCorsHeaders } = require('./_utils');
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -248,6 +248,25 @@ module.exports = async function handler(req, res) {
         sendError(res, 500, metadataError.message, { code: 'SERVER_ERROR', requestId });
         return;
       }
+
+      await logAuditEvent(
+        supabaseAdmin,
+        req,
+        {
+          actorId: null,
+          action: 'webhook_account_type_change',
+          resourceType: 'profile',
+          resourceId: userId,
+          changes: {
+            provider: 'revenuecat',
+            eventType,
+            providerEventId: providerEventId || null,
+            productId: productId || null,
+            to: accountTypeId
+          }
+        },
+        requestId
+      );
     }
 
     res.status(200).json({ ok: true, userId: userId || null, accountTypeId });

@@ -60,12 +60,14 @@ Core targets:
 - payment webhook integration:
   - `POST /api/payment-webhook`
   - `POST /api/stripe-webhook`
+  - webhook-driven account changes now emit best-effort audit log rows (`audit_logs`)
 - API hardening pass:
   - shared utility module (`api/_utils.js`) for CORS/auth/error/request-id
   - browser CORS fail-closed behavior when `ALLOWED_ORIGINS` is missing or origin is not allowlisted
   - missing `Origin` now requires explicit auth (or explicit route opt-in) to reduce no-origin abuse paths
   - webhook auth fail-closed in all environments when `REVENUECAT_WEBHOOK_SECRET` is missing
   - admin account-type endpoint blocks `accountTypeId=admin` unless `ENABLE_ADMIN_TIER_GRANTS=true`
+  - best-effort audit log helper shared in `api/_utils.js` for privileged operations
   - standardized API error format with error codes and request IDs
 - chat/feed polish:
   - animated streaming indicator dots
@@ -73,6 +75,10 @@ Core targets:
   - smoother route transitions between mode/history/chat
 - history UX polish:
   - conversations grouped by recency (`Today`, `Yesterday`, `This week`, `Earlier`)
+- safety/empty-state polish:
+  - delete-account flow now requires typed confirmation (`DELETE`) before irreversible action
+  - richer chat empty state card (headline + guidance)
+  - send button press animation for clearer action feedback
 - unit test baseline:
   - `npm run test:unit`
   - API tests for `claude`, `delete-account`, `admin-account-type`, `payment-webhook`, and shared utils

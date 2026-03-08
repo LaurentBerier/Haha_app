@@ -93,6 +93,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
   const [isPickingImage, setIsPickingImage] = useState(false);
   const [error, setError] = useState<ChatError | null>(null);
   const [pickerError, setPickerError] = useState<string | null>(null);
+  const sendScale = useRef(new Animated.Value(1)).current;
 
   const { voiceStatus, transcript, voiceError, startRecording, stopRecording } = useVoiceInput();
   const { pulse, shake } = useVoiceAnimations(voiceStatus);
@@ -208,6 +209,10 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
 
   const handleDiscussionPress = () => {
     if (canSend) {
+      Animated.sequence([
+        Animated.timing(sendScale, { toValue: 0.9, duration: 70, useNativeDriver: true }),
+        Animated.timing(sendScale, { toValue: 1, duration: 110, useNativeDriver: true })
+      ]).start();
       handleSend();
       return;
     }
@@ -290,16 +295,18 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
           ) : null}
         </View>
 
-        <Pressable
-          testID="chat-discussion-button"
-          style={[styles.rightAction, disabled && styles.disabledButton]}
-          onPress={handleDiscussionPress}
-          disabled={disabled}
-          accessibilityRole="button"
-          accessibilityLabel={canSend ? t('sendButtonA11y') : t('discussionButtonA11y')}
-        >
-          <Text style={styles.rightActionText}>{canSend ? '➤' : '◉'}</Text>
-        </Pressable>
+        <Animated.View style={{ transform: [{ scale: sendScale }] }}>
+          <Pressable
+            testID="chat-discussion-button"
+            style={[styles.rightAction, disabled && styles.disabledButton]}
+            onPress={handleDiscussionPress}
+            disabled={disabled}
+            accessibilityRole="button"
+            accessibilityLabel={canSend ? t('sendButtonA11y') : t('discussionButtonA11y')}
+          >
+            <Text style={styles.rightActionText}>{canSend ? '➤' : '◉'}</Text>
+          </Pressable>
+        </Animated.View>
       </View>
 
       {error ? (

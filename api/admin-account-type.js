@@ -1,4 +1,4 @@
-const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
+const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, logAuditEvent, sendError, setCorsHeaders } = require('./_utils');
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -52,6 +52,20 @@ async function accountTypeExists(supabaseAdmin, accountTypeId) {
   }
 
   return Boolean(data?.id);
+}
+
+async function readCurrentAccountType(supabaseAdmin, userId) {
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('account_type_id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return typeof data?.account_type_id === 'string' ? data.account_type_id : null;
 }
 
 async function updateAppMetadata(supabaseAdmin, userId, accountTypeId) {
@@ -151,6 +165,8 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    const previousAccountTypeId = await readCurrentAccountType(supabaseAdmin, userId);
+
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .update({ account_type_id: accountTypeId })
@@ -167,6 +183,22 @@ module.exports = async function handler(req, res) {
       sendError(res, 500, metadataError.message, { code: 'SERVER_ERROR', requestId });
       return;
     }
+
+    await logAuditEvent(
+      supabaseAdmin,
+      req,
+      {
+        actorId: auth.userId,
+        action: 'account_type_change',
+        resourceType: 'profile',
+        resourceId: userId,
+        changes: {
+          from: previousAccountTypeId,
+          to: accountTypeId
+        }
+      },
+      requestId
+    );
 
     res.status(200).json({
       ok: true,

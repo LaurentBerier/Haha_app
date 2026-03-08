@@ -3,6 +3,7 @@ const { createReqRes } = require('./testHelpers');
 function buildSupabaseMock({
   user = { id: 'admin-1', app_metadata: { role: 'admin', account_type: 'admin' } },
   targetUser = { id: 'user-2', app_metadata: { locale: 'fr-CA' } },
+  currentAccountTypeId = 'free',
   accountTypeExists = true,
   profileUpdateError = null,
   metadataUpdateError = null
@@ -21,6 +22,10 @@ function buildSupabaseMock({
     data: { user: targetUser },
     error: null
   });
+  const profileMaybeSingle = jest.fn().mockResolvedValue({
+    data: { account_type_id: currentAccountTypeId },
+    error: null
+  });
 
   const from = jest.fn((table) => {
     if (table === 'account_types') {
@@ -35,6 +40,11 @@ function buildSupabaseMock({
 
     if (table === 'profiles') {
       return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: profileMaybeSingle
+          })
+        }),
         update: () => ({
           eq: profileUpdateEq
         })
@@ -55,7 +65,7 @@ function buildSupabaseMock({
       },
       from
     },
-    spies: { getUser, maybeSingle, profileUpdateEq, updateUserById, getUserById }
+    spies: { getUser, maybeSingle, profileUpdateEq, updateUserById, getUserById, profileMaybeSingle }
   };
 }
 

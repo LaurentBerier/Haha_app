@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme } from 'react-native';
 import { SettingsRow } from '../../components/common/SettingsRow';
 import { t } from '../../i18n';
 import { deleteAccount, signOut } from '../../services/authService';
@@ -46,6 +46,8 @@ export default function SettingsScreen() {
   const systemColorScheme = useColorScheme();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
 
   const email = user?.email ?? '';
   const identity = user?.displayName ?? email;
@@ -103,11 +105,11 @@ export default function SettingsScreen() {
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(t('settingsDeleteAccount'), t('settingsDeleteConfirm'), [
-      { text: t('cancel'), style: 'cancel' },
-      { text: t('settingsDeleteAccount'), style: 'destructive', onPress: () => void doDeleteAccount() }
-    ]);
+    setDeleteConfirmInput('');
+    setShowDeleteConfirm((current) => !current);
   };
+
+  const isDeleteConfirmValid = deleteConfirmInput.trim().toUpperCase() === 'DELETE';
 
   return (
     <ScrollView contentContainerStyle={styles.screen} testID="settings-screen">
@@ -202,6 +204,47 @@ export default function SettingsScreen() {
             showChevron={false}
             testID="settings-delete-account"
           />
+          {showDeleteConfirm ? (
+            <View style={styles.deleteConfirmCard} testID="settings-delete-account-confirmation">
+              <Text style={styles.deleteConfirmText}>{t('settingsDeleteTypePrompt')}</Text>
+              <Text style={styles.deleteConfirmHint}>{t('settingsDeleteTypeHint')}</Text>
+              <TextInput
+                value={deleteConfirmInput}
+                onChangeText={setDeleteConfirmInput}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                editable={!isSubmitting}
+                placeholder={t('settingsDeleteTypePlaceholder')}
+                placeholderTextColor={theme.colors.textDisabled}
+                style={styles.deleteConfirmInput}
+                testID="settings-delete-account-input"
+              />
+              <View style={styles.deleteConfirmActions}>
+                <Pressable
+                  onPress={() => {
+                    setShowDeleteConfirm(false);
+                    setDeleteConfirmInput('');
+                  }}
+                  style={[styles.deleteCancelButton, isSubmitting ? styles.deleteButtonDisabled : null]}
+                  disabled={isSubmitting}
+                  testID="settings-delete-account-cancel"
+                >
+                  <Text style={styles.deleteCancelButtonLabel}>{t('cancel')}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void doDeleteAccount()}
+                  style={[
+                    styles.deleteConfirmButton,
+                    (!isDeleteConfirmValid || isSubmitting) ? styles.deleteButtonDisabled : null
+                  ]}
+                  disabled={!isDeleteConfirmValid || isSubmitting}
+                  testID="settings-delete-account-confirm"
+                >
+                  <Text style={styles.deleteConfirmButtonLabel}>{t('settingsDeleteTypeCta')}</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -330,5 +373,69 @@ const styles = StyleSheet.create({
   blockerLabel: {
     color: theme.colors.textMuted,
     fontSize: 13
+  },
+  deleteConfirmCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.error,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.md,
+    gap: theme.spacing.sm
+  },
+  deleteConfirmText: {
+    color: theme.colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  deleteConfirmHint: {
+    color: theme.colors.textMuted,
+    fontSize: 12
+  },
+  deleteConfirmInput: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 10,
+    backgroundColor: theme.colors.surfaceSunken,
+    color: theme.colors.textPrimary,
+    paddingHorizontal: theme.spacing.sm,
+    fontSize: 14
+  },
+  deleteConfirmActions: {
+    flexDirection: 'row',
+    gap: theme.spacing.sm
+  },
+  deleteCancelButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.surfaceSunken
+  },
+  deleteCancelButtonLabel: {
+    color: theme.colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  deleteConfirmButton: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.error,
+    backgroundColor: theme.colors.error,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  deleteConfirmButtonLabel: {
+    color: theme.colors.textPrimary,
+    fontSize: 13,
+    fontWeight: '800'
+  },
+  deleteButtonDisabled: {
+    opacity: 0.45
   }
 });
