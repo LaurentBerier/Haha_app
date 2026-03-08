@@ -372,3 +372,28 @@ Run commands:
 npm run e2e:build:ios
 npm run e2e:ios
 ```
+
+## 24) Vercel build fails with `vercel.json ... should NOT have additional property 'bodyParser'`
+
+Symptom:
+
+- Deployment fails before build starts.
+- Error references:
+  - ``functions.api/stripe-webhook.js`` and `bodyParser`.
+
+Cause:
+
+- In this repo's Vercel function schema, `bodyParser` is not a supported key under `functions`.
+
+Fix:
+
+1. Remove `bodyParser` from `vercel.json` function config.
+2. Keep only supported keys (for example `maxDuration`).
+3. Re-run deploy.
+
+Validation command:
+
+```bash
+cd /Users/laurentbernier/Documents/HAHA_app
+npx vercel build --yes
+```

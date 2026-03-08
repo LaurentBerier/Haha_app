@@ -45,8 +45,14 @@ async function resolveRawBody(req, requestId) {
   }
 
   if (isRecord(req.body)) {
-    console.error(`[api/stripe-webhook][${requestId}] Raw body unavailable because request body is pre-parsed JSON.`);
-    return '';
+    // Fallback for platforms that pre-parse JSON body before handler execution.
+    // Signature verification can still succeed when canonical serialization matches payload bytes.
+    try {
+      return JSON.stringify(req.body);
+    } catch {
+      console.error(`[api/stripe-webhook][${requestId}] Raw body unavailable because request body is pre-parsed JSON.`);
+      return '';
+    }
   }
 
   try {

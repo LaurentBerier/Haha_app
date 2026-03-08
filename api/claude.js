@@ -852,6 +852,14 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  const promptContext = normalizePromptContext(req.body);
+  if (!promptContext.ok) {
+    sendError(res, 400, promptContext.error, { code: 'INVALID_REQUEST', requestId });
+    return;
+  }
+
+  const profileForPromptPromise = fetchUserProfileForPrompt(supabaseAdmin, auth.userId, requestId);
+
   const monthlyQuota = await enforceMonthlyQuota(supabaseAdmin, auth.userId, auth.accountType, requestId);
   if (!monthlyQuota.ok) {
     if (monthlyQuota.status === 429) {
@@ -880,13 +888,7 @@ module.exports = async function handler(req, res) {
   }
 
   const tierMaxTokens = getMaxTokensForTier(auth.accountType);
-  const promptContext = normalizePromptContext(req.body);
-  if (!promptContext.ok) {
-    sendError(res, 400, promptContext.error, { code: 'INVALID_REQUEST', requestId });
-    return;
-  }
-
-  const profileForPrompt = await fetchUserProfileForPrompt(supabaseAdmin, auth.userId, requestId);
+  const profileForPrompt = await profileForPromptPromise;
   const serverSystemPrompt = buildServerSystemPrompt(promptContext, profileForPrompt);
 
   let payload;

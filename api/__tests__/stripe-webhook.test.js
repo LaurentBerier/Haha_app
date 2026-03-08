@@ -129,7 +129,7 @@ describe('api/stripe-webhook', () => {
     expect(res.payload.error.code).toBe('UNAUTHORIZED');
   });
 
-  it('rejects webhook when body is pre-parsed JSON (raw payload unavailable)', async () => {
+  it('rejects webhook when body is pre-parsed JSON and signature does not match', async () => {
     const event = {
       id: 'evt_missing_raw_body',
       type: 'checkout.session.completed',
@@ -148,8 +148,8 @@ describe('api/stripe-webhook', () => {
 
     await handler(req, res);
 
-    expect(res.statusCode).toBe(500);
-    expect(res.payload.error.code).toBe('SERVER_MISCONFIGURED');
+    expect(res.statusCode).toBe(401);
+    expect(res.payload.error.code).toBe('UNAUTHORIZED');
   });
 
   it('returns duplicate=true when Stripe event already exists', async () => {

@@ -70,10 +70,12 @@ Core targets:
   - admin account-type endpoint blocks `accountTypeId=admin` unless `ENABLE_ADMIN_TIER_GRANTS=true`
   - best-effort audit log helper shared in `api/_utils.js` for privileged operations
   - standardized API error format with error codes and request IDs
+  - Vercel deployment compatibility fix: removed unsupported `bodyParser` property from `vercel.json` function schema
 - chat/feed polish:
   - animated streaming indicator dots
   - optimized message-slice updates with per-conversation message index map to reduce per-token update cost
   - smoother route transitions between mode/history/chat
+  - Claude handler now overlaps prompt profile fetch with quota/rate-limit checks to reduce pre-stream latency
 - history UX polish:
   - conversations grouped by recency (`Today`, `Yesterday`, `This week`, `Earlier`)
 - safety/empty-state polish:
