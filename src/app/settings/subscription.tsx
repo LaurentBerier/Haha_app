@@ -1,16 +1,18 @@
-import { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { t } from '../../i18n';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { getLanguage, t } from '../../i18n';
 import {
-  getBillingProviderOptions,
+  cancelSubscription,
+  fetchSubscriptionSummary,
   isCheckoutConfigured,
   startSubscriptionCheckout,
-  type BillingProviderId,
-  type BillingProviderOption,
-  type SubscriptionPlanId
+  type SubscriptionPlanId,
+  type SubscriptionSummary
 } from '../../services/subscriptionService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
+
+type PlanId = 'free' | 'regular' | 'premium';
 
 function getAccountTypeLabel(accountType: string | null | undefined): string {
   if (accountType === 'regular') {
@@ -25,112 +27,264 @@ function getAccountTypeLabel(accountType: string | null | undefined): string {
   return t('accountTypeFree');
 }
 
+function isPaidPlan(accountType: string | null | undefined): boolean {
+  return accountType === 'regular' || accountType === 'premium' || accountType === 'admin';
+}
+
+function toKnownPlanId(accountType: string | null | undefined): PlanId | null {
+  if (accountType === 'free' || accountType === 'regular' || accountType === 'premium') {
+    return accountType;
+  }
+  return null;
+}
+
+function formatBillingDate(iso: string | null): string | null {
+  if (!iso) {
+    return null;
+  }
+
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed.toLocaleDateString(getLanguage(), {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+}
+
 export default function SubscriptionScreen() {
   const session = useStore((state) => state.session);
   const user = session?.user ?? null;
-  const [activeCheckoutKey, setActiveCheckoutKey] = useState<string | null>(null);
-  const accountTypeLabel = getAccountTypeLabel(user?.accountType);
-  const providerOptions = useMemo(() => getBillingProviderOptions(), []);
 
-  const getProviderLabel = (providerId: BillingProviderId): string => {
-    if (providerId === 'stripe') {
-      return t('settingsSubscriptionProviderStripe');
+  const [summary, setSummary] = useState<SubscriptionSummary | null>(null);
+  const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+  const [activeActionKey, setActiveActionKey] = useState<string | null>(null);
+
+  const loadSummary = useCallback(async () => {
+    if (!session?.accessToken) {
+      setSummary(null);
+      return;
     }
-    if (providerId === 'paypal') {
-      return t('settingsSubscriptionProviderPayPal');
+
+    setIsLoadingSummary(true);
+    try {
+      const nextSummary = await fetchSubscriptionSummary(session.accessToken);
+      setSummary(nextSummary);
+    } catch {
+      setSummary(null);
+    } finally {
+      setIsLoadingSummary(false);
     }
-    return t('settingsSubscriptionProviderApple');
+  }, [session?.accessToken]);
+
+  useEffect(() => {
+    void loadSummary();
+  }, [loadSummary]);
+
+  const effectiveAccountType = summary?.accountType ?? user?.accountType ?? 'free';
+  const currentPlanLabel = getAccountTypeLabel(effectiveAccountType);
+  const currentPlanId = toKnownPlanId(effectiveAccountType);
+  const nextCycleLabel = formatBillingDate(summary?.nextBillingDate ?? null) ?? t('settingsSubscriptionNoCycle');
+  const isCancellingAtPeriodEnd = Boolean(summary?.cancelAtPeriodEnd);
+  const canCancel = Boolean(summary?.canCancel);
+
+  const plans: {
+    id: PlanId;
+    priceLabel: string;
+    punchline: string;
+    perks: [string, string, string];
+  }[] = [
+    {
+      id: 'free',
+      priceLabel: t('settingsSubscriptionPlanFreePrice'),
+      punchline: t('settingsSubscriptionPlanFreePunchline'),
+      perks: [
+        t('settingsSubscriptionPlanFreePerk1'),
+        t('settingsSubscriptionPlanFreePerk2'),
+        t('settingsSubscriptionPlanFreePerk3')
+      ]
+    },
+    {
+      id: 'regular',
+      priceLabel: t('settingsSubscriptionPlanRegularPrice'),
+      punchline: t('settingsSubscriptionPlanRegularPunchline'),
+      perks: [
+        t('settingsSubscriptionPlanRegularPerk1'),
+        t('settingsSubscriptionPlanRegularPerk2'),
+        t('settingsSubscriptionPlanRegularPerk3')
+      ]
+    },
+    {
+      id: 'premium',
+      priceLabel: t('settingsSubscriptionPlanPremiumPrice'),
+      punchline: t('settingsSubscriptionPlanPremiumPunchline'),
+      perks: [
+        t('settingsSubscriptionPlanPremiumPerk1'),
+        t('settingsSubscriptionPlanPremiumPerk2'),
+        t('settingsSubscriptionPlanPremiumPerk3')
+      ]
+    }
+  ];
+
+  const handleCancelAtPeriodEnd = async () => {
+    if (!session?.accessToken) {
+      return;
+    }
+
+    setActiveActionKey('cancel');
+    try {
+      const nextSummary = await cancelSubscription(session.accessToken);
+      setSummary(nextSummary);
+      Alert.alert(t('settingsSubscriptionCancelSuccessTitle'), t('settingsSubscriptionCancelSuccessBody'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('settingsSubscriptionCancelErrorBody');
+      Alert.alert(t('settingsSubscriptionCancelErrorTitle'), message);
+    } finally {
+      setActiveActionKey(null);
+    }
   };
 
-  const toCheckoutKey = (providerId: BillingProviderId, planId?: SubscriptionPlanId): string =>
-    `${providerId}:${planId ?? 'default'}`;
+  const requestCancellation = () => {
+    Alert.alert(t('settingsSubscriptionCancelTitle'), t('settingsSubscriptionCancelConfirm'), [
+      { text: t('cancel'), style: 'cancel' },
+      {
+        text: t('settingsSubscriptionCancelCta'),
+        style: 'destructive',
+        onPress: () => {
+          void handleCancelAtPeriodEnd();
+        }
+      }
+    ]);
+  };
 
-  const handleProviderPress = async (provider: BillingProviderOption, planId?: SubscriptionPlanId) => {
-    const checkoutKey = toCheckoutKey(provider.id, planId);
-    setActiveCheckoutKey(checkoutKey);
+  const handlePlanSelection = async (planId: PlanId) => {
+    if (!session) {
+      return;
+    }
+
+    if (planId === 'free') {
+      if (canCancel) {
+        requestCancellation();
+        return;
+      }
+
+      Alert.alert(t('settingsSubscriptionNoActionTitle'), t('settingsSubscriptionNoActionBody'));
+      return;
+    }
+
+    if (!isCheckoutConfigured('stripe', planId)) {
+      Alert.alert(t('settingsSubscriptionProviderUnavailableTitle'), t('settingsSubscriptionProviderUnavailableBody'));
+      return;
+    }
+
+    const actionKey = `checkout:${planId}`;
+    setActiveActionKey(actionKey);
     try {
-      const opened = await startSubscriptionCheckout(provider.id, planId, {
+      const opened = await startSubscriptionCheckout('stripe', planId as SubscriptionPlanId, {
         userId: user?.id,
         email: user?.email
       });
       if (!opened) {
-        Alert.alert(t('settingsSubscriptionProviderUnavailableTitle'), t('settingsSubscriptionProviderUnavailableBody'));
+        Alert.alert(t('settingsSubscriptionCheckoutErrorTitle'), t('settingsSubscriptionCheckoutErrorBody'));
       }
     } catch {
       Alert.alert(t('settingsSubscriptionCheckoutErrorTitle'), t('settingsSubscriptionCheckoutErrorBody'));
     } finally {
-      setActiveCheckoutKey(null);
+      setActiveActionKey(null);
     }
   };
 
+  const hasStripePlansConfigured = isCheckoutConfigured('stripe', 'regular') && isCheckoutConfigured('stripe', 'premium');
+
   return (
     <ScrollView contentContainerStyle={styles.screen} testID="settings-subscription-screen">
-      <View style={styles.planCard}>
-        <Text style={styles.title}>{t('settingsSubscription')}</Text>
-        <Text style={styles.body}>{`${t('settingsCurrentSubscription')} ${accountTypeLabel}`}</Text>
-        <Text style={styles.subtle}>{t('settingsSubscriptionComingSoon')}</Text>
+      <View style={styles.heroCard}>
+        <Text style={styles.heroTitle}>{t('settingsSubscription')}</Text>
+        <Text style={styles.heroLine}>{`${t('settingsCurrentSubscription')} ${currentPlanLabel}`}</Text>
+        <Text style={styles.heroMeta}>{`${t('settingsSubscriptionNextCycleLabel')} ${nextCycleLabel}`}</Text>
+        {isCancellingAtPeriodEnd ? <Text style={styles.cancelNotice}>{t('settingsSubscriptionCancelScheduled')}</Text> : null}
+
+        {canCancel ? (
+          <Pressable
+            style={[styles.cancelButton, activeActionKey === 'cancel' ? styles.disabledButton : null]}
+            onPress={requestCancellation}
+            disabled={activeActionKey !== null}
+            testID="subscription-cancel-cta"
+          >
+            {activeActionKey === 'cancel' ? (
+              <ActivityIndicator color={theme.colors.textPrimary} />
+            ) : (
+              <Text style={styles.cancelButtonLabel}>{t('settingsSubscriptionCancelCta')}</Text>
+            )}
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t('settingsSubscriptionMethodsTitle')}</Text>
-        <Text style={styles.sectionHint}>{t('settingsSubscriptionMethodsHint')}</Text>
+        <Text style={styles.sectionTitle}>{t('settingsSubscriptionChooseTitle')}</Text>
+        <Text style={styles.sectionHint}>{t('settingsSubscriptionChooseHint')}</Text>
 
-        {providerOptions.map((provider) => (
-          <View key={provider.id} style={styles.providerCard}>
-            <View style={styles.providerHeader}>
-              <Text style={styles.providerName}>{getProviderLabel(provider.id)}</Text>
-              <View
-                style={[styles.statusPill, provider.isConfigured ? styles.statusReady : styles.statusPending]}
-                testID={`subscription-provider-${provider.id}-status`}
-              >
-                <Text style={styles.statusPillLabel}>
-                  {provider.isConfigured ? t('settingsSubscriptionProviderReady') : t('settingsSubscriptionProviderPending')}
-                </Text>
-              </View>
-            </View>
+        {!hasStripePlansConfigured ? <Text style={styles.configurationWarning}>{t('settingsSubscriptionMissingConfig')}</Text> : null}
 
-            {provider.id === 'stripe' ? (
-              <View style={styles.planButtonsRow}>
-                <Pressable
-                  style={[
-                    styles.providerButton,
-                    activeCheckoutKey === toCheckoutKey('stripe', 'regular') ? styles.providerButtonDisabled : null,
-                    !isCheckoutConfigured('stripe', 'regular') ? styles.providerButtonDisabled : null
-                  ]}
-                  onPress={() => void handleProviderPress(provider, 'regular')}
-                  disabled={activeCheckoutKey !== null || !isCheckoutConfigured('stripe', 'regular')}
-                  testID="subscription-provider-stripe-regular-cta"
-                >
-                  <Text style={styles.providerButtonLabel}>{`${t('accountTypeRegular')} · ${t('settingsSubscriptionConnectProvider')}`}</Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.providerButton,
-                    activeCheckoutKey === toCheckoutKey('stripe', 'premium') ? styles.providerButtonDisabled : null,
-                    !isCheckoutConfigured('stripe', 'premium') ? styles.providerButtonDisabled : null
-                  ]}
-                  onPress={() => void handleProviderPress(provider, 'premium')}
-                  disabled={activeCheckoutKey !== null || !isCheckoutConfigured('stripe', 'premium')}
-                  testID="subscription-provider-stripe-premium-cta"
-                >
-                  <Text style={styles.providerButtonLabel}>{`${t('accountTypePremium')} · ${t('settingsSubscriptionConnectProvider')}`}</Text>
-                </Pressable>
-              </View>
-            ) : (
-              <Pressable
-                style={[
-                  styles.providerButton,
-                  activeCheckoutKey === toCheckoutKey(provider.id) ? styles.providerButtonDisabled : null
-                ]}
-                onPress={() => void handleProviderPress(provider)}
-                disabled={activeCheckoutKey !== null}
-                testID={`subscription-provider-${provider.id}-cta`}
-              >
-                <Text style={styles.providerButtonLabel}>{t('settingsSubscriptionConnectProvider')}</Text>
-              </Pressable>
-            )}
+        {isLoadingSummary ? (
+          <View style={styles.loadingCard}>
+            <ActivityIndicator color={theme.colors.accent} />
+            <Text style={styles.loadingLabel}>{t('loadingA11y')}</Text>
           </View>
-        ))}
+        ) : null}
+
+        {plans.map((plan) => {
+          const isCurrentPlan = currentPlanId === plan.id && !isCancellingAtPeriodEnd;
+          const isFreeDowngrade = plan.id === 'free' && isPaidPlan(effectiveAccountType);
+          const checkoutMissing = plan.id !== 'free' && !isCheckoutConfigured('stripe', plan.id as SubscriptionPlanId);
+          const disableForNoAction = plan.id === 'free' && !canCancel && !isFreeDowngrade;
+          const isBusy = activeActionKey !== null;
+          const isProcessingThisPlan = activeActionKey === `checkout:${plan.id}`;
+
+          const disabled = isBusy || isCurrentPlan || checkoutMissing || disableForNoAction;
+          const buttonLabel = isCurrentPlan
+            ? t('settingsSubscriptionCurrentPlanCta')
+            : isFreeDowngrade
+              ? t('settingsSubscriptionDowngradeCta')
+              : t('settingsSubscriptionChoosePlanCta');
+
+          return (
+            <View
+              key={plan.id}
+              style={[styles.planCard, isCurrentPlan ? styles.planCardCurrent : null]}
+              testID={`subscription-plan-${plan.id}`}
+            >
+              <View style={styles.planHeader}>
+                <Text style={styles.planTitle}>{getAccountTypeLabel(plan.id)}</Text>
+                <Text style={styles.planPrice}>{plan.priceLabel}</Text>
+              </View>
+
+              <Text style={styles.planPunchline}>{plan.punchline}</Text>
+
+              {plan.perks.map((perk) => (
+                <Text key={`${plan.id}-${perk}`} style={styles.planPerk}>{`• ${perk}`}</Text>
+              ))}
+
+              <Pressable
+                style={[styles.planCta, disabled ? styles.disabledButton : null]}
+                onPress={() => {
+                  void handlePlanSelection(plan.id);
+                }}
+                disabled={disabled}
+                testID={`subscription-plan-${plan.id}-cta`}
+              >
+                {isProcessingThisPlan ? (
+                  <ActivityIndicator color={theme.colors.textPrimary} />
+                ) : (
+                  <Text style={styles.planCtaLabel}>{buttonLabel}</Text>
+                )}
+              </Pressable>
+            </View>
+          );
+        })}
       </View>
     </ScrollView>
   );
@@ -143,7 +297,7 @@ const styles = StyleSheet.create({
     gap: theme.spacing.lg,
     minHeight: '100%'
   },
-  planCard: {
+  heroCard: {
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: 14,
@@ -151,18 +305,38 @@ const styles = StyleSheet.create({
     padding: theme.spacing.lg,
     gap: theme.spacing.xs
   },
-  title: {
+  heroTitle: {
     color: theme.colors.textPrimary,
-    fontSize: 22,
+    fontSize: 30,
+    fontWeight: '800'
+  },
+  heroLine: {
+    color: theme.colors.textPrimary,
+    fontSize: 18,
     fontWeight: '700'
   },
-  body: {
-    color: theme.colors.textPrimary,
-    fontSize: 16
-  },
-  subtle: {
+  heroMeta: {
     color: theme.colors.textSecondary,
     fontSize: 14
+  },
+  cancelNotice: {
+    color: theme.colors.accent,
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  cancelButton: {
+    marginTop: theme.spacing.sm,
+    minHeight: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.error,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  cancelButtonLabel: {
+    color: theme.colors.error,
+    fontSize: 14,
+    fontWeight: '700'
   },
   section: {
     gap: theme.spacing.sm
@@ -177,47 +351,64 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 12
   },
-  providerCard: {
+  configurationWarning: {
+    color: theme.colors.error,
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  loadingCard: {
+    minHeight: 56,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 12,
+    backgroundColor: theme.colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.sm
+  },
+  loadingLabel: {
+    color: theme.colors.textSecondary,
+    fontSize: 14
+  },
+  planCard: {
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: 14,
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.md,
-    gap: theme.spacing.sm
-  },
-  planButtonsRow: {
     gap: theme.spacing.xs
   },
-  providerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: theme.spacing.sm
-  },
-  providerName: {
-    color: theme.colors.textPrimary,
-    fontSize: 16,
-    fontWeight: '700'
-  },
-  statusPill: {
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 4
-  },
-  statusReady: {
+  planCardCurrent: {
     borderColor: theme.colors.accent
   },
-  statusPending: {
-    borderColor: theme.colors.border
+  planHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: theme.spacing.sm
   },
-  statusPillLabel: {
+  planTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 22,
+    fontWeight: '800'
+  },
+  planPrice: {
     color: theme.colors.textSecondary,
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase'
+    fontSize: 14,
+    fontWeight: '700'
   },
-  providerButton: {
+  planPunchline: {
+    color: theme.colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '600'
+  },
+  planPerk: {
+    color: theme.colors.textSecondary,
+    fontSize: 13
+  },
+  planCta: {
+    marginTop: theme.spacing.sm,
     minHeight: 42,
     borderRadius: 10,
     borderWidth: 1,
@@ -226,12 +417,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center'
   },
-  providerButtonDisabled: {
-    opacity: 0.65
-  },
-  providerButtonLabel: {
+  planCtaLabel: {
     color: theme.colors.textPrimary,
     fontSize: 14,
     fontWeight: '700'
+  },
+  disabledButton: {
+    opacity: 0.6
   }
 });

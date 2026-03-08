@@ -1,12 +1,42 @@
-import {
-  ExpoSpeechRecognitionModule,
-  type ExpoSpeechRecognitionErrorEvent,
-  type ExpoSpeechRecognitionResultEvent
-} from 'expo-speech-recognition';
-
 type Listener = { remove: () => void };
+type SpeechRecognitionModule = {
+  requestPermissionsAsync: () => Promise<{ granted: boolean }>;
+  addListener: (
+    eventName: 'result' | 'error',
+    callback: (event: {
+      results?: Array<{ transcript?: string }>;
+      message?: string;
+      error?: string;
+    }) => void
+  ) => Listener;
+  start: (options: {
+    lang: string;
+    interimResults: boolean;
+    maxAlternatives: number;
+    continuous: boolean;
+    addsPunctuation: boolean;
+  }) => void;
+  stop: () => void;
+};
 
 let listeners: Listener[] = [];
+let cachedModule: SpeechRecognitionModule | null | undefined;
+
+function getSpeechRecognitionModule(): SpeechRecognitionModule | null {
+  if (cachedModule !== undefined) {
+    return cachedModule;
+  }
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const loaded = require('expo-speech-recognition') as { ExpoSpeechRecognitionModule?: SpeechRecognitionModule };
+    cachedModule = loaded?.ExpoSpeechRecognitionModule ?? null;
+  } catch {
+    cachedModule = null;
+  }
+
+  return cachedModule;
+}
 
 function clearListeners(): void {
   listeners.forEach((listener) => listener.remove());
@@ -14,8 +44,13 @@ function clearListeners(): void {
 }
 
 export async function requestVoicePermission(): Promise<boolean> {
+  const module = getSpeechRecognitionModule();
+  if (!module) {
+    return false;
+  }
+
   try {
-    const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+    const result = await module.requestPermissionsAsync();
     return result.granted;
   } catch {
     return false;
@@ -27,22 +62,28 @@ export function startListening(
   onResult: (text: string) => void,
   onError: (error: Error) => void
 ): void {
+  const module = getSpeechRecognitionModule();
+  if (!module) {
+    onError(new Error('Speech recognition is unavailable on this build.'));
+    return;
+  }
+
   clearListeners();
 
   listeners.push(
-    ExpoSpeechRecognitionModule.addListener('result', (event: ExpoSpeechRecognitionResultEvent) => {
-      const transcript = event.results[0]?.transcript?.trim();
+    module.addListener('result', (event) => {
+      const transcript = event.results?.[0]?.transcript?.trim();
       if (transcript) {
         onResult(transcript);
       }
     }),
-    ExpoSpeechRecognitionModule.addListener('error', (event: ExpoSpeechRecognitionErrorEvent) => {
+    module.addListener('error', (event) => {
       onError(new Error(event.message || event.error || 'Speech recognition failed'));
     })
   );
 
   try {
-    ExpoSpeechRecognitionModule.start({
+    module.start({
       lang: locale,
       interimResults: true,
       maxAlternatives: 1,
@@ -58,8 +99,9 @@ export function startListening(
 }
 
 export function stopListening(): void {
+  const module = getSpeechRecognitionModule();
   try {
-    ExpoSpeechRecognitionModule.stop();
+    module?.stop();
   } finally {
     clearListeners();
   }

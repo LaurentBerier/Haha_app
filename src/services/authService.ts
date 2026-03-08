@@ -149,7 +149,9 @@ function toBackendBaseUrl(): string {
 
   try {
     const parsed = new URL(proxyUrl);
-    return `${parsed.protocol}//${parsed.host}`;
+    const normalizedPathname = parsed.pathname.replace(/\/+$/, '');
+    const basePath = normalizedPathname.replace(/\/claude\/?$/, '');
+    return `${parsed.protocol}//${parsed.host}${basePath}`;
   } catch {
     return '';
   }

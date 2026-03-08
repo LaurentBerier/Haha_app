@@ -1,6 +1,8 @@
 import { Linking } from 'react-native';
 import {
   APPLE_PAY_CHECKOUT_URL,
+  API_BASE_URL,
+  CLAUDE_PROXY_URL,
   PAYPAL_CHECKOUT_URL,
   STRIPE_CHECKOUT_URL_REGULAR,
   STRIPE_CHECKOUT_URL_PREMIUM
@@ -16,6 +18,14 @@ export interface StartCheckoutOptions {
 export interface BillingProviderOption {
   id: BillingProviderId;
   isConfigured: boolean;
+}
+export interface SubscriptionSummary {
+  accountType: string;
+  provider: 'stripe' | null;
+  subscriptionStatus: string | null;
+  nextBillingDate: string | null;
+  cancelAtPeriodEnd: boolean;
+  canCancel: boolean;
 }
 
 const NON_STRIPE_PROVIDER_URLS: Record<Exclude<BillingProviderId, 'stripe'>, string> = {
@@ -36,6 +46,35 @@ function getCheckoutUrl(providerId: BillingProviderId, planId?: SubscriptionPlan
   }
 
   return NON_STRIPE_PROVIDER_URLS[providerId].trim();
+}
+
+function toBackendBaseUrl(): string {
+  const explicitBase = API_BASE_URL.trim().replace(/\/+$/, '');
+  if (explicitBase) {
+    return explicitBase;
+  }
+
+  const proxyUrl = CLAUDE_PROXY_URL.trim();
+  if (!proxyUrl) {
+    return '';
+  }
+
+  if (proxyUrl.startsWith('/')) {
+    return proxyUrl.replace(/\/claude\/?$/, '');
+  }
+
+  try {
+    const parsed = new URL(proxyUrl);
+    const normalizedPathname = parsed.pathname.replace(/\/+$/, '');
+    const basePath = normalizedPathname.replace(/\/claude\/?$/, '');
+    return `${parsed.protocol}//${parsed.host}${basePath}`;
+  } catch {
+    return '';
+  }
+}
+
+function toNonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 export function isCheckoutConfigured(providerId: BillingProviderId, planId?: SubscriptionPlanId): boolean {
@@ -94,6 +133,98 @@ export async function startSubscriptionCheckout(
 
   await Linking.openURL(checkoutUrl);
   return true;
+}
+
+export async function fetchSubscriptionSummary(accessToken: string): Promise<SubscriptionSummary> {
+  const baseUrl = toBackendBaseUrl();
+  if (!baseUrl) {
+    throw new Error('Missing backend API base URL. Set EXPO_PUBLIC_API_BASE_URL or EXPO_PUBLIC_CLAUDE_PROXY_URL.');
+  }
+
+  const response = await fetch(`${baseUrl}/subscription-summary`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      'error' in payload &&
+      payload.error &&
+      typeof payload.error === 'object' &&
+      'message' in payload.error &&
+      typeof payload.error.message === 'string'
+    ) {
+      throw new Error(payload.error.message);
+    }
+    throw new Error('Impossible de récupérer les détails de ton abonnement.');
+  }
+
+  const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  return {
+    accountType: toNonEmptyString(record.accountType) ?? 'free',
+    provider: record.provider === 'stripe' ? 'stripe' : null,
+    subscriptionStatus: toNonEmptyString(record.subscriptionStatus),
+    nextBillingDate: toNonEmptyString(record.nextBillingDate),
+    cancelAtPeriodEnd: Boolean(record.cancelAtPeriodEnd),
+    canCancel: Boolean(record.canCancel)
+  };
+}
+
+export async function cancelSubscription(accessToken: string): Promise<SubscriptionSummary> {
+  const baseUrl = toBackendBaseUrl();
+  if (!baseUrl) {
+    throw new Error('Missing backend API base URL. Set EXPO_PUBLIC_API_BASE_URL or EXPO_PUBLIC_CLAUDE_PROXY_URL.');
+  }
+
+  const response = await fetch(`${baseUrl}/subscription-cancel`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`
+    }
+  });
+
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      'error' in payload &&
+      payload.error &&
+      typeof payload.error === 'object' &&
+      'message' in payload.error &&
+      typeof payload.error.message === 'string'
+    ) {
+      throw new Error(payload.error.message);
+    }
+    throw new Error("Impossible d'annuler l'abonnement pour le moment.");
+  }
+
+  const record = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  return {
+    accountType: toNonEmptyString(record.accountType) ?? 'free',
+    provider: 'stripe',
+    subscriptionStatus: toNonEmptyString(record.subscriptionStatus),
+    nextBillingDate: toNonEmptyString(record.nextBillingDate),
+    cancelAtPeriodEnd: Boolean(record.cancelAtPeriodEnd),
+    canCancel: Boolean(record.canCancel)
+  };
 }
 
 export async function syncSubscriptionState(): Promise<void> {

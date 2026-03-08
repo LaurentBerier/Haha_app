@@ -39,8 +39,7 @@ export function useAuth() {
             return;
           }
           hydrateQuota(usageSummary.messagesUsed, accountType);
-        } catch (error) {
-          console.error('[useAuth] usage summary bootstrap failed', error);
+        } catch {
           if (isMounted) {
             hydrateQuota(0, accountType);
           }
@@ -87,8 +86,7 @@ export function useAuth() {
             return;
           }
           hydrateQuota(usageSummary.messagesUsed, accountType);
-        } catch (error) {
-          console.error('[useAuth] usage summary auth sync failed', error);
+        } catch {
           if (isMounted) {
             hydrateQuota(0, accountType);
           }
