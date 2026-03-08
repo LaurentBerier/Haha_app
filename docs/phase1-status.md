@@ -6,7 +6,7 @@
 - Original MVP scope (single-artist chat) delivered
 - Current execution tracking moved to `docs/phase2-status.md`
 
-## Current State (2026-03-07)
+## Current State (2026-03-08)
 
 Implemented in this repository:
 
@@ -23,7 +23,7 @@ Implemented in this repository:
 - Settings flows:
   - edit profile
   - language and display preferences
-  - subscription provider scaffold (Stripe/PayPal/Apple checkout URLs)
+  - subscription plan screen with Stripe plan CTAs (regular/premium), current cycle, and cancel action
   - sign out
   - account deletion
 - Global app top bar/hamburger UI is unified across web and mobile app routes
@@ -31,7 +31,7 @@ Implemented in this repository:
 - Account type infrastructure:
   - extensible tier model (`free`, `regular`, `premium`, `admin`, custom)
   - admin endpoint to assign account type
-- Payment webhook scaffold for tier updates
+- Payment webhook + Stripe billing endpoints now wired for tier updates and subscription state reads
 
 ## Validation Commands
 

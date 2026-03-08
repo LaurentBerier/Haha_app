@@ -19,6 +19,7 @@ Supabase is the source of truth for:
 
 - Root layout (`_layout.tsx`): hydration, error boundary, auth/onboarding gate
 - Root layout also owns the global app top bar (brand logo left, hamburger menu right) and account menu overlay for authenticated users.
+- Root layout supports an E2E-only auth bypass gate via `EXPO_PUBLIC_E2E_AUTH_BYPASS=true`.
 - Auth routes:
   - `/(auth)/login`
   - `/(auth)/signup`
@@ -68,12 +69,12 @@ Active slices:
 - `profileService.ts`: fetch/update profile, onboarding complete/skip
 - `claudeApiService.ts`: proxy calls with Bearer token
 - `personalityEngineService.ts`: prompt generation + profile personalization
-- `subscriptionService.ts`: subscription provider option registry + checkout URL launcher (Stripe regular/premium plan links, PayPal, Apple)
+- `subscriptionService.ts`: Stripe checkout launcher (regular/premium), subscription summary fetch, and cancel-at-period-end action
 - `persistenceService.ts`: local cache persistence (conversations/messages/ui selections)
 
 ### Hooks (`src/hooks`)
 
-- `useAuth`: bootstraps stored session + subscribes to Supabase auth changes
+- `useAuth`: bootstraps stored session, hydrates usage quota from `/api/usage-summary`, and subscribes to Supabase auth changes
 - `useChat`: handles prompt build + Claude proxy orchestration
 - `useStorePersistence`: hydration/debounced persistence
 
@@ -84,6 +85,7 @@ Active slices:
 - CORS allowlist handling via shared `api/_utils.js` (`ALLOWED_ORIGINS`)
 - Bearer token validation via Supabase admin API
 - strict server-side model whitelist
+- server-side monthly quota by tier (env-overridable caps)
 - server-side per-user rate limiting backed by `public.usage_events`
 - payload validation
 - forwards request to Anthropic API
@@ -120,6 +122,28 @@ Active slices:
 - stores events in `payment_events`
 - persists Stripe customer/subscription mapping in `stripe_customer_links`
 - updates profile tier + metadata claims
+
+### `GET /api/usage-summary` (`api/usage-summary.js`)
+
+- validates bearer token via Supabase admin API
+- returns monthly usage snapshot for current user:
+  - `messagesUsed`
+  - `messagesCap` (`null` for `admin`)
+  - `resetDate` (UTC next month start)
+
+### `GET /api/subscription-summary` (`api/subscription-summary.js`)
+
+- validates bearer token via Supabase admin API
+- resolves Stripe subscription link from `stripe_customer_links`
+- fetches current Stripe subscription status (when linked) using `STRIPE_SECRET_KEY`
+- returns current billing state for the app subscription screen
+
+### `POST /api/subscription-cancel` (`api/subscription-cancel.js`)
+
+- validates bearer token via Supabase admin API
+- resolves Stripe subscription from `stripe_customer_links`
+- updates Stripe subscription with `cancel_at_period_end=true`
+- returns updated cancellation/billing metadata
 
 ## Auth and Profile Model
 
@@ -175,6 +199,7 @@ Built-in tiers:
 
 - Paid tiers (`regular`, `premium`) currently target an ElevenLabs voice path.
 - Stripe checkout is configured with per-plan links (`regular`, `premium`) in client env vars.
+- Subscription UX is plan-first (`Gratuit`, `Régulier`, `Premium`) with factual perk summaries and direct plan CTAs.
 - Artist pool share is modeled at a fixed `15%` across paid tiers.
 
 ## Persistence Strategy

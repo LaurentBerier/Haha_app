@@ -9,13 +9,15 @@ Implemented in this repository:
 - Mobile app (`src/`) with Expo Router, Zustand, strict TypeScript.
 - Supabase auth integration (email/password + Apple Sign-In).
 - Auth gate and onboarding flow in app routing.
-- Settings flow (profile edit, language/display preferences, subscription provider scaffold, sign out, account deletion).
+- Settings flow (profile edit, language/display preferences, subscription plan management, sign out, account deletion).
 - Unified app-style top bar (logo + hamburger menu) across mobile/web app screens.
 - Paid-tier voice strategy currently targets ElevenLabs.
+- Subscription screen includes current plan, next billing cycle, and cancel-at-period-end for Stripe subscriptions.
 - User profile model and profile personalization injection in system prompts.
 - Claude proxy (`api/claude.js`) with JWT validation via Supabase service role.
 - Admin endpoint (`api/admin-account-type.js`) for account type assignment.
 - Account deletion endpoint (`api/delete-account.js`).
+- Usage summary endpoint (`api/usage-summary.js`) for monthly quota hydration.
 - Payment webhooks:
   - RevenueCat (`api/payment-webhook.js`)
   - Stripe (`api/stripe-webhook.js`)
@@ -64,6 +66,7 @@ cp .env.example .env
 - `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_PREMIUM`
 - `EXPO_PUBLIC_PAYPAL_CHECKOUT_URL`
 - `EXPO_PUBLIC_APPLE_PAY_CHECKOUT_URL`
+- `EXPO_PUBLIC_E2E_AUTH_BYPASS` (test-only; used by Detox scripts)
 
 Notes:
 
@@ -80,6 +83,7 @@ Notes:
 - `SUPABASE_SERVICE_ROLE_KEY` (server-only, required for JWT/user validation)
 - `REVENUECAT_WEBHOOK_SECRET` (required if using `api/payment-webhook.js`; endpoint fails closed when missing)
 - `STRIPE_WEBHOOK_SECRET` (required for `api/stripe-webhook.js` signature verification)
+- `STRIPE_SECRET_KEY` (required for Stripe subscription read/cancel endpoints)
 - `STRIPE_PAYMENT_LINK_ID_REGULAR` (optional but recommended; maps checkout session to `regular`)
 - `STRIPE_PAYMENT_LINK_ID_PREMIUM` (optional but recommended; maps checkout session to `premium`)
 - `STRIPE_PRICE_ID_REGULAR_MONTHLY` / `STRIPE_PRICE_ID_PREMIUM_MONTHLY` (recommended for subscription update events)
@@ -88,6 +92,9 @@ Notes:
 - `CLAUDE_RATE_LIMIT_MAX_REQUESTS` (optional, default `30`, per user)
 - `CLAUDE_RATE_LIMIT_WINDOW_MS` (optional, default `60000`)
 - `ANTHROPIC_FETCH_TIMEOUT_MS` (optional, default `25000`)
+- `CLAUDE_MONTHLY_CAP_FREE` (optional, default `15`)
+- `CLAUDE_MONTHLY_CAP_REGULAR` (optional, default `45`)
+- `CLAUDE_MONTHLY_CAP_PREMIUM` (optional, default `110`)
 
 ## Supabase Setup
 
@@ -133,6 +140,7 @@ Behavior:
 - Signup confirmation screen instructs users to check spam/junk for Ha-Ha.ai confirmation emails.
 - Password recovery links (`flow=recovery`) are handled by `/auth/callback` and routed to `/(auth)/reset-password`.
 - Expired/invalid callback links now show a recovery screen with explicit actions to either sign in (resume onboarding) or restart signup.
+- E2E-only bypass exists via `EXPO_PUBLIC_E2E_AUTH_BYPASS=true` (used in Detox scripts; keep disabled outside tests).
 - `Paramètres` (`/settings`) stays reachable from authenticated screens via header shortcut.
 - Header logo returns to artist selection (`/`) and hamburger menu includes account routes plus auth action (sign in/sign up/sign out depending on state).
 
@@ -178,6 +186,7 @@ Security:
 - Validates token using Supabase admin client
 - Rejects invalid/missing token with `401`
 - Enforces server-side model whitelist (only approved models are accepted)
+- Enforces server-side monthly message quota by tier (`free`, `regular`, `premium`; `admin` unlimited)
 - Enforces server-side per-user rate limit using `public.usage_events`
 - Browser-origin requests are fail-closed when `ALLOWED_ORIGINS` is missing or origin is not allowlisted
 - Adds `X-Request-Id` response header for log correlation
@@ -196,12 +205,15 @@ Security:
 - Deletes authenticated user via `auth.admin.deleteUser`
 - Cascading FK cleanup handles profile-linked tables
 
-## Payment Webhook Scaffold
+## Billing and Subscription Endpoints
 
 Endpoint:
 
+- `GET /api/usage-summary`
 - `POST /api/payment-webhook`
 - `POST /api/stripe-webhook`
+- `GET /api/subscription-summary`
+- `POST /api/subscription-cancel`
 
 Notes:
 
@@ -209,7 +221,9 @@ Notes:
 - Persists incoming events in `public.payment_events`.
 - Maps product IDs to account types, updates `profiles.account_type_id`, and syncs JWT metadata.
 - Fails closed in every environment when `REVENUECAT_WEBHOOK_SECRET` is missing.
+- `usage-summary` returns `{ messagesUsed, messagesCap, resetDate }` for post-login quota hydration.
 - Stripe webhook verifies `Stripe-Signature`, stores events in `public.payment_events`, maps plan IDs to tiers, and syncs account type claims.
+- Stripe subscription endpoints allow client UI to display next billing cycle and request cancellation at period end.
 
 ## Run
 
@@ -231,6 +245,10 @@ npx expo run:ios --device --configuration Release
 
 # Produce static web build artifacts (includes web compatibility patch)
 npm run export:web
+
+# Optional iOS Detox E2E
+npm run e2e:build:ios
+npm run e2e:ios
 ```
 
 ## Verify
@@ -245,6 +263,13 @@ API smoke tests:
 
 ```bash
 ./scripts/smoke-auth.sh
+```
+
+Optional E2E:
+
+```bash
+npm run e2e:build:ios
+npm run e2e:ios
 ```
 
 ## Deploy to Vercel

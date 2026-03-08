@@ -1,6 +1,6 @@
 # Phase 2 Status (Mobile + API)
 
-Last updated: **2026-03-07**
+Last updated: **2026-03-08**
 
 ## Scope
 
@@ -31,7 +31,9 @@ Core targets:
 - settings flows:
   - edit profile
   - language + display preferences
-  - subscription provider integration (Stripe regular/premium links, PayPal, Apple checkout links)
+  - subscription plan screen (`Gratuit`, `Régulier`, `Premium`) with plan perks and direct Stripe CTAs
+  - current plan + next billing cycle display
+  - cancellation at period end for active Stripe subscriptions
   - sign out
   - delete account
 - paid-tier voice direction set to ElevenLabs (strategy-level decision)
@@ -40,11 +42,18 @@ Core targets:
   - `npm run export:web` applies module-script compatibility patch
   - `npm run deploy:web` targets Vercel project `haha-app-web`
 - `POST /api/claude` protected with bearer token validation
+  - server-side model whitelist
+  - server-side monthly quota enforcement by tier
+  - server-side rate limiting
 - `POST /api/delete-account` endpoint
+- `GET /api/usage-summary` endpoint (quota hydration after login)
+- Stripe subscription API endpoints:
+  - `GET /api/subscription-summary`
+  - `POST /api/subscription-cancel`
 - account type infrastructure:
   - SQL + RLS hardening
   - `POST /api/admin-account-type`
-- payment webhook scaffold:
+- payment webhook integration:
   - `POST /api/payment-webhook`
   - `POST /api/stripe-webhook`
 - API hardening pass:
@@ -56,24 +65,28 @@ Core targets:
   - `npm run test:unit`
   - API tests for `claude`, `delete-account`, `admin-account-type`, `payment-webhook`, and shared utils
   - store slice tests for `subscriptionSlice` and `usageSlice`
+- E2E baseline stabilized on iOS:
+  - `npm run e2e:build:ios`
+  - `npm run e2e:ios`
+  - auth bypass is test-scoped via `EXPO_PUBLIC_E2E_AUTH_BYPASS=true` in package scripts
 
 ## In Progress
 
 - end-to-end production validation of full auth/recovery flow on physical devices
-- payment provider integration (webhook currently scaffolded)
-- Stripe webhook deployment and dashboard event wiring in production
-- stronger automated integration coverage
+- PayPal/Apple checkout enablement (URLs and backend linkage)
+- stronger automated integration coverage beyond current E2E happy-path set
 
 ## Planned Next
 
-- integrate billing provider (RevenueCat/Stripe decision path)
-- connect Stripe customer portal / self-serve cancel flow
-- complete entitlement hydration from backend source of truth post-login
+- Stripe customer portal / subscription-management deep link
+- webhook observability dashboard (event success/failure + retry tracking)
+- broaden entitlement sync checks post-webhook (periodic reconciliation)
 - add integration/e2e tests for:
   - signup confirm callback
   - password recovery callback
   - onboarding complete/skip
   - claude proxy 401/200 contract
+  - subscription checkout return flow
 - improve operational monitoring around auth and proxy endpoints
 
 ## Verification Baseline
@@ -82,6 +95,8 @@ Core targets:
 npm run typecheck
 npm run lint
 npm run test:unit
+npm run e2e:build:ios
+npm run e2e:ios
 ```
 
 Manual checks:
@@ -92,7 +107,9 @@ Manual checks:
 4. Unauthenticated user is redirected to login.
 5. Authenticated user without onboarding is redirected to onboarding.
 6. `POST /api/claude` returns `401` without bearer token.
-7. `npm run deploy:web` publishes a working web app (no white-screen bootstrap crash).
+7. Stripe checkout completed event reaches `POST /api/stripe-webhook` with `200`.
+8. Subscription screen displays current plan + next cycle and can request cancellation.
+9. `npm run deploy:web` publishes a working web app (no white-screen bootstrap crash).
 
 ## Dependencies and Config
 
@@ -103,10 +120,11 @@ Required app env:
 - `EXPO_PUBLIC_CLAUDE_PROXY_URL`
 - `EXPO_PUBLIC_API_BASE_URL` (recommended for non-Claude API routes like `/delete-account`)
 - `EXPO_PUBLIC_STRIPE_CHECKOUT_URL` (legacy fallback)
-- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_REGULAR` (optional, Stripe regular plan link)
-- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_PREMIUM` (optional, Stripe premium plan link)
-- `EXPO_PUBLIC_PAYPAL_CHECKOUT_URL` (optional, enables PayPal CTA in subscription screen)
-- `EXPO_PUBLIC_APPLE_PAY_CHECKOUT_URL` (optional, enables Apple Pay CTA in subscription screen)
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_REGULAR` (required for regular paid CTA)
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_PREMIUM` (required for premium paid CTA)
+- `EXPO_PUBLIC_PAYPAL_CHECKOUT_URL` (optional, reserved for future provider wiring)
+- `EXPO_PUBLIC_APPLE_PAY_CHECKOUT_URL` (optional, reserved for future provider wiring)
+- `EXPO_PUBLIC_E2E_AUTH_BYPASS` (test-only, should stay false/unset outside E2E)
 
 Required backend env:
 
@@ -115,9 +133,11 @@ Required backend env:
 - `ANTHROPIC_API_KEY`
 - `REVENUECAT_WEBHOOK_SECRET` (required when webhook endpoint is enabled)
 - `STRIPE_WEBHOOK_SECRET` (required for `POST /api/stripe-webhook`)
+- `STRIPE_SECRET_KEY` (required for Stripe summary/cancel endpoints)
 - `STRIPE_PAYMENT_LINK_ID_REGULAR` / `STRIPE_PAYMENT_LINK_ID_PREMIUM` (recommended)
 - `STRIPE_PRICE_ID_REGULAR_MONTHLY` / `STRIPE_PRICE_ID_PREMIUM_MONTHLY` (recommended)
 - `ALLOWED_ORIGINS` (required for browser clients that send `Origin`)
+- `CLAUDE_MONTHLY_CAP_FREE` / `CLAUDE_MONTHLY_CAP_REGULAR` / `CLAUDE_MONTHLY_CAP_PREMIUM` (optional tier cap overrides)
 
 Supabase URL config must include:
 

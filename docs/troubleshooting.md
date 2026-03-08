@@ -295,3 +295,80 @@ If still blocked:
 1. Open `/(auth)/login` and sign in with the same email/password.
 2. If password unknown, use `/(auth)/forgot-password`.
 3. If signup was never finalized, restart from `/(auth)/signup` and use the newest email link only.
+
+## 20) Subscription plan CTAs are visible but disabled (grey)
+
+Symptom:
+
+- In `/settings/subscription`, `Régulier` / `Premium` buttons appear disabled.
+
+Root cause:
+
+- Missing checkout URLs in app env:
+  - `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_REGULAR`
+  - `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_PREMIUM`
+
+Fix:
+
+1. Set both env vars in local `.env` and in Vercel (for web builds).
+2. Rebuild/redeploy web app after env changes:
+
+```bash
+cd /Users/laurentbernier/Documents/HAHA_app
+npm run deploy:web
+```
+
+## 21) `POST /api/stripe-webhook` returns 404
+
+Symptom:
+
+- Stripe event deliveries show `404 ERR` with `The page could not be found`.
+
+Checklist:
+
+- Endpoint URL in Stripe must be exactly:
+  - `https://<your-domain>/api/stripe-webhook`
+- Destination must point to a running deployed app (not an old/paused domain).
+- Re-check Stripe account context (test/sandbox vs live) and webhook destination environment.
+
+## 22) `Cannot find native module 'ExpoSpeechRecognition'` on iOS simulator
+
+Symptom:
+
+- Red screen appears immediately after launch in simulator.
+
+Cause:
+
+- Native module requires a dev build; Expo Go/runtime mismatch or stale native build.
+
+Fix:
+
+```bash
+cd /Users/laurentbernier/Documents/HAHA_app
+npx expo run:ios
+```
+
+If issue persists:
+
+1. Clean/rebuild app binary.
+2. Ensure dependency is installed (`expo-speech-recognition`) and native project is regenerated.
+3. Relaunch Metro with cache clear (`npx expo start -c`).
+
+## 23) Detox E2E hangs with "The app is busy" (native timer loop)
+
+Symptom:
+
+- Detox waits indefinitely with repeated "Run loop is awake / native timers" logs.
+
+Fix strategy used in this repo:
+
+- Disable Detox synchronization for this suite launch path.
+- Ensure iOS permissions are pre-granted in `device.launchApp(...)`.
+- Use current `testID`s (`chat-discussion-button` instead of deprecated send ID).
+
+Run commands:
+
+```bash
+npm run e2e:build:ios
+npm run e2e:ios
+```
