@@ -4,6 +4,7 @@ import type { Artist } from '../../models/Artist';
 import { theme } from '../../theme';
 import { t } from '../../i18n';
 import { getArtistAvatarSource } from '../../config/artistAssets';
+import { impactLight } from '../../services/hapticsService';
 import { PremiumBadge } from '../common/PremiumBadge';
 import { ArtistAvatar } from './ArtistAvatar';
 
@@ -17,12 +18,17 @@ export function ArtistCard({ artist, locked, onStart }: ArtistCardProps) {
   const avatarSource = getArtistAvatarSource(artist.id);
   const artistGenre = artist.id === ARTIST_IDS.CATHY_GAUTHIER ? t('artistGenreCathy') : '';
 
+  const handleStart = () => {
+    void impactLight();
+    onStart();
+  };
+
   return (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && !locked && styles.pressed, locked && styles.locked]}
       testID={`artist-start-${artist.id}`}
       accessibilityRole="button"
-      onPress={onStart}
+      onPress={handleStart}
       disabled={locked}
     >
       <View style={styles.avatarWrap}>

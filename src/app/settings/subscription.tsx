@@ -9,6 +9,7 @@ import {
   type SubscriptionPlanId,
   type SubscriptionSummary
 } from '../../services/subscriptionService';
+import { impactLight, notifySuccess, notifyWarning } from '../../services/hapticsService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 
@@ -138,9 +139,11 @@ export default function SubscriptionScreen() {
     try {
       const nextSummary = await cancelSubscription(session.accessToken);
       setSummary(nextSummary);
+      void notifySuccess();
       Alert.alert(t('settingsSubscriptionCancelSuccessTitle'), t('settingsSubscriptionCancelSuccessBody'));
     } catch (error) {
       const message = error instanceof Error ? error.message : t('settingsSubscriptionCancelErrorBody');
+      void notifyWarning();
       Alert.alert(t('settingsSubscriptionCancelErrorTitle'), message);
     } finally {
       setActiveActionKey(null);
@@ -171,6 +174,7 @@ export default function SubscriptionScreen() {
         return;
       }
 
+      void notifyWarning();
       Alert.alert(t('settingsSubscriptionNoActionTitle'), t('settingsSubscriptionNoActionBody'));
       return;
     }
@@ -188,9 +192,13 @@ export default function SubscriptionScreen() {
         email: user?.email
       });
       if (!opened) {
+        void notifyWarning();
         Alert.alert(t('settingsSubscriptionCheckoutErrorTitle'), t('settingsSubscriptionCheckoutErrorBody'));
+      } else {
+        void impactLight();
       }
     } catch {
+      void notifyWarning();
       Alert.alert(t('settingsSubscriptionCheckoutErrorTitle'), t('settingsSubscriptionCheckoutErrorBody'));
     } finally {
       setActiveActionKey(null);

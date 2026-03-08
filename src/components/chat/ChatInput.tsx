@@ -18,6 +18,7 @@ import { t } from '../../i18n';
 import type { ChatError } from '../../models/ChatError';
 import type { ChatImageAttachment, ChatSendPayload } from '../../models/ChatSendPayload';
 import type { ClaudeImageMediaType } from '../../services/claudeApiService';
+import { impactLight, impactMedium, notifyWarning } from '../../services/hapticsService';
 import type { VoiceStatus } from '../../store/slices/uiSlice';
 import { theme } from '../../theme';
 
@@ -115,6 +116,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
       return;
     }
 
+    void impactLight();
     const sendError = onSend({ text: trimmed, image: imageAttachment });
     if (sendError) {
       setError(sendError);
@@ -133,6 +135,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
     }
 
     if (voiceStatus === 'recording') {
+      void impactLight();
       const finalTranscript = (await stopRecording()).trim();
       if (finalTranscript) {
         clearValidationErrors();
@@ -141,6 +144,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
       return;
     }
 
+    void impactMedium();
     await startRecording();
   };
 
@@ -208,6 +212,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
       return;
     }
 
+    void notifyWarning();
     Alert.alert(t('discussionComingSoonTitle'), t('discussionComingSoonBody'));
   };
 
