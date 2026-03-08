@@ -440,3 +440,26 @@ npx expo start -c
 cd /Users/laurentbernier/Documents/HAHA_app
 npm run deploy:web
 ```
+
+## 26) Chat shows `Rate limit store unavailable.`
+
+Symptoms:
+
+- AI bubble fails with: `Rate limit store unavailable.`
+
+Most likely causes:
+
+- `SUPABASE_SERVICE_ROLE_KEY` is missing/incorrect in Vercel (for example anon key instead of service-role key)
+- `usage_events` schema is partially migrated (for example missing columns)
+
+Current mitigation in code:
+
+- Claude API now retries `usage_events` insert without `request_id` when that column is absent.
+- If `usage_events` is temporarily unavailable, API uses an in-memory per-user fallback limiter (short-term resilience).
+
+Permanent fix checklist:
+
+1. In Vercel, verify `SUPABASE_SERVICE_ROLE_KEY` is the real service-role secret (`sb_secret_...`), not the publishable/anon key.
+2. Re-run SQL migration:
+   - [`docs/supabase-account-types.sql`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-account-types.sql)
+3. Redeploy backend and web.

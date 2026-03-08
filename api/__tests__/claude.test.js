@@ -5,7 +5,8 @@ function buildSupabaseClient({
   profile = null,
   initialUsageCount = 0,
   usageCountError = null,
-  usageInsertError = null
+  usageInsertError = null,
+  usageInsertErrors = null
 } = {}) {
   let usageCount = initialUsageCount;
   let profileRow = profile;
@@ -20,10 +21,15 @@ function buildSupabaseClient({
     }))
   }));
   const usageInsert = jest.fn().mockImplementation(() => {
-    if (!usageInsertError) {
+    let currentInsertError = usageInsertError;
+    if (Array.isArray(usageInsertErrors) && usageInsertErrors.length > 0) {
+      currentInsertError = usageInsertErrors.shift();
+    }
+
+    if (!currentInsertError) {
       usageCount += 1;
     }
-    return Promise.resolve({ error: usageInsertError });
+    return Promise.resolve({ error: currentInsertError });
   });
   const profileMaybeSingle = jest.fn().mockImplementation(() =>
     Promise.resolve({
@@ -380,6 +386,75 @@ describe('api/claude', () => {
 
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../claude');
+    const first = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello' }] }
+    });
+    const second = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello again' }] }
+    });
+
+    await handler(first.req, first.res);
+    await handler(second.req, second.res);
+
+    expect(first.res.statusCode).toBe(200);
+    expect(second.res.statusCode).toBe(429);
+    expect(second.res.payload.error.code).toBe('RATE_LIMIT_EXCEEDED');
+  });
+
+  it('accepts request when usage_events insert first fails on request_id and legacy retry succeeds', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
+    });
+
+    const currentMonthStartIso = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          profile: {
+            monthly_message_count: 0,
+            monthly_reset_at: currentMonthStartIso
+          },
+          usageInsertErrors: [{ code: '42703', message: 'column "request_id" does not exist' }, null]
+        })
+      )
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello' }] }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to in-memory rate limit when usage_events store is unavailable', async () => {
+    process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = '1';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
+    });
+
+    const currentMonthStartIso = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)).toISOString();
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          profile: {
+            monthly_message_count: 0,
+            monthly_reset_at: currentMonthStartIso
+          },
+          usageCountError: { code: '42P01', message: 'relation "usage_events" does not exist' }
+        })
+      )
     }));
 
     const handler = require('../claude');

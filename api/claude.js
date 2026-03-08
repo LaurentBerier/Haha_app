@@ -111,6 +111,7 @@ const PROFILE_STATUS_LABEL_EN = {
   prefer_not_to_say: 'Prefer not to say'
 };
 const monthlyQuotaCache = new Map();
+const inMemoryRateLimitCache = new Map();
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -524,6 +525,58 @@ function incrementMonthlyQuotaCache(userId, monthStartIso) {
   });
 }
 
+function isMissingUsageEventsRequestIdColumn(error) {
+  const code = isRecord(error) && typeof error.code === 'string' ? error.code : '';
+  if (code !== '42703') {
+    return false;
+  }
+
+  const message = isRecord(error) && typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return message.includes('request_id');
+}
+
+function isRateLimitStoreUnavailableError(error) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const code = typeof error.code === 'string' ? error.code : '';
+  if (code === '42P01' || code === '42703' || code === '42501') {
+    return true;
+  }
+
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return (
+    message.includes('usage_events') ||
+    message.includes('request_id') ||
+    message.includes('permission denied') ||
+    message.includes('does not exist')
+  );
+}
+
+function enforceInMemoryRateLimit(userId, nowMs, windowMs, maxRequests) {
+  const key = typeof userId === 'string' && userId ? userId : 'anonymous';
+  const previous = inMemoryRateLimitCache.get(key);
+  const safePrevious = Array.isArray(previous) ? previous : [];
+  const windowStartMs = nowMs - windowMs;
+  const recent = safePrevious.filter((ts) => typeof ts === 'number' && ts >= windowStartMs);
+
+  if (recent.length >= maxRequests) {
+    inMemoryRateLimitCache.set(key, recent);
+    return {
+      ok: false,
+      status: 429,
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Rate limit exceeded.',
+      retryAfterSeconds: Math.max(1, Math.ceil(windowMs / 1000))
+    };
+  }
+
+  recent.push(nowMs);
+  inMemoryRateLimitCache.set(key, recent);
+  return { ok: true, retryAfterSeconds: 0 };
+}
+
 async function readProfileMonthlyCounter(supabaseAdmin, userId, requestId) {
   const { data, error } = await supabaseAdmin
     .from('profiles')
@@ -664,6 +717,30 @@ async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuo
   const maxRequests = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS, DEFAULT_RATE_LIMIT_MAX_REQUESTS);
   const windowStartIso = new Date(now - windowMs).toISOString();
   const nowIso = new Date(now).toISOString();
+  const monthStartIso = monthlyQuota && typeof monthlyQuota.monthStartIso === 'string'
+    ? monthlyQuota.monthStartIso
+    : getMonthStartIso();
+
+  const applyMonthlyCounterUpdate = async () => {
+    if (monthlyQuota && monthlyQuota.source === 'profile') {
+      const used = typeof monthlyQuota.used === 'number' && Number.isFinite(monthlyQuota.used) ? monthlyQuota.used : 0;
+      const nextCount = used + 1;
+      const writeResult = await writeProfileMonthlyCounter(supabaseAdmin, userId, monthStartIso, nextCount, requestId);
+      if (!writeResult.ok) {
+        return {
+          ok: false,
+          status: 500,
+          code: 'SERVER_MISCONFIGURED',
+          message: 'Usage store unavailable.'
+        };
+      }
+      setMonthlyQuotaCache(userId, monthStartIso, nextCount);
+    } else {
+      incrementMonthlyQuotaCache(userId, monthStartIso);
+    }
+
+    return { ok: true, retryAfterSeconds: 0 };
+  };
 
   const { count, error: countError } = await supabaseAdmin
     .from('usage_events')
@@ -673,6 +750,15 @@ async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuo
     .gte('created_at', windowStartIso);
 
   if (countError) {
+    if (isRateLimitStoreUnavailableError(countError)) {
+      console.error(`[api/claude][${requestId}] Falling back to in-memory rate limit (count)`, countError);
+      const fallbackResult = enforceInMemoryRateLimit(userId, now, windowMs, maxRequests);
+      if (!fallbackResult.ok) {
+        return fallbackResult;
+      }
+      return applyMonthlyCounterUpdate();
+    }
+
     console.error(`[api/claude][${requestId}] Failed to read usage_events`, countError);
     return {
       ok: false,
@@ -692,14 +778,34 @@ async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuo
     };
   }
 
-  const { error: insertError } = await supabaseAdmin.from('usage_events').insert({
+  const insertPayload = {
     user_id: userId,
     endpoint: 'claude',
     request_id: requestId,
     created_at: nowIso
-  });
+  };
+
+  let { error: insertError } = await supabaseAdmin.from('usage_events').insert(insertPayload);
+  if (insertError && isMissingUsageEventsRequestIdColumn(insertError)) {
+    const legacyInsertPayload = {
+      user_id: userId,
+      endpoint: 'claude',
+      created_at: nowIso
+    };
+    ({ error: insertError } = await supabaseAdmin.from('usage_events').insert(legacyInsertPayload));
+  }
 
   if (insertError) {
+    if (isRateLimitStoreUnavailableError(insertError)) {
+      console.error(`[api/claude][${requestId}] Falling back to in-memory rate limit (insert)`, insertError);
+      const fallbackResult = enforceInMemoryRateLimit(userId, now, windowMs, maxRequests);
+      if (!fallbackResult.ok) {
+        return fallbackResult;
+      }
+
+      return applyMonthlyCounterUpdate();
+    }
+
     console.error(`[api/claude][${requestId}] Failed to write usage_events`, insertError);
     return {
       ok: false,
@@ -709,28 +815,7 @@ async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuo
     };
   }
 
-  const monthStartIso = monthlyQuota && typeof monthlyQuota.monthStartIso === 'string'
-    ? monthlyQuota.monthStartIso
-    : getMonthStartIso();
-
-  if (monthlyQuota && monthlyQuota.source === 'profile') {
-    const used = typeof monthlyQuota.used === 'number' && Number.isFinite(monthlyQuota.used) ? monthlyQuota.used : 0;
-    const nextCount = used + 1;
-    const writeResult = await writeProfileMonthlyCounter(supabaseAdmin, userId, monthStartIso, nextCount, requestId);
-    if (!writeResult.ok) {
-      return {
-        ok: false,
-        status: 500,
-        code: 'SERVER_MISCONFIGURED',
-        message: 'Usage store unavailable.'
-      };
-    }
-    setMonthlyQuotaCache(userId, monthStartIso, nextCount);
-  } else {
-    incrementMonthlyQuotaCache(userId, monthStartIso);
-  }
-
-  return { ok: true, retryAfterSeconds: 0 };
+  return applyMonthlyCounterUpdate();
 }
 
 async function relaySseResponse(upstreamResponse, res, requestId) {
