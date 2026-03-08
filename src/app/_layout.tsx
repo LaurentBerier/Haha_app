@@ -1,4 +1,4 @@
-import { Stack, router, useSegments } from 'expo-router';
+import { Stack, router, usePathname, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Platform, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
@@ -11,6 +11,7 @@ import { t } from '../i18n';
 import { signOut } from '../services/authService';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme';
+import { E2E_AUTH_BYPASS } from '../config/env';
 
 type AccountMenuRoute = '/settings' | '/settings/edit-profile' | '/settings/subscription';
 
@@ -22,6 +23,7 @@ export default function RootLayout() {
   const clearSession = useStore((state) => state.clearSession);
   const { authStatus, isAuthenticated, userProfile } = useAuth();
   const segments = useSegments();
+  const pathname = usePathname();
   const systemColorScheme = useColorScheme();
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const inAuthGroup = segments[0] === '(auth)';
@@ -90,6 +92,13 @@ export default function RootLayout() {
     }
 
     if (!isAuthenticated) {
+      if (E2E_AUTH_BYPASS) {
+        if (inAuthGroup) {
+          router.replace('/');
+        }
+        return;
+      }
+
       if (!inAuthGroup || isOnboardingRoute) {
         router.replace('/(auth)/login');
       }
@@ -113,10 +122,8 @@ export default function RootLayout() {
   }, [isAccountMenuOpen, showAccountMenu]);
 
   useEffect(() => {
-    if (isAccountMenuOpen) {
-      setIsAccountMenuOpen(false);
-    }
-  }, [isAccountMenuOpen, segments]);
+    setIsAccountMenuOpen(false);
+  }, [pathname]);
 
   return (
     <ErrorBoundary>
