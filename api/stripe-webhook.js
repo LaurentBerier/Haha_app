@@ -117,6 +117,33 @@ function isUniqueViolation(error) {
   return isRecord(error) && typeof error.code === 'string' && error.code === '23505';
 }
 
+function isMissingProviderEventIdColumn(error) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const code = typeof error.code === 'string' ? error.code : '';
+  if (code === '42703') {
+    return true;
+  }
+
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return message.includes('provider_event_id');
+}
+
+async function insertPaymentEvent(supabaseAdmin, row) {
+  const withProviderEventId = { ...row, provider_event_id: row.provider_event_id ?? null };
+  let result = await supabaseAdmin.from('payment_events').insert(withProviderEventId);
+
+  if (result.error && isMissingProviderEventIdColumn(result.error)) {
+    const legacyRow = { ...withProviderEventId };
+    delete legacyRow.provider_event_id;
+    result = await supabaseAdmin.from('payment_events').insert(legacyRow);
+  }
+
+  return result;
+}
+
 async function verifyStripeSignature(req, requestId) {
   const webhookSecret = (process.env.STRIPE_WEBHOOK_SECRET ?? '').trim();
   const rawBody = await resolveRawBody(req, requestId);
@@ -454,7 +481,7 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    const { error: eventError } = await supabaseAdmin.from('payment_events').insert({
+    const { error: eventError } = await insertPaymentEvent(supabaseAdmin, {
       user_id: userId,
       provider: 'stripe',
       provider_event_id: providerEventId || null,

@@ -11,10 +11,17 @@ function signPayload(payload, secret, timestamp = Math.floor(Date.now() / 1000))
 function buildSupabaseMock({
   linkLookupUserId = '',
   targetUser = { id: 'user-1', app_metadata: { locale: 'fr-CA' } },
-  duplicateEventCount = 0
+  duplicateEventCount = 0,
+  paymentInsertResults = [{ error: null }]
 } = {}) {
   const linksUpsert = jest.fn().mockResolvedValue({ error: null });
-  const paymentInsert = jest.fn().mockResolvedValue({ error: null });
+  const paymentInsert = jest.fn();
+  paymentInsertResults.forEach((result) => {
+    paymentInsert.mockResolvedValueOnce(result);
+  });
+  if (paymentInsertResults.length === 0) {
+    paymentInsert.mockResolvedValue({ error: null });
+  }
   const paymentSelectContains = jest.fn().mockResolvedValue({ count: duplicateEventCount, error: null });
   const profilesEq = jest.fn().mockResolvedValue({ error: null });
   const linksMaybeSingle = jest.fn().mockResolvedValue({
@@ -231,6 +238,51 @@ describe('api/stripe-webhook', () => {
         account_type: 'premium'
       }
     });
+  });
+
+  it('falls back to legacy payment_events insert when provider_event_id column is missing', async () => {
+    const event = {
+      id: 'evt_checkout_legacy_insert',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_legacy',
+          client_reference_id: 'user-1',
+          customer: 'cus_legacy',
+          subscription: 'sub_legacy',
+          payment_link: 'plink_regular'
+        }
+      }
+    };
+    const payload = JSON.stringify(event);
+    const signature = signPayload(payload, process.env.STRIPE_WEBHOOK_SECRET);
+    const supabase = buildSupabaseMock({
+      paymentInsertResults: [
+        { error: { code: '42703', message: 'column "provider_event_id" does not exist' } },
+        { error: null }
+      ]
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+
+    const handler = require('../stripe-webhook');
+    const { req, res } = createReqRes({
+      headers: { 'stripe-signature': signature },
+      body: payload
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(supabase.spies.paymentInsert).toHaveBeenCalledTimes(2);
+    expect(supabase.spies.paymentInsert.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        provider_event_id: 'evt_checkout_legacy_insert'
+      })
+    );
+    expect(supabase.spies.paymentInsert.mock.calls[1][0].provider_event_id).toBeUndefined();
   });
 
   it('processes customer.subscription.deleted and downgrades to free', async () => {

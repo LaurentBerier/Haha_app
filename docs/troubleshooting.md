@@ -200,6 +200,12 @@ Fix:
 
 - rerun [`docs/supabase-account-types.sql`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-account-types.sql)
 
+Notes:
+
+- Current webhook handlers are backward-compatible during migration rollout:
+  - if `provider_event_id` is not present yet, insert automatically retries without that field.
+- This avoids immediate production outage, but the SQL migration is still recommended for durable idempotency.
+
 Verify:
 
 ```sql
