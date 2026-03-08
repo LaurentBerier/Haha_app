@@ -1,5 +1,16 @@
 const { createReqRes } = require('./testHelpers');
 
+function buildPaymentEventsTable({ insert, duplicateEventCount = 0 } = {}) {
+  return {
+    insert: insert ?? jest.fn().mockResolvedValue({ error: null }),
+    select: () => ({
+      eq: () => ({
+        contains: jest.fn().mockResolvedValue({ count: duplicateEventCount, error: null })
+      })
+    })
+  };
+}
+
 describe('api/payment-webhook', () => {
   const originalEnv = {
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
@@ -126,12 +137,13 @@ describe('api/payment-webhook', () => {
       error: null
     });
     const updateUserById = jest.fn().mockResolvedValue({ error: null });
+    const paymentEvents = buildPaymentEventsTable({ insert });
 
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => ({
         from: jest.fn((table) => {
           if (table === 'payment_events') {
-            return { insert };
+            return paymentEvents;
           }
 
           if (table === 'profiles') {
@@ -168,5 +180,65 @@ describe('api/payment-webhook', () => {
       }
     });
     expect(res.statusCode).toBe(200);
+  });
+
+  it('returns duplicate=true when RevenueCat event already exists', async () => {
+    process.env.REVENUECAT_WEBHOOK_SECRET = 'top-secret';
+    const insert = jest.fn().mockResolvedValue({ error: null });
+    const paymentEvents = buildPaymentEventsTable({ insert, duplicateEventCount: 1 });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => ({
+        from: jest.fn((table) => {
+          if (table === 'payment_events') {
+            return paymentEvents;
+          }
+
+          if (table === 'profiles') {
+            return {
+              update: () => ({
+                eq: jest.fn().mockResolvedValue({ error: null })
+              })
+            };
+          }
+
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+        auth: {
+          admin: {
+            getUserById: jest.fn().mockResolvedValue({
+              data: { user: { app_metadata: { locale: 'fr-CA' } } },
+              error: null
+            }),
+            updateUserById: jest.fn().mockResolvedValue({ error: null })
+          }
+        }
+      }))
+    }));
+
+    const handler = require('../payment-webhook');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer top-secret' },
+      body: {
+        event: {
+          id: 'evt_revcat_dup_1',
+          type: 'INITIAL_PURCHASE',
+          app_user_id: 'user-1',
+          product_id: 'haha_regular_monthly'
+        }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload).toEqual(
+      expect.objectContaining({
+        ok: true,
+        duplicate: true,
+        userId: 'user-1'
+      })
+    );
+    expect(insert).not.toHaveBeenCalled();
   });
 });

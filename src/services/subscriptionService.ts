@@ -7,6 +7,8 @@ import {
   STRIPE_CHECKOUT_URL_REGULAR,
   STRIPE_CHECKOUT_URL_PREMIUM
 } from '../config/env';
+import { refreshSession } from './authService';
+import { useStore } from '../store/useStore';
 
 export type BillingProviderId = 'stripe' | 'paypal' | 'apple';
 export type SubscriptionPlanId = 'regular' | 'premium';
@@ -228,5 +230,6 @@ export async function cancelSubscription(accessToken: string): Promise<Subscript
 }
 
 export async function syncSubscriptionState(): Promise<void> {
-  return Promise.resolve();
+  const refreshedSession = await refreshSession();
+  await useStore.getState().setSession(refreshedSession);
 }

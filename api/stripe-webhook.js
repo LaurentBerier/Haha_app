@@ -44,10 +44,9 @@ async function resolveRawBody(req, requestId) {
     return req.body.toString('utf8');
   }
 
-  // Fallback when platform pre-parsed JSON body before handler.
   if (isRecord(req.body)) {
-    console.error(`[api/stripe-webhook][${requestId}] Raw body unavailable, using JSON fallback for signature check.`);
-    return JSON.stringify(req.body);
+    console.error(`[api/stripe-webhook][${requestId}] Raw body unavailable because request body is pre-parsed JSON.`);
+    return '';
   }
 
   try {
@@ -115,7 +114,12 @@ async function verifyStripeSignature(req, requestId) {
   const parsedSignature = parseStripeSignature(signatureHeader);
 
   if (!rawBody) {
-    return { ok: false, status: 400, code: 'INVALID_REQUEST', message: 'Webhook payload is required.' };
+    return {
+      ok: false,
+      status: 500,
+      code: 'SERVER_MISCONFIGURED',
+      message: 'Stripe webhook raw body is unavailable.'
+    };
   }
 
   if (!webhookSecret || !parsedSignature.timestamp || parsedSignature.signatures.length === 0) {
@@ -147,6 +151,10 @@ async function verifyStripeSignature(req, requestId) {
   }
 
   return { ok: true, event };
+}
+
+function getStripeProviderEventId(event) {
+  return isRecord(event) && typeof event.id === 'string' && event.id.trim() ? event.id.trim() : '';
 }
 
 function getStripePlanMaps() {
@@ -324,6 +332,24 @@ async function updateAppMetadata(supabaseAdmin, userId, accountTypeId) {
   });
 }
 
+async function isDuplicateStripeEvent(supabaseAdmin, providerEventId) {
+  if (!providerEventId) {
+    return { ok: true, duplicate: false };
+  }
+
+  const { count, error } = await supabaseAdmin
+    .from('payment_events')
+    .select('id', { count: 'exact', head: true })
+    .eq('provider', 'stripe')
+    .contains('raw_payload', { _provider_event_id: providerEventId });
+
+  if (error) {
+    return { ok: false, error };
+  }
+
+  return { ok: true, duplicate: (count ?? 0) > 0 };
+}
+
 module.exports = async function handler(req, res) {
   const requestId = attachRequestId(req, res);
   const supabaseAdmin = getSupabaseAdmin();
@@ -367,6 +393,18 @@ module.exports = async function handler(req, res) {
   }
 
   const event = verification.event;
+  const providerEventId = getStripeProviderEventId(event);
+  const duplicateCheck = await isDuplicateStripeEvent(supabaseAdmin, providerEventId);
+  if (!duplicateCheck.ok) {
+    sendError(res, 500, duplicateCheck.error.message, { code: 'SERVER_ERROR', requestId });
+    return;
+  }
+
+  if (duplicateCheck.duplicate) {
+    res.status(200).json({ ok: true, duplicate: true, type: event.type });
+    return;
+  }
+
   const { linkMap, priceMap } = getStripePlanMaps();
   const stripeEvent = extractStripeEventData(event, linkMap, priceMap);
   if (!stripeEvent) {
@@ -412,7 +450,10 @@ module.exports = async function handler(req, res) {
       event_type: stripeEvent.eventType,
       product_id: stripeEvent.productId,
       account_type_id: stripeEvent.accountTypeId,
-      raw_payload: event
+      raw_payload: {
+        ...event,
+        _provider_event_id: providerEventId || null
+      }
     });
 
     if (eventError) {

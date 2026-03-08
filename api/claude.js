@@ -11,6 +11,7 @@ const MAX_IMAGE_BYTES = 3_000_000;
 const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 30;
+const MONTHLY_QUOTA_CACHE_TTL_MS = 5_000;
 const DEFAULT_MONTHLY_CAPS = {
   free: 15,
   regular: 45,
@@ -24,6 +25,7 @@ const DEFAULT_MAX_TOKENS_BY_TIER = {
   admin: 300
 };
 const ALLOWED_IMAGE_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const monthlyQuotaCache = new Map();
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -225,6 +227,41 @@ function getRetryAfterUntilNextMonthSeconds() {
   return Math.max(1, Math.ceil((nextMonthStartMs - Date.now()) / 1000));
 }
 
+function getMonthlyQuotaCacheKey(userId, monthStartIso) {
+  return `${userId}:${monthStartIso}`;
+}
+
+function getMonthlyQuotaFromCache(userId, monthStartIso) {
+  const key = getMonthlyQuotaCacheKey(userId, monthStartIso);
+  const cached = monthlyQuotaCache.get(key);
+  if (!cached || Date.now() - cached.updatedAtMs > MONTHLY_QUOTA_CACHE_TTL_MS) {
+    return null;
+  }
+
+  return cached.count;
+}
+
+function setMonthlyQuotaCache(userId, monthStartIso, count) {
+  const key = getMonthlyQuotaCacheKey(userId, monthStartIso);
+  monthlyQuotaCache.set(key, {
+    count: Math.max(0, Number.isFinite(count) ? Math.floor(count) : 0),
+    updatedAtMs: Date.now()
+  });
+}
+
+function incrementMonthlyQuotaCache(userId, monthStartIso) {
+  const key = getMonthlyQuotaCacheKey(userId, monthStartIso);
+  const cached = monthlyQuotaCache.get(key);
+  if (!cached) {
+    return;
+  }
+
+  monthlyQuotaCache.set(key, {
+    count: cached.count + 1,
+    updatedAtMs: Date.now()
+  });
+}
+
 async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId) {
   const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
   if (normalizedAccountType === 'admin') {
@@ -233,6 +270,19 @@ async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId
 
   const effectiveCap = getMonthlyCap(normalizedAccountType);
   const monthStartIso = getMonthStartIso();
+  const cachedUsage = getMonthlyQuotaFromCache(userId, monthStartIso);
+  if (cachedUsage !== null) {
+    if (cachedUsage >= effectiveCap) {
+      return {
+        ok: false,
+        status: 429,
+        code: 'MONTHLY_QUOTA_EXCEEDED',
+        message: `Monthly message quota exceeded. Limit: ${effectiveCap} messages.`
+      };
+    }
+
+    return { ok: true };
+  }
 
   const { count, error } = await supabaseAdmin
     .from('usage_events')
@@ -259,6 +309,8 @@ async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId
       message: `Monthly message quota exceeded. Limit: ${effectiveCap} messages.`
     };
   }
+
+  setMonthlyQuotaCache(userId, monthStartIso, count ?? 0);
 
   return { ok: true };
 }
@@ -313,6 +365,8 @@ async function enforceUserRateLimit(supabaseAdmin, userId, requestId) {
       message: 'Rate limit store unavailable.'
     };
   }
+
+  incrementMonthlyQuotaCache(userId, getMonthStartIso());
 
   return { ok: true, retryAfterSeconds: 0 };
 }

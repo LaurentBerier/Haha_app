@@ -10,10 +10,12 @@ function signPayload(payload, secret, timestamp = Math.floor(Date.now() / 1000))
 
 function buildSupabaseMock({
   linkLookupUserId = '',
-  targetUser = { id: 'user-1', app_metadata: { locale: 'fr-CA' } }
+  targetUser = { id: 'user-1', app_metadata: { locale: 'fr-CA' } },
+  duplicateEventCount = 0
 } = {}) {
   const linksUpsert = jest.fn().mockResolvedValue({ error: null });
   const paymentInsert = jest.fn().mockResolvedValue({ error: null });
+  const paymentSelectContains = jest.fn().mockResolvedValue({ count: duplicateEventCount, error: null });
   const profilesEq = jest.fn().mockResolvedValue({ error: null });
   const linksMaybeSingle = jest.fn().mockResolvedValue({
     data: linkLookupUserId ? { user_id: linkLookupUserId } : null,
@@ -35,7 +37,14 @@ function buildSupabaseMock({
     }
 
     if (table === 'payment_events') {
-      return { insert: paymentInsert };
+      return {
+        insert: paymentInsert,
+        select: () => ({
+          eq: () => ({
+            contains: paymentSelectContains
+          })
+        })
+      };
     }
 
     if (table === 'profiles') {
@@ -59,7 +68,7 @@ function buildSupabaseMock({
         }
       }
     },
-    spies: { linksUpsert, paymentInsert, profilesEq, linksMaybeSingle, getUserById, updateUserById }
+    spies: { linksUpsert, paymentInsert, paymentSelectContains, profilesEq, linksMaybeSingle, getUserById, updateUserById }
   };
 }
 
@@ -120,8 +129,64 @@ describe('api/stripe-webhook', () => {
     expect(res.payload.error.code).toBe('UNAUTHORIZED');
   });
 
+  it('rejects webhook when body is pre-parsed JSON (raw payload unavailable)', async () => {
+    const event = {
+      id: 'evt_missing_raw_body',
+      type: 'checkout.session.completed',
+      data: { object: { id: 'cs_123' } }
+    };
+    const supabase = buildSupabaseMock();
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+
+    const handler = require('../stripe-webhook');
+    const { req, res } = createReqRes({
+      headers: { 'stripe-signature': 't=1,v1=invalid' },
+      body: event
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.payload.error.code).toBe('SERVER_MISCONFIGURED');
+  });
+
+  it('returns duplicate=true when Stripe event already exists', async () => {
+    const event = {
+      id: 'evt_duplicate_1',
+      type: 'checkout.session.completed',
+      data: { object: { id: 'cs_123', client_reference_id: 'user-1', payment_link: 'plink_regular' } }
+    };
+    const payload = JSON.stringify(event);
+    const signature = signPayload(payload, process.env.STRIPE_WEBHOOK_SECRET);
+    const supabase = buildSupabaseMock({ duplicateEventCount: 1 });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+
+    const handler = require('../stripe-webhook');
+    const { req, res } = createReqRes({
+      headers: { 'stripe-signature': signature },
+      body: payload
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload).toEqual(
+      expect.objectContaining({
+        ok: true,
+        duplicate: true,
+        type: 'checkout.session.completed'
+      })
+    );
+    expect(supabase.spies.paymentInsert).not.toHaveBeenCalled();
+  });
+
   it('processes checkout.session.completed and upgrades account type', async () => {
     const event = {
+      id: 'evt_checkout_1',
       type: 'checkout.session.completed',
       data: {
         object: {
@@ -170,6 +235,7 @@ describe('api/stripe-webhook', () => {
 
   it('processes customer.subscription.deleted and downgrades to free', async () => {
     const event = {
+      id: 'evt_sub_deleted_1',
       type: 'customer.subscription.deleted',
       data: {
         object: {

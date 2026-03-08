@@ -52,6 +52,22 @@ function getProductId(payload) {
   return typeof product === 'string' ? product : '';
 }
 
+function getProviderEventId(payload) {
+  const event = isRecord(payload.event) ? payload.event : null;
+  if (!event) {
+    return '';
+  }
+
+  const candidates = [event.id, event.transaction_id, event.original_transaction_id];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return '';
+}
+
 function mapProductToAccountType(productId, eventType) {
   if (eventType === 'cancelled' || eventType === 'refunded') {
     return 'free';
@@ -110,6 +126,24 @@ async function updateAppMetadata(supabaseAdmin, userId, accountTypeId) {
   });
 }
 
+async function isDuplicateRevenueCatEvent(supabaseAdmin, providerEventId) {
+  if (!providerEventId) {
+    return { ok: true, duplicate: false };
+  }
+
+  const { count, error } = await supabaseAdmin
+    .from('payment_events')
+    .select('id', { count: 'exact', head: true })
+    .eq('provider', 'revenuecat')
+    .contains('raw_payload', { _provider_event_id: providerEventId });
+
+  if (error) {
+    return { ok: false, error };
+  }
+
+  return { ok: true, duplicate: (count ?? 0) > 0 };
+}
+
 module.exports = async function handler(req, res) {
   const requestId = attachRequestId(req, res);
   const supabaseAdmin = getSupabaseAdmin();
@@ -158,6 +192,7 @@ module.exports = async function handler(req, res) {
 
   const sourceType = isRecord(req.body.event) && typeof req.body.event.type === 'string' ? req.body.event.type : 'UNKNOWN';
   const eventType = toWebhookEventType(sourceType);
+  const providerEventId = getProviderEventId(req.body);
   const userId = getUserId(req.body);
   const productId = getProductId(req.body);
   const accountTypeId = mapProductToAccountType(productId, eventType);
@@ -168,13 +203,27 @@ module.exports = async function handler(req, res) {
   }
 
   try {
+    const duplicateCheck = await isDuplicateRevenueCatEvent(supabaseAdmin, providerEventId);
+    if (!duplicateCheck.ok) {
+      sendError(res, 500, duplicateCheck.error.message, { code: 'SERVER_ERROR', requestId });
+      return;
+    }
+
+    if (duplicateCheck.duplicate) {
+      res.status(200).json({ ok: true, duplicate: true, userId: userId || null, accountTypeId });
+      return;
+    }
+
     const { error: eventError } = await supabaseAdmin.from('payment_events').insert({
       user_id: userId,
       provider: 'revenuecat',
       event_type: eventType,
       product_id: productId || 'unknown',
       account_type_id: accountTypeId,
-      raw_payload: req.body
+      raw_payload: {
+        ...req.body,
+        _provider_event_id: providerEventId || null
+      }
     });
 
     if (eventError) {
