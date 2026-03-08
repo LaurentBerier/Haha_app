@@ -223,11 +223,17 @@ export function useChat(conversationId: string) {
           resetStreamState();
           return;
         }
+        const message = error instanceof Error && typeof error.message === 'string' && error.message.trim()
+          ? error.message.trim()
+          : 'Erreur pendant la génération';
         if (__DEV__) {
-          console.error('[Chat] Generation failed:', error.message);
+          console.error('[Chat] Generation failed:', message);
         }
         failedJobsRef.current.set(artistMessageId, nextJob);
-        updateMessage(jobConversationId, artistMessageId, { status: 'error' });
+        updateMessage(jobConversationId, artistMessageId, {
+          status: 'error',
+          metadata: { errorMessage: message }
+        });
         resetStreamState();
         runNext();
       };

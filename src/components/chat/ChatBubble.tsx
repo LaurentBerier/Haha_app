@@ -14,6 +14,10 @@ interface ChatBubbleProps {
 function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMessage }: ChatBubbleProps) {
   const isUser = message.role === 'user';
   const imageUri = message.metadata?.imageUri;
+  const errorMessage =
+    typeof message.metadata?.errorMessage === 'string' && message.metadata.errorMessage.trim()
+      ? message.metadata.errorMessage.trim()
+      : t('errorStreaming');
   const hasText = message.content.trim().length > 0;
   const shouldShowPlaceholder = !hasText && !imageUri;
   const senderName = isUser ? userDisplayName : artistDisplayName;
@@ -44,7 +48,7 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
           {message.status === 'error' ? (
             <>
               <Text style={styles.error} testID={`chat-bubble-error-${message.id}`}>
-                {t('errorStreaming')}
+                {errorMessage}
               </Text>
               {onRetryMessage ? (
                 <Pressable

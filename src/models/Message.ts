@@ -6,6 +6,7 @@ export interface MessageMetadata {
   voiceUrl?: string;
   imageUri?: string;
   imageMediaType?: string;
+  errorMessage?: string;
 }
 
 export interface Message {
