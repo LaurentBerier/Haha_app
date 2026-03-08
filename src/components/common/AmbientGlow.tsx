@@ -1,11 +1,13 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from 'react-native';
+import { useStore } from '../../store/useStore';
 
 interface AmbientGlowProps {
   variant?: 'home' | 'mode';
 }
 
 function AmbientGlowBase({ variant = 'home' }: AmbientGlowProps) {
+  const reduceMotionPreference = useStore((state) => state.reduceMotion);
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const farOrbit = useRef(new Animated.Value(0)).current;
   const midOrbit = useRef(new Animated.Value(0)).current;
@@ -34,8 +36,11 @@ function AmbientGlowBase({ variant = 'home' }: AmbientGlowProps) {
     };
   }, []);
 
+  const shouldReduceMotion =
+    reduceMotionPreference === 'on' ? true : reduceMotionPreference === 'off' ? false : reduceMotionEnabled;
+
   useEffect(() => {
-    if (reduceMotionEnabled) {
+    if (shouldReduceMotion) {
       farOrbit.setValue(0);
       midOrbit.setValue(0);
       nearOrbit.setValue(0);
@@ -89,7 +94,7 @@ function AmbientGlowBase({ variant = 'home' }: AmbientGlowProps) {
     animations.forEach((animation) => animation.start());
 
     return () => animations.forEach((animation) => animation.stop());
-  }, [farOrbit, glowPulse, midOrbit, nearOrbit, reduceMotionEnabled]);
+  }, [farOrbit, glowPulse, midOrbit, nearOrbit, shouldReduceMotion]);
 
   const isHome = variant === 'home';
   const pulseOpacity = glowPulse.interpolate({

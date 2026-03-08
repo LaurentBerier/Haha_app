@@ -47,6 +47,7 @@ Core targets:
 - `POST /api/claude` protected with bearer token validation
   - server-side model whitelist
   - server-side artist-aware prompt assembly (Cathy + placeholder artists)
+  - prompt language alignment (FR/EN) based on active app language
   - server-side monthly quota enforcement by tier
   - profile-backed monthly counter support (with graceful fallback to `usage_events` count)
   - server-side rate limiting
@@ -92,6 +93,9 @@ Core targets:
 - interaction polish:
   - lightweight global toast system for non-blocking success/error/info feedback
   - onboarding option selection pulse animation
+  - motion accessibility control:
+    - system `Reduce Motion` is respected
+    - user override added in Settings (`Système`, `Animations activées`, `Animations réduites`)
 - billing UX polish:
   - subscription screen now detects checkout return (app foreground/web focus), refreshes auth session, and reloads subscription status automatically
   - successful checkout sync now shows explicit toast feedback

@@ -24,4 +24,12 @@ describe('personalityEngineService', () => {
 
     expect(prompt).toContain('Tu es Cathy Gauthier');
   });
+
+  it('builds English prompt instructions when language is English', () => {
+    const prompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'default', null, 'en-CA');
+
+    expect(prompt).toContain('You are Cathy Gauthier');
+    expect(prompt).toContain('## ABSOLUTE RULES');
+    expect(prompt).not.toContain('Tu reponds toujours en francais quebecois');
+  });
 });

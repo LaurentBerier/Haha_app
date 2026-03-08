@@ -105,6 +105,10 @@ export const useStore = create<StoreState>()((...a) => ({
       snapshot.preferences?.displayMode === 'light' || snapshot.preferences?.displayMode === 'system'
         ? snapshot.preferences.displayMode
         : 'dark';
+    const nextReduceMotion =
+      snapshot.preferences?.reduceMotion === 'on' || snapshot.preferences?.reduceMotion === 'off'
+        ? snapshot.preferences.reduceMotion
+        : 'system';
 
     setI18nLanguage(nextLanguage);
 
@@ -114,7 +118,8 @@ export const useStore = create<StoreState>()((...a) => ({
       activeConversationId: snapshot.activeConversationId,
       messagesByConversation: normalizeMessagesByConversation(snapshot.messagesByConversation),
       language: snapshot.preferences?.language ? nextLanguage : current.language,
-      displayMode: snapshot.preferences?.displayMode ? nextDisplayMode : current.displayMode
+      displayMode: snapshot.preferences?.displayMode ? nextDisplayMode : current.displayMode,
+      reduceMotion: snapshot.preferences?.reduceMotion ? nextReduceMotion : current.reduceMotion
     });
   },
   markHydrated: () => a[0]({ hasHydrated: true })
@@ -140,7 +145,8 @@ export function selectPersistedSnapshot(state: StoreState): PersistedStoreSnapsh
     messagesByConversation,
     preferences: {
       language: state.language,
-      displayMode: state.displayMode
+      displayMode: state.displayMode,
+      reduceMotion: state.reduceMotion
     }
   };
 }

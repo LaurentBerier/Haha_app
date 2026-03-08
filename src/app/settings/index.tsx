@@ -5,7 +5,7 @@ import { useToast } from '../../components/common/ToastProvider';
 import { SettingsRow } from '../../components/common/SettingsRow';
 import { t } from '../../i18n';
 import { deleteAccount, signOut } from '../../services/authService';
-import type { AppLanguage, DisplayMode } from '../../store/slices/uiSlice';
+import type { AppLanguage, DisplayMode, ReduceMotionPreference } from '../../store/slices/uiSlice';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 
@@ -42,8 +42,10 @@ export default function SettingsScreen() {
   const clearSession = useStore((state) => state.clearSession);
   const language = useStore((state) => state.language);
   const displayMode = useStore((state) => state.displayMode);
+  const reduceMotion = useStore((state) => state.reduceMotion);
   const setLanguagePreference = useStore((state) => state.setLanguagePreference);
   const setDisplayMode = useStore((state) => state.setDisplayMode);
+  const setReduceMotion = useStore((state) => state.setReduceMotion);
   const systemColorScheme = useColorScheme();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -63,6 +65,11 @@ export default function SettingsScreen() {
     { value: 'dark', label: t('settingsDisplayDark') },
     { value: 'light', label: t('settingsDisplayLight') },
     { value: 'system', label: t('settingsDisplaySystem') }
+  ];
+  const reduceMotionOptions: Array<{ value: ReduceMotionPreference; label: string }> = [
+    { value: 'system', label: t('settingsReduceMotionSystem') },
+    { value: 'off', label: t('settingsReduceMotionOff') },
+    { value: 'on', label: t('settingsReduceMotionOn') }
   ];
   const effectiveDisplayMode = displayMode === 'system' ? (systemColorScheme === 'light' ? 'light' : 'dark') : displayMode;
 
@@ -178,6 +185,23 @@ export default function SettingsScreen() {
           {displayMode === 'system' ? (
             <Text style={styles.preferenceHint}>{`${t('settingsDisplaySystem')} (${effectiveDisplayMode})`}</Text>
           ) : null}
+        </View>
+        <View style={styles.preferenceCard}>
+          <Text style={styles.preferenceLabel}>{t('settingsReduceMotion')}</Text>
+          <View style={styles.choiceRow}>
+            {reduceMotionOptions.map((option) => (
+              <Pressable
+                key={option.value}
+                onPress={() => setReduceMotion(option.value)}
+                style={[styles.choiceChip, reduceMotion === option.value ? styles.choiceChipActive : null]}
+                testID={`settings-reduce-motion-${option.value}`}
+              >
+                <Text style={[styles.choiceChipLabel, reduceMotion === option.value ? styles.choiceChipLabelActive : null]}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
       </View>
 

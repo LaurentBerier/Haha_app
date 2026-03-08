@@ -4,6 +4,7 @@ import type { MessagePage } from './Message';
 export interface PersistedUiPreferences {
   language: 'fr-CA' | 'en-CA';
   displayMode: 'dark' | 'light' | 'system';
+  reduceMotion: 'system' | 'on' | 'off';
 }
 
 export interface PersistedStoreSnapshot {

@@ -150,6 +150,30 @@ create table if not exists public.payment_events (
   created_at timestamptz not null default now()
 );
 
+-- Backward-compatible migration from older schemas:
+-- ensure provider_event_id exists, and backfill from legacy transaction_id when present.
+alter table public.payment_events
+  add column if not exists provider_event_id text;
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'payment_events'
+      and column_name = 'transaction_id'
+  ) then
+    execute $sql$
+      update public.payment_events
+      set provider_event_id = coalesce(provider_event_id, transaction_id)
+      where provider_event_id is null
+        and transaction_id is not null
+    $sql$;
+  end if;
+end
+$$;
+
 create unique index if not exists payment_events_provider_event_unique_idx
   on public.payment_events (provider, provider_event_id)
   where provider_event_id is not null;
@@ -220,6 +244,19 @@ create table if not exists public.usage_events (
 
 create index if not exists usage_events_user_endpoint_created_at_idx
   on public.usage_events (user_id, endpoint, created_at desc);
+
+-- Counters used by public.enforce_claude_limits RPC.
+alter table public.profiles
+  add column if not exists monthly_message_count int not null default 0;
+
+alter table public.profiles
+  add column if not exists monthly_reset_at timestamptz not null default date_trunc('month', now());
+
+update public.profiles
+set monthly_message_count = coalesce(monthly_message_count, 0),
+    monthly_reset_at = coalesce(monthly_reset_at, date_trunc('month', now()))
+where monthly_message_count is null
+   or monthly_reset_at is null;
 
 -- Optional RPC path to collapse quota check + rate-limit check + usage insert
 -- into one server round-trip (used by /api/claude when CLAUDE_LIMITS_RPC=true).

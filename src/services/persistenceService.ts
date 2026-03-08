@@ -110,10 +110,13 @@ function isValidPreferences(value: unknown): boolean {
 
   const language = value.language;
   const displayMode = value.displayMode;
+  const reduceMotion = value.reduceMotion;
   const hasValidLanguage =
     language === undefined || language === 'fr-CA' || language === 'en-CA' || language === 'fr-FR' || language === 'en';
   const hasValidDisplayMode = displayMode === undefined || displayMode === 'dark' || displayMode === 'light' || displayMode === 'system';
-  return hasValidLanguage && hasValidDisplayMode;
+  const hasValidReduceMotion =
+    reduceMotion === undefined || reduceMotion === 'system' || reduceMotion === 'on' || reduceMotion === 'off';
+  return hasValidLanguage && hasValidDisplayMode && hasValidReduceMotion;
 }
 
 function isValidSnapshot(data: unknown): data is PersistedStoreSnapshot {

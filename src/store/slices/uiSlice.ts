@@ -6,6 +6,7 @@ import type { StoreState } from '../useStore';
 export type VoiceStatus = 'idle' | 'recording' | 'transcribing' | 'error';
 export type AppLanguage = 'fr-CA' | 'en-CA';
 export type DisplayMode = 'dark' | 'light' | 'system';
+export type ReduceMotionPreference = 'system' | 'on' | 'off';
 
 function resolveLanguage(language: string | null | undefined): AppLanguage {
   if (!language) {
@@ -24,10 +25,12 @@ export interface UiSlice {
   voiceStatus: VoiceStatus;
   language: AppLanguage;
   displayMode: DisplayMode;
+  reduceMotion: ReduceMotionPreference;
   setLoading: (val: boolean) => void;
   setVoiceStatus: (status: VoiceStatus) => void;
   setLanguagePreference: (language: AppLanguage) => void;
   setDisplayMode: (mode: DisplayMode) => void;
+  setReduceMotion: (mode: ReduceMotionPreference) => void;
 }
 
 export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set) => ({
@@ -35,11 +38,13 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set) =>
   voiceStatus: 'idle',
   language: resolveLanguage(APP_DEFAULT_LANGUAGE),
   displayMode: 'dark',
+  reduceMotion: 'system',
   setLoading: (val) => set({ isLoading: val }),
   setVoiceStatus: (status) => set({ voiceStatus: status }),
   setLanguagePreference: (language) => {
     setI18nLanguage(language);
     set({ language: resolveLanguage(language) });
   },
-  setDisplayMode: (mode) => set({ displayMode: mode })
+  setDisplayMode: (mode) => set({ displayMode: mode }),
+  setReduceMotion: (mode) => set({ reduceMotion: mode })
 });
