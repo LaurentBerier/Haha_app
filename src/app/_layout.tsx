@@ -28,6 +28,7 @@ export default function RootLayout() {
   const systemColorScheme = useColorScheme();
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const inAuthGroup = segments[0] === '(auth)';
+  const isAuthCallbackRoute = segments[0] === 'auth' && segments[1] === 'callback';
   const isOnboardingRoute = segments[1] === 'onboarding';
   const needsOnboarding =
     isAuthenticated && userProfile ? !userProfile.onboardingCompleted && !userProfile.onboardingSkipped : false;
@@ -100,7 +101,7 @@ export default function RootLayout() {
         return;
       }
 
-      if (!inAuthGroup || isOnboardingRoute) {
+      if ((!inAuthGroup && !isAuthCallbackRoute) || isOnboardingRoute) {
         router.replace('/(auth)/login');
       }
       return;
@@ -114,7 +115,7 @@ export default function RootLayout() {
     if (!needsOnboarding && inAuthGroup) {
       router.replace('/');
     }
-  }, [authStatus, hasHydrated, inAuthGroup, isAuthenticated, isOnboardingRoute, needsOnboarding]);
+  }, [authStatus, hasHydrated, inAuthGroup, isAuthCallbackRoute, isAuthenticated, isOnboardingRoute, needsOnboarding]);
 
   useEffect(() => {
     if (!showAccountMenu && isAccountMenuOpen) {

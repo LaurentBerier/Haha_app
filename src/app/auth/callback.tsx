@@ -31,6 +31,14 @@ function toFriendlyError(message: string): string {
   return 'La validation du compte a échoué. Tu peux te connecter pour reprendre, ou recommencer la création du compte.';
 }
 
+function getWebCurrentUrl(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return typeof window.location?.href === 'string' && window.location.href ? window.location.href : null;
+}
+
 export default function AuthCallbackScreen() {
   const params = useLocalSearchParams<{
     code?: string;
@@ -55,7 +63,8 @@ export default function AuthCallbackScreen() {
         assertSupabaseConfigured();
 
         const incomingUrl = await Linking.getInitialURL();
-        const url = incomingUrl ? new URL(incomingUrl) : null;
+        const callbackUrl = incomingUrl ?? getWebCurrentUrl();
+        const url = callbackUrl ? new URL(callbackUrl) : null;
         const hash = new URLSearchParams(url?.hash.replace(/^#/, ''));
         const query = url?.searchParams ?? new URLSearchParams();
 
@@ -83,8 +92,8 @@ export default function AuthCallbackScreen() {
           if (error) {
             authErrorMessage = error.message;
           }
-        } else if (code && incomingUrl) {
-          const { error } = await supabase.auth.exchangeCodeForSession(incomingUrl);
+        } else if (code && callbackUrl) {
+          const { error } = await supabase.auth.exchangeCodeForSession(callbackUrl);
           if (error) {
             authErrorMessage = error.message;
           }

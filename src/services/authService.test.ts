@@ -34,6 +34,7 @@ import { deleteAccount, getUsageSummary, signUpWithEmail } from './authService';
 
 describe('authService', () => {
   const originalFetch = global.fetch;
+  const originalWindow = global.window;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -41,6 +42,11 @@ describe('authService', () => {
 
   afterAll(() => {
     global.fetch = originalFetch;
+    global.window = originalWindow;
+  });
+
+  afterEach(() => {
+    global.window = originalWindow;
   });
 
   it('returns confirmationRequired=true when signup requires email confirmation', async () => {
@@ -53,6 +59,29 @@ describe('authService', () => {
 
     expect(result.confirmationRequired).toBe(true);
     expect(result.session).toBeNull();
+  });
+
+  it('uses web callback URL for signup redirect when running on web', async () => {
+    global.window = {
+      location: {
+        origin: 'https://www.ha-ha.ai'
+      }
+    } as unknown as Window & typeof globalThis;
+
+    signUp.mockResolvedValue({
+      data: { session: null },
+      error: null
+    });
+
+    await signUpWithEmail('user@example.com', 'password123');
+
+    expect(signUp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        options: expect.objectContaining({
+          emailRedirectTo: 'https://www.ha-ha.ai/auth/callback'
+        })
+      })
+    );
   });
 
   it('parses usage summary payload from backend', async () => {

@@ -17,6 +17,20 @@ export interface UsageSummary {
   resetDate: string;
 }
 
+function getAuthCallbackUrl(flow?: 'recovery'): string {
+  if (
+    typeof window !== 'undefined' &&
+    typeof window.location?.origin === 'string' &&
+    /^https?:\/\//i.test(window.location.origin)
+  ) {
+    const normalizedOrigin = window.location.origin.replace(/\/+$/, '');
+    const base = `${normalizedOrigin}/auth/callback`;
+    return flow ? `${base}?flow=${flow}` : base;
+  }
+
+  return flow ? `${AUTH_CALLBACK_SCHEME_URL}?flow=${flow}` : AUTH_CALLBACK_SCHEME_URL;
+}
+
 function toAuthUser(sessionUser: Session['user']): AuthUser {
   const role = typeof sessionUser.app_metadata?.role === 'string' ? sessionUser.app_metadata.role : null;
   const accountType =
@@ -70,7 +84,7 @@ export async function signUpWithEmail(email: string, password: string): Promise<
     email,
     password,
     options: {
-      emailRedirectTo: AUTH_CALLBACK_SCHEME_URL
+      emailRedirectTo: getAuthCallbackUrl()
     }
   });
   if (error) {
@@ -86,7 +100,7 @@ export async function signUpWithEmail(email: string, password: string): Promise<
 export async function requestPasswordReset(email: string): Promise<void> {
   assertSupabaseConfigured();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${AUTH_CALLBACK_SCHEME_URL}?flow=recovery`
+    redirectTo: getAuthCallbackUrl('recovery')
   });
 
   if (error) {
