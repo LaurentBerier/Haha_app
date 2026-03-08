@@ -83,6 +83,10 @@ function mapProductToAccountType(productId, eventType) {
   return map[productId] ?? null;
 }
 
+function isUniqueViolation(error) {
+  return isRecord(error) && typeof error.code === 'string' && error.code === '23505';
+}
+
 function isAuthorized(req) {
   const sharedSecret = process.env.REVENUECAT_WEBHOOK_SECRET;
   if (!sharedSecret) {
@@ -217,6 +221,7 @@ module.exports = async function handler(req, res) {
     const { error: eventError } = await supabaseAdmin.from('payment_events').insert({
       user_id: userId,
       provider: 'revenuecat',
+      provider_event_id: providerEventId || null,
       event_type: eventType,
       product_id: productId || 'unknown',
       account_type_id: accountTypeId,
@@ -227,6 +232,10 @@ module.exports = async function handler(req, res) {
     });
 
     if (eventError) {
+      if (providerEventId && isUniqueViolation(eventError)) {
+        res.status(200).json({ ok: true, duplicate: true, userId: userId || null, accountTypeId });
+        return;
+      }
       sendError(res, 500, eventError.message, { code: 'SERVER_ERROR', requestId });
       return;
     }

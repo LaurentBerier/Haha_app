@@ -61,6 +61,7 @@ Core targets:
   - `POST /api/payment-webhook`
   - `POST /api/stripe-webhook`
   - webhook-driven account changes now emit best-effort audit log rows (`audit_logs`)
+  - `payment_events` supports provider-level idempotency key (`provider_event_id`) with unique index
 - API hardening pass:
   - shared utility module (`api/_utils.js`) for CORS/auth/error/request-id
   - browser CORS fail-closed behavior when `ALLOWED_ORIGINS` is missing or origin is not allowlisted

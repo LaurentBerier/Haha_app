@@ -107,6 +107,10 @@ function signatureMatches(expectedSignature, candidateSignature) {
   return timingSafeEqual(expected, candidate);
 }
 
+function isUniqueViolation(error) {
+  return isRecord(error) && typeof error.code === 'string' && error.code === '23505';
+}
+
 async function verifyStripeSignature(req, requestId) {
   const webhookSecret = (process.env.STRIPE_WEBHOOK_SECRET ?? '').trim();
   const rawBody = await resolveRawBody(req, requestId);
@@ -447,6 +451,7 @@ module.exports = async function handler(req, res) {
     const { error: eventError } = await supabaseAdmin.from('payment_events').insert({
       user_id: userId,
       provider: 'stripe',
+      provider_event_id: providerEventId || null,
       event_type: stripeEvent.eventType,
       product_id: stripeEvent.productId,
       account_type_id: stripeEvent.accountTypeId,
@@ -457,6 +462,10 @@ module.exports = async function handler(req, res) {
     });
 
     if (eventError) {
+      if (providerEventId && isUniqueViolation(eventError)) {
+        res.status(200).json({ ok: true, duplicate: true, type: event.type });
+        return;
+      }
       sendError(res, 500, eventError.message, { code: 'SERVER_ERROR', requestId });
       return;
     }

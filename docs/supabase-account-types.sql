@@ -142,12 +142,17 @@ create table if not exists public.payment_events (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
   provider text not null check (provider in ('revenuecat','stripe','apple')),
+  provider_event_id text,
   event_type text not null,
   product_id text not null,
   account_type_id text references public.account_types(id),
   raw_payload jsonb,
   created_at timestamptz not null default now()
 );
+
+create unique index if not exists payment_events_provider_event_unique_idx
+  on public.payment_events (provider, provider_event_id)
+  where provider_event_id is not null;
 
 -- Stripe customer/subscription linkage for webhook entitlement sync.
 create table if not exists public.stripe_customer_links (
