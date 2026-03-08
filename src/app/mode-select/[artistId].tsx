@@ -98,6 +98,13 @@ export default function ModeSelectScreen() {
             <Text style={styles.subtitle}>{artist.name}</Text>
           </View>
         }
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyEmoji}>🎭</Text>
+            <Text style={styles.emptyTitle}>{t('modeSelectEmptyHeadline')}</Text>
+            <Text style={styles.emptySubtitle}>{t('modeSelectEmptySubtext')}</Text>
+          </View>
+        }
         contentContainerStyle={styles.content}
         style={styles.list}
         showsVerticalScrollIndicator
@@ -143,5 +150,30 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: theme.colors.error
+  },
+  emptyState: {
+    marginTop: theme.spacing.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 16,
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.lg,
+    alignItems: 'center',
+    gap: theme.spacing.xs
+  },
+  emptyEmoji: {
+    fontSize: 24
+  },
+  emptyTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center'
+  },
+  emptySubtitle: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center'
   }
 });

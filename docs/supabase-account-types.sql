@@ -221,6 +221,123 @@ create table if not exists public.usage_events (
 create index if not exists usage_events_user_endpoint_created_at_idx
   on public.usage_events (user_id, endpoint, created_at desc);
 
+-- Optional RPC path to collapse quota check + rate-limit check + usage insert
+-- into one server round-trip (used by /api/claude when CLAUDE_LIMITS_RPC=true).
+create or replace function public.enforce_claude_limits(
+  p_user_id uuid,
+  p_account_type text,
+  p_request_id text,
+  p_now_iso timestamptz,
+  p_window_start_iso timestamptz,
+  p_month_start_iso timestamptz,
+  p_rate_limit_max int,
+  p_monthly_cap int
+)
+returns table (
+  allowed boolean,
+  status_code int,
+  error_code text,
+  error_message text,
+  retry_after_seconds int,
+  monthly_used int
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_now timestamptz := coalesce(p_now_iso, now());
+  v_window_start timestamptz := coalesce(p_window_start_iso, now() - interval '1 minute');
+  v_month_start timestamptz := coalesce(p_month_start_iso, date_trunc('month', now()));
+  v_rate_limit_max int := greatest(coalesce(p_rate_limit_max, 1), 1);
+  v_monthly_cap int := coalesce(p_monthly_cap, 0);
+  v_recent_count int := 0;
+  v_monthly_count int := 0;
+  v_monthly_reset_at timestamptz;
+  v_retry_after_seconds int;
+  v_is_admin boolean := coalesce(p_account_type, 'free') = 'admin';
+begin
+  if p_user_id is null then
+    return query select false, 401, 'UNAUTHORIZED', 'Unauthorized.', 0, 0;
+    return;
+  end if;
+
+  select monthly_message_count, monthly_reset_at
+  into v_monthly_count, v_monthly_reset_at
+  from public.profiles
+  where id = p_user_id
+  for update;
+
+  if v_monthly_count is null then
+    v_monthly_count := 0;
+  end if;
+
+  if v_monthly_reset_at is null or v_monthly_reset_at < v_month_start then
+    v_monthly_count := 0;
+    update public.profiles
+    set monthly_message_count = 0, monthly_reset_at = v_month_start
+    where id = p_user_id;
+  end if;
+
+  if not v_is_admin and v_monthly_cap > 0 and v_monthly_count >= v_monthly_cap then
+    v_retry_after_seconds := greatest(
+      1,
+      ceil(extract(epoch from (date_trunc('month', v_now) + interval '1 month') - v_now))::int
+    );
+    return query select
+      false,
+      429,
+      'MONTHLY_QUOTA_EXCEEDED',
+      format('Monthly message quota exceeded. Limit: %s messages.', v_monthly_cap),
+      v_retry_after_seconds,
+      v_monthly_count;
+    return;
+  end if;
+
+  select count(*)::int
+  into v_recent_count
+  from public.usage_events
+  where user_id = p_user_id
+    and endpoint = 'claude'
+    and created_at >= v_window_start;
+
+  if v_recent_count >= v_rate_limit_max then
+    return query select
+      false,
+      429,
+      'RATE_LIMIT_EXCEEDED',
+      'Rate limit exceeded.',
+      60,
+      v_monthly_count;
+    return;
+  end if;
+
+  begin
+    insert into public.usage_events(user_id, endpoint, request_id, created_at)
+    values (p_user_id, 'claude', nullif(p_request_id, ''), v_now);
+  exception
+    when undefined_column then
+      insert into public.usage_events(user_id, endpoint, created_at)
+      values (p_user_id, 'claude', v_now);
+  end;
+
+  if not v_is_admin then
+    update public.profiles
+    set monthly_message_count = coalesce(monthly_message_count, 0) + 1,
+        monthly_reset_at = v_month_start
+    where id = p_user_id;
+    v_monthly_count := v_monthly_count + 1;
+  end if;
+
+  return query select true, 200, null::text, null::text, 0, v_monthly_count;
+end;
+$$;
+
+revoke all on function public.enforce_claude_limits(uuid, text, text, timestamptz, timestamptz, timestamptz, int, int)
+  from public;
+grant execute on function public.enforce_claude_limits(uuid, text, text, timestamptz, timestamptz, timestamptz, int, int)
+  to service_role;
+
 alter table public.usage_events enable row level security;
 drop policy if exists "usage_events: service-role only" on public.usage_events;
 create policy "usage_events: service-role only"

@@ -8,6 +8,8 @@ export const fr = {
   locked: 'Verrouillé',
   chatTitle: 'Discussion',
   modeSelectTitle: 'Choix du mode',
+  modeSelectEmptyHeadline: 'Aucun mode disponible',
+  modeSelectEmptySubtext: "Cet artiste n'a pas encore de modes actifs. Reviens bientôt.",
   historyModeTitle: 'Historique',
   historyModeDescription: 'Reprends une de tes 20 dernières conversations',
   historyEmpty: "Aucune conversation pour l'instant",

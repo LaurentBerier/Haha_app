@@ -11,6 +11,7 @@ const MAX_IMAGE_BYTES = 3_000_000;
 const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 30;
+const CLAUDE_LIMITS_RPC_NAME = 'enforce_claude_limits';
 const MONTHLY_QUOTA_CACHE_TTL_MS = 5_000;
 const DEFAULT_ARTIST_ID = 'cathy-gauthier';
 const DEFAULT_MODE_ID = 'default';
@@ -27,9 +28,9 @@ const DEFAULT_MAX_TOKENS_BY_TIER = {
   admin: 300
 };
 const ALLOWED_IMAGE_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
-const SUPPORTED_ARTIST_IDS = new Set([DEFAULT_ARTIST_ID]);
 const DEFAULT_MODE_PROMPT = `Conversation libre. Reponds comme Cathy dans une discussion informelle,
 avec repartie rapide, sarcasme et punchlines courtes.`;
+const GENERIC_MODE_PROMPT = `Conversation libre. Reponds selon la personnalite de l'artiste selectionne, avec humour concret et sans sortir du personnage.`;
 const MODE_PROMPTS = {
   'radar-attitude': `L'utilisateur te decrit une situation ou un comportement.
 Analyse l'attitude de la personne decrite avec ton regard mordant et sans filtre.
@@ -84,6 +85,70 @@ const CATHY_BLUEPRINT = {
     ]
   }
 };
+const MYSTERY_ARTIST_ONE_BLUEPRINT = {
+  identity: {
+    name: 'Artiste mystere #1',
+    role: 'Humoriste invite'
+  },
+  toneMetrics: {
+    aggression: 5,
+    warmth: 5,
+    sarcasm: 5,
+    judgmentIntensity: 5,
+    selfDeprecation: 5
+  },
+  humorMechanics: {
+    exaggerationLevel: 5
+  },
+  thematicAnchors: ['Improvisation', 'Observations du quotidien', 'Humour situationnel'],
+  guardrails: {
+    hardNo: [
+      'Blagues violentes impliquant des enfants',
+      'Vulgarite gratuite sans fonction humoristique',
+      'Ridicule purement physique'
+    ],
+    softZones: [
+      { topic: 'politique', rule: 'contextuel seulement' },
+      { topic: 'religion', rule: 'contextuel seulement' },
+      { topic: 'identite', rule: 'humour structure requis' }
+    ]
+  }
+};
+const MYSTERY_ARTIST_TWO_BLUEPRINT = {
+  identity: {
+    name: 'Artiste mystere #2',
+    role: 'Humoriste invite'
+  },
+  toneMetrics: {
+    aggression: 4,
+    warmth: 6,
+    sarcasm: 4,
+    judgmentIntensity: 4,
+    selfDeprecation: 6
+  },
+  humorMechanics: {
+    exaggerationLevel: 6
+  },
+  thematicAnchors: ['Autoderision', 'Vie moderne', 'Absurde leger'],
+  guardrails: {
+    hardNo: [
+      'Blagues violentes impliquant des enfants',
+      'Vulgarite gratuite sans fonction humoristique',
+      'Ridicule purement physique'
+    ],
+    softZones: [
+      { topic: 'politique', rule: 'contextuel seulement' },
+      { topic: 'religion', rule: 'contextuel seulement' },
+      { topic: 'identite', rule: 'humour structure requis' }
+    ]
+  }
+};
+const ARTIST_BLUEPRINTS = {
+  'cathy-gauthier': CATHY_BLUEPRINT,
+  'mystery-artist-one': MYSTERY_ARTIST_ONE_BLUEPRINT,
+  'mystery-artist-two': MYSTERY_ARTIST_TWO_BLUEPRINT
+};
+const SUPPORTED_ARTIST_IDS = new Set(Object.keys(ARTIST_BLUEPRINTS));
 const PROFILE_SEX_LABEL_FR = {
   male: 'Homme',
   female: 'Femme',
@@ -359,9 +424,39 @@ function buildUserProfileSection(profile, promptLanguage) {
 
 function buildServerSystemPrompt(context, profile) {
   const promptLanguage = resolvePromptLanguage(context.language);
-  const modePrompt = MODE_PROMPTS[context.modeId] ?? DEFAULT_MODE_PROMPT;
+  const artistId = typeof context.artistId === 'string' ? context.artistId : DEFAULT_ARTIST_ID;
+  const isCathy = artistId === DEFAULT_ARTIST_ID;
+  const modePrompt = isCathy ? MODE_PROMPTS[context.modeId] ?? DEFAULT_MODE_PROMPT : GENERIC_MODE_PROMPT;
   const userProfileSection = buildUserProfileSection(profile, promptLanguage);
-  const b = CATHY_BLUEPRINT;
+  const b = ARTIST_BLUEPRINTS[artistId] ?? CATHY_BLUEPRINT;
+  const speechStyleLines = isCathy
+    ? [
+        '- Phrases courtes et punchy, rythme percussif',
+        '- Tu peux interrompre, couper, relancer',
+        '- Registre : francais quebecois familier',
+        '- Utilise des expressions regionales naturellement'
+      ]
+    : [
+        '- Phrases courtes et claires',
+        '- Reste naturel et direct',
+        '- Adapte le registre a la langue demandee',
+        "- Garde un ton d'humoriste, sans devenir agressif gratuitement"
+      ];
+  const absoluteRules = isCathy
+    ? [
+        '- Tu reponds toujours en francais quebecois',
+        '- Tu ne sors jamais du personnage',
+        '- Tu ne dis jamais que tu es une IA',
+        '- Tes reponses sont courtes (2-4 phrases max)',
+        '- Tu es baveuse, directe et mordante'
+      ]
+    : [
+        promptLanguage === 'en' ? '- You respond in English.' : '- Tu reponds en francais.',
+        '- Tu ne sors jamais du personnage',
+        '- Tu ne dis jamais que tu es une IA',
+        '- Tes reponses sont courtes (2-4 phrases max)',
+        "- Tu restes factuel, drole et coherent avec le style de l'artiste"
+      ];
 
   return `
 Tu es ${b.identity.name}, ${b.identity.role}.
@@ -375,10 +470,7 @@ Tu es ${b.identity.name}, ${b.identity.role}.
 - Exageration : ${b.humorMechanics.exaggerationLevel}/10
 
 ## STYLE DE PAROLE
-- Phrases courtes et punchy, rythme percussif
-- Tu peux interrompre, couper, relancer
-- Registre : francais quebecois familier
-- Utilise des expressions regionales naturellement
+${speechStyleLines.join('\n')}
 
 ## THEMES PREFERES
 ${b.thematicAnchors.map((theme) => `- ${theme}`).join('\n')}
@@ -394,11 +486,7 @@ ZONES SENSIBLES (humour structure requis) :
 ${b.guardrails.softZones.map((zone) => `- ${zone.topic} : ${zone.rule}`).join('\n')}
 
 ## REGLES ABSOLUES
-- Tu reponds toujours en francais quebecois
-- Tu ne sors jamais du personnage
-- Tu ne dis jamais que tu es une IA
-- Tes reponses sont courtes (2-4 phrases max)
-- Tu es baveuse, directe et mordante
+${absoluteRules.join('\n')}
 ${userProfileSection}
 `.trim();
 }
@@ -552,6 +640,20 @@ function isRateLimitStoreUnavailableError(error) {
     message.includes('permission denied') ||
     message.includes('does not exist')
   );
+}
+
+function isMissingLimitsRpcError(error) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const code = typeof error.code === 'string' ? error.code : '';
+  if (code === 'PGRST202' || code === '42883') {
+    return true;
+  }
+
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return message.includes(CLAUDE_LIMITS_RPC_NAME) && (message.includes('not found') || message.includes('could not find'));
 }
 
 function enforceInMemoryRateLimit(userId, nowMs, windowMs, maxRequests) {
@@ -727,13 +829,91 @@ async function readRecentUsageCount(supabaseAdmin, userId, windowStartIso, reque
   }
 }
 
+async function enforceLimitsViaRpc(supabaseAdmin, options) {
+  const enabled = (process.env.CLAUDE_LIMITS_RPC ?? '').trim().toLowerCase() === 'true';
+  if (!enabled) {
+    return { ok: false, unsupported: true };
+  }
+
+  const normalizedAccountType =
+    typeof options.accountType === 'string' && options.accountType.trim() ? options.accountType.trim() : 'free';
+  const monthlyCap = normalizedAccountType === 'admin' ? null : getMonthlyCap(normalizedAccountType);
+  const nowIso = new Date(options.nowMs).toISOString();
+  const windowStartIso = new Date(options.nowMs - options.windowMs).toISOString();
+  const monthStartIso = getMonthStartIso();
+  const payload = {
+    p_user_id: options.userId,
+    p_account_type: normalizedAccountType,
+    p_request_id: options.requestId,
+    p_now_iso: nowIso,
+    p_window_start_iso: windowStartIso,
+    p_month_start_iso: monthStartIso,
+    p_rate_limit_max: options.maxRequests,
+    p_monthly_cap: monthlyCap
+  };
+
+  const { data, error } = await supabaseAdmin.rpc(CLAUDE_LIMITS_RPC_NAME, payload);
+  if (error) {
+    if (isMissingLimitsRpcError(error)) {
+      return { ok: false, unsupported: true };
+    }
+
+    console.error(`[api/claude][${options.requestId}] Limits RPC failed`, error);
+    return {
+      ok: false,
+      unsupported: false,
+      status: 500,
+      code: 'SERVER_MISCONFIGURED',
+      message: 'Usage store unavailable.'
+    };
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!isRecord(row)) {
+    return { ok: false, unsupported: true };
+  }
+
+  if (row.allowed === true) {
+    if (typeof row.monthly_used === 'number' && Number.isFinite(row.monthly_used) && monthlyCap !== null) {
+      setMonthlyQuotaCache(options.userId, monthStartIso, row.monthly_used);
+    }
+
+    return {
+      ok: true,
+      unsupported: false
+    };
+  }
+
+  const status = typeof row.status_code === 'number' ? row.status_code : 429;
+  const code = typeof row.error_code === 'string' && row.error_code ? row.error_code : 'RATE_LIMIT_EXCEEDED';
+  const message = typeof row.error_message === 'string' && row.error_message ? row.error_message : 'Rate limit exceeded.';
+  const retryAfterSeconds =
+    typeof row.retry_after_seconds === 'number' && Number.isFinite(row.retry_after_seconds)
+      ? Math.max(1, Math.floor(row.retry_after_seconds))
+      : status === 429
+        ? Math.max(1, Math.ceil(options.windowMs / 1000))
+        : 0;
+
+  return {
+    ok: false,
+    unsupported: false,
+    status,
+    code,
+    message,
+    retryAfterSeconds
+  };
+}
+
 async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuota, options = {}) {
   const now = typeof options.now === 'number' && Number.isFinite(options.now) ? options.now : Date.now();
   const windowMs =
     typeof options.windowMs === 'number' && Number.isFinite(options.windowMs) && options.windowMs > 0
       ? options.windowMs
       : parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_WINDOW_MS, DEFAULT_RATE_LIMIT_WINDOW_MS);
-  const maxRequests = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS, DEFAULT_RATE_LIMIT_MAX_REQUESTS);
+  const maxRequests =
+    typeof options.maxRequests === 'number' && Number.isFinite(options.maxRequests) && options.maxRequests > 0
+      ? Math.floor(options.maxRequests)
+      : parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS, DEFAULT_RATE_LIMIT_MAX_REQUESTS);
   const windowStartIso = new Date(now - windowMs).toISOString();
   const nowIso = new Date(now).toISOString();
   const monthStartIso = monthlyQuota && typeof monthlyQuota.monthStartIso === 'string'
@@ -966,30 +1146,52 @@ module.exports = async function handler(req, res) {
   const profileForPromptPromise = fetchUserProfileForPrompt(supabaseAdmin, auth.userId, requestId);
   const now = Date.now();
   const windowMs = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_WINDOW_MS, DEFAULT_RATE_LIMIT_WINDOW_MS);
-  const windowStartIso = new Date(now - windowMs).toISOString();
-  const recentUsageCountPromise = readRecentUsageCount(supabaseAdmin, auth.userId, windowStartIso, requestId);
-
-  const monthlyQuota = await enforceMonthlyQuota(supabaseAdmin, auth.userId, auth.accountType, requestId);
-  if (!monthlyQuota.ok) {
-    if (monthlyQuota.status === 429) {
-      res.setHeader('Retry-After', String(getRetryAfterUntilNextMonthSeconds()));
-    }
-    sendError(res, monthlyQuota.status, monthlyQuota.message, { code: monthlyQuota.code, requestId });
-    return;
-  }
-
-  const recentUsageCount = await recentUsageCountPromise;
-  const rateLimit = await enforceUserRateLimit(supabaseAdmin, auth.userId, requestId, monthlyQuota, {
-    now,
+  const maxRequests = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS, DEFAULT_RATE_LIMIT_MAX_REQUESTS);
+  const rpcLimits = await enforceLimitsViaRpc(supabaseAdmin, {
+    userId: auth.userId,
+    accountType: auth.accountType,
+    requestId,
+    nowMs: now,
     windowMs,
-    recentUsageCount
+    maxRequests
   });
-  if (!rateLimit.ok) {
-    if (rateLimit.status === 429) {
-      res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
+
+  if (!rpcLimits.ok) {
+    if (!rpcLimits.unsupported) {
+      if (rpcLimits.status === 429 && rpcLimits.code === 'MONTHLY_QUOTA_EXCEEDED') {
+        res.setHeader('Retry-After', String(getRetryAfterUntilNextMonthSeconds()));
+      } else if (rpcLimits.status === 429 && rpcLimits.retryAfterSeconds) {
+        res.setHeader('Retry-After', String(rpcLimits.retryAfterSeconds));
+      }
+      sendError(res, rpcLimits.status, rpcLimits.message, { code: rpcLimits.code, requestId });
+      return;
     }
-    sendError(res, rateLimit.status, rateLimit.message, { code: rateLimit.code, requestId });
-    return;
+
+    const windowStartIso = new Date(now - windowMs).toISOString();
+    const recentUsageCountPromise = readRecentUsageCount(supabaseAdmin, auth.userId, windowStartIso, requestId);
+    const monthlyQuota = await enforceMonthlyQuota(supabaseAdmin, auth.userId, auth.accountType, requestId);
+    if (!monthlyQuota.ok) {
+      if (monthlyQuota.status === 429) {
+        res.setHeader('Retry-After', String(getRetryAfterUntilNextMonthSeconds()));
+      }
+      sendError(res, monthlyQuota.status, monthlyQuota.message, { code: monthlyQuota.code, requestId });
+      return;
+    }
+
+    const recentUsageCount = await recentUsageCountPromise;
+    const rateLimit = await enforceUserRateLimit(supabaseAdmin, auth.userId, requestId, monthlyQuota, {
+      now,
+      windowMs,
+      maxRequests,
+      recentUsageCount
+    });
+    if (!rateLimit.ok) {
+      if (rateLimit.status === 429) {
+        res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
+      }
+      sendError(res, rateLimit.status, rateLimit.message, { code: rateLimit.code, requestId });
+      return;
+    }
   }
 
   const apiKey = (process.env.ANTHROPIC_API_KEY ?? '').trim();

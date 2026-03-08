@@ -6,7 +6,9 @@ function buildSupabaseClient({
   initialUsageCount = 0,
   usageCountError = null,
   usageInsertError = null,
-  usageInsertErrors = null
+  usageInsertErrors = null,
+  rpcResult = null,
+  rpcError = null
 } = {}) {
   let usageCount = initialUsageCount;
   let profileRow = profile;
@@ -38,6 +40,10 @@ function buildSupabaseClient({
     })
   );
   const profileUpdateEq = jest.fn().mockResolvedValue({ error: null });
+  const rpc = jest.fn().mockResolvedValue({
+    data: rpcResult,
+    error: rpcError
+  });
 
   return {
     auth: {
@@ -46,6 +52,7 @@ function buildSupabaseClient({
         error: user ? null : { message: 'invalid jwt' }
       })
     },
+    rpc,
     from: jest.fn((table) => {
       if (table === 'usage_events') {
         return {
@@ -88,7 +95,8 @@ describe('api/claude', () => {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
     CLAUDE_RATE_LIMIT_MAX_REQUESTS: process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS,
-    CLAUDE_MONTHLY_CAP_FREE: process.env.CLAUDE_MONTHLY_CAP_FREE
+    CLAUDE_MONTHLY_CAP_FREE: process.env.CLAUDE_MONTHLY_CAP_FREE,
+    CLAUDE_LIMITS_RPC: process.env.CLAUDE_LIMITS_RPC
   };
   const originalFetch = global.fetch;
 
@@ -100,6 +108,7 @@ describe('api/claude', () => {
     process.env.ANTHROPIC_API_KEY = 'anthropic-api-key';
     process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = '30';
     delete process.env.CLAUDE_MONTHLY_CAP_FREE;
+    delete process.env.CLAUDE_LIMITS_RPC;
     delete process.env.ALLOWED_ORIGINS;
     global.fetch = jest.fn();
   });
@@ -142,6 +151,12 @@ describe('api/claude', () => {
       process.env.CLAUDE_MONTHLY_CAP_FREE = originalEnv.CLAUDE_MONTHLY_CAP_FREE;
     } else {
       delete process.env.CLAUDE_MONTHLY_CAP_FREE;
+    }
+
+    if (typeof originalEnv.CLAUDE_LIMITS_RPC === 'string') {
+      process.env.CLAUDE_LIMITS_RPC = originalEnv.CLAUDE_LIMITS_RPC;
+    } else {
+      delete process.env.CLAUDE_LIMITS_RPC;
     }
   });
 
@@ -638,6 +653,95 @@ describe('api/claude', () => {
 
       expect(res.statusCode).toBe(429);
       expect(res.payload.error.code).toBe('MONTHLY_QUOTA_EXCEEDED');
+    });
+  });
+
+  describe('limits rpc path', () => {
+    it('accepts request when RPC path allows limits', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
+      });
+      process.env.CLAUDE_LIMITS_RPC = 'true';
+
+      jest.doMock('@supabase/supabase-js', () => ({
+        createClient: jest.fn(() =>
+          buildSupabaseClient({
+            rpcResult: [{ allowed: true, status_code: 200, monthly_used: 1 }]
+          })
+        )
+      }));
+
+      const handler = require('../claude');
+      const { req, res } = createReqRes({
+        headers: { authorization: 'Bearer valid-token' },
+        body: { systemPrompt: 'ignored', messages: [{ role: 'user', content: 'hello' }] }
+      });
+
+      await handler(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('returns 429 when RPC reports monthly quota exceeded', async () => {
+      process.env.CLAUDE_LIMITS_RPC = 'true';
+
+      jest.doMock('@supabase/supabase-js', () => ({
+        createClient: jest.fn(() =>
+          buildSupabaseClient({
+            rpcResult: [
+              {
+                allowed: false,
+                status_code: 429,
+                error_code: 'MONTHLY_QUOTA_EXCEEDED',
+                error_message: 'Monthly quota exceeded.',
+                retry_after_seconds: 3600
+              }
+            ]
+          })
+        )
+      }));
+
+      const handler = require('../claude');
+      const { req, res } = createReqRes({
+        headers: { authorization: 'Bearer valid-token' },
+        body: { systemPrompt: 'ignored', messages: [{ role: 'user', content: 'hello' }] }
+      });
+
+      await handler(req, res);
+
+      expect(res.statusCode).toBe(429);
+      expect(res.payload.error.code).toBe('MONTHLY_QUOTA_EXCEEDED');
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('falls back to default path when RPC function is missing', async () => {
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
+      });
+      process.env.CLAUDE_LIMITS_RPC = 'true';
+
+      jest.doMock('@supabase/supabase-js', () => ({
+        createClient: jest.fn(() =>
+          buildSupabaseClient({
+            rpcError: { code: 'PGRST202', message: 'Could not find function enforce_claude_limits' },
+            initialUsageCount: 0
+          })
+        )
+      }));
+
+      const handler = require('../claude');
+      const { req, res } = createReqRes({
+        headers: { authorization: 'Bearer valid-token' },
+        body: { systemPrompt: 'ignored', messages: [{ role: 'user', content: 'hello' }] }
+      });
+
+      await handler(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(global.fetch).toHaveBeenCalledTimes(1);
     });
   });
 

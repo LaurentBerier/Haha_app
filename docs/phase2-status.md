@@ -46,9 +46,11 @@ Core targets:
   - `npm run deploy:web` targets Vercel project `haha-app-web`
 - `POST /api/claude` protected with bearer token validation
   - server-side model whitelist
+  - server-side artist-aware prompt assembly (Cathy + placeholder artists)
   - server-side monthly quota enforcement by tier
   - profile-backed monthly counter support (with graceful fallback to `usage_events` count)
   - server-side rate limiting
+  - optional single-RPC limits path (`CLAUDE_LIMITS_RPC=true`) to combine quota + rate-limit + usage insert into one DB round-trip
 - `POST /api/delete-account` endpoint
 - `GET /api/usage-summary` endpoint (quota hydration after login)
 - Stripe subscription API endpoints:
@@ -101,6 +103,7 @@ Core targets:
 - unit test baseline:
   - `npm run test:unit`
   - added tests for subscription sync/checkout URL shaping and for artist-aware prompt builder
+  - added service tests for `authService` and `claudeApiService`
   - API tests for `claude`, `delete-account`, `admin-account-type`, `payment-webhook`, and shared utils
   - store slice tests for `subscriptionSlice` and `usageSlice`
 - E2E baseline stabilized on iOS:
@@ -176,6 +179,7 @@ Required backend env:
 - `STRIPE_PRICE_ID_REGULAR_MONTHLY` / `STRIPE_PRICE_ID_PREMIUM_MONTHLY` (recommended)
 - `ALLOWED_ORIGINS` (required for browser clients that send `Origin`)
 - `CLAUDE_MONTHLY_CAP_FREE` / `CLAUDE_MONTHLY_CAP_REGULAR` / `CLAUDE_MONTHLY_CAP_PREMIUM` (optional tier cap overrides)
+- `CLAUDE_LIMITS_RPC` (optional, set `true` after running the latest SQL function migration for `enforce_claude_limits`)
 - `ENABLE_ADMIN_TIER_GRANTS` (optional, defaults to disabled; set to `true` only when explicit admin-tier promotion is required)
 
 Supabase URL config must include:

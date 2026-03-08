@@ -8,6 +8,8 @@ export const en = {
   locked: 'Locked',
   chatTitle: 'Chat',
   modeSelectTitle: 'Mode selection',
+  modeSelectEmptyHeadline: 'No mode available yet',
+  modeSelectEmptySubtext: 'This artist has no active modes right now. Check back soon.',
   historyModeTitle: 'Chat History',
   historyModeDescription: 'Resume one of your last 20 conversations',
   historyEmpty: 'No conversations yet',
