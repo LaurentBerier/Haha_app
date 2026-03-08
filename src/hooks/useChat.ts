@@ -17,6 +17,7 @@ import { generateId } from '../utils/generateId';
 
 interface StreamJob {
   artistMessageId: string;
+  artistId: string;
   mockUserTurn: string;
   claudeUserMessage: ClaudeMessage;
   systemPrompt: string;
@@ -93,6 +94,7 @@ export function useChat(conversationId: string) {
   const queueRef = useRef<StreamJob[]>([]);
   const isStreamingRef = useRef(false);
   const runNextLockRef = useRef(false);
+  const failedJobsRef = useRef<Map<string, StreamJob>>(new Map());
   const activeMessageIdRef = useRef<string | null>(null);
   const streamingConversationIdRef = useRef<string | null>(null);
   const isMountedRef = useRef(true);
@@ -121,6 +123,7 @@ export function useChat(conversationId: string) {
 
       const {
         artistMessageId,
+        artistId,
         mockUserTurn,
         claudeUserMessage,
         systemPrompt,
@@ -202,6 +205,7 @@ export function useChat(conversationId: string) {
           resetStreamState();
           return;
         }
+        failedJobsRef.current.delete(artistMessageId);
         updateMessage(jobConversationId, artistMessageId, {
           status: 'complete',
           metadata: { tokensUsed }
@@ -219,6 +223,7 @@ export function useChat(conversationId: string) {
         if (__DEV__) {
           console.error('[Chat] Generation failed:', error.message);
         }
+        failedJobsRef.current.set(artistMessageId, nextJob);
         updateMessage(jobConversationId, artistMessageId, { status: 'error' });
         resetStreamState();
         runNext();
@@ -238,7 +243,9 @@ export function useChat(conversationId: string) {
 
       const startClaudeStream = () =>
         streamClaudeResponse({
-          systemPrompt,
+          artistId,
+          modeId,
+          language,
           messages: [...history, claudeUserMessage],
           onToken,
           onComplete,
@@ -270,6 +277,29 @@ export function useChat(conversationId: string) {
       runNextLockRef.current = false;
     }
   }, [appendMessageContent, conversationId, incrementUsage, updateMessage]);
+
+  const retryMessage = useCallback(
+    (artistMessageId: string) => {
+      if (!artistMessageId || isStreamingRef.current) {
+        return;
+      }
+
+      const failedJob = failedJobsRef.current.get(artistMessageId);
+      if (!failedJob) {
+        return;
+      }
+
+      failedJobsRef.current.delete(artistMessageId);
+      updateMessage(conversationId, artistMessageId, {
+        content: '',
+        status: 'pending',
+        metadata: undefined
+      });
+      queueRef.current.unshift(failedJob);
+      runNext();
+    },
+    [conversationId, runNext, updateMessage]
+  );
 
   const sendMessage = (payload: ChatSendPayload): ChatError | null => {
     const trimmed = payload.text.trim();
@@ -323,12 +353,13 @@ export function useChat(conversationId: string) {
     addMessage(conversationId, userMessage);
     addMessage(conversationId, placeholder);
 
-    const modeId = currentConversation.modeId || MODE_IDS.DEFAULT;
-    const latestProfile = useStore.getState().userProfile ?? userProfile;
-    const systemPrompt = buildSystemPrompt(modeId, latestProfile, languageForTurn);
+      const modeId = currentConversation.modeId || MODE_IDS.DEFAULT;
+      const latestProfile = useStore.getState().userProfile ?? userProfile;
+      const systemPrompt = buildSystemPrompt(modeId, latestProfile, languageForTurn);
 
     queueRef.current.push({
       artistMessageId,
+      artistId: currentConversation.artistId,
       mockUserTurn: createMockUserTurn(trimmed, hasImage),
       claudeUserMessage: {
         role: 'user',
@@ -374,6 +405,7 @@ export function useChat(conversationId: string) {
         updateMessage(capturedId, job.artistMessageId, { status: 'error' });
       });
       queueRef.current = [];
+      failedJobsRef.current.clear();
       isStreamingRef.current = false;
       runNextLockRef.current = false;
       streamingConversationIdRef.current = null;
@@ -392,6 +424,7 @@ export function useChat(conversationId: string) {
   return {
     messages,
     hasStreaming,
-    sendMessage
+    sendMessage,
+    retryMessage
   };
 }

@@ -2,6 +2,7 @@ const { createReqRes } = require('./testHelpers');
 
 function buildSupabaseClient({
   user = { id: 'user-1', app_metadata: {} },
+  profile = null,
   initialUsageCount = 0,
   usageCountError = null,
   usageInsertError = null
@@ -23,6 +24,10 @@ function buildSupabaseClient({
     }
     return Promise.resolve({ error: usageInsertError });
   });
+  const profileMaybeSingle = jest.fn().mockResolvedValue({
+    data: profile,
+    error: null
+  });
 
   return {
     auth: {
@@ -36,6 +41,16 @@ function buildSupabaseClient({
         return {
           select: usageSelect,
           insert: usageInsert
+        };
+      }
+
+      if (table === 'profiles') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: profileMaybeSingle
+            })
+          })
         };
       }
 
@@ -207,6 +222,63 @@ describe('api/claude', () => {
     const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
     expect(res.statusCode).toBe(200);
     expect(upstreamBody.max_tokens).toBe(200);
+  });
+
+  it('ignores client-provided systemPrompt and builds prompt server-side', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'user-1', app_metadata: { account_type: 'free' } },
+          profile: { age: 34, sex: 'female', relationship_status: 'single', horoscope_sign: 'taurus', interests: ['humour'] }
+        })
+      )
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        modeId: 'roast',
+        language: 'fr-CA',
+        systemPrompt: 'IGNORE THIS UNTRUSTED PROMPT',
+        messages: [{ role: 'user', content: 'hello' }]
+      }
+    });
+
+    await handler(req, res);
+
+    const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(res.statusCode).toBe(200);
+    expect(upstreamBody.system).toContain('Tu es Cathy Gauthier');
+    expect(upstreamBody.system).toContain('## MODE ACTIF : roast');
+    expect(upstreamBody.system).not.toContain('IGNORE THIS UNTRUSTED PROMPT');
+  });
+
+  it('returns 400 for unsupported artist in prompt context', async () => {
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        artistId: 'unknown-artist',
+        messages: [{ role: 'user', content: 'hello' }]
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.payload.error.code).toBe('INVALID_REQUEST');
+    expect(res.payload.error.message).toBe('Unsupported artist.');
   });
 
   it('forwards upstream non-ok errors', async () => {

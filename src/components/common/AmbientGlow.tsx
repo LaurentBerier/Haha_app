@@ -1,17 +1,48 @@
-import { memo, useEffect, useRef } from 'react';
-import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { memo, useEffect, useRef, useState } from 'react';
+import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from 'react-native';
 
 interface AmbientGlowProps {
   variant?: 'home' | 'mode';
 }
 
 function AmbientGlowBase({ variant = 'home' }: AmbientGlowProps) {
+  const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const farOrbit = useRef(new Animated.Value(0)).current;
   const midOrbit = useRef(new Animated.Value(0)).current;
   const nearOrbit = useRef(new Animated.Value(0)).current;
   const glowPulse = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
+    let isMounted = true;
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((enabled) => {
+        if (isMounted) {
+          setReduceMotionEnabled(Boolean(enabled));
+        }
+      })
+      .catch(() => {
+        // Ignore platform-specific failures and keep default motion behavior.
+      });
+
+    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', (enabled) => {
+      setReduceMotionEnabled(Boolean(enabled));
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotionEnabled) {
+      farOrbit.setValue(0);
+      midOrbit.setValue(0);
+      nearOrbit.setValue(0);
+      glowPulse.setValue(0);
+      return;
+    }
+
     const animations = [
       Animated.loop(
         Animated.timing(farOrbit, {
@@ -58,7 +89,7 @@ function AmbientGlowBase({ variant = 'home' }: AmbientGlowProps) {
     animations.forEach((animation) => animation.start());
 
     return () => animations.forEach((animation) => animation.stop());
-  }, [farOrbit, glowPulse, midOrbit, nearOrbit]);
+  }, [farOrbit, glowPulse, midOrbit, nearOrbit, reduceMotionEnabled]);
 
   const isHome = variant === 'home';
   const pulseOpacity = glowPulse.interpolate({

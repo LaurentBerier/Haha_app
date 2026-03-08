@@ -2,6 +2,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import { Link, router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { t } from '../../i18n';
 import { signInWithApple, signInWithEmail } from '../../services/authService';
 import { theme } from '../../theme';
 
@@ -29,7 +30,7 @@ export default function LoginScreen() {
       await signInWithEmail(email.trim(), password);
       router.replace('/');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Impossible de se connecter.';
+      const message = err instanceof Error ? err.message : t('loginError');
       setError(message);
     } finally {
       setIsSubmitting(false);
@@ -44,7 +45,7 @@ export default function LoginScreen() {
       await signInWithApple();
       router.replace('/');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Connexion Apple impossible.';
+      const message = err instanceof Error ? err.message : t('loginAppleError');
       setError(message);
     } finally {
       setIsSubmitting(false);
@@ -53,13 +54,13 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.screen} testID="login-screen">
-      <Text style={styles.title}>Se connecter</Text>
-      <Text style={styles.subtitle}>Accède à ton compte Ha-Ha.ai</Text>
+      <Text style={styles.title}>{t('loginTitle')}</Text>
+      <Text style={styles.subtitle}>{t('loginSubtitle')}</Text>
 
       <TextInput
         value={email}
         onChangeText={setEmail}
-        placeholder="Email"
+        placeholder={t('loginEmailPlaceholder')}
         placeholderTextColor={theme.colors.textDisabled}
         keyboardType="email-address"
         autoCapitalize="none"
@@ -69,7 +70,7 @@ export default function LoginScreen() {
       <TextInput
         value={password}
         onChangeText={setPassword}
-        placeholder="Mot de passe"
+        placeholder={t('loginPasswordPlaceholder')}
         placeholderTextColor={theme.colors.textDisabled}
         secureTextEntry
         style={styles.input}
@@ -82,7 +83,7 @@ export default function LoginScreen() {
         onPress={onSubmit}
         disabled={isSubmitting || !email.trim() || !password}
       >
-        {isSubmitting ? <ActivityIndicator color={theme.colors.textPrimary} /> : <Text style={styles.buttonLabel}>Se connecter</Text>}
+        {isSubmitting ? <ActivityIndicator color={theme.colors.textPrimary} /> : <Text style={styles.buttonLabel}>{t('loginSubmit')}</Text>}
       </Pressable>
 
       {appleAvailable ? (
@@ -97,13 +98,13 @@ export default function LoginScreen() {
 
       <Link href="/(auth)/forgot-password" asChild>
         <Pressable>
-          <Text style={styles.link}>Mot de passe oublié ?</Text>
+          <Text style={styles.link}>{t('loginForgotPassword')}</Text>
         </Pressable>
       </Link>
 
       <Link href="/(auth)/signup" asChild>
         <Pressable>
-          <Text style={styles.link}>Créer un compte</Text>
+          <Text style={styles.link}>{t('loginCreateAccount')}</Text>
         </Pressable>
       </Link>
     </View>

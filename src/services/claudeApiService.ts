@@ -25,8 +25,10 @@ export interface ClaudeMessage {
 }
 
 export interface ClaudeStreamParams {
-  systemPrompt: string;
   messages: ClaudeMessage[];
+  artistId: string;
+  modeId: string;
+  language: string;
   maxTokens?: number;
   temperature?: number;
   onToken: (token: string) => void;
@@ -160,7 +162,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
   };
 
   const runStream = async () => {
-    const { systemPrompt, messages, maxTokens = 300, temperature = 0.9 } = params;
+    const { artistId, modeId, language, messages, maxTokens = 300, temperature = 0.9 } = params;
 
     if (!proxyUrl) {
       emitError(new Error('Missing Claude proxy URL. Set EXPO_PUBLIC_CLAUDE_PROXY_URL.'));
@@ -181,7 +183,9 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
           maxTokens,
           temperature,
           stream: shouldUseStreaming,
-          systemPrompt,
+          artistId,
+          modeId,
+          language,
           messages
         }),
         signal: controller.signal

@@ -69,7 +69,7 @@ create policy "account_types: read-only for all"
 drop policy if exists "own profile" on public.profiles;
 drop policy if exists "profiles: own read" on public.profiles;
 drop policy if exists "profiles: own insert" on public.profiles;
-drop policy if exists "profiles: own update (no account_type)" on public.profiles;
+drop policy if exists "profiles: own update (locked account_type)" on public.profiles;
 
 create policy "profiles: own read"
   on public.profiles
@@ -81,14 +81,33 @@ create policy "profiles: own insert"
   for insert
   with check (auth.uid() = id);
 
-create policy "profiles: own update (no account_type)"
+create policy "profiles: own update (locked account_type)"
   on public.profiles
   for update
   using (auth.uid() = id)
-  with check (
-    auth.uid() = id
-    and account_type_id = (select p.account_type_id from public.profiles p where p.id = auth.uid())
-  );
+  with check (auth.uid() = id);
+
+-- Prevent self-promotion via race conditions:
+-- if a signed-in user updates their own profile, account_type_id is immutable.
+create or replace function public.prevent_profile_account_type_change()
+returns trigger
+language plpgsql
+as $$
+begin
+  if auth.uid() is not null
+     and new.id = auth.uid()
+     and new.account_type_id is distinct from old.account_type_id then
+    raise exception 'account_type_id is immutable for self updates';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_lock_account_type on public.profiles;
+create trigger profiles_lock_account_type
+before update on public.profiles
+for each row execute function public.prevent_profile_account_type_change();
 
 -- Sync account_type_id to auth.users.app_metadata whenever admins/webhooks change it.
 create or replace function public.sync_account_type_to_jwt()
@@ -104,8 +123,7 @@ begin
       jsonb_build_object(
         'app_metadata',
         jsonb_build_object(
-          'account_type', new.account_type_id,
-          'role', case when new.account_type_id = 'admin' then 'admin' else 'user' end
+          'account_type', new.account_type_id
         )
       )
     );

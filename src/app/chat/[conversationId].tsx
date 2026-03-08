@@ -40,7 +40,7 @@ export default function ChatScreen() {
   const sessionUser = useStore((state) => state.session?.user ?? null);
   const conversations = useStore((state) => state.conversations);
   const artists = useStore((state) => state.artists);
-  const { messages, sendMessage, hasStreaming } = useChat(conversationId);
+  const { messages, sendMessage, retryMessage, hasStreaming } = useChat(conversationId);
 
   const currentConversation = useMemo(
     () => findConversationById(conversations, conversationId),
@@ -66,7 +66,12 @@ export default function ChatScreen() {
     >
       <View style={styles.container}>
         {isValidConversation ? (
-          <MessageList messages={messages} userDisplayName={userDisplayName} artistDisplayName={artistDisplayName} />
+          <MessageList
+            messages={messages}
+            userDisplayName={userDisplayName}
+            artistDisplayName={artistDisplayName}
+            onRetryMessage={retryMessage}
+          />
         ) : (
           <Text style={styles.error} testID="chat-invalid-conversation">
             {t('invalidConversation')}

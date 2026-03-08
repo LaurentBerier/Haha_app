@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { t } from '../../i18n';
 import type { Message } from '../../models/Message';
 import { theme } from '../../theme';
@@ -8,9 +8,10 @@ interface ChatBubbleProps {
   message: Message;
   userDisplayName: string;
   artistDisplayName: string;
+  onRetryMessage?: (messageId: string) => void;
 }
 
-function ChatBubbleBase({ message, userDisplayName, artistDisplayName }: ChatBubbleProps) {
+function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMessage }: ChatBubbleProps) {
   const isUser = message.role === 'user';
   const imageUri = message.metadata?.imageUri;
   const hasText = message.content.trim().length > 0;
@@ -27,25 +28,36 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName }: ChatBub
         >
           {senderName}
         </Text>
-      <View
-        style={[styles.bubble, isUser ? styles.userBubble : styles.artistBubble]}
-        testID={`chat-bubble-${message.role}-${message.id}`}
-        accessibilityLabel={`chat-bubble-${message.role}`}
-      >
-        {imageUri ? <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" /> : null}
+        <View
+          style={[styles.bubble, isUser ? styles.userBubble : styles.artistBubble]}
+          testID={`chat-bubble-${message.role}-${message.id}`}
+          accessibilityLabel={`chat-bubble-${message.role}`}
+        >
+          {imageUri ? <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" /> : null}
 
-        {hasText || shouldShowPlaceholder ? (
-          <Text style={styles.content} testID={`chat-bubble-content-${message.id}`}>
-            {hasText ? message.content : '...'}
-          </Text>
-        ) : null}
+          {hasText || shouldShowPlaceholder ? (
+            <Text style={styles.content} testID={`chat-bubble-content-${message.id}`}>
+              {hasText ? message.content : '...'}
+            </Text>
+          ) : null}
 
-        {message.status === 'error' ? (
-          <Text style={styles.error} testID={`chat-bubble-error-${message.id}`}>
-            {t('errorStreaming')}
-          </Text>
-        ) : null}
-      </View>
+          {message.status === 'error' ? (
+            <>
+              <Text style={styles.error} testID={`chat-bubble-error-${message.id}`}>
+                {t('errorStreaming')}
+              </Text>
+              {onRetryMessage ? (
+                <Pressable
+                  onPress={() => onRetryMessage(message.id)}
+                  style={styles.retryButton}
+                  testID={`chat-bubble-retry-${message.id}`}
+                >
+                  <Text style={styles.retryLabel}>{t('retry')}</Text>
+                </Pressable>
+              ) : null}
+            </>
+          ) : null}
+        </View>
       </View>
     </View>
   );
@@ -117,5 +129,19 @@ const styles = StyleSheet.create({
     color: theme.colors.error,
     marginTop: theme.spacing.xs,
     fontSize: 11
+  },
+  retryButton: {
+    marginTop: theme.spacing.xs,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 8,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 6
+  },
+  retryLabel: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700'
   }
 });

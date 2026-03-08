@@ -12,6 +12,8 @@ const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 30;
 const MONTHLY_QUOTA_CACHE_TTL_MS = 5_000;
+const DEFAULT_ARTIST_ID = 'cathy-gauthier';
+const DEFAULT_MODE_ID = 'default';
 const DEFAULT_MONTHLY_CAPS = {
   free: 15,
   regular: 45,
@@ -25,6 +27,89 @@ const DEFAULT_MAX_TOKENS_BY_TIER = {
   admin: 300
 };
 const ALLOWED_IMAGE_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const SUPPORTED_ARTIST_IDS = new Set([DEFAULT_ARTIST_ID]);
+const DEFAULT_MODE_PROMPT = `Conversation libre. Reponds comme Cathy dans une discussion informelle,
+avec repartie rapide, sarcasme et punchlines courtes.`;
+const MODE_PROMPTS = {
+  'radar-attitude': `L'utilisateur te decrit une situation ou un comportement.
+Analyse l'attitude de la personne decrite avec ton regard mordant et sans filtre.
+Donne un verdict specifique a la situation, comme sur scene.`,
+  roast: `L'utilisateur veut se faire roaster.
+Utilise exactement ce qu'il te dit pour le detruire avec humour.
+Sois creative, specifique, mordante et sans compliments caches.`,
+  horoscope: `L'utilisateur te donne un signe astro.
+Donne un horoscope completement bidon mais hilarant dans ton style.
+Sois specifique au signe et au theme quand il y en a un.`,
+  'message-personnalise': `L'utilisateur veut un message personnalise pour quelqu'un.
+Extrait le prenom, l'age et le contexte de la demande quand possible.
+Ecris un message dans ton style avec ces details.`,
+  'message-perso': `L'utilisateur veut un message personnalise pour quelqu'un.
+Extrait le prenom, l'age et le contexte de la demande quand possible.
+Ecris un message dans ton style avec ces details.`,
+  default: DEFAULT_MODE_PROMPT
+};
+const CATHY_BLUEPRINT = {
+  identity: {
+    name: 'Cathy Gauthier',
+    role: 'Humoriste quebecoise'
+  },
+  toneMetrics: {
+    aggression: 7.5,
+    warmth: 4,
+    sarcasm: 8,
+    judgmentIntensity: 9,
+    selfDeprecation: 6
+  },
+  humorMechanics: {
+    exaggerationLevel: 8
+  },
+  thematicAnchors: [
+    'Relations hommes/femmes',
+    'Comportements sociaux ridicules',
+    'Hypocrisie',
+    'Ego fragile',
+    'Incompetence',
+    'Reseaux sociaux'
+  ],
+  guardrails: {
+    hardNo: [
+      'Blagues violentes impliquant des enfants',
+      'Vulgarite gratuite sans fonction humoristique',
+      'Ridicule purement physique'
+    ],
+    softZones: [
+      { topic: 'politique', rule: 'contextuel seulement' },
+      { topic: 'religion', rule: 'contextuel seulement' },
+      { topic: 'identite', rule: 'humour structure requis' }
+    ]
+  }
+};
+const PROFILE_SEX_LABEL_FR = {
+  male: 'Homme',
+  female: 'Femme',
+  non_binary: 'Non-binaire',
+  prefer_not_to_say: 'Prefere ne pas repondre'
+};
+const PROFILE_SEX_LABEL_EN = {
+  male: 'Male',
+  female: 'Female',
+  non_binary: 'Non-binary',
+  prefer_not_to_say: 'Prefer not to say'
+};
+const PROFILE_STATUS_LABEL_FR = {
+  single: 'Celibataire',
+  in_relationship: 'En couple',
+  married: 'Marie(e)',
+  complicated: "C'est complique",
+  prefer_not_to_say: 'Prefere ne pas repondre'
+};
+const PROFILE_STATUS_LABEL_EN = {
+  single: 'Single',
+  in_relationship: 'In a relationship',
+  married: 'Married',
+  complicated: "It's complicated",
+  prefer_not_to_say: 'Prefer not to say'
+};
 const monthlyQuotaCache = new Map();
 
 function isRecord(value) {
@@ -150,16 +235,183 @@ function normalizeMessages(rawMessages) {
   });
 }
 
-function parsePayload(body, tierMaxTokens = DEFAULT_MAX_TOKENS) {
+function resolvePromptLanguage(language) {
+  if (typeof language === 'string' && language.toLowerCase().startsWith('en')) {
+    return 'en';
+  }
+
+  return 'fr';
+}
+
+function normalizePromptContext(body) {
+  if (!isRecord(body)) {
+    return {
+      ok: true,
+      artistId: DEFAULT_ARTIST_ID,
+      modeId: DEFAULT_MODE_ID,
+      language: 'fr-CA'
+    };
+  }
+
+  const rawArtistId = typeof body.artistId === 'string' ? body.artistId.trim() : '';
+  if (rawArtistId && !SUPPORTED_ARTIST_IDS.has(rawArtistId)) {
+    return { ok: false, error: 'Unsupported artist.' };
+  }
+
+  const rawModeId = typeof body.modeId === 'string' ? body.modeId.trim() : '';
+  const modeId = rawModeId && rawModeId.length <= 80 ? rawModeId : DEFAULT_MODE_ID;
+  const rawLanguage = typeof body.language === 'string' ? body.language.trim() : '';
+  const language = rawLanguage && rawLanguage.length <= 24 ? rawLanguage : 'fr-CA';
+
+  return {
+    ok: true,
+    artistId: rawArtistId || DEFAULT_ARTIST_ID,
+    modeId,
+    language
+  };
+}
+
+function normalizeProfileForPrompt(row) {
+  if (!isRecord(row)) {
+    return null;
+  }
+
+  const interests = Array.isArray(row.interests)
+    ? row.interests.filter((value) => typeof value === 'string' && value.trim()).slice(0, 12)
+    : [];
+
+  return {
+    age: typeof row.age === 'number' && Number.isFinite(row.age) ? Math.floor(row.age) : null,
+    sex: typeof row.sex === 'string' ? row.sex : null,
+    relationshipStatus: typeof row.relationship_status === 'string' ? row.relationship_status : null,
+    horoscopeSign: typeof row.horoscope_sign === 'string' ? row.horoscope_sign : null,
+    interests
+  };
+}
+
+async function fetchUserProfileForPrompt(supabaseAdmin, userId, requestId) {
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('age, sex, relationship_status, horoscope_sign, interests')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error(`[api/claude][${requestId}] Failed to fetch profile for prompt`, error);
+    return null;
+  }
+
+  return normalizeProfileForPrompt(data);
+}
+
+function buildUserProfileSection(profile, promptLanguage) {
+  if (!profile) {
+    return '';
+  }
+
+  const sexLabels = promptLanguage === 'en' ? PROFILE_SEX_LABEL_EN : PROFILE_SEX_LABEL_FR;
+  const statusLabels = promptLanguage === 'en' ? PROFILE_STATUS_LABEL_EN : PROFILE_STATUS_LABEL_FR;
+  const lines = [];
+
+  if (typeof profile.age === 'number') {
+    lines.push(promptLanguage === 'en' ? `- Approximate age: ${profile.age}` : `- Age approximatif : ${profile.age} ans`);
+  }
+
+  if (profile.sex && sexLabels[profile.sex]) {
+    lines.push(promptLanguage === 'en' ? `- Gender: ${sexLabels[profile.sex]}` : `- Genre : ${sexLabels[profile.sex]}`);
+  }
+
+  if (profile.relationshipStatus && statusLabels[profile.relationshipStatus]) {
+    lines.push(
+      promptLanguage === 'en'
+        ? `- Relationship status: ${statusLabels[profile.relationshipStatus]}`
+        : `- Statut : ${statusLabels[profile.relationshipStatus]}`
+    );
+  }
+
+  if (typeof profile.horoscopeSign === 'string' && profile.horoscopeSign) {
+    lines.push(
+      promptLanguage === 'en'
+        ? `- Horoscope sign: ${profile.horoscopeSign}`
+        : `- Signe astro : ${profile.horoscopeSign}`
+    );
+  }
+
+  if (Array.isArray(profile.interests) && profile.interests.length > 0) {
+    lines.push(
+      promptLanguage === 'en'
+        ? `- Interests: ${profile.interests.join(', ')}`
+        : `- Interets : ${profile.interests.join(', ')}`
+    );
+  }
+
+  if (lines.length === 0) {
+    return '';
+  }
+
+  if (promptLanguage === 'en') {
+    return `\n## USER PROFILE\nAdapt your humor and references to this profile:\n${lines.join('\n')}`;
+  }
+
+  return `\n## PROFIL UTILISATEUR\nAdapte ton humour et tes references a ce profil :\n${lines.join('\n')}`;
+}
+
+function buildServerSystemPrompt(context, profile) {
+  const promptLanguage = resolvePromptLanguage(context.language);
+  const modePrompt = MODE_PROMPTS[context.modeId] ?? DEFAULT_MODE_PROMPT;
+  const userProfileSection = buildUserProfileSection(profile, promptLanguage);
+  const b = CATHY_BLUEPRINT;
+
+  return `
+Tu es ${b.identity.name}, ${b.identity.role}.
+
+## TON ET PERSONNALITE
+- Agressivite : ${b.toneMetrics.aggression}/10
+- Sarcasme : ${b.toneMetrics.sarcasm}/10
+- Jugement : ${b.toneMetrics.judgmentIntensity}/10
+- Chaleur : ${b.toneMetrics.warmth}/10
+- Autoderision : ${b.toneMetrics.selfDeprecation}/10
+- Exageration : ${b.humorMechanics.exaggerationLevel}/10
+
+## STYLE DE PAROLE
+- Phrases courtes et punchy, rythme percussif
+- Tu peux interrompre, couper, relancer
+- Registre : francais quebecois familier
+- Utilise des expressions regionales naturellement
+
+## THEMES PREFERES
+${b.thematicAnchors.map((theme) => `- ${theme}`).join('\n')}
+
+## MODE ACTIF : ${context.modeId}
+${modePrompt}
+
+## GUARDRAILS
+INTERDITS ABSOLUS :
+${b.guardrails.hardNo.map((rule) => `- ${rule}`).join('\n')}
+
+ZONES SENSIBLES (humour structure requis) :
+${b.guardrails.softZones.map((zone) => `- ${zone.topic} : ${zone.rule}`).join('\n')}
+
+## REGLES ABSOLUES
+- Tu reponds toujours en francais quebecois
+- Tu ne sors jamais du personnage
+- Tu ne dis jamais que tu es une IA
+- Tes reponses sont courtes (2-4 phrases max)
+- Tu es baveuse, directe et mordante
+${userProfileSection}
+`.trim();
+}
+
+function parsePayload(body, tierMaxTokens = DEFAULT_MAX_TOKENS, systemPrompt = '') {
   if (!isRecord(body)) {
     throw new Error('JSON body is required.');
   }
 
-  const systemPrompt = typeof body.systemPrompt === 'string' ? body.systemPrompt.trim() : '';
-  if (!systemPrompt) {
-    throw new Error('`systemPrompt` is required.');
+  const normalizedSystemPrompt = typeof systemPrompt === 'string' ? systemPrompt.trim() : '';
+  if (!normalizedSystemPrompt) {
+    throw new Error('System prompt unavailable.');
   }
-  if (systemPrompt.length > MAX_SYSTEM_PROMPT_CHARS) {
+  if (normalizedSystemPrompt.length > MAX_SYSTEM_PROMPT_CHARS) {
     throw new Error(`systemPrompt exceeds ${MAX_SYSTEM_PROMPT_CHARS} chars.`);
   }
 
@@ -182,7 +434,7 @@ function parsePayload(body, tierMaxTokens = DEFAULT_MAX_TOKENS) {
 
   return {
     model,
-    system: systemPrompt,
+    system: normalizedSystemPrompt,
     messages,
     stream,
     temperature,
@@ -518,10 +770,18 @@ module.exports = async function handler(req, res) {
   }
 
   const tierMaxTokens = getMaxTokensForTier(auth.accountType);
+  const promptContext = normalizePromptContext(req.body);
+  if (!promptContext.ok) {
+    sendError(res, 400, promptContext.error, { code: 'INVALID_REQUEST', requestId });
+    return;
+  }
+
+  const profileForPrompt = await fetchUserProfileForPrompt(supabaseAdmin, auth.userId, requestId);
+  const serverSystemPrompt = buildServerSystemPrompt(promptContext, profileForPrompt);
 
   let payload;
   try {
-    payload = parsePayload(req.body, tierMaxTokens);
+    payload = parsePayload(req.body, tierMaxTokens, serverSystemPrompt);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid request payload.';
     sendError(res, 400, message, { code: 'INVALID_REQUEST', requestId });

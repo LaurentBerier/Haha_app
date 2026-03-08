@@ -9,9 +9,10 @@ interface MessageListProps {
   messages: Message[];
   userDisplayName: string;
   artistDisplayName: string;
+  onRetryMessage?: (messageId: string) => void;
 }
 
-function MessageListBase({ messages, userDisplayName, artistDisplayName }: MessageListProps) {
+function MessageListBase({ messages, userDisplayName, artistDisplayName, onRetryMessage }: MessageListProps) {
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottomRef = useRef(true);
   const hasScrolledInitiallyRef = useRef(false);
@@ -55,9 +56,14 @@ function MessageListBase({ messages, userDisplayName, artistDisplayName }: Messa
 
   const renderItem = useCallback(
     ({ item }: { item: Message }) => (
-      <ChatBubble message={item} userDisplayName={userDisplayName} artistDisplayName={artistDisplayName} />
+      <ChatBubble
+        message={item}
+        userDisplayName={userDisplayName}
+        artistDisplayName={artistDisplayName}
+        onRetryMessage={onRetryMessage}
+      />
     ),
-    [artistDisplayName, userDisplayName]
+    [artistDisplayName, onRetryMessage, userDisplayName]
   );
 
   return (
