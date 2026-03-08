@@ -230,6 +230,11 @@ Recommended Stripe events:
 - `customer.subscription.updated`
 - `customer.subscription.deleted`
 
+Implementation note:
+
+- Webhook signature verification now uses Stripe SDK `constructEvent(...)` with strict raw-body validation.
+- If the request body is already JSON-parsed before handler execution (raw bytes lost), verification is rejected.
+
 ## 16) Stripe webhook processed but account type did not change
 
 Checklist:

@@ -60,6 +60,7 @@ Core targets:
 - payment webhook integration:
   - `POST /api/payment-webhook`
   - `POST /api/stripe-webhook`
+  - Stripe signature verification now uses official `stripe.webhooks.constructEvent` with strict raw-body validation
   - webhook-driven account changes now emit best-effort audit log rows (`audit_logs`)
   - `payment_events` supports provider-level idempotency key (`provider_event_id`) with unique index
   - webhook handlers are backward-compatible during staggered DB rollout (auto-fallback insert when `provider_event_id` column is still missing)

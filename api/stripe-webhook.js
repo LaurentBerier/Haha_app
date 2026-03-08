@@ -1,15 +1,16 @@
-const { createHmac, timingSafeEqual } = require('node:crypto');
+const Stripe = require('stripe');
 const { attachRequestId, getMissingEnv, getSupabaseAdmin, logAuditEvent, sendError, setCorsHeaders } = require('./_utils');
 
 const STRIPE_SIGNATURE_TOLERANCE_SECONDS = 300;
+const stripeClient = new Stripe('sk_test_placeholder');
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
 }
 
 async function readRawBodyFromStream(req) {
-  if (!req || typeof req.on !== 'function') {
-    return '';
+  if (!req || typeof req.on !== 'function' || req.readableEnded) {
+    return null;
   }
 
   return new Promise((resolve, reject) => {
@@ -19,7 +20,7 @@ async function readRawBodyFromStream(req) {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
     });
     req.on('end', () => {
-      resolve(Buffer.concat(chunks).toString('utf8'));
+      resolve(chunks.length > 0 ? Buffer.concat(chunks) : null);
     });
     req.on('error', (error) => {
       reject(error);
@@ -29,37 +30,31 @@ async function readRawBodyFromStream(req) {
 
 async function resolveRawBody(req, requestId) {
   if (typeof req.rawBody === 'string' && req.rawBody) {
-    return req.rawBody;
+    return Buffer.from(req.rawBody, 'utf8');
   }
 
   if (Buffer.isBuffer(req.rawBody) && req.rawBody.length > 0) {
-    return req.rawBody.toString('utf8');
+    return req.rawBody;
   }
 
   if (typeof req.body === 'string' && req.body) {
-    return req.body;
+    return Buffer.from(req.body, 'utf8');
   }
 
   if (Buffer.isBuffer(req.body) && req.body.length > 0) {
-    return req.body.toString('utf8');
+    return req.body;
   }
 
   if (isRecord(req.body)) {
-    // Fallback for platforms that pre-parse JSON body before handler execution.
-    // Signature verification can still succeed when canonical serialization matches payload bytes.
-    try {
-      return JSON.stringify(req.body);
-    } catch {
-      console.error(`[api/stripe-webhook][${requestId}] Raw body unavailable because request body is pre-parsed JSON.`);
-      return '';
-    }
+    console.error(`[api/stripe-webhook][${requestId}] Raw body unavailable because request body is pre-parsed JSON.`);
+    return null;
   }
 
   try {
     return await readRawBodyFromStream(req);
   } catch (error) {
     console.error(`[api/stripe-webhook][${requestId}] Failed to read raw body stream`, error);
-    return '';
+    return null;
   }
 }
 
@@ -73,44 +68,6 @@ function toHeaderString(value) {
   }
 
   return '';
-}
-
-function parseStripeSignature(headerValue) {
-  const parsed = {
-    timestamp: null,
-    signatures: []
-  };
-
-  if (!headerValue) {
-    return parsed;
-  }
-
-  for (const part of headerValue.split(',')) {
-    const [rawKey, rawValue] = part.split('=');
-    const key = (rawKey ?? '').trim();
-    const value = (rawValue ?? '').trim();
-
-    if (key === 't' && /^\d+$/.test(value)) {
-      parsed.timestamp = Number.parseInt(value, 10);
-      continue;
-    }
-
-    if (key === 'v1' && value) {
-      parsed.signatures.push(value);
-    }
-  }
-
-  return parsed;
-}
-
-function signatureMatches(expectedSignature, candidateSignature) {
-  const expected = Buffer.from(expectedSignature, 'utf8');
-  const candidate = Buffer.from(candidateSignature, 'utf8');
-  if (expected.length !== candidate.length) {
-    return false;
-  }
-
-  return timingSafeEqual(expected, candidate);
 }
 
 function isUniqueViolation(error) {
@@ -148,9 +105,8 @@ async function verifyStripeSignature(req, requestId) {
   const webhookSecret = (process.env.STRIPE_WEBHOOK_SECRET ?? '').trim();
   const rawBody = await resolveRawBody(req, requestId);
   const signatureHeader = toHeaderString(req.headers['stripe-signature']);
-  const parsedSignature = parseStripeSignature(signatureHeader);
 
-  if (!rawBody) {
+  if (!rawBody || rawBody.length === 0) {
     return {
       ok: false,
       status: 500,
@@ -159,28 +115,16 @@ async function verifyStripeSignature(req, requestId) {
     };
   }
 
-  if (!webhookSecret || !parsedSignature.timestamp || parsedSignature.signatures.length === 0) {
-    return { ok: false, status: 401, code: 'UNAUTHORIZED', message: 'Invalid Stripe signature.' };
-  }
-
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  if (Math.abs(nowSeconds - parsedSignature.timestamp) > STRIPE_SIGNATURE_TOLERANCE_SECONDS) {
-    return { ok: false, status: 401, code: 'UNAUTHORIZED', message: 'Stripe signature timestamp is out of range.' };
-  }
-
-  const signedPayload = `${parsedSignature.timestamp}.${rawBody}`;
-  const expectedSignature = createHmac('sha256', webhookSecret).update(signedPayload).digest('hex');
-  const hasMatch = parsedSignature.signatures.some((candidate) => signatureMatches(expectedSignature, candidate));
-  if (!hasMatch) {
+  if (!webhookSecret || !signatureHeader) {
     return { ok: false, status: 401, code: 'UNAUTHORIZED', message: 'Invalid Stripe signature.' };
   }
 
   let event;
   try {
-    event = JSON.parse(rawBody);
+    event = stripeClient.webhooks.constructEvent(rawBody, signatureHeader, webhookSecret, STRIPE_SIGNATURE_TOLERANCE_SECONDS);
   } catch (error) {
-    console.error(`[api/stripe-webhook][${requestId}] Invalid JSON payload`, error);
-    return { ok: false, status: 400, code: 'INVALID_REQUEST', message: 'Webhook payload must be valid JSON.' };
+    console.error(`[api/stripe-webhook][${requestId}] Signature verification failed`, error);
+    return { ok: false, status: 401, code: 'UNAUTHORIZED', message: 'Invalid Stripe signature.' };
   }
 
   if (!isRecord(event) || typeof event.type !== 'string') {
