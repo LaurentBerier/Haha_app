@@ -79,6 +79,41 @@ describe('api/_utils', () => {
     expect(result).toEqual({ ok: false, reason: 'origin_required' });
   });
 
+  it('allows non-browser request with bearer token when Origin is missing', () => {
+    const req = {
+      headers: {
+        authorization: 'Bearer abc123'
+      }
+    };
+    const res = createResponseMock();
+
+    const result = setCorsHeaders(req, res);
+
+    expect(result).toEqual({ ok: true, reason: null });
+  });
+
+  it('allows missing Origin for routes that explicitly opt in', () => {
+    const req = {
+      headers: {}
+    };
+    const res = createResponseMock();
+
+    const result = setCorsHeaders(req, res, { allowMissingOrigin: true });
+
+    expect(result).toEqual({ ok: true, reason: null });
+  });
+
+  it('rejects missing Origin when no auth and no explicit allow', () => {
+    const req = {
+      headers: {}
+    };
+    const res = createResponseMock();
+
+    const result = setCorsHeaders(req, res);
+
+    expect(result).toEqual({ ok: false, reason: 'origin_required' });
+  });
+
   it('uses provided x-request-id when valid', () => {
     const req = { headers: { 'x-request-id': ' req-123 ' } };
     const res = createResponseMock();

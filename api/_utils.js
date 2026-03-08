@@ -13,14 +13,15 @@ function parseAllowedOrigins() {
 function setCorsHeaders(req, res, options = {}) {
   const methods = options.methods ?? 'POST, OPTIONS';
   const headers = options.headers ?? 'Content-Type, Authorization';
+  const allowMissingOrigin = options.allowMissingOrigin === true;
   const origin = req.headers.origin;
   const allowedOrigins = parseAllowedOrigins();
 
   res.setHeader('Access-Control-Allow-Methods', methods);
   res.setHeader('Access-Control-Allow-Headers', headers);
 
-  // Non-browser callers (mobile native, server-to-server) do not send Origin.
-  // Browsers generally send Fetch Metadata headers; reject those when Origin is missing.
+  // Non-browser callers may omit Origin. Browsers generally send Fetch Metadata;
+  // reject those when Origin is missing to avoid browser CORS bypass patterns.
   if (!origin) {
     const hasFetchMetadata =
       typeof req.headers['sec-fetch-mode'] === 'string' ||
@@ -31,7 +32,16 @@ function setCorsHeaders(req, res, options = {}) {
       return { ok: false, reason: 'origin_required' };
     }
 
-    return { ok: true, reason: null };
+    if (allowMissingOrigin) {
+      return { ok: true, reason: null };
+    }
+
+    const bearer = extractBearerToken(req.headers.authorization);
+    if (bearer) {
+      return { ok: true, reason: null };
+    }
+
+    return { ok: false, reason: 'origin_required' };
   }
 
   if (allowedOrigins.length === 0) {

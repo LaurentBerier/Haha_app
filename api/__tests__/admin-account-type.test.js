@@ -63,7 +63,8 @@ describe('api/admin-account-type', () => {
   const originalEnv = {
     SUPABASE_URL: process.env.SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS
+    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+    ENABLE_ADMIN_TIER_GRANTS: process.env.ENABLE_ADMIN_TIER_GRANTS
   };
 
   beforeEach(() => {
@@ -72,6 +73,7 @@ describe('api/admin-account-type', () => {
     process.env.SUPABASE_URL = 'https://example.supabase.co';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
     delete process.env.ALLOWED_ORIGINS;
+    delete process.env.ENABLE_ADMIN_TIER_GRANTS;
   });
 
   afterEach(() => {
@@ -92,6 +94,12 @@ describe('api/admin-account-type', () => {
       process.env.ALLOWED_ORIGINS = originalEnv.ALLOWED_ORIGINS;
     } else {
       delete process.env.ALLOWED_ORIGINS;
+    }
+
+    if (typeof originalEnv.ENABLE_ADMIN_TIER_GRANTS === 'string') {
+      process.env.ENABLE_ADMIN_TIER_GRANTS = originalEnv.ENABLE_ADMIN_TIER_GRANTS;
+    } else {
+      delete process.env.ENABLE_ADMIN_TIER_GRANTS;
     }
   });
 
@@ -138,9 +146,11 @@ describe('api/admin-account-type', () => {
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => supabase.client)
     }));
+    process.env.ALLOWED_ORIGINS = 'https://admin.example.com';
 
     const handler = require('../admin-account-type');
     const { req, res } = createReqRes({
+      headers: { origin: 'https://admin.example.com' },
       body: { userId: 'user-2', accountTypeId: 'premium' }
     });
 
@@ -166,6 +176,26 @@ describe('api/admin-account-type', () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.payload.error.code).toBe('INVALID_REQUEST');
+    expect(supabase.spies.updateUserById).not.toHaveBeenCalled();
+  });
+
+  it('blocks admin tier grants unless explicitly enabled', async () => {
+    const supabase = buildSupabaseMock();
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+
+    const handler = require('../admin-account-type');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer admin-token' },
+      body: { userId: 'user-2', accountTypeId: 'admin' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(403);
+    expect(res.payload.error.code).toBe('FORBIDDEN');
+    expect(supabase.spies.profileUpdateEq).not.toHaveBeenCalled();
     expect(supabase.spies.updateUserById).not.toHaveBeenCalled();
   });
 

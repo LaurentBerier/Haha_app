@@ -147,7 +147,7 @@ async function isDuplicateRevenueCatEvent(supabaseAdmin, providerEventId) {
 module.exports = async function handler(req, res) {
   const requestId = attachRequestId(req, res);
   const supabaseAdmin = getSupabaseAdmin();
-  const corsResult = setCorsHeaders(req, res);
+  const corsResult = setCorsHeaders(req, res, { allowMissingOrigin: true });
   if (!corsResult.ok) {
     if (corsResult.reason === 'cors_not_configured') {
       sendError(res, 500, 'Server misconfigured: ALLOWED_ORIGINS missing.', {

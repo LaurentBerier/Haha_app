@@ -1,5 +1,5 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useMemo } from 'react';
+import { useCallback } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 import { ChatInput } from '../../components/chat/ChatInput';
 import { MessageList } from '../../components/chat/MessageList';
@@ -38,21 +38,16 @@ export default function ChatScreen() {
   const isValidConversation = conversationId.length > 0;
 
   const sessionUser = useStore((state) => state.session?.user ?? null);
-  const conversations = useStore((state) => state.conversations);
-  const artists = useStore((state) => state.artists);
-  const { messages, sendMessage, retryMessage, hasStreaming } = useChat(conversationId);
-
-  const currentConversation = useMemo(
-    () => findConversationById(conversations, conversationId),
-    [conversations, conversationId]
+  const currentArtistName = useStore(
+    useCallback((state) => {
+      const artistId = findConversationById(state.conversations, conversationId)?.artistId;
+      if (!artistId) {
+        return null;
+      }
+      return state.artists.find((artist) => artist.id === artistId)?.name ?? null;
+    }, [conversationId])
   );
-  const currentArtistName = useMemo(() => {
-    const artistId = currentConversation?.artistId;
-    if (!artistId) {
-      return null;
-    }
-    return artists.find((artist) => artist.id === artistId)?.name ?? null;
-  }, [artists, currentConversation?.artistId]);
+  const { messages, sendMessage, retryMessage, hasStreaming } = useChat(conversationId);
 
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? '');
   const artistDisplayName = formatArtistDisplayName(currentArtistName);

@@ -479,6 +479,16 @@ function getRetryAfterUntilNextMonthSeconds() {
   return Math.max(1, Math.ceil((nextMonthStartMs - Date.now()) / 1000));
 }
 
+function isMissingMonthlyCounterColumnError(error) {
+  const code = isRecord(error) && typeof error.code === 'string' ? error.code : '';
+  if (code === '42703') {
+    return true;
+  }
+
+  const message = isRecord(error) && typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return message.includes('monthly_message_count') || message.includes('monthly_reset_at');
+}
+
 function getMonthlyQuotaCacheKey(userId, monthStartIso) {
   return `${userId}:${monthStartIso}`;
 }
@@ -514,14 +524,95 @@ function incrementMonthlyQuotaCache(userId, monthStartIso) {
   });
 }
 
+async function readProfileMonthlyCounter(supabaseAdmin, userId, requestId) {
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('monthly_message_count, monthly_reset_at')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingMonthlyCounterColumnError(error)) {
+      return { ok: true, unsupported: true };
+    }
+
+    console.error(`[api/claude][${requestId}] Failed to read profile monthly counter`, error);
+    return { ok: false, error };
+  }
+
+  if (!data || !isRecord(data)) {
+    return { ok: true, unsupported: true };
+  }
+
+  return {
+    ok: true,
+    unsupported: false,
+    monthlyMessageCount:
+      typeof data.monthly_message_count === 'number' && Number.isFinite(data.monthly_message_count)
+        ? Math.max(0, Math.floor(data.monthly_message_count))
+        : 0,
+    monthlyResetAt: typeof data.monthly_reset_at === 'string' ? data.monthly_reset_at : ''
+  };
+}
+
+async function writeProfileMonthlyCounter(supabaseAdmin, userId, monthStartIso, nextCount, requestId) {
+  const { error } = await supabaseAdmin
+    .from('profiles')
+    .update({
+      monthly_message_count: Math.max(0, nextCount),
+      monthly_reset_at: monthStartIso
+    })
+    .eq('id', userId);
+
+  if (error) {
+    if (isMissingMonthlyCounterColumnError(error)) {
+      return { ok: true, unsupported: true };
+    }
+
+    console.error(`[api/claude][${requestId}] Failed to write profile monthly counter`, error);
+    return { ok: false, error };
+  }
+
+  return { ok: true, unsupported: false };
+}
+
 async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId) {
   const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
   if (normalizedAccountType === 'admin') {
-    return { ok: true };
+    return { ok: true, source: 'admin' };
   }
 
   const effectiveCap = getMonthlyCap(normalizedAccountType);
   const monthStartIso = getMonthStartIso();
+  const profileCounter = await readProfileMonthlyCounter(supabaseAdmin, userId, requestId);
+  if (!profileCounter.ok) {
+    return {
+      ok: false,
+      status: 500,
+      code: 'SERVER_MISCONFIGURED',
+      message: 'Usage store unavailable.'
+    };
+  }
+
+  if (!profileCounter.unsupported) {
+    const monthStartMs = Date.parse(monthStartIso);
+    const monthlyResetMs = Date.parse(profileCounter.monthlyResetAt);
+    const isCurrentMonth = Number.isFinite(monthlyResetMs) && monthlyResetMs >= monthStartMs;
+    const used = isCurrentMonth ? profileCounter.monthlyMessageCount : 0;
+
+    if (used >= effectiveCap) {
+      return {
+        ok: false,
+        status: 429,
+        code: 'MONTHLY_QUOTA_EXCEEDED',
+        message: `Monthly message quota exceeded. Limit: ${effectiveCap} messages.`
+      };
+    }
+
+    setMonthlyQuotaCache(userId, monthStartIso, used);
+    return { ok: true, source: 'profile', monthStartIso, used };
+  }
+
   const cachedUsage = getMonthlyQuotaFromCache(userId, monthStartIso);
   if (cachedUsage !== null) {
     if (cachedUsage >= effectiveCap) {
@@ -533,7 +624,7 @@ async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId
       };
     }
 
-    return { ok: true };
+    return { ok: true, source: 'usage_events', monthStartIso, used: cachedUsage };
   }
 
   const { count, error } = await supabaseAdmin
@@ -564,10 +655,10 @@ async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId
 
   setMonthlyQuotaCache(userId, monthStartIso, count ?? 0);
 
-  return { ok: true };
+  return { ok: true, source: 'usage_events', monthStartIso, used: count ?? 0 };
 }
 
-async function enforceUserRateLimit(supabaseAdmin, userId, requestId) {
+async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuota) {
   const now = Date.now();
   const windowMs = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_WINDOW_MS, DEFAULT_RATE_LIMIT_WINDOW_MS);
   const maxRequests = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS, DEFAULT_RATE_LIMIT_MAX_REQUESTS);
@@ -618,7 +709,26 @@ async function enforceUserRateLimit(supabaseAdmin, userId, requestId) {
     };
   }
 
-  incrementMonthlyQuotaCache(userId, getMonthStartIso());
+  const monthStartIso = monthlyQuota && typeof monthlyQuota.monthStartIso === 'string'
+    ? monthlyQuota.monthStartIso
+    : getMonthStartIso();
+
+  if (monthlyQuota && monthlyQuota.source === 'profile') {
+    const used = typeof monthlyQuota.used === 'number' && Number.isFinite(monthlyQuota.used) ? monthlyQuota.used : 0;
+    const nextCount = used + 1;
+    const writeResult = await writeProfileMonthlyCounter(supabaseAdmin, userId, monthStartIso, nextCount, requestId);
+    if (!writeResult.ok) {
+      return {
+        ok: false,
+        status: 500,
+        code: 'SERVER_MISCONFIGURED',
+        message: 'Usage store unavailable.'
+      };
+    }
+    setMonthlyQuotaCache(userId, monthStartIso, nextCount);
+  } else {
+    incrementMonthlyQuotaCache(userId, monthStartIso);
+  }
 
   return { ok: true, retryAfterSeconds: 0 };
 }
@@ -751,7 +861,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const rateLimit = await enforceUserRateLimit(supabaseAdmin, auth.userId, requestId);
+  const rateLimit = await enforceUserRateLimit(supabaseAdmin, auth.userId, requestId, monthlyQuota);
   if (!rateLimit.ok) {
     if (rateLimit.status === 429) {
       res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));

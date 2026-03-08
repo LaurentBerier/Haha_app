@@ -46,9 +46,12 @@ describe('api/delete-account', () => {
         }
       }))
     }));
+    process.env.ALLOWED_ORIGINS = 'https://app.example.com';
 
     const handler = require('../delete-account');
-    const { req, res } = createReqRes();
+    const { req, res } = createReqRes({
+      headers: { origin: 'https://app.example.com' }
+    });
 
     await handler(req, res);
 

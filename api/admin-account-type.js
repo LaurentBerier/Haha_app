@@ -135,6 +135,15 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  const adminTierGrantEnabled = (process.env.ENABLE_ADMIN_TIER_GRANTS ?? '').trim().toLowerCase() === 'true';
+  if (accountTypeId === 'admin' && !adminTierGrantEnabled) {
+    sendError(res, 403, 'Admin tier grants are disabled on this environment.', {
+      code: 'FORBIDDEN',
+      requestId
+    });
+    return;
+  }
+
   try {
     const exists = await accountTypeExists(supabaseAdmin, accountTypeId);
     if (!exists) {

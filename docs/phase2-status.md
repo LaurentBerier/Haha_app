@@ -27,6 +27,9 @@ Core targets:
 - signup confirmation copy includes spam/junk reminder for Ha-Ha.ai email delivery
 - auth gate + onboarding redirect in root routing
 - onboarding data persisted to `public.profiles`
+- onboarding UX polish:
+  - visual step progress bar
+  - explicit age-range validation message (13-120) before advancing
 - global app-style header (brand logo + hamburger) keeps settings/user-space reachable on authenticated app screens (web + mobile)
 - settings flows:
   - edit profile
@@ -44,6 +47,7 @@ Core targets:
 - `POST /api/claude` protected with bearer token validation
   - server-side model whitelist
   - server-side monthly quota enforcement by tier
+  - profile-backed monthly counter support (with graceful fallback to `usage_events` count)
   - server-side rate limiting
 - `POST /api/delete-account` endpoint
 - `GET /api/usage-summary` endpoint (quota hydration after login)
@@ -59,8 +63,16 @@ Core targets:
 - API hardening pass:
   - shared utility module (`api/_utils.js`) for CORS/auth/error/request-id
   - browser CORS fail-closed behavior when `ALLOWED_ORIGINS` is missing or origin is not allowlisted
+  - missing `Origin` now requires explicit auth (or explicit route opt-in) to reduce no-origin abuse paths
   - webhook auth fail-closed in all environments when `REVENUECAT_WEBHOOK_SECRET` is missing
+  - admin account-type endpoint blocks `accountTypeId=admin` unless `ENABLE_ADMIN_TIER_GRANTS=true`
   - standardized API error format with error codes and request IDs
+- chat/feed polish:
+  - animated streaming indicator dots
+  - optimized message-slice updates to reduce per-token cloning overhead
+  - smoother route transitions between mode/history/chat
+- history UX polish:
+  - conversations grouped by recency (`Today`, `Yesterday`, `This week`, `Earlier`)
 - unit test baseline:
   - `npm run test:unit`
   - API tests for `claude`, `delete-account`, `admin-account-type`, `payment-webhook`, and shared utils
@@ -138,6 +150,7 @@ Required backend env:
 - `STRIPE_PRICE_ID_REGULAR_MONTHLY` / `STRIPE_PRICE_ID_PREMIUM_MONTHLY` (recommended)
 - `ALLOWED_ORIGINS` (required for browser clients that send `Origin`)
 - `CLAUDE_MONTHLY_CAP_FREE` / `CLAUDE_MONTHLY_CAP_REGULAR` / `CLAUDE_MONTHLY_CAP_PREMIUM` (optional tier cap overrides)
+- `ENABLE_ADMIN_TIER_GRANTS` (optional, defaults to disabled; set to `true` only when explicit admin-tier promotion is required)
 
 Supabase URL config must include:
 

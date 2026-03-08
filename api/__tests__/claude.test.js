@@ -8,6 +8,7 @@ function buildSupabaseClient({
   usageInsertError = null
 } = {}) {
   let usageCount = initialUsageCount;
+  let profileRow = profile;
   const usageSelect = jest.fn().mockImplementation(() => ({
     eq: jest.fn().mockImplementation(() => ({
       eq: jest.fn().mockImplementation(() => ({
@@ -24,10 +25,13 @@ function buildSupabaseClient({
     }
     return Promise.resolve({ error: usageInsertError });
   });
-  const profileMaybeSingle = jest.fn().mockResolvedValue({
-    data: profile,
-    error: null
-  });
+  const profileMaybeSingle = jest.fn().mockImplementation(() =>
+    Promise.resolve({
+      data: profileRow,
+      error: null
+    })
+  );
+  const profileUpdateEq = jest.fn().mockResolvedValue({ error: null });
 
   return {
     auth: {
@@ -50,6 +54,18 @@ function buildSupabaseClient({
             eq: () => ({
               maybeSingle: profileMaybeSingle
             })
+          }),
+          update: (updates) => ({
+            eq: (column, value) => {
+              if (column === 'id' && typeof value === 'string') {
+                profileRow =
+                  profileRow && typeof profileRow === 'object'
+                    ? { ...profileRow, ...updates }
+                    : { ...updates };
+              }
+
+              return profileUpdateEq();
+            }
           })
         };
       }
@@ -143,9 +159,11 @@ describe('api/claude', () => {
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => buildSupabaseClient())
     }));
+    process.env.ALLOWED_ORIGINS = 'https://app.example.com';
 
     const handler = require('../claude');
     const { req, res } = createReqRes({
+      headers: { origin: 'https://app.example.com' },
       body: { systemPrompt: 'test', messages: [{ role: 'user', content: 'hello' }] }
     });
 

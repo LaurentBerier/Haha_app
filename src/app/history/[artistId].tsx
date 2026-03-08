@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { Header } from '../../components/common/Header';
 import { getModeById } from '../../config/modes';
 import { t } from '../../i18n';
@@ -10,6 +10,71 @@ import { theme } from '../../theme';
 import { formatDate } from '../../utils/formatDate';
 
 const HISTORY_LIMIT = 20;
+type HistorySection = { title: string; data: Conversation[] };
+
+function getStartOfTodayMs(now: Date): number {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+}
+
+function getStartOfWeekMs(now: Date): number {
+  const day = now.getDay();
+  const mondayOffset = day === 0 ? 6 : day - 1;
+  const startOfToday = getStartOfTodayMs(now);
+  return startOfToday - mondayOffset * 24 * 60 * 60 * 1000;
+}
+
+function buildHistorySections(conversations: Conversation[]): HistorySection[] {
+  const now = new Date();
+  const startOfToday = getStartOfTodayMs(now);
+  const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000;
+  const startOfWeek = getStartOfWeekMs(now);
+
+  const today: Conversation[] = [];
+  const yesterday: Conversation[] = [];
+  const thisWeek: Conversation[] = [];
+  const earlier: Conversation[] = [];
+
+  for (const conversation of conversations) {
+    const updatedAtMs = Date.parse(conversation.updatedAt);
+    if (!Number.isFinite(updatedAtMs)) {
+      earlier.push(conversation);
+      continue;
+    }
+
+    if (updatedAtMs >= startOfToday) {
+      today.push(conversation);
+      continue;
+    }
+
+    if (updatedAtMs >= startOfYesterday) {
+      yesterday.push(conversation);
+      continue;
+    }
+
+    if (updatedAtMs >= startOfWeek) {
+      thisWeek.push(conversation);
+      continue;
+    }
+
+    earlier.push(conversation);
+  }
+
+  const sections: HistorySection[] = [];
+  if (today.length > 0) {
+    sections.push({ title: t('historyGroupToday'), data: today });
+  }
+  if (yesterday.length > 0) {
+    sections.push({ title: t('historyGroupYesterday'), data: yesterday });
+  }
+  if (thisWeek.length > 0) {
+    sections.push({ title: t('historyGroupThisWeek'), data: thisWeek });
+  }
+  if (earlier.length > 0) {
+    sections.push({ title: t('historyGroupEarlier'), data: earlier });
+  }
+
+  return sections;
+}
 
 function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) {
@@ -29,12 +94,12 @@ export default function HistoryScreen() {
 
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
 
-  const recentConversations = useMemo(() => {
+  const historySections = useMemo(() => {
     const source = conversationsByArtist[artistId] ?? [];
-
-    return [...source]
+    const recentConversations = [...source]
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, HISTORY_LIMIT);
+    return buildHistorySections(recentConversations);
   }, [artistId, conversationsByArtist]);
 
   const openConversation = useCallback(
@@ -97,10 +162,11 @@ export default function HistoryScreen() {
         </View>
       </View>
 
-      <FlatList
-        data={recentConversations}
+      <SectionList
+        sections={historySections}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
+        renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
         contentContainerStyle={styles.listContent}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={<Text style={styles.emptyText}>{t('historyEmpty')}</Text>}
@@ -147,6 +213,14 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: theme.spacing.sm
+  },
+  sectionHeader: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.xs
   },
   item: {
     borderWidth: 1,

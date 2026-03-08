@@ -20,6 +20,30 @@ function getMessagePage(state: StoreState, conversationId: string): MessagePage 
   return state.messagesByConversation[conversationId] ?? EMPTY_PAGE;
 }
 
+function updateMessageByIndex(
+  messages: Message[],
+  messageId: string,
+  update: (current: Message) => Message
+): Message[] {
+  const index = messages.findIndex((message) => message.id === messageId);
+  if (index < 0) {
+    return messages;
+  }
+
+  const current = messages[index];
+  if (!current) {
+    return messages;
+  }
+  const next = update(current);
+  if (next === current) {
+    return messages;
+  }
+
+  const clone = messages.slice();
+  clone[index] = next;
+  return clone;
+}
+
 export const createMessageSlice: StateCreator<StoreState, [], [], MessageSlice> = (set, get) => ({
   messagesByConversation: {},
   addMessage: (conversationId, message) =>
@@ -33,39 +57,49 @@ export const createMessageSlice: StateCreator<StoreState, [], [], MessageSlice> 
       }
     })),
   updateMessage: (conversationId, messageId, updates) =>
-    set((state) => ({
-      messagesByConversation: {
-        ...state.messagesByConversation,
-        [conversationId]: {
-          ...getMessagePage(state, conversationId),
-          messages: getMessagePage(state, conversationId).messages.map((message) =>
-            message.id === messageId
-              ? {
-                  ...message,
-                  ...updates
-                }
-              : message
-          )
-        }
+    set((state) => {
+      const page = getMessagePage(state, conversationId);
+      const nextMessages = updateMessageByIndex(page.messages, messageId, (message) => ({ ...message, ...updates }));
+      if (nextMessages === page.messages) {
+        return state;
       }
-    })),
+
+      return {
+        messagesByConversation: {
+          ...state.messagesByConversation,
+          [conversationId]: {
+            ...page,
+            messages: nextMessages
+          }
+        }
+      };
+    }),
   appendMessageContent: (conversationId, messageId, token) =>
-    set((state) => ({
-      messagesByConversation: {
-        ...state.messagesByConversation,
-        [conversationId]: {
-          ...getMessagePage(state, conversationId),
-          messages: getMessagePage(state, conversationId).messages.map((message) =>
-            message.id === messageId
-              ? {
-                  ...message,
-                  content: message.content + token,
-                  status: 'streaming' as const
-                }
-              : message
-          )
-        }
+    set((state) => {
+      if (!token) {
+        return state;
       }
-    })),
+
+      const page = getMessagePage(state, conversationId);
+      const nextMessages = updateMessageByIndex(page.messages, messageId, (message) => ({
+        ...message,
+        content: message.content + token,
+        status: 'streaming' as const
+      }));
+
+      if (nextMessages === page.messages) {
+        return state;
+      }
+
+      return {
+        messagesByConversation: {
+          ...state.messagesByConversation,
+          [conversationId]: {
+            ...page,
+            messages: nextMessages
+          }
+        }
+      };
+    }),
   getMessages: (conversationId) => get().messagesByConversation[conversationId]?.messages ?? []
 });

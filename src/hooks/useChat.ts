@@ -27,6 +27,8 @@ interface StreamJob {
   modeId: string;
 }
 
+const EMPTY_MESSAGES: Message[] = [];
+
 function createClaudeUserContent(text: string, payload: ChatSendPayload): string | ClaudeContentBlock[] {
   if (!payload.image) {
     return text;
@@ -66,21 +68,23 @@ export function useChat(conversationId: string) {
   const updateConversation = useStore((state) => state.updateConversation);
   const userProfile = useStore((state) => state.userProfile);
 
-  const conversations = useStore((state) => state.conversations);
-  const artists = useStore((state) => state.artists);
-  const messages = useStore((state) => state.messagesByConversation[conversationId]?.messages ?? []);
-
-  const currentConversation = useMemo(
-    () => findConversationById(conversations, conversationId),
-    [conversations, conversationId]
+  const messages = useStore(
+    useCallback((state) => state.messagesByConversation[conversationId]?.messages ?? EMPTY_MESSAGES, [conversationId])
   );
 
-  const currentArtist = useMemo(() => {
-    if (!currentConversation) {
-      return null;
-    }
-    return artists.find((artist) => artist.id === currentConversation.artistId) ?? null;
-  }, [artists, currentConversation]);
+  const currentConversation = useStore(
+    useCallback((state) => findConversationById(state.conversations, conversationId), [conversationId])
+  );
+
+  const currentArtist = useStore(
+    useCallback((state) => {
+      const artistId = findConversationById(state.conversations, conversationId)?.artistId;
+      if (!artistId) {
+        return null;
+      }
+      return state.artists.find((artist) => artist.id === artistId) ?? null;
+    }, [conversationId])
+  );
 
   const modeFewShots = useMemo(() => {
     if (!currentConversation?.modeId || currentConversation.artistId !== ARTIST_IDS.CATHY_GAUTHIER) {

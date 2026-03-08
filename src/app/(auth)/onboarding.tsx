@@ -9,6 +9,7 @@ import {
 } from '../../config/onboarding';
 import type { HoroscopeSign, RelationshipStatus, Sex } from '../../models/UserProfile';
 import { completeOnboarding, skipOnboarding } from '../../services/profileService';
+import { t } from '../../i18n';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 
@@ -29,6 +30,7 @@ export default function OnboardingScreen() {
 
   const [step, setStep] = useState(0);
   const [ageInput, setAgeInput] = useState('');
+  const [ageError, setAgeError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [answers, setAnswers] = useState<OnboardingAnswers>({
@@ -164,18 +166,40 @@ export default function OnboardingScreen() {
   };
 
   const onAgeNext = () => {
+    const trimmed = ageInput.trim();
+    if (!trimmed) {
+      setAgeError(null);
+      setAnswers((prev) => ({ ...prev, age: null }));
+      goNext();
+      return;
+    }
+
     const parsedAge = Number.parseInt(ageInput, 10);
     if (Number.isFinite(parsedAge) && parsedAge >= 13 && parsedAge <= 120) {
+      setAgeError(null);
       setAnswers((prev) => ({ ...prev, age: parsedAge }));
-    } else {
-      setAnswers((prev) => ({ ...prev, age: null }));
+      goNext();
+      return;
     }
-    goNext();
+
+    setAgeError(t('onboardingAgeInvalidRange'));
   };
 
   return (
     <ScrollView contentContainerStyle={styles.screen} testID="onboarding-screen">
       <Text style={styles.progress}>{progress}</Text>
+      <View style={styles.progressBar}>
+        {Array.from({ length: TOTAL_STEPS }).map((_, index) => {
+          const isDone = index < step;
+          const isActive = index === step;
+          return (
+            <View
+              key={`progress-${index}`}
+              style={[styles.progressSegment, isDone ? styles.progressSegmentDone : null, isActive ? styles.progressSegmentActive : null]}
+            />
+          );
+        })}
+      </View>
       <Text style={styles.title}>Personnalisation</Text>
       {step === 0 ? (
         <Text style={styles.privacy}>
@@ -189,12 +213,18 @@ export default function OnboardingScreen() {
           <Text style={styles.question}>Quel est ton âge ?</Text>
           <TextInput
             value={ageInput}
-            onChangeText={setAgeInput}
+            onChangeText={(value) => {
+              setAgeInput(value);
+              if (ageError) {
+                setAgeError(null);
+              }
+            }}
             keyboardType="number-pad"
             placeholder="Ex: 28"
             placeholderTextColor={theme.colors.textDisabled}
             style={styles.input}
           />
+          {ageError ? <Text style={styles.errorText}>{ageError}</Text> : null}
           <Pressable
             style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
             onPress={onAgeNext}
@@ -338,6 +368,26 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 13,
     textAlign: 'right'
+  },
+  progressBar: {
+    flexDirection: 'row',
+    gap: theme.spacing.xs
+  },
+  progressSegment: {
+    flex: 1,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surfaceSunken,
+    borderWidth: 1,
+    borderColor: theme.colors.border
+  },
+  progressSegmentDone: {
+    backgroundColor: theme.colors.accent,
+    borderColor: theme.colors.accent
+  },
+  progressSegmentActive: {
+    backgroundColor: theme.colors.surfaceButton,
+    borderColor: theme.colors.surfaceButton
   },
   title: {
     color: theme.colors.textPrimary,
