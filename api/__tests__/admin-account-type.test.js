@@ -188,8 +188,7 @@ describe('api/admin-account-type', () => {
     expect(supabase.spies.updateUserById).toHaveBeenCalledWith('user-2', {
       app_metadata: {
         locale: 'fr-CA',
-        account_type: 'premium',
-        role: 'user'
+        account_type: 'premium'
       }
     });
     expect(res.statusCode).toBe(200);

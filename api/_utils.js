@@ -20,7 +20,17 @@ function setCorsHeaders(req, res, options = {}) {
   res.setHeader('Access-Control-Allow-Headers', headers);
 
   // Non-browser callers (mobile native, server-to-server) do not send Origin.
+  // Browsers generally send Fetch Metadata headers; reject those when Origin is missing.
   if (!origin) {
+    const hasFetchMetadata =
+      typeof req.headers['sec-fetch-mode'] === 'string' ||
+      typeof req.headers['sec-fetch-site'] === 'string' ||
+      typeof req.headers['sec-fetch-dest'] === 'string';
+
+    if (hasFetchMetadata) {
+      return { ok: false, reason: 'origin_required' };
+    }
+
     return { ok: true, reason: null };
   }
 

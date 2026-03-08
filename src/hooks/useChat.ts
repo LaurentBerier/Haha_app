@@ -95,11 +95,15 @@ export function useChat(conversationId: string) {
   const runNextLockRef = useRef(false);
   const activeMessageIdRef = useRef<string | null>(null);
   const streamingConversationIdRef = useRef<string | null>(null);
+  const isMountedRef = useRef(true);
   const isCancelledRef = useRef(false);
   const cancelRef = useRef<null | (() => void)>(null);
+  const bufferedTokensRef = useRef('');
+  const flushBufferedTokensRef = useRef<null | (() => void)>(null);
+  const flushFrameRef = useRef<number | null>(null);
 
   const runNext = useCallback(() => {
-    if (!conversationId || runNextLockRef.current) {
+    if (!conversationId || runNextLockRef.current || !isMountedRef.current) {
       return;
     }
 
@@ -131,20 +135,21 @@ export function useChat(conversationId: string) {
       streamingConversationIdRef.current = jobConversationId;
       isCancelledRef.current = false;
       let fallbackStarted = false;
-      let bufferedTokens = '';
-      let flushFrame: number | null = null;
+      bufferedTokensRef.current = '';
 
       const flushBufferedTokens = () => {
-        if (!bufferedTokens) {
+        if (!bufferedTokensRef.current) {
           return;
         }
 
-        appendMessageContent(jobConversationId, artistMessageId, bufferedTokens);
-        bufferedTokens = '';
+        const chunk = bufferedTokensRef.current;
+        bufferedTokensRef.current = '';
+        appendMessageContent(jobConversationId, artistMessageId, chunk);
       };
+      flushBufferedTokensRef.current = flushBufferedTokens;
 
       const scheduleFlush = () => {
-        if (flushFrame !== null) {
+        if (flushFrameRef.current !== null) {
           return;
         }
 
@@ -153,16 +158,19 @@ export function useChat(conversationId: string) {
           return;
         }
 
-        flushFrame = requestAnimationFrame(() => {
-          flushFrame = null;
+        flushFrameRef.current = requestAnimationFrame(() => {
+          flushFrameRef.current = null;
+          if (!isMountedRef.current || streamingConversationIdRef.current !== jobConversationId) {
+            return;
+          }
           flushBufferedTokens();
         });
       };
 
       const resetStreamState = () => {
-        if (flushFrame !== null && typeof cancelAnimationFrame === 'function') {
-          cancelAnimationFrame(flushFrame);
-          flushFrame = null;
+        if (flushFrameRef.current !== null && typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(flushFrameRef.current);
+          flushFrameRef.current = null;
         }
 
         flushBufferedTokens();
@@ -171,20 +179,29 @@ export function useChat(conversationId: string) {
         streamingConversationIdRef.current = null;
         isCancelledRef.current = false;
         cancelRef.current = null;
+        flushBufferedTokensRef.current = null;
+        bufferedTokensRef.current = '';
       };
 
       const onToken = (token: string) => {
+        if (!isMountedRef.current) {
+          return;
+        }
         if (isCancelledRef.current) {
           return;
         }
         if (streamingConversationIdRef.current !== jobConversationId) {
           return;
         }
-        bufferedTokens += token;
+        bufferedTokensRef.current += token;
         scheduleFlush();
       };
 
       const onComplete = ({ tokensUsed }: { tokensUsed: number }) => {
+        if (!isMountedRef.current || streamingConversationIdRef.current !== jobConversationId) {
+          resetStreamState();
+          return;
+        }
         updateMessage(jobConversationId, artistMessageId, {
           status: 'complete',
           metadata: { tokensUsed }
@@ -195,6 +212,10 @@ export function useChat(conversationId: string) {
       };
 
       const failStream = (error: Error) => {
+        if (!isMountedRef.current || streamingConversationIdRef.current !== jobConversationId) {
+          resetStreamState();
+          return;
+        }
         if (__DEV__) {
           console.error('[Chat] Generation failed:', error.message);
         }
@@ -222,7 +243,7 @@ export function useChat(conversationId: string) {
           onToken,
           onComplete,
           onError: (error) => {
-            if (fallbackStarted || isCancelledRef.current) {
+            if (fallbackStarted || isCancelledRef.current || !isMountedRef.current) {
               return;
             }
 
@@ -332,10 +353,19 @@ export function useChat(conversationId: string) {
 
   useEffect(() => {
     const capturedId = conversationId;
+    isMountedRef.current = true;
 
     return () => {
+      isMountedRef.current = false;
+      if (flushFrameRef.current !== null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(flushFrameRef.current);
+        flushFrameRef.current = null;
+      }
       cancelRef.current?.();
       cancelRef.current = null;
+      flushBufferedTokensRef.current?.();
+      flushBufferedTokensRef.current = null;
+      bufferedTokensRef.current = '';
       if (activeMessageIdRef.current) {
         updateMessage(capturedId, activeMessageIdRef.current, { status: 'error' });
         activeMessageIdRef.current = null;

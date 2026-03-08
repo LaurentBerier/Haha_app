@@ -1,3 +1,4 @@
+const { timingSafeEqual } = require('node:crypto');
 const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
 
 function isRecord(value) {
@@ -73,7 +74,17 @@ function isAuthorized(req) {
   }
 
   const token = extractBearerToken(req.headers.authorization);
-  return token === sharedSecret;
+  if (!token) {
+    return false;
+  }
+
+  const tokenBuffer = Buffer.from(token, 'utf8');
+  const secretBuffer = Buffer.from(sharedSecret, 'utf8');
+  if (tokenBuffer.length !== secretBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(tokenBuffer, secretBuffer);
 }
 
 async function updateAppMetadata(supabaseAdmin, userId, accountTypeId) {
@@ -94,8 +105,7 @@ async function updateAppMetadata(supabaseAdmin, userId, accountTypeId) {
   return supabaseAdmin.auth.admin.updateUserById(userId, {
     app_metadata: {
       ...existingMetadata,
-      account_type: accountTypeId,
-      role: accountTypeId === 'admin' ? 'admin' : 'user'
+      account_type: accountTypeId
     }
   });
 }

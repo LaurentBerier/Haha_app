@@ -163,8 +163,7 @@ describe('api/stripe-webhook', () => {
     expect(supabase.spies.updateUserById).toHaveBeenCalledWith('user-1', {
       app_metadata: {
         locale: 'fr-CA',
-        account_type: 'premium',
-        role: 'user'
+        account_type: 'premium'
       }
     });
   });
@@ -204,8 +203,7 @@ describe('api/stripe-webhook', () => {
     expect(supabase.spies.updateUserById).toHaveBeenCalledWith('user-1', {
       app_metadata: {
         locale: 'fr-CA',
-        account_type: 'free',
-        role: 'user'
+        account_type: 'free'
       }
     });
   });

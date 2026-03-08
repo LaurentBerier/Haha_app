@@ -66,6 +66,19 @@ describe('api/_utils', () => {
     expect(res.headers['Access-Control-Allow-Headers']).toBe('Content-Type, Authorization');
   });
 
+  it('rejects browser-like request when Origin is missing', () => {
+    const req = {
+      headers: {
+        'sec-fetch-mode': 'no-cors'
+      }
+    };
+    const res = createResponseMock();
+
+    const result = setCorsHeaders(req, res);
+
+    expect(result).toEqual({ ok: false, reason: 'origin_required' });
+  });
+
   it('uses provided x-request-id when valid', () => {
     const req = { headers: { 'x-request-id': ' req-123 ' } };
     const res = createResponseMock();

@@ -72,8 +72,7 @@ async function updateAppMetadata(supabaseAdmin, userId, accountTypeId) {
   return supabaseAdmin.auth.admin.updateUserById(userId, {
     app_metadata: {
       ...existingMetadata,
-      account_type: accountTypeId,
-      role: accountTypeId === 'admin' ? 'admin' : 'user'
+      account_type: accountTypeId
     }
   });
 }

@@ -92,6 +92,31 @@ describe('api/payment-webhook', () => {
     );
   });
 
+  it('rejects near-match token safely', async () => {
+    process.env.REVENUECAT_WEBHOOK_SECRET = 'top-secret';
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => ({}))
+    }));
+
+    const handler = require('../payment-webhook');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer top-secreu' },
+      body: { event: { type: 'INITIAL_PURCHASE', app_user_id: 'user-1', product_id: 'haha_regular_monthly' } }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.payload).toEqual(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: 'UNAUTHORIZED'
+        })
+      })
+    );
+  });
+
   it('merges existing app_metadata when syncing account type', async () => {
     process.env.REVENUECAT_WEBHOOK_SECRET = 'top-secret';
     const insert = jest.fn().mockResolvedValue({ error: null });
@@ -139,8 +164,7 @@ describe('api/payment-webhook', () => {
     expect(updateUserById).toHaveBeenCalledWith('user-1', {
       app_metadata: {
         locale: 'fr-CA',
-        account_type: 'premium',
-        role: 'user'
+        account_type: 'premium'
       }
     });
     expect(res.statusCode).toBe(200);

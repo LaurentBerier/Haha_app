@@ -7,28 +7,55 @@ function isRecord(value) {
   return typeof value === 'object' && value !== null;
 }
 
-function getRawBody(req) {
-  if (typeof req.rawBody === 'string') {
+async function readRawBodyFromStream(req) {
+  if (!req || typeof req.on !== 'function') {
+    return '';
+  }
+
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+
+    req.on('data', (chunk) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+    });
+    req.on('end', () => {
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    });
+    req.on('error', (error) => {
+      reject(error);
+    });
+  });
+}
+
+async function resolveRawBody(req, requestId) {
+  if (typeof req.rawBody === 'string' && req.rawBody) {
     return req.rawBody;
   }
 
-  if (Buffer.isBuffer(req.rawBody)) {
+  if (Buffer.isBuffer(req.rawBody) && req.rawBody.length > 0) {
     return req.rawBody.toString('utf8');
   }
 
-  if (typeof req.body === 'string') {
+  if (typeof req.body === 'string' && req.body) {
     return req.body;
   }
 
-  if (Buffer.isBuffer(req.body)) {
+  if (Buffer.isBuffer(req.body) && req.body.length > 0) {
     return req.body.toString('utf8');
   }
 
+  // Fallback when platform pre-parsed JSON body before handler.
   if (isRecord(req.body)) {
+    console.error(`[api/stripe-webhook][${requestId}] Raw body unavailable, using JSON fallback for signature check.`);
     return JSON.stringify(req.body);
   }
 
-  return '';
+  try {
+    return await readRawBodyFromStream(req);
+  } catch (error) {
+    console.error(`[api/stripe-webhook][${requestId}] Failed to read raw body stream`, error);
+    return '';
+  }
 }
 
 function toHeaderString(value) {
@@ -81,9 +108,9 @@ function signatureMatches(expectedSignature, candidateSignature) {
   return timingSafeEqual(expected, candidate);
 }
 
-function verifyStripeSignature(req, requestId) {
+async function verifyStripeSignature(req, requestId) {
   const webhookSecret = (process.env.STRIPE_WEBHOOK_SECRET ?? '').trim();
-  const rawBody = getRawBody(req);
+  const rawBody = await resolveRawBody(req, requestId);
   const signatureHeader = toHeaderString(req.headers['stripe-signature']);
   const parsedSignature = parseStripeSignature(signatureHeader);
 
@@ -292,8 +319,7 @@ async function updateAppMetadata(supabaseAdmin, userId, accountTypeId) {
   return supabaseAdmin.auth.admin.updateUserById(userId, {
     app_metadata: {
       ...existingMetadata,
-      account_type: accountTypeId,
-      role: accountTypeId === 'admin' ? 'admin' : 'user'
+      account_type: accountTypeId
     }
   });
 }
@@ -334,7 +360,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const verification = verifyStripeSignature(req, requestId);
+  const verification = await verifyStripeSignature(req, requestId);
   if (!verification.ok) {
     sendError(res, verification.status, verification.message, { code: verification.code, requestId });
     return;
