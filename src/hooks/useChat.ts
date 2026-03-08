@@ -141,7 +141,6 @@ export function useChat(conversationId: string) {
       activeMessageIdRef.current = artistMessageId;
       streamingConversationIdRef.current = jobConversationId;
       isCancelledRef.current = false;
-      let fallbackStarted = false;
       bufferedTokensRef.current = '';
 
       const flushBufferedTokens = () => {
@@ -253,22 +252,7 @@ export function useChat(conversationId: string) {
           messages: [...history, claudeUserMessage],
           onToken,
           onComplete,
-          onError: (error) => {
-            if (fallbackStarted || isCancelledRef.current || !isMountedRef.current) {
-              return;
-            }
-
-            fallbackStarted = true;
-            if (__DEV__) {
-              console.warn('[Chat] Claude failed, falling back to mock:', error.message);
-            }
-            updateMessage(jobConversationId, artistMessageId, { status: 'pending' });
-            const fallbackCancel = startMockStream();
-            cancelRef.current = () => {
-              isCancelledRef.current = true;
-              fallbackCancel();
-            };
-          }
+          onError: failStream
         });
 
       const rawCancel = USE_MOCK_LLM ? startMockStream() : startClaudeStream();

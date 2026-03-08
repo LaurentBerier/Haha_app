@@ -403,3 +403,40 @@ Validation command:
 cd /Users/laurentbernier/Documents/HAHA_app
 npx vercel build --yes
 ```
+
+## 25) Chat replies are generic / unrelated to question
+
+Symptoms:
+
+- Replies feel random/generic and not tied to the user prompt.
+- Usually happens when Claude proxy requests fail and app falls back to mock behavior.
+
+Root causes to check:
+
+- stale model in app env (for example `EXPO_PUBLIC_ANTHROPIC_MODEL=claude-sonnet-4-5-20250929`) while backend accepts only `claude-sonnet-4-6`
+- invalid/missing API auth token
+- backend quota/rate-limit rejection
+
+Current behavior:
+
+- automatic fallback from Claude to mock is disabled in normal mode to avoid silent fake answers
+- failed Claude requests now surface as errors in chat instead of generic mock output
+
+Fix checklist:
+
+1. Ensure app env uses:
+   - `EXPO_PUBLIC_USE_MOCK_LLM=false`
+   - `EXPO_PUBLIC_ANTHROPIC_MODEL=claude-sonnet-4-6`
+2. Clear cache and restart:
+
+```bash
+cd /Users/laurentbernier/Documents/HAHA_app
+npx expo start -c
+```
+
+3. Rebuild/redeploy web app after env or code updates:
+
+```bash
+cd /Users/laurentbernier/Documents/HAHA_app
+npm run deploy:web
+```

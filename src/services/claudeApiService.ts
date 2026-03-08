@@ -1,4 +1,4 @@
-import { ANTHROPIC_MODEL, CLAUDE_PROXY_URL } from '../config/env';
+import { CLAUDE_PROXY_URL } from '../config/env';
 import { useStore } from '../store/useStore';
 
 export type ClaudeImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
@@ -179,7 +179,6 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
           ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {})
         },
         body: JSON.stringify({
-          model: ANTHROPIC_MODEL,
           maxTokens,
           temperature,
           stream: shouldUseStreaming,
