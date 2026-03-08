@@ -78,6 +78,7 @@ Core targets:
   - optimized message-slice updates with per-conversation message index map to reduce per-token update cost
   - smoother route transitions between mode/history/chat
   - Claude handler now overlaps prompt profile fetch with quota/rate-limit checks to reduce pre-stream latency
+  - Claude handler now also preloads the rate-limit usage count in parallel with monthly quota verification
 - history UX polish:
   - conversations grouped by recency (`Today`, `Yesterday`, `This week`, `Earlier`)
   - history screen now shows loading skeleton cards while persisted store hydration is in progress

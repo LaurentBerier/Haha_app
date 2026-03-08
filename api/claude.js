@@ -711,9 +711,28 @@ async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId
   return { ok: true, source: 'usage_events', monthStartIso, used: count ?? 0 };
 }
 
-async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuota) {
-  const now = Date.now();
-  const windowMs = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_WINDOW_MS, DEFAULT_RATE_LIMIT_WINDOW_MS);
+async function readRecentUsageCount(supabaseAdmin, userId, windowStartIso, requestId) {
+  try {
+    const { count, error } = await supabaseAdmin
+      .from('usage_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', userId)
+      .eq('endpoint', 'claude')
+      .gte('created_at', windowStartIso);
+
+    return { count, error };
+  } catch (error) {
+    console.error(`[api/claude][${requestId}] Failed to read usage_events`, error);
+    return { count: 0, error };
+  }
+}
+
+async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuota, options = {}) {
+  const now = typeof options.now === 'number' && Number.isFinite(options.now) ? options.now : Date.now();
+  const windowMs =
+    typeof options.windowMs === 'number' && Number.isFinite(options.windowMs) && options.windowMs > 0
+      ? options.windowMs
+      : parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_WINDOW_MS, DEFAULT_RATE_LIMIT_WINDOW_MS);
   const maxRequests = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS, DEFAULT_RATE_LIMIT_MAX_REQUESTS);
   const windowStartIso = new Date(now - windowMs).toISOString();
   const nowIso = new Date(now).toISOString();
@@ -742,12 +761,13 @@ async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuo
     return { ok: true, retryAfterSeconds: 0 };
   };
 
-  const { count, error: countError } = await supabaseAdmin
-    .from('usage_events')
-    .select('id', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('endpoint', 'claude')
-    .gte('created_at', windowStartIso);
+  const usageCountResult =
+    options.recentUsageCount && typeof options.recentUsageCount === 'object'
+      ? options.recentUsageCount
+      : await readRecentUsageCount(supabaseAdmin, userId, windowStartIso, requestId);
+
+  const count = typeof usageCountResult.count === 'number' ? usageCountResult.count : 0;
+  const countError = usageCountResult.error;
 
   if (countError) {
     if (isRateLimitStoreUnavailableError(countError)) {
@@ -944,6 +964,10 @@ module.exports = async function handler(req, res) {
   }
 
   const profileForPromptPromise = fetchUserProfileForPrompt(supabaseAdmin, auth.userId, requestId);
+  const now = Date.now();
+  const windowMs = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_WINDOW_MS, DEFAULT_RATE_LIMIT_WINDOW_MS);
+  const windowStartIso = new Date(now - windowMs).toISOString();
+  const recentUsageCountPromise = readRecentUsageCount(supabaseAdmin, auth.userId, windowStartIso, requestId);
 
   const monthlyQuota = await enforceMonthlyQuota(supabaseAdmin, auth.userId, auth.accountType, requestId);
   if (!monthlyQuota.ok) {
@@ -954,7 +978,12 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const rateLimit = await enforceUserRateLimit(supabaseAdmin, auth.userId, requestId, monthlyQuota);
+  const recentUsageCount = await recentUsageCountPromise;
+  const rateLimit = await enforceUserRateLimit(supabaseAdmin, auth.userId, requestId, monthlyQuota, {
+    now,
+    windowMs,
+    recentUsageCount
+  });
   if (!rateLimit.ok) {
     if (rateLimit.status === 429) {
       res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
