@@ -9,6 +9,8 @@ export const fr = {
   historyModeTitle: 'Historique',
   historyModeDescription: 'Reprends une de tes 20 dernières conversations',
   historyEmpty: "Aucune conversation pour l'instant",
+  historyEmptyHeadline: 'Aucune conversation sauvegardée',
+  historyEmptySubtext: 'Lance un premier échange, il apparaîtra ici automatiquement.',
   historyScreenTitle: 'Discussions récentes',
   historyGroupToday: "Aujourd'hui",
   historyGroupYesterday: 'Hier',

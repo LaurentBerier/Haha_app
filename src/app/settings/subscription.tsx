@@ -239,12 +239,14 @@ export default function SubscriptionScreen() {
 
         {isLoadingSummary ? (
           <View style={styles.loadingCard}>
-            <ActivityIndicator color={theme.colors.accent} />
-            <Text style={styles.loadingLabel}>{t('loadingA11y')}</Text>
+            <View style={styles.skeletonTitle} />
+            <View style={styles.skeletonLine} />
+            <View style={styles.skeletonLineShort} />
           </View>
         ) : null}
 
-        {plans.map((plan) => {
+        {!isLoadingSummary
+          ? plans.map((plan) => {
           const isCurrentPlan = currentPlanId === plan.id && !isCancellingAtPeriodEnd;
           const isFreeDowngrade = plan.id === 'free' && isPaidPlan(effectiveAccountType);
           const checkoutMissing = plan.id !== 'free' && !isCheckoutConfigured('stripe', plan.id as SubscriptionPlanId);
@@ -292,7 +294,18 @@ export default function SubscriptionScreen() {
               </Pressable>
             </View>
           );
-        })}
+          })
+          : Array.from({ length: 3 }).map((_, index) => (
+              <View key={`subscription-skeleton-${index}`} style={styles.planCard}>
+                <View style={styles.planHeader}>
+                  <View style={styles.skeletonPlanTitle} />
+                  <View style={styles.skeletonPlanPrice} />
+                </View>
+                <View style={styles.skeletonLine} />
+                <View style={styles.skeletonLineShort} />
+                <View style={styles.skeletonCta} />
+              </View>
+            ))}
       </View>
     </ScrollView>
   );
@@ -365,19 +378,54 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   loadingCard: {
-    minHeight: 56,
+    minHeight: 92,
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: 12,
     backgroundColor: theme.colors.surface,
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'center',
-    gap: theme.spacing.sm
+    padding: theme.spacing.md,
+    gap: theme.spacing.xs
   },
   loadingLabel: {
     color: theme.colors.textSecondary,
     fontSize: 14
+  },
+  skeletonTitle: {
+    width: '42%',
+    height: 14,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surfaceButton
+  },
+  skeletonLine: {
+    width: '88%',
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surfaceSunken
+  },
+  skeletonLineShort: {
+    width: '62%',
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surfaceSunken
+  },
+  skeletonPlanTitle: {
+    width: '40%',
+    height: 18,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surfaceButton
+  },
+  skeletonPlanPrice: {
+    width: '26%',
+    height: 12,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surfaceSunken
+  },
+  skeletonCta: {
+    marginTop: theme.spacing.sm,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: theme.colors.surfaceSunken
   },
   planCard: {
     borderWidth: 1,

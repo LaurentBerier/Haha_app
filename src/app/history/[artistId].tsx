@@ -169,7 +169,13 @@ export default function HistoryScreen() {
         renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
         contentContainerStyle={styles.listContent}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
-        ListEmptyComponent={<Text style={styles.emptyText}>{t('historyEmpty')}</Text>}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyEmoji}>🗂️</Text>
+            <Text style={styles.emptyTitle}>{t('historyEmptyHeadline')}</Text>
+            <Text style={styles.emptyText}>{t('historyEmptySubtext')}</Text>
+          </View>
+        }
       />
     </View>
   );
@@ -258,7 +264,23 @@ const styles = StyleSheet.create({
   emptyText: {
     color: theme.colors.textMuted,
     textAlign: 'center',
-    marginTop: 40
+    fontSize: 13
+  },
+  emptyState: {
+    marginTop: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.lg
+  },
+  emptyEmoji: {
+    fontSize: 28
+  },
+  emptyTitle: {
+    color: theme.colors.textPrimary,
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '700'
   },
   errorText: {
     color: theme.colors.error,

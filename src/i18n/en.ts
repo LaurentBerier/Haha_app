@@ -9,6 +9,8 @@ export const en = {
   historyModeTitle: 'Chat History',
   historyModeDescription: 'Resume one of your last 20 conversations',
   historyEmpty: 'No conversations yet',
+  historyEmptyHeadline: 'No saved conversations yet',
+  historyEmptySubtext: 'Start a first chat and it will appear here automatically.',
   historyScreenTitle: 'Recent Chats',
   historyGroupToday: 'Today',
   historyGroupYesterday: 'Yesterday',
