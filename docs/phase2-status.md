@@ -71,7 +71,7 @@ Core targets:
   - standardized API error format with error codes and request IDs
 - chat/feed polish:
   - animated streaming indicator dots
-  - optimized message-slice updates to reduce per-token cloning overhead
+  - optimized message-slice updates with per-conversation message index map to reduce per-token update cost
   - smoother route transitions between mode/history/chat
 - history UX polish:
   - conversations grouped by recency (`Today`, `Yesterday`, `This week`, `Earlier`)

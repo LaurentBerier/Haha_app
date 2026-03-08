@@ -13,20 +13,32 @@ export interface MessageSlice {
 const EMPTY_PAGE: MessagePage = {
   messages: [],
   hasMore: false,
-  cursor: null
+  cursor: null,
+  messageIndexById: {}
 };
 
 function getMessagePage(state: StoreState, conversationId: string): MessagePage {
   return state.messagesByConversation[conversationId] ?? EMPTY_PAGE;
 }
 
+function buildMessageIndexById(messages: Message[]): Record<string, number> {
+  const index: Record<string, number> = {};
+  messages.forEach((message, position) => {
+    index[message.id] = position;
+  });
+  return index;
+}
+
+function getMessageIndexById(page: MessagePage): Record<string, number> {
+  return page.messageIndexById ?? buildMessageIndexById(page.messages);
+}
+
 function updateMessageByIndex(
   messages: Message[],
-  messageId: string,
+  index: number,
   update: (current: Message) => Message
 ): Message[] {
-  const index = messages.findIndex((message) => message.id === messageId);
-  if (index < 0) {
+  if (index < 0 || index >= messages.length) {
     return messages;
   }
 
@@ -47,19 +59,31 @@ function updateMessageByIndex(
 export const createMessageSlice: StateCreator<StoreState, [], [], MessageSlice> = (set, get) => ({
   messagesByConversation: {},
   addMessage: (conversationId, message) =>
-    set((state) => ({
-      messagesByConversation: {
-        ...state.messagesByConversation,
-        [conversationId]: {
-          ...getMessagePage(state, conversationId),
-          messages: [...getMessagePage(state, conversationId).messages, message]
+    set((state) => {
+      const page = getMessagePage(state, conversationId);
+      const nextMessages = [...page.messages, message];
+      const nextIndexById = {
+        ...getMessageIndexById(page),
+        [message.id]: nextMessages.length - 1
+      };
+
+      return {
+        messagesByConversation: {
+          ...state.messagesByConversation,
+          [conversationId]: {
+            ...page,
+            messages: nextMessages,
+            messageIndexById: nextIndexById
+          }
         }
-      }
-    })),
+      };
+    }),
   updateMessage: (conversationId, messageId, updates) =>
     set((state) => {
       const page = getMessagePage(state, conversationId);
-      const nextMessages = updateMessageByIndex(page.messages, messageId, (message) => ({ ...message, ...updates }));
+      const indexById = getMessageIndexById(page);
+      const index = typeof indexById[messageId] === 'number' ? indexById[messageId] : -1;
+      const nextMessages = updateMessageByIndex(page.messages, index, (message) => ({ ...message, ...updates }));
       if (nextMessages === page.messages) {
         return state;
       }
@@ -69,7 +93,8 @@ export const createMessageSlice: StateCreator<StoreState, [], [], MessageSlice> 
           ...state.messagesByConversation,
           [conversationId]: {
             ...page,
-            messages: nextMessages
+            messages: nextMessages,
+            messageIndexById: indexById
           }
         }
       };
@@ -81,7 +106,9 @@ export const createMessageSlice: StateCreator<StoreState, [], [], MessageSlice> 
       }
 
       const page = getMessagePage(state, conversationId);
-      const nextMessages = updateMessageByIndex(page.messages, messageId, (message) => ({
+      const indexById = getMessageIndexById(page);
+      const index = typeof indexById[messageId] === 'number' ? indexById[messageId] : -1;
+      const nextMessages = updateMessageByIndex(page.messages, index, (message) => ({
         ...message,
         content: message.content + token,
         status: 'streaming' as const
@@ -96,7 +123,8 @@ export const createMessageSlice: StateCreator<StoreState, [], [], MessageSlice> 
           ...state.messagesByConversation,
           [conversationId]: {
             ...page,
-            messages: nextMessages
+            messages: nextMessages,
+            messageIndexById: indexById
           }
         }
       };

@@ -47,12 +47,21 @@ function normalizeMessagesByConversation(
 ): Record<string, MessagePage> {
   const normalized: Record<string, MessagePage> = {};
 
+  const buildMessageIndexById = (messages: Message[]): Record<string, number> => {
+    const index: Record<string, number> = {};
+    messages.forEach((message, position) => {
+      index[message.id] = position;
+    });
+    return index;
+  };
+
   Object.entries(input).forEach(([conversationId, value]) => {
     if (Array.isArray(value)) {
       normalized[conversationId] = {
         messages: value as Message[],
         hasMore: false,
-        cursor: null
+        cursor: null,
+        messageIndexById: buildMessageIndexById(value as Message[])
       };
       return;
     }
@@ -61,7 +70,8 @@ function normalizeMessagesByConversation(
       normalized[conversationId] = {
         messages: value.messages,
         hasMore: typeof value.hasMore === 'boolean' ? value.hasMore : false,
-        cursor: typeof value.cursor === 'string' || value.cursor === null ? value.cursor : null
+        cursor: typeof value.cursor === 'string' || value.cursor === null ? value.cursor : null,
+        messageIndexById: buildMessageIndexById(value.messages)
       };
       return;
     }
@@ -69,7 +79,8 @@ function normalizeMessagesByConversation(
     normalized[conversationId] = {
       messages: [],
       hasMore: false,
-      cursor: null
+      cursor: null,
+      messageIndexById: {}
     };
   });
 
@@ -110,11 +121,23 @@ export const useStore = create<StoreState>()((...a) => ({
 }));
 
 export function selectPersistedSnapshot(state: StoreState): PersistedStoreSnapshot {
+  const messagesByConversation = Object.entries(state.messagesByConversation).reduce<Record<string, MessagePage>>(
+    (acc, [conversationId, page]) => {
+      acc[conversationId] = {
+        messages: page.messages,
+        hasMore: page.hasMore,
+        cursor: page.cursor
+      };
+      return acc;
+    },
+    {}
+  );
+
   return {
     selectedArtistId: state.selectedArtistId,
     conversations: state.conversations,
     activeConversationId: state.activeConversationId,
-    messagesByConversation: state.messagesByConversation,
+    messagesByConversation,
     preferences: {
       language: state.language,
       displayMode: state.displayMode

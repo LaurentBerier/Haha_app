@@ -22,4 +22,5 @@ export interface MessagePage {
   messages: Message[];
   hasMore: boolean;
   cursor: string | null;
+  messageIndexById?: Record<string, number>;
 }
