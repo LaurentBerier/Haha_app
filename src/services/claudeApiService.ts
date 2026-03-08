@@ -1,4 +1,4 @@
-import { CLAUDE_PROXY_URL } from '../config/env';
+import { API_BASE_URL, CLAUDE_PROXY_URL } from '../config/env';
 import { useStore } from '../store/useStore';
 
 export type ClaudeImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
@@ -73,6 +73,40 @@ function normalizeError(error: unknown): Error {
   return error instanceof Error ? error : new Error(typeof error === 'string' ? error : 'Unknown stream error');
 }
 
+function normalizeUrl(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
+function buildClaudeProxyCandidates(): string[] {
+  const candidates: string[] = [];
+  const addCandidate = (candidate: string) => {
+    const normalized = candidate.trim();
+    if (!normalized) {
+      return;
+    }
+    if (!candidates.includes(normalized)) {
+      candidates.push(normalized);
+    }
+  };
+
+  addCandidate(CLAUDE_PROXY_URL.trim());
+
+  const apiBase = normalizeUrl(API_BASE_URL);
+  if (apiBase) {
+    addCandidate(`${apiBase}/claude`);
+  }
+
+  if (typeof window !== 'undefined' && typeof window.location?.origin === 'string' && window.location.origin) {
+    const origin = normalizeUrl(window.location.origin);
+    if (origin) {
+      addCandidate(`${origin}/api/claude`);
+    }
+  }
+
+  addCandidate('/api/claude');
+  return candidates;
+}
+
 function extractDataBlocks(chunk: string): { blocks: string[]; remaining: string } {
   const normalized = chunk.replace(/\r\n/g, '\n');
   const parts = normalized.split('\n\n');
@@ -136,7 +170,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
   const controller = new AbortController();
   let isCancelled = false;
   let hasSettled = false;
-  const proxyUrl = CLAUDE_PROXY_URL.trim();
+  const proxyUrlCandidates = buildClaudeProxyCandidates();
 
   const emitToken = (token: string): void => {
     if (isCancelled || hasSettled || !token) {
@@ -164,7 +198,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
   const runStream = async () => {
     const { artistId, modeId, language, messages, maxTokens = 300, temperature = 0.9 } = params;
 
-    if (!proxyUrl) {
+    if (proxyUrlCandidates.length === 0) {
       emitError(new Error('Missing Claude proxy URL. Set EXPO_PUBLIC_CLAUDE_PROXY_URL.'));
       return;
     }
@@ -172,7 +206,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
     try {
       const shouldUseStreaming = !isReactNativeRuntime();
       const accessToken = useStore.getState().session?.accessToken;
-      const response = await fetch(proxyUrl, {
+      const requestInit: RequestInit = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -188,7 +222,27 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
           messages
         }),
         signal: controller.signal
-      });
+      };
+      let response: Response | null = null;
+      let lastFetchError: Error | null = null;
+      for (const proxyUrl of proxyUrlCandidates) {
+        try {
+          response = await fetch(proxyUrl, requestInit);
+          if (response) {
+            break;
+          }
+        } catch (error) {
+          const normalized = normalizeError(error);
+          if (normalized.name === 'AbortError') {
+            throw normalized;
+          }
+          lastFetchError = normalized;
+        }
+      }
+
+      if (!response) {
+        throw lastFetchError ?? new Error('Failed to fetch');
+      }
 
       if (!response.ok) {
         let payload: unknown;
@@ -290,6 +344,10 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
 
       const normalized = normalizeError(error);
       if (normalized.name === 'AbortError') {
+        return;
+      }
+      if (normalized.message === 'Failed to fetch') {
+        emitError(new Error("Impossible de joindre le service IA. Vérifie la connexion réseau et réessaie."));
         return;
       }
       emitError(normalized);

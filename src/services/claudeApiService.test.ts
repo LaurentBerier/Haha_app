@@ -1,6 +1,7 @@
 const mockGetState = jest.fn();
 
 jest.mock('../config/env', () => ({
+  API_BASE_URL: '',
   CLAUDE_PROXY_URL: 'https://api.ha-ha.ai/claude'
 }));
 
@@ -89,6 +90,45 @@ describe('claudeApiService', () => {
 
     expect(onToken).toHaveBeenCalledWith('Bonjour!');
     expect(onComplete).toHaveBeenCalledWith({ tokensUsed: 9 });
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('falls back to relative /api/claude when primary proxy URL fetch fails', async () => {
+    const onToken = jest.fn();
+    const onComplete = jest.fn();
+    const onError = jest.fn();
+
+    const fetchMock = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('Failed to fetch'))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          content: [{ type: 'text', text: 'Salut fallback!' }],
+          usage: { output_tokens: 4 }
+        })
+      });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    (globalThis as { navigator?: { product?: string } }).navigator = { product: 'ReactNative' };
+
+    streamClaudeResponse({
+      artistId: 'cathy-gauthier',
+      modeId: 'default',
+      language: 'fr-CA',
+      messages: [{ role: 'user', content: 'Test fallback' }],
+      onToken,
+      onComplete,
+      onError
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://api.ha-ha.ai/claude');
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/claude');
+    expect(onToken).toHaveBeenCalledWith('Salut fallback!');
+    expect(onComplete).toHaveBeenCalledWith({ tokensUsed: 4 });
     expect(onError).not.toHaveBeenCalled();
   });
 });
