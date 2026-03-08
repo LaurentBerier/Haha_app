@@ -1,13 +1,16 @@
 import { router } from 'expo-router';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ArtistCard } from '../components/artist/ArtistCard';
 import { AmbientGlow } from '../components/common/AmbientGlow';
 import { useArtist } from '../hooks/useArtist';
+import { t } from '../i18n';
 import { theme } from '../theme';
 
 export default function HomeScreen() {
   const { artists, selectArtist, isArtistUnlocked } = useArtist();
   const isLoadingArtists = artists.length === 0;
+  const unlockedArtistsCount = artists.filter((artist) => isArtistUnlocked(artist.id)).length;
+  const showAllLockedState = !isLoadingArtists && unlockedArtistsCount === 0;
 
   const handleStart = (artistId: string) => {
     selectArtist(artistId);
@@ -22,6 +25,13 @@ export default function HomeScreen() {
       <AmbientGlow variant="home" />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} testID="home-screen">
         <View style={styles.list}>
+          {showAllLockedState ? (
+            <View style={styles.emptyStateCard}>
+              <Text style={styles.emptyStateEmoji}>🎟️</Text>
+              <Text style={styles.emptyStateTitle}>{t('homeLockedHeadline')}</Text>
+              <Text style={styles.emptyStateSubtitle}>{t('homeLockedSubtext')}</Text>
+            </View>
+          ) : null}
           {isLoadingArtists
             ? Array.from({ length: 3 }).map((_, index) => (
                 <View key={`artist-skeleton-${index}`} style={styles.skeletonCard}>
@@ -91,5 +101,29 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 999,
     backgroundColor: theme.colors.surfaceSunken
+  },
+  emptyStateCard: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 18,
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.lg,
+    alignItems: 'center',
+    gap: theme.spacing.xs
+  },
+  emptyStateEmoji: {
+    fontSize: 24
+  },
+  emptyStateTitle: {
+    color: theme.colors.textPrimary,
+    fontWeight: '700',
+    fontSize: 16,
+    textAlign: 'center'
+  },
+  emptyStateSubtitle: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center'
   }
 });

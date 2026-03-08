@@ -1,11 +1,23 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  AppState,
+  type AppStateStatus,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View
+} from 'react-native';
 import { useToast } from '../../components/common/ToastProvider';
 import { getLanguage, t } from '../../i18n';
 import {
   cancelSubscription,
   fetchSubscriptionSummary,
   isCheckoutConfigured,
+  syncSubscriptionState,
   startSubscriptionCheckout,
   type SubscriptionPlanId,
   type SubscriptionSummary
@@ -64,6 +76,9 @@ export default function SubscriptionScreen() {
   const [summary, setSummary] = useState<SubscriptionSummary | null>(null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [activeActionKey, setActiveActionKey] = useState<string | null>(null);
+  const pendingCheckoutPlanRef = useRef<PlanId | null>(null);
+  const checkoutSyncAttemptsRef = useRef(0);
+  const checkoutSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toast = useToast();
 
   const loadSummary = useCallback(async () => {
@@ -87,12 +102,89 @@ export default function SubscriptionScreen() {
     void loadSummary();
   }, [loadSummary]);
 
+  const clearPendingCheckoutSync = useCallback(() => {
+    pendingCheckoutPlanRef.current = null;
+    checkoutSyncAttemptsRef.current = 0;
+    if (checkoutSyncTimerRef.current !== null) {
+      clearTimeout(checkoutSyncTimerRef.current);
+      checkoutSyncTimerRef.current = null;
+    }
+  }, []);
+
   const effectiveAccountType = summary?.accountType ?? user?.accountType ?? 'free';
   const currentPlanLabel = getAccountTypeLabel(effectiveAccountType);
   const currentPlanId = toKnownPlanId(effectiveAccountType);
   const nextCycleLabel = formatBillingDate(summary?.nextBillingDate ?? null) ?? t('settingsSubscriptionNoCycle');
   const isCancellingAtPeriodEnd = Boolean(summary?.cancelAtPeriodEnd);
   const canCancel = Boolean(summary?.canCancel);
+
+  const syncSubscriptionAfterCheckout = useCallback(async () => {
+    const pendingPlan = pendingCheckoutPlanRef.current;
+    if (!pendingPlan || !session?.accessToken) {
+      return;
+    }
+
+    if (checkoutSyncAttemptsRef.current >= 4) {
+      clearPendingCheckoutSync();
+      toast.info(t('settingsSubscriptionSyncPending'));
+      return;
+    }
+
+    checkoutSyncAttemptsRef.current += 1;
+
+    try {
+      await syncSubscriptionState();
+      const refreshedSummary = await fetchSubscriptionSummary(session.accessToken);
+      setSummary(refreshedSummary);
+
+      const refreshedPlan = toKnownPlanId(refreshedSummary.accountType);
+      if (refreshedPlan === pendingPlan || refreshedSummary.accountType === 'admin') {
+        clearPendingCheckoutSync();
+        toast.success(t('settingsSubscriptionSyncSuccess'));
+      }
+    } catch {
+      if (checkoutSyncAttemptsRef.current >= 4) {
+        clearPendingCheckoutSync();
+      }
+    }
+  }, [clearPendingCheckoutSync, session?.accessToken, toast]);
+
+  useEffect(() => {
+    const handleAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        void syncSubscriptionAfterCheckout();
+      }
+    };
+
+    const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
+
+    const handleWindowFocus = () => {
+      void syncSubscriptionAfterCheckout();
+    };
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void syncSubscriptionAfterCheckout();
+      }
+    };
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
+      window.addEventListener('focus', handleWindowFocus);
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+
+    return () => {
+      appStateSubscription.remove();
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
+        window.removeEventListener('focus', handleWindowFocus);
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+      if (checkoutSyncTimerRef.current !== null) {
+        clearTimeout(checkoutSyncTimerRef.current);
+        checkoutSyncTimerRef.current = null;
+      }
+    };
+  }, [syncSubscriptionAfterCheckout]);
 
   const plans: {
     id: PlanId;
@@ -194,12 +286,19 @@ export default function SubscriptionScreen() {
         email: user?.email
       });
       if (!opened) {
+        clearPendingCheckoutSync();
         void notifyWarning();
         toast.error(t('settingsSubscriptionCheckoutErrorBody'));
       } else {
+        pendingCheckoutPlanRef.current = planId;
+        checkoutSyncAttemptsRef.current = 0;
+        checkoutSyncTimerRef.current = setTimeout(() => {
+          void syncSubscriptionAfterCheckout();
+        }, 1500);
         void impactLight();
       }
     } catch {
+      clearPendingCheckoutSync();
       void notifyWarning();
       toast.error(t('settingsSubscriptionCheckoutErrorBody'));
     } finally {

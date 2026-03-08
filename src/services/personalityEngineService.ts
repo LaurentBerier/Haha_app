@@ -1,7 +1,7 @@
-import { cathyBlueprint } from '../data/cathy-gauthier/personalityBlueprint';
-import { getModePrompt } from '../data/cathy-gauthier/modePrompts';
+import { ARTIST_IDS } from '../config/constants';
 import type { Message } from '../models/Message';
 import type { UserProfile } from '../models/UserProfile';
+import { resolveArtistModePrompt, resolveArtistPromptBlueprint } from './artistPromptRegistry';
 
 export interface ChatHistoryMessage {
   role: 'user' | 'assistant';
@@ -90,9 +90,14 @@ function buildUserProfileSection(profile: UserProfile | null | undefined, langua
   return `\n## PROFIL UTILISATEUR\nAdapte ton humour et tes références à ce profil :\n${lines.join('\n')}`;
 }
 
-export function buildSystemPrompt(modeId: string, userProfile?: UserProfile | null, language?: string): string {
-  const b = cathyBlueprint;
-  const modePrompt = getModePrompt(modeId);
+export function buildSystemPromptForArtist(
+  artistId: string,
+  modeId: string,
+  userProfile?: UserProfile | null,
+  language?: string
+): string {
+  const b = resolveArtistPromptBlueprint(artistId);
+  const modePrompt = resolveArtistModePrompt(artistId, modeId);
   const promptLanguage = resolvePromptLanguage(language);
   const userProfileSection = buildUserProfileSection(userProfile, promptLanguage);
 
@@ -133,7 +138,16 @@ ${b.guardrails.softZones.map((zone) => `- ${zone.topic} : ${zone.rule}`).join('\
 - Tes reponses sont courtes (2-4 phrases max)
 - Tu es baveuse, directe et mordante
 ${userProfileSection}
-`.trim();
+  `.trim();
+}
+
+export function buildSystemPrompt(
+  modeId: string,
+  userProfile?: UserProfile | null,
+  language?: string,
+  artistId: string = ARTIST_IDS.CATHY_GAUTHIER
+): string {
+  return buildSystemPromptForArtist(artistId, modeId, userProfile, language);
 }
 
 function toHistoryContent(message: Message): string {

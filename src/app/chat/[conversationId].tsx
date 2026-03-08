@@ -1,5 +1,4 @@
 import { useLocalSearchParams } from 'expo-router';
-import { useCallback } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 import { ChatInput } from '../../components/chat/ChatInput';
 import { MessageList } from '../../components/chat/MessageList';
@@ -8,7 +7,6 @@ import { useChat } from '../../hooks/useChat';
 import { t } from '../../i18n';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
-import { findConversationById } from '../../utils/conversationUtils';
 
 function formatUserDisplayName(displayName: string | null, email: string): string {
   const trimmed = displayName?.trim();
@@ -38,16 +36,7 @@ export default function ChatScreen() {
   const isValidConversation = conversationId.length > 0;
 
   const sessionUser = useStore((state) => state.session?.user ?? null);
-  const currentArtistName = useStore(
-    useCallback((state) => {
-      const artistId = findConversationById(state.conversations, conversationId)?.artistId;
-      if (!artistId) {
-        return null;
-      }
-      return state.artists.find((artist) => artist.id === artistId)?.name ?? null;
-    }, [conversationId])
-  );
-  const { messages, sendMessage, retryMessage, hasStreaming } = useChat(conversationId);
+  const { messages, sendMessage, retryMessage, hasStreaming, currentArtistName } = useChat(conversationId);
 
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? '');
   const artistDisplayName = formatArtistDisplayName(currentArtistName);

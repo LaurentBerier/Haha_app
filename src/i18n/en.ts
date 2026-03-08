@@ -1,6 +1,8 @@
 export const en = {
   appName: 'Ha-Ha.ai',
   homeTitle: 'Artists',
+  homeLockedHeadline: 'No artist available on this plan',
+  homeLockedSubtext: 'Upgrade to Regular or Premium to unlock the next act.',
   artistGenreCathy: 'Direct, brutally honest, no bullshit',
   startChat: 'Start',
   locked: 'Locked',
@@ -93,6 +95,8 @@ export const en = {
   settingsSubscriptionProviderUnavailableBody: 'Add the checkout URL in EXPO_PUBLIC_* variables and restart the app.',
   settingsSubscriptionCheckoutErrorTitle: 'Cannot open checkout',
   settingsSubscriptionCheckoutErrorBody: 'Could not open the payment page right now.',
+  settingsSubscriptionSyncSuccess: 'Subscription updated.',
+  settingsSubscriptionSyncPending: 'Payment detected, sync still pending. Check back in a few seconds.',
   menuAuthSignIn: 'Sign in',
   menuAuthSignUp: 'Sign up',
   loginTitle: 'Sign in',

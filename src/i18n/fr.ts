@@ -1,6 +1,8 @@
 export const fr = {
   appName: 'Ha-Ha.ai',
   homeTitle: 'Artistes',
+  homeLockedHeadline: 'Aucun artiste disponible sur ce plan',
+  homeLockedSubtext: 'Passe en Régulier ou Premium pour déverrouiller la prochaine scène.',
   artistGenreCathy: 'Directe, trop honnête et pas de bullshit',
   startChat: 'Démarrer',
   locked: 'Verrouillé',
@@ -93,6 +95,8 @@ export const fr = {
   settingsSubscriptionProviderUnavailableBody: "Ajoute l'URL de checkout dans les variables EXPO_PUBLIC_* puis redémarre l'app.",
   settingsSubscriptionCheckoutErrorTitle: 'Ouverture impossible',
   settingsSubscriptionCheckoutErrorBody: "Impossible d'ouvrir la page de paiement pour le moment.",
+  settingsSubscriptionSyncSuccess: 'Abonnement mis à jour.',
+  settingsSubscriptionSyncPending: "Paiement détecté, mise à jour en cours. Reviens dans quelques secondes.",
   menuAuthSignIn: 'Se connecter',
   menuAuthSignUp: 'Créer un compte',
   loginTitle: 'Se connecter',

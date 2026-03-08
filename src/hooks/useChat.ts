@@ -9,7 +9,7 @@ import type { Message } from '../models/Message';
 import type { ClaudeContentBlock, ClaudeMessage } from '../services/claudeApiService';
 import { streamClaudeResponse } from '../services/claudeApiService';
 import { streamMockReply } from '../services/mockLlmService';
-import { buildSystemPrompt, formatConversationHistory } from '../services/personalityEngineService';
+import { buildSystemPromptForArtist, formatConversationHistory } from '../services/personalityEngineService';
 import { useStore } from '../store/useStore';
 import { findConversationById } from '../utils/conversationUtils';
 import { shouldAutoSwitchToEnglish } from '../utils/languageDetection';
@@ -67,6 +67,7 @@ export function useChat(conversationId: string) {
   const incrementUsage = useStore((state) => state.incrementUsage);
   const updateConversation = useStore((state) => state.updateConversation);
   const userProfile = useStore((state) => state.userProfile);
+  const artists = useStore((state) => state.artists);
 
   const messages = useStore(
     useCallback((state) => state.messagesByConversation[conversationId]?.messages ?? EMPTY_MESSAGES, [conversationId])
@@ -76,14 +77,9 @@ export function useChat(conversationId: string) {
     useCallback((state) => findConversationById(state.conversations, conversationId), [conversationId])
   );
 
-  const currentArtist = useStore(
-    useCallback((state) => {
-      const artistId = findConversationById(state.conversations, conversationId)?.artistId;
-      if (!artistId) {
-        return null;
-      }
-      return state.artists.find((artist) => artist.id === artistId) ?? null;
-    }, [conversationId])
+  const currentArtist = useMemo(
+    () => artists.find((artist) => artist.id === currentConversation?.artistId) ?? null,
+    [artists, currentConversation?.artistId]
   );
 
   const modeFewShots = useMemo(() => {
@@ -349,7 +345,12 @@ export function useChat(conversationId: string) {
 
       const modeId = currentConversation.modeId || MODE_IDS.DEFAULT;
       const latestProfile = useStore.getState().userProfile ?? userProfile;
-      const systemPrompt = buildSystemPrompt(modeId, latestProfile, languageForTurn);
+      const systemPrompt = buildSystemPromptForArtist(
+        currentConversation.artistId,
+        modeId,
+        latestProfile,
+        languageForTurn
+      );
 
     queueRef.current.push({
       artistMessageId,
@@ -418,6 +419,7 @@ export function useChat(conversationId: string) {
   return {
     messages,
     hasStreaming,
+    currentArtistName: currentArtist?.name ?? null,
     sendMessage,
     retryMessage
   };

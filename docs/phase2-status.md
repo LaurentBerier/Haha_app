@@ -79,6 +79,7 @@ Core targets:
   - smoother route transitions between mode/history/chat
   - Claude handler now overlaps prompt profile fetch with quota/rate-limit checks to reduce pre-stream latency
   - Claude handler now also preloads the rate-limit usage count in parallel with monthly quota verification
+  - chat screen now reuses artist data from `useChat` to avoid duplicate conversation lookups on each render
 - history UX polish:
   - conversations grouped by recency (`Today`, `Yesterday`, `This week`, `Earlier`)
   - history screen now shows loading skeleton cards while persisted store hydration is in progress
@@ -89,11 +90,17 @@ Core targets:
 - interaction polish:
   - lightweight global toast system for non-blocking success/error/info feedback
   - onboarding option selection pulse animation
+- billing UX polish:
+  - subscription screen now detects checkout return (app foreground/web focus), refreshes auth session, and reloads subscription status automatically
+  - successful checkout sync now shows explicit toast feedback
+- personality engine architecture:
+  - added artist prompt registry (`src/services/artistPromptRegistry.ts`) so prompt assembly is artist-aware and no longer Cathy-only by design
 - chat input memory optimization:
   - image attachments now keep URI in component state
   - base64 payload is generated only at send time
 - unit test baseline:
   - `npm run test:unit`
+  - added tests for subscription sync/checkout URL shaping and for artist-aware prompt builder
   - API tests for `claude`, `delete-account`, `admin-account-type`, `payment-webhook`, and shared utils
   - store slice tests for `subscriptionSlice` and `usageSlice`
 - E2E baseline stabilized on iOS:
