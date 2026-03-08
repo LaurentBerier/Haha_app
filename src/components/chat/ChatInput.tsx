@@ -27,6 +27,12 @@ interface ChatInputProps {
   disabled?: boolean;
 }
 
+interface ChatImageAttachmentDraft {
+  uri: string;
+  mediaType: ClaudeImageMediaType;
+  fileSizeBytes: number | null;
+}
+
 const IMAGE_MEDIA_TYPES = new Set<ClaudeImageMediaType>(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
 function useVoiceAnimations(voiceStatus: VoiceStatus) {
@@ -87,10 +93,39 @@ function estimateBase64Bytes(base64: string): number {
   return Math.floor((trimmed.length * 3) / 4) - padding;
 }
 
+async function blobToBase64(blob: Blob): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const commaIndex = result.indexOf(',');
+      if (commaIndex < 0) {
+        reject(new Error('Invalid data URL.'));
+        return;
+      }
+      resolve(result.slice(commaIndex + 1));
+    };
+    reader.onerror = () => {
+      reject(new Error('Failed to read image file.'));
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function readImageAsBase64(uri: string): Promise<string> {
+  const response = await fetch(uri);
+  if (!response.ok) {
+    throw new Error(`Failed to read image attachment (${response.status}).`);
+  }
+  const blob = await response.blob();
+  return await blobToBase64(blob);
+}
+
 export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
   const [value, setValue] = useState('');
-  const [imageAttachment, setImageAttachment] = useState<ChatImageAttachment | null>(null);
+  const [imageAttachment, setImageAttachment] = useState<ChatImageAttachmentDraft | null>(null);
   const [isPickingImage, setIsPickingImage] = useState(false);
+  const [isEncodingImage, setIsEncodingImage] = useState(false);
   const [error, setError] = useState<ChatError | null>(null);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const sendScale = useRef(new Animated.Value(1)).current;
@@ -101,7 +136,12 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
   const trimmed = value.trim();
   const hasText = trimmed.length > 0;
   const hasImage = Boolean(imageAttachment);
-  const canSend = (hasText || hasImage) && !disabled && voiceStatus !== 'transcribing' && voiceStatus !== 'recording';
+  const canSend =
+    (hasText || hasImage) &&
+    !disabled &&
+    !isEncodingImage &&
+    voiceStatus !== 'transcribing' &&
+    voiceStatus !== 'recording';
 
   const clearValidationErrors = () => {
     if (error) {
@@ -112,13 +152,42 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
     }
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!hasText && !hasImage) {
       return;
     }
 
+    let preparedImage: ChatImageAttachment | null = null;
+    if (imageAttachment) {
+      setIsEncodingImage(true);
+      try {
+        const base64 = await readImageAsBase64(imageAttachment.uri);
+        if (!base64) {
+          setPickerError(t('imagePickerError'));
+          return;
+        }
+
+        const estimatedBytes = estimateBase64Bytes(base64);
+        if (estimatedBytes > MAX_IMAGE_UPLOAD_BYTES) {
+          setPickerError(t('imageTooLarge'));
+          return;
+        }
+
+        preparedImage = {
+          uri: imageAttachment.uri,
+          mediaType: imageAttachment.mediaType,
+          base64
+        };
+      } catch {
+        setPickerError(t('imagePickerError'));
+        return;
+      } finally {
+        setIsEncodingImage(false);
+      }
+    }
+
     void impactLight();
-    const sendError = onSend({ text: trimmed, image: imageAttachment });
+    const sendError = onSend({ text: trimmed, image: preparedImage });
     if (sendError) {
       setError(sendError);
       return;
@@ -168,7 +237,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
         mediaTypes: ['images'] as ImagePicker.MediaType[],
         allowsEditing: false,
         quality: 0.7,
-        base64: true,
+        base64: false,
         exif: false
       });
 
@@ -181,15 +250,15 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
         return;
       }
 
-      const base64 = asset.base64;
       const mediaType = normalizeImageMediaType(asset.mimeType);
+      const fileSizeBytes = typeof asset.fileSize === 'number' && Number.isFinite(asset.fileSize) ? asset.fileSize : null;
 
-      if (!base64 || !mediaType) {
+      if (!mediaType) {
         setPickerError(t('imagePickerUnsupported'));
         return;
       }
 
-      if (estimateBase64Bytes(base64) > MAX_IMAGE_UPLOAD_BYTES) {
+      if (fileSizeBytes !== null && fileSizeBytes > MAX_IMAGE_UPLOAD_BYTES) {
         setPickerError(t('imageTooLarge'));
         return;
       }
@@ -197,8 +266,8 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
       clearValidationErrors();
       setImageAttachment({
         uri: asset.uri,
-        base64,
-        mediaType
+        mediaType,
+        fileSizeBytes
       });
     } catch {
       setPickerError(t('imagePickerError'));
@@ -213,7 +282,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
         Animated.timing(sendScale, { toValue: 0.9, duration: 70, useNativeDriver: true }),
         Animated.timing(sendScale, { toValue: 1, duration: 110, useNativeDriver: true })
       ]).start();
-      handleSend();
+      void handleSend();
       return;
     }
 
@@ -240,13 +309,17 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
 
       <View style={styles.container}>
         <Pressable
-          style={[styles.leftAction, (disabled || isPickingImage) && styles.disabledButton]}
-          disabled={disabled || isPickingImage}
+          style={[styles.leftAction, (disabled || isPickingImage || isEncodingImage) && styles.disabledButton]}
+          disabled={disabled || isPickingImage || isEncodingImage}
           onPress={handlePickImage}
           accessibilityRole="button"
           accessibilityLabel={t('addButtonA11y')}
         >
-          {isPickingImage ? <ActivityIndicator color={theme.colors.textDisabled} /> : <Text style={styles.leftActionText}>+</Text>}
+          {isPickingImage || isEncodingImage ? (
+            <ActivityIndicator color={theme.colors.textDisabled} />
+          ) : (
+            <Text style={styles.leftActionText}>+</Text>
+          )}
         </Pressable>
 
         <View style={styles.inputShell}>
@@ -278,10 +351,10 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
                 style={[
                   styles.micButton,
                   voiceStatus === 'recording' && styles.micRecording,
-                  (disabled || voiceStatus === 'transcribing') && styles.disabledButton
+                  (disabled || isEncodingImage || voiceStatus === 'transcribing') && styles.disabledButton
                 ]}
                 onPress={handleVoiceToggle}
-                disabled={disabled || voiceStatus === 'transcribing'}
+                disabled={disabled || isEncodingImage || voiceStatus === 'transcribing'}
                 accessibilityRole="button"
                 accessibilityLabel={voiceStatus === 'recording' ? t('micButtonStop') : t('micButtonLabel')}
               >
@@ -298,9 +371,9 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
         <Animated.View style={{ transform: [{ scale: sendScale }] }}>
           <Pressable
             testID="chat-discussion-button"
-            style={[styles.rightAction, disabled && styles.disabledButton]}
+            style={[styles.rightAction, (disabled || isEncodingImage) && styles.disabledButton]}
             onPress={handleDiscussionPress}
-            disabled={disabled}
+            disabled={disabled || isEncodingImage}
             accessibilityRole="button"
             accessibilityLabel={canSend ? t('sendButtonA11y') : t('discussionButtonA11y')}
           >

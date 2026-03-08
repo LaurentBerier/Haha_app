@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import {
   HOROSCOPE_OPTIONS,
   INTEREST_OPTIONS,
@@ -29,6 +29,7 @@ export default function OnboardingScreen() {
   const setUserProfile = useStore((state) => state.setUserProfile);
 
   const [step, setStep] = useState(0);
+  const optionPulse = useState(() => new Animated.Value(1))[0];
   const [ageInput, setAgeInput] = useState('');
   const [ageError, setAgeError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -185,6 +186,23 @@ export default function OnboardingScreen() {
     setAgeError(t('onboardingAgeInvalidRange'));
   };
 
+  const animateOptionSelection = () => {
+    Animated.sequence([
+      Animated.spring(optionPulse, {
+        toValue: 0.985,
+        friction: 7,
+        tension: 200,
+        useNativeDriver: true
+      }),
+      Animated.spring(optionPulse, {
+        toValue: 1,
+        friction: 7,
+        tension: 200,
+        useNativeDriver: true
+      })
+    ]).start();
+  };
+
   return (
     <ScrollView contentContainerStyle={styles.screen} testID="onboarding-screen">
       <Text style={styles.progress}>{progress}</Text>
@@ -238,7 +256,7 @@ export default function OnboardingScreen() {
       {step === 1 ? (
         <View style={styles.stepBlock}>
           <Text style={styles.question}>Comment tu te identifies ?</Text>
-          <View style={styles.optionsWrap}>
+          <Animated.View style={[styles.optionsWrap, { transform: [{ scale: optionPulse }] }]}>
             {SEX_OPTIONS.map((option) => (
               <Pressable
                 key={option.value}
@@ -247,6 +265,7 @@ export default function OnboardingScreen() {
                   if (isSubmitting) {
                     return;
                   }
+                  animateOptionSelection();
                   setAnswers((prev) => ({ ...prev, sex: option.value }));
                   goNext();
                 }}
@@ -255,14 +274,14 @@ export default function OnboardingScreen() {
                 <Text style={styles.optionLabel}>{option.label}</Text>
               </Pressable>
             ))}
-          </View>
+          </Animated.View>
         </View>
       ) : null}
 
       {step === 2 ? (
         <View style={styles.stepBlock}>
           <Text style={styles.question}>Ton statut amoureux ?</Text>
-          <View style={styles.optionsWrap}>
+          <Animated.View style={[styles.optionsWrap, { transform: [{ scale: optionPulse }] }]}>
             {RELATIONSHIP_OPTIONS.map((option) => (
               <Pressable
                 key={option.value}
@@ -274,6 +293,7 @@ export default function OnboardingScreen() {
                   if (isSubmitting) {
                     return;
                   }
+                  animateOptionSelection();
                   setAnswers((prev) => ({ ...prev, relationshipStatus: option.value }));
                   goNext();
                 }}
@@ -282,14 +302,14 @@ export default function OnboardingScreen() {
                 <Text style={styles.optionLabel}>{option.label}</Text>
               </Pressable>
             ))}
-          </View>
+          </Animated.View>
         </View>
       ) : null}
 
       {step === 3 ? (
         <View style={styles.stepBlock}>
           <Text style={styles.question}>Ton signe astrologique ?</Text>
-          <View style={styles.gridWrap}>
+          <Animated.View style={[styles.gridWrap, { transform: [{ scale: optionPulse }] }]}>
             {HOROSCOPE_OPTIONS.map((option) => (
               <Pressable
                 key={option.value}
@@ -301,6 +321,7 @@ export default function OnboardingScreen() {
                   if (isSubmitting) {
                     return;
                   }
+                  animateOptionSelection();
                   setAnswers((prev) => ({ ...prev, horoscopeSign: option.value }));
                   goNext();
                 }}
@@ -309,14 +330,14 @@ export default function OnboardingScreen() {
                 <Text style={styles.optionLabel}>{option.label}</Text>
               </Pressable>
             ))}
-          </View>
+          </Animated.View>
         </View>
       ) : null}
 
       {step === 4 ? (
         <View style={styles.stepBlock}>
           <Text style={styles.question}>Tes centres d'intérêt ?</Text>
-          <View style={styles.optionsWrap}>
+          <Animated.View style={[styles.optionsWrap, { transform: [{ scale: optionPulse }] }]}>
             {INTEREST_OPTIONS.map((interest) => (
               <Pressable
                 key={interest}
@@ -324,13 +345,16 @@ export default function OnboardingScreen() {
                   styles.optionButton,
                   answers.interests.includes(interest) && styles.optionButtonSelected
                 ]}
-                onPress={() => toggleInterest(interest)}
+                onPress={() => {
+                  animateOptionSelection();
+                  toggleInterest(interest);
+                }}
                 disabled={isSubmitting}
               >
                 <Text style={styles.optionLabel}>{interest}</Text>
               </Pressable>
             ))}
-          </View>
+          </Animated.View>
 
           <Pressable
             style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}

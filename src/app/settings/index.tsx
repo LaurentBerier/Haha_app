@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme } from 'react-native';
+import { useToast } from '../../components/common/ToastProvider';
 import { SettingsRow } from '../../components/common/SettingsRow';
 import { t } from '../../i18n';
 import { deleteAccount, signOut } from '../../services/authService';
@@ -48,6 +49,7 @@ export default function SettingsScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
+  const toast = useToast();
 
   const email = user?.email ?? '';
   const identity = user?.displayName ?? email;
@@ -72,7 +74,9 @@ export default function SettingsScreen() {
       clearSession();
       router.replace('/(auth)/login');
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : t('settingsGenericError'));
+      const message = error instanceof Error ? error.message : t('settingsGenericError');
+      setErrorMessage(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -98,7 +102,9 @@ export default function SettingsScreen() {
       clearSession();
       router.replace('/(auth)/login');
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : t('settingsDeleteError'));
+      const message = error instanceof Error ? error.message : t('settingsDeleteError');
+      setErrorMessage(message);
+      toast.error(message);
     } finally {
       setIsSubmitting(false);
     }

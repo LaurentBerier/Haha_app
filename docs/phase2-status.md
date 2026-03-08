@@ -79,6 +79,12 @@ Core targets:
   - delete-account flow now requires typed confirmation (`DELETE`) before irreversible action
   - richer chat empty state card (headline + guidance)
   - send button press animation for clearer action feedback
+- interaction polish:
+  - lightweight global toast system for non-blocking success/error/info feedback
+  - onboarding option selection pulse animation
+- chat input memory optimization:
+  - image attachments now keep URI in component state
+  - base64 payload is generated only at send time
 - unit test baseline:
   - `npm run test:unit`
   - API tests for `claude`, `delete-account`, `admin-account-type`, `payment-webhook`, and shared utils

@@ -5,6 +5,7 @@ import { Platform, Pressable, StyleSheet, Text, View, useColorScheme } from 'rea
 import { BrandMark } from '../components/common/BrandMark';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
+import { ToastProvider } from '../components/common/ToastProvider';
 import { useAuth } from '../hooks/useAuth';
 import { useStorePersistence } from '../hooks/useStorePersistence';
 import { t } from '../i18n';
@@ -127,14 +128,15 @@ export default function RootLayout() {
 
   return (
     <ErrorBoundary>
-      {!hasHydrated || authStatus === 'loading' ? (
-        <View style={styles.loadingScreen} testID="loading-screen">
-          <LoadingSpinner />
-        </View>
-      ) : (
-        <>
-          <StatusBar style={effectiveDisplayMode === 'light' ? 'dark' : 'light'} />
-          <Stack
+      <ToastProvider>
+        {!hasHydrated || authStatus === 'loading' ? (
+          <View style={styles.loadingScreen} testID="loading-screen">
+            <LoadingSpinner />
+          </View>
+        ) : (
+          <>
+            <StatusBar style={effectiveDisplayMode === 'light' ? 'dark' : 'light'} />
+            <Stack
             key={language}
             screenOptions={{
               headerStyle: {
@@ -201,37 +203,38 @@ export default function RootLayout() {
             <Stack.Screen name="settings/index" options={{ title: t('settingsTitle') }} />
             <Stack.Screen name="settings/edit-profile" options={{ title: t('settingsEditProfile') }} />
             <Stack.Screen name="settings/subscription" options={{ title: t('settingsSubscription') }} />
-          </Stack>
-          {isAccountMenuOpen ? (
-            <View style={styles.menuOverlay}>
-              <Pressable style={styles.menuBackdrop} onPress={closeAccountMenu} testID="account-menu-backdrop" />
-              <View style={styles.menuPanel}>
-                <Text style={styles.menuTitle}>{t('settingsAccount')}</Text>
-                {accountMenuItems.map((item) => (
+            </Stack>
+            {isAccountMenuOpen ? (
+              <View style={styles.menuOverlay}>
+                <Pressable style={styles.menuBackdrop} onPress={closeAccountMenu} testID="account-menu-backdrop" />
+                <View style={styles.menuPanel}>
+                  <Text style={styles.menuTitle}>{t('settingsAccount')}</Text>
+                  {accountMenuItems.map((item) => (
+                    <Pressable
+                      key={item.route}
+                      onPress={() => navigateFromAccountMenu(item.route)}
+                      style={styles.menuItem}
+                      testID={`account-menu-item-${item.route.replace(/\//g, '-')}`}
+                    >
+                      <Text style={styles.menuItemLabel}>{item.label}</Text>
+                    </Pressable>
+                  ))}
+                  <View style={styles.menuDivider} />
                   <Pressable
-                    key={item.route}
-                    onPress={() => navigateFromAccountMenu(item.route)}
-                    style={styles.menuItem}
-                    testID={`account-menu-item-${item.route.replace(/\//g, '-')}`}
+                    onPress={() => void handleAuthMenuAction()}
+                    style={[styles.menuItem, isAuthenticated ? styles.menuItemDestructive : null]}
+                    testID="account-menu-auth-action"
                   >
-                    <Text style={styles.menuItemLabel}>{item.label}</Text>
+                    <Text style={[styles.menuItemLabel, isAuthenticated ? styles.menuItemLabelDestructive : null]}>
+                      {authMenuLabel}
+                    </Text>
                   </Pressable>
-                ))}
-                <View style={styles.menuDivider} />
-                <Pressable
-                  onPress={() => void handleAuthMenuAction()}
-                  style={[styles.menuItem, isAuthenticated ? styles.menuItemDestructive : null]}
-                  testID="account-menu-auth-action"
-                >
-                  <Text style={[styles.menuItemLabel, isAuthenticated ? styles.menuItemLabelDestructive : null]}>
-                    {authMenuLabel}
-                  </Text>
-                </Pressable>
+                </View>
               </View>
-            </View>
-          ) : null}
-        </>
-      )}
+            ) : null}
+          </>
+        )}
+      </ToastProvider>
     </ErrorBoundary>
   );
 }

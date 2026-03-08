@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useToast } from '../../components/common/ToastProvider';
 import { getLanguage, t } from '../../i18n';
 import {
   cancelSubscription,
@@ -63,6 +64,7 @@ export default function SubscriptionScreen() {
   const [summary, setSummary] = useState<SubscriptionSummary | null>(null);
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [activeActionKey, setActiveActionKey] = useState<string | null>(null);
+  const toast = useToast();
 
   const loadSummary = useCallback(async () => {
     if (!session?.accessToken) {
@@ -140,11 +142,11 @@ export default function SubscriptionScreen() {
       const nextSummary = await cancelSubscription(session.accessToken);
       setSummary(nextSummary);
       void notifySuccess();
-      Alert.alert(t('settingsSubscriptionCancelSuccessTitle'), t('settingsSubscriptionCancelSuccessBody'));
+      toast.success(t('settingsSubscriptionCancelSuccessBody'));
     } catch (error) {
       const message = error instanceof Error ? error.message : t('settingsSubscriptionCancelErrorBody');
       void notifyWarning();
-      Alert.alert(t('settingsSubscriptionCancelErrorTitle'), message);
+      toast.error(message);
     } finally {
       setActiveActionKey(null);
     }
@@ -180,7 +182,7 @@ export default function SubscriptionScreen() {
     }
 
     if (!isCheckoutConfigured('stripe', planId)) {
-      Alert.alert(t('settingsSubscriptionProviderUnavailableTitle'), t('settingsSubscriptionProviderUnavailableBody'));
+      toast.info(t('settingsSubscriptionProviderUnavailableBody'));
       return;
     }
 
@@ -193,13 +195,13 @@ export default function SubscriptionScreen() {
       });
       if (!opened) {
         void notifyWarning();
-        Alert.alert(t('settingsSubscriptionCheckoutErrorTitle'), t('settingsSubscriptionCheckoutErrorBody'));
+        toast.error(t('settingsSubscriptionCheckoutErrorBody'));
       } else {
         void impactLight();
       }
     } catch {
       void notifyWarning();
-      Alert.alert(t('settingsSubscriptionCheckoutErrorTitle'), t('settingsSubscriptionCheckoutErrorBody'));
+      toast.error(t('settingsSubscriptionCheckoutErrorBody'));
     } finally {
       setActiveActionKey(null);
     }
