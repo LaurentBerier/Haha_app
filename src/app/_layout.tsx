@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
   },
   backgroundOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(4, 9, 18, 0.46)'
+    backgroundColor: 'rgba(4, 9, 18, 0.24)'
   },
   loadingScreen: {
     flex: 1,
