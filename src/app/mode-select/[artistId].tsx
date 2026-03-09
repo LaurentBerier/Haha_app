@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { AmbientGlow } from '../../components/common/AmbientGlow';
+import { BackButton } from '../../components/common/BackButton';
 import { MODE_IDS } from '../../config/constants';
 import { ModeCard } from '../../components/mode/ModeCard';
 import { getModeById } from '../../config/modes';
@@ -86,6 +87,9 @@ export default function ModeSelectScreen() {
   return (
     <View style={styles.screen}>
       <AmbientGlow variant="mode" />
+      <View style={styles.topRow}>
+        <BackButton testID="mode-select-back" />
+      </View>
       <FlatList
         testID="mode-select-screen"
         data={modeOptions}
@@ -94,7 +98,6 @@ export default function ModeSelectScreen() {
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListHeaderComponent={
           <View style={styles.header}>
-            <Text style={styles.title}>{t('modeSelectTitle')}</Text>
             <Text style={styles.subtitle}>{artist.name}</Text>
           </View>
         }
@@ -119,7 +122,13 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background
   },
   list: {
-    backgroundColor: 'transparent'
+    backgroundColor: 'transparent',
+    flex: 1
+  },
+  topRow: {
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs
   },
   content: {
     padding: theme.spacing.md,
@@ -130,14 +139,10 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
     paddingHorizontal: 2
   },
-  title: {
-    color: theme.colors.textPrimary,
-    fontSize: 21,
-    fontWeight: '700'
-  },
   subtitle: {
     color: theme.colors.textMuted,
-    fontSize: 12
+    fontSize: 13,
+    fontWeight: '600'
   },
   separator: {
     height: theme.spacing.sm

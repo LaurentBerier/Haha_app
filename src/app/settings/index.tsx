@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme } from 'react-native';
+import { BackButton } from '../../components/common/BackButton';
 import { useToast } from '../../components/common/ToastProvider';
 import { SettingsRow } from '../../components/common/SettingsRow';
 import { t } from '../../i18n';
@@ -126,6 +127,9 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.screen} testID="settings-screen">
+      <View style={styles.topRow}>
+        <BackButton testID="settings-back" />
+      </View>
       <View style={styles.profileCard}>
         <View style={styles.avatar}>
           <Text style={styles.avatarLabel}>{initials}</Text>
@@ -295,6 +299,9 @@ const styles = StyleSheet.create({
     gap: theme.spacing.lg,
     backgroundColor: theme.colors.background,
     minHeight: '100%'
+  },
+  topRow: {
+    alignSelf: 'flex-start'
   },
   profileCard: {
     borderWidth: 1,

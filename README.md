@@ -10,7 +10,11 @@ Implemented in this repository:
 - Supabase auth integration (email/password + Apple Sign-In).
 - Auth gate and onboarding flow in app routing.
 - Settings flow (profile edit, language/display preferences, subscription plan management, sign out, account deletion).
-- Unified app-style top bar (logo + hamburger menu) across mobile/web app screens.
+- Unified app-style top bar (logo left, center title, hamburger right) across authenticated mobile/web app screens.
+- Universal back button on secondary routes (chat, mode selection, history, settings subpages).
+- Header logo remains a home shortcut to artist selection (`/`) and never replaces back behavior.
+- Chat header title reflects the active mode label (for example `🔥 Radar d’Attitude`) instead of a static "Discussion" title.
+- Artist selection now distinguishes available vs upcoming artists with a clear CTA for available artists and "Disponible bientôt" cards for locked artists.
 - Paid-tier voice strategy currently targets ElevenLabs.
 - Subscription screen includes current plan, next billing cycle, and cancel-at-period-end for Stripe subscriptions.
 - User profile model and profile personalization injection in system prompts.
@@ -79,8 +83,7 @@ Notes:
 
 - `ANTHROPIC_API_KEY`
 - `SUPABASE_URL`
-- `SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` (server-only, required for JWT/user validation)
+- `SUPABASE_SERVICE_ROLE_KEY` (server-only, required for JWT/user validation; can be legacy JWT-style `eyJ...` or secret-style `sb_secret_...`)
 - `REVENUECAT_WEBHOOK_SECRET` (required if using `api/payment-webhook.js`; endpoint fails closed when missing)
 - `STRIPE_WEBHOOK_SECRET` (required for `api/stripe-webhook.js` signature verification)
 - `STRIPE_SECRET_KEY` (required for Stripe subscription read/cancel endpoints)
@@ -95,6 +98,8 @@ Notes:
 - `CLAUDE_MONTHLY_CAP_FREE` (optional, default `15`)
 - `CLAUDE_MONTHLY_CAP_REGULAR` (optional, default `45`)
 - `CLAUDE_MONTHLY_CAP_PREMIUM` (optional, default `110`)
+- `CLAUDE_LIMITS_RPC` (optional, set `true` after SQL migration to use `public.enforce_claude_limits(...)`)
+- `ENABLE_ADMIN_TIER_GRANTS` (optional, default disabled; required to allow `accountTypeId='admin'` through admin endpoint)
 
 ## Supabase Setup
 
@@ -117,6 +122,10 @@ This creates:
 - JWT metadata sync trigger on account type changes
 - `public.payment_events` ledger table
 - `public.stripe_customer_links` mapping table
+- `public.audit_logs` for privileged operation traces
+- `public.usage_events` for Claude quota/rate limiting
+- `public.profiles.monthly_message_count` + `monthly_reset_at` counters
+- `public.enforce_claude_limits(...)` RPC (optional fast-path used by `/api/claude` when enabled)
 
 ## App Auth Flow
 
@@ -143,6 +152,7 @@ Behavior:
 - E2E-only bypass exists via `EXPO_PUBLIC_E2E_AUTH_BYPASS=true` (used in Detox scripts; keep disabled outside tests).
 - `Paramètres` (`/settings`) stays reachable from authenticated screens via header shortcut.
 - Header logo returns to artist selection (`/`) and hamburger menu includes account routes plus auth action (sign in/sign up/sign out depending on state).
+- Account-scoped local chat state is cleared automatically when session user changes, preventing cross-account conversation mixing on shared devices.
 
 Supabase URL configuration should include:
 
@@ -164,6 +174,7 @@ Admin endpoint:
 Auth requirements:
 
 - Bearer JWT from Supabase user with `app_metadata.role='admin'` or `app_metadata.account_type='admin'`
+- `accountTypeId='admin'` is blocked unless `ENABLE_ADMIN_TIER_GRANTS=true`
 
 Payload:
 
@@ -184,10 +195,13 @@ Security:
 
 - Requires `Authorization: Bearer <access_token>`
 - Validates token using Supabase admin client
-- Rejects invalid/missing token with `401`
+- Rejects invalid/missing token with `401` once CORS checks pass (requests without allowed origin/bearer are rejected earlier with `403`)
+- Assembles the system prompt server-side from validated context (`artistId`, `modeId`, user profile); client cannot inject arbitrary system prompt text
 - Enforces server-side model whitelist (only approved models are accepted)
 - Enforces server-side monthly message quota by tier (`free`, `regular`, `premium`; `admin` unlimited)
 - Enforces server-side per-user rate limit using `public.usage_events`
+- Supports optional one-call limits path through Supabase RPC (`CLAUDE_LIMITS_RPC=true`)
+- Includes in-memory limiter fallback when DB usage store is temporarily unavailable
 - Browser-origin requests are fail-closed when `ALLOWED_ORIGINS` is missing or origin is not allowlisted
 - Adds `X-Request-Id` response header for log correlation
 - Error envelope: `{ "error": { "message": string, "code": string, "requestId": string } }`
@@ -224,6 +238,7 @@ Notes:
 - `usage-summary` returns `{ messagesUsed, messagesCap, resetDate }` for post-login quota hydration.
 - Stripe webhook verifies `Stripe-Signature`, stores events in `public.payment_events`, maps plan IDs to tiers, and syncs account type claims.
 - Stripe subscription endpoints allow client UI to display next billing cycle and request cancellation at period end.
+- Subscription UI is plan-first (`Gratuit`, `Régulier`, `Premium`) and triggers Stripe checkout URLs directly for paid plans.
 
 ## Run
 

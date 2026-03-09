@@ -63,7 +63,7 @@ export const artists: Artist[] = [
   },
   {
     id: ARTIST_IDS.MYSTERY_ARTIST_ONE,
-    name: '???',
+    name: 'Humoriste mystère',
     slug: ARTIST_IDS.MYSTERY_ARTIST_ONE,
     avatarUrl: '?',
     supportedLanguages: ['fr-CA', 'en-CA'],
@@ -109,7 +109,7 @@ export const artists: Artist[] = [
   },
   {
     id: ARTIST_IDS.MYSTERY_ARTIST_TWO,
-    name: '????',
+    name: 'Invité surprise',
     slug: ARTIST_IDS.MYSTERY_ARTIST_TWO,
     avatarUrl: '?',
     supportedLanguages: ['fr-CA', 'en-CA'],

@@ -8,6 +8,7 @@ export interface PersistedUiPreferences {
 }
 
 export interface PersistedStoreSnapshot {
+  ownerUserId?: string | null;
   selectedArtistId: string | null;
   conversations: Record<string, Conversation[]>;
   activeConversationId: string | null;

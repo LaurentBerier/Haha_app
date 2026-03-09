@@ -77,12 +77,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceRaised,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    borderRadius: 14,
-    padding: theme.spacing.md,
+    borderRadius: 12,
+    padding: theme.spacing.sm + 1,
     shadowColor: theme.colors.shadowMode,
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
     elevation: 2
   },
   cardHistory: {
@@ -91,7 +91,8 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border
   },
   pressed: {
-    opacity: 0.9
+    opacity: 0.94,
+    transform: [{ scale: 0.995 }]
   },
   row: {
     flexDirection: 'row',
@@ -119,12 +120,12 @@ const styles = StyleSheet.create({
   },
   title: {
     color: theme.colors.textPrimary,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700'
   },
   description: {
     color: theme.colors.textMuted,
     fontSize: 12,
-    lineHeight: 17
+    lineHeight: 16
   }
 });

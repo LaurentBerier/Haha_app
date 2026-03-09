@@ -11,6 +11,7 @@ import {
   Text,
   View
 } from 'react-native';
+import { BackButton } from '../../components/common/BackButton';
 import { useToast } from '../../components/common/ToastProvider';
 import { getLanguage, t } from '../../i18n';
 import {
@@ -310,6 +311,9 @@ export default function SubscriptionScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.screen} testID="settings-subscription-screen">
+      <View style={styles.topRow}>
+        <BackButton testID="settings-subscription-back" />
+      </View>
       <View style={styles.heroCard}>
         <Text style={styles.heroTitle}>{t('settingsSubscription')}</Text>
         <Text style={styles.heroLine}>{`${t('settingsCurrentSubscription')} ${currentPlanLabel}`}</Text>
@@ -318,7 +322,11 @@ export default function SubscriptionScreen() {
 
         {canCancel ? (
           <Pressable
-            style={[styles.cancelButton, activeActionKey === 'cancel' ? styles.disabledButton : null]}
+            style={({ pressed }) => [
+              styles.cancelButton,
+              pressed && activeActionKey === null ? styles.pressedButton : null,
+              activeActionKey === 'cancel' ? styles.disabledButton : null
+            ]}
             onPress={requestCancellation}
             disabled={activeActionKey !== null}
             testID="subscription-cancel-cta"
@@ -380,7 +388,11 @@ export default function SubscriptionScreen() {
               ))}
 
               <Pressable
-                style={[styles.planCta, disabled ? styles.disabledButton : null]}
+                style={({ pressed }) => [
+                  styles.planCta,
+                  pressed && !disabled ? styles.pressedButton : null,
+                  disabled ? styles.disabledButton : null
+                ]}
                 onPress={() => {
                   void handlePlanSelection(plan.id);
                 }}
@@ -419,6 +431,9 @@ const styles = StyleSheet.create({
     gap: theme.spacing.lg,
     minHeight: '100%'
   },
+  topRow: {
+    alignSelf: 'flex-start'
+  },
   heroCard: {
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -429,12 +444,12 @@ const styles = StyleSheet.create({
   },
   heroTitle: {
     color: theme.colors.textPrimary,
-    fontSize: 30,
+    fontSize: 24,
     fontWeight: '800'
   },
   heroLine: {
     color: theme.colors.textPrimary,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700'
   },
   heroMeta: {
@@ -547,7 +562,7 @@ const styles = StyleSheet.create({
   },
   planTitle: {
     color: theme.colors.textPrimary,
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '800'
   },
   planPrice: {
@@ -581,5 +596,9 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6
+  },
+  pressedButton: {
+    opacity: 0.94,
+    transform: [{ scale: 0.995 }]
   }
 });

@@ -1,12 +1,16 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo } from 'react';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 import { ChatInput } from '../../components/chat/ChatInput';
 import { MessageList } from '../../components/chat/MessageList';
 import { StreamingIndicator } from '../../components/chat/StreamingIndicator';
+import { BackButton } from '../../components/common/BackButton';
+import { getModeById } from '../../config/modes';
 import { useChat } from '../../hooks/useChat';
 import { t } from '../../i18n';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
+import { findConversationById } from '../../utils/conversationUtils';
 
 function formatUserDisplayName(displayName: string | null, email: string): string {
   const trimmed = displayName?.trim();
@@ -31,15 +35,32 @@ function formatArtistDisplayName(artistName: string | null): string {
 }
 
 export default function ChatScreen() {
+  const navigation = useNavigation();
   const params = useLocalSearchParams<{ conversationId: string }>();
   const conversationId = params.conversationId ?? '';
   const isValidConversation = conversationId.length > 0;
 
   const sessionUser = useStore((state) => state.session?.user ?? null);
+  const currentConversation = useStore(
+    useCallback((state) => findConversationById(state.conversations, conversationId), [conversationId])
+  );
   const { messages, sendMessage, retryMessage, hasStreaming, currentArtistName } = useChat(conversationId);
 
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? '');
   const artistDisplayName = formatArtistDisplayName(currentArtistName);
+  const activeMode = useMemo(
+    () => (currentConversation?.modeId ? getModeById(currentConversation.modeId) : null),
+    [currentConversation?.modeId]
+  );
+  const activeModeLabel = activeMode?.name ?? t('chatModeUnknown');
+  const activeModeEmoji = activeMode?.emoji ?? '💬';
+  const chatHeaderTitle = `${activeModeEmoji} ${activeModeLabel}`;
+
+  useEffect(() => {
+    navigation.setOptions({
+      title: isValidConversation ? chatHeaderTitle : t('chatTitle')
+    });
+  }, [chatHeaderTitle, isValidConversation, navigation]);
 
   return (
     <KeyboardAvoidingView
@@ -49,6 +70,9 @@ export default function ChatScreen() {
       keyboardVerticalOffset={88}
     >
       <View style={styles.container}>
+        <View style={styles.topRow}>
+          <BackButton testID="chat-back" />
+        </View>
         {isValidConversation ? (
           <MessageList
             messages={messages}
@@ -75,6 +99,11 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1
+  },
+  topRow: {
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs
   },
   error: {
     color: theme.colors.error,

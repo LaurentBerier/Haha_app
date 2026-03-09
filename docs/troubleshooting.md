@@ -109,7 +109,7 @@ Redeploy:
 npx vercel --prod --yes
 ```
 
-## 7) `/api/claude` returns 500 instead of 401
+## 7) `/api/claude` returns 500 instead of 401/403
 
 Verify Vercel env vars:
 
@@ -118,12 +118,19 @@ Verify Vercel env vars:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - if request comes from a browser origin: `ALLOWED_ORIGINS` must include that origin
 
-No-auth smoke test should return `401`:
+Auth smoke tests:
 
 ```bash
+# 1) Missing bearer + no Origin => expected 403 (CORS guard)
 curl -i -X POST "https://<alias>.vercel.app/api/claude" \
   -H "content-type: application/json" \
-  -d '{"systemPrompt":"test","messages":[{"role":"user","content":"hi"}]}'
+  -d '{"messages":[{"role":"user","content":"hi"}]}'
+
+# 2) Invalid bearer => expected 401 (auth guard)
+curl -i -X POST "https://<alias>.vercel.app/api/claude" \
+  -H "content-type: application/json" \
+  -H "authorization: Bearer invalid-token" \
+  -d '{"messages":[{"role":"user","content":"hi"}]}'
 ```
 
 ## 8) SQL error `relation "profiles" does not exist`
@@ -413,14 +420,17 @@ npx vercel build --yes
 
 Symptoms:
 
-- Replies feel random/generic and not tied to the user prompt.
-- Usually happens when Claude proxy requests fail and app falls back to mock behavior.
+- Chat bubble shows `Erreur pendant la génération`.
+- Console/network shows `Failed to fetch` or `Impossible de joindre le service IA...`.
+- Replies can look generic if `USE_MOCK_LLM` was enabled by mistake.
 
 Root causes to check:
 
+- bad/missing proxy base URL (`EXPO_PUBLIC_CLAUDE_PROXY_URL` or `EXPO_PUBLIC_API_BASE_URL`)
 - stale model in app env (for example `EXPO_PUBLIC_ANTHROPIC_MODEL=claude-sonnet-4-5-20250929`) while backend accepts only `claude-sonnet-4-6`
 - invalid/missing API auth token
 - backend quota/rate-limit rejection
+- browser origin blocked by `ALLOWED_ORIGINS`
 
 Current behavior:
 
@@ -446,6 +456,20 @@ cd /Users/laurentbernier/Documents/HAHA_app
 npm run deploy:web
 ```
 
+4. Verify proxy health directly (replace domain):
+
+```bash
+curl -i -X POST "https://<your-app-domain>/api/claude" \
+  -H "content-type: application/json" \
+  -H "authorization: Bearer invalid-token" \
+  -d '{"messages":[{"role":"user","content":"salut"}]}'
+```
+
+Expected:
+- `401 Unauthorized` with invalid bearer token (route reachable)
+- note: request without bearer/origin may return `403` first because of CORS guard
+- not `404`, not `FUNCTION_INVOCATION_FAILED`
+
 ## 26) Chat shows `Rate limit store unavailable.`
 
 Symptoms:
@@ -464,7 +488,30 @@ Current mitigation in code:
 
 Permanent fix checklist:
 
-1. In Vercel, verify `SUPABASE_SERVICE_ROLE_KEY` is the real service-role secret (`sb_secret_...`), not the publishable/anon key.
+1. In Vercel, verify `SUPABASE_SERVICE_ROLE_KEY` is the real service-role key (legacy JWT-style `eyJ...` or secret-style `sb_secret_...`), not the publishable/anon key.
 2. Re-run SQL migration:
    - [`docs/supabase-account-types.sql`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-account-types.sql)
 3. Redeploy backend and web.
+
+## 27) Conversation history appears mixed between users
+
+Symptoms:
+
+- After logging into different accounts on the same browser/device, conversations from another user appear.
+
+Current safeguard in code:
+
+- Persisted store now includes `ownerUserId`.
+- On auth bootstrap/state sync, account-scoped local data is automatically cleared when user changes.
+
+If you still see old mixed data (usually from older cached builds):
+
+1. Update to latest build, then sign out and sign back in.
+2. Clear local cache once:
+   - Web: clear Local Storage key `ha-ha-store-v1` and reload.
+   - iOS simulator/device dev build: reinstall app or clear app data.
+3. Confirm with a fresh login cycle:
+   - user A creates a chat
+   - sign out
+   - user B signs in
+   - history for user B should not include user A messages

@@ -18,8 +18,12 @@ Supabase is the source of truth for:
 ### Routing (`src/app`)
 
 - Root layout (`_layout.tsx`): hydration, error boundary, auth/onboarding gate
-- Root layout also owns the global app top bar (brand logo left, hamburger menu right) and account menu overlay for authenticated users.
+- Root layout also owns the global app top bar (brand logo left, screen title center, hamburger menu right) and account menu overlay for authenticated users.
 - Root layout supports an E2E-only auth bypass gate via `EXPO_PUBLIC_E2E_AUTH_BYPASS=true`.
+- Home route (`/`) intentionally uses an empty center title for a cleaner artist-selection header.
+- Chat route dynamically sets the center title to active mode (`emoji + mode name`).
+- Universal `BackButton` is used on secondary routes (`mode-select`, `history`, `chat`, `settings`, `edit-profile`, `subscription`).
+- Header logo always routes to `/` (artist selection); back navigation remains a separate action.
 - Auth routes:
   - `/(auth)/login`
   - `/(auth)/signup`
@@ -53,6 +57,12 @@ Active slices:
 - `usageSlice`
 - `userProfileSlice`
 
+Store-level account isolation:
+
+- persisted snapshot includes `ownerUserId`
+- when authenticated user changes, account-scoped chat state is cleared (`conversations`, `messagesByConversation`, active conversation)
+- message pages include `messageIndexById` for lower-cost streaming updates
+
 ### Services (`src/services`)
 
 - `supabaseClient.ts`: Supabase client initialization (AsyncStorage session persistence)
@@ -69,13 +79,14 @@ Active slices:
 - `profileService.ts`: fetch/update profile, onboarding complete/skip
 - `claudeApiService.ts`: proxy calls with Bearer token
 - `personalityEngineService.ts`: prompt generation + profile personalization
+- `artistPromptRegistry.ts`: artist-aware blueprint/mode prompt resolution (Cathy + fallback artists)
 - `subscriptionService.ts`: Stripe checkout launcher (regular/premium), subscription summary fetch, and cancel-at-period-end action
 - `persistenceService.ts`: local cache persistence (conversations/messages/ui selections)
 
 ### Hooks (`src/hooks`)
 
 - `useAuth`: bootstraps stored session, hydrates usage quota from `/api/usage-summary`, and subscribes to Supabase auth changes
-- `useChat`: handles prompt build + Claude proxy orchestration
+- `useChat`: queue-driven streaming orchestration, retry support, and route-safe stream cleanup
 - `useStorePersistence`: hydration/debounced persistence
 
 ## Backend Endpoints (`api`)
@@ -84,9 +95,13 @@ Active slices:
 
 - CORS allowlist handling via shared `api/_utils.js` (`ALLOWED_ORIGINS`)
 - Bearer token validation via Supabase admin API
+- server-side prompt-context validation (`artistId`, `modeId`, `language`)
+- server-side system prompt assembly (artist blueprint + mode + user profile)
 - strict server-side model whitelist
 - server-side monthly quota by tier (env-overridable caps)
 - server-side per-user rate limiting backed by `public.usage_events`
+- optional single-RPC limits path (`public.enforce_claude_limits`) via `CLAUDE_LIMITS_RPC=true`
+- short-lived monthly quota cache + graceful in-memory rate-limit fallback when DB usage store is unavailable
 - payload validation
 - forwards request to Anthropic API
 - upstream timeout protection with `AbortController`
@@ -98,7 +113,9 @@ Active slices:
 - admin-only bearer token check
 - validates target account type
 - updates `profiles.account_type_id`
-- syncs `auth.users.app_metadata` (`account_type`, `role`)
+- syncs `auth.users.app_metadata.account_type` while preserving existing metadata fields
+- `accountTypeId='admin'` is blocked unless `ENABLE_ADMIN_TIER_GRANTS=true`
+- writes best-effort audit row (`audit_logs`) for account-type changes
 - shared CORS/auth/error/request-id utilities
 
 ### `POST /api/delete-account` (`api/delete-account.js`)
@@ -111,17 +128,22 @@ Active slices:
 ### `POST /api/payment-webhook` (`api/payment-webhook.js`)
 
 - validates webhook auth in all environments (`REVENUECAT_WEBHOOK_SECRET`)
+- constant-time secret comparison (`timingSafeEqual`)
 - stores events in `payment_events`
+- duplicate-event guard using provider event identifiers
 - maps products to account types
 - updates profile tier + metadata claims
+- writes best-effort audit rows (`audit_logs`)
 
 ### `POST /api/stripe-webhook` (`api/stripe-webhook.js`)
 
 - verifies `Stripe-Signature` using `STRIPE_WEBHOOK_SECRET`
+- verification uses official Stripe SDK `constructEvent(...)` on strict raw request body
 - supports `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`
 - stores events in `payment_events`
 - persists Stripe customer/subscription mapping in `stripe_customer_links`
 - updates profile tier + metadata claims
+- writes best-effort audit rows (`audit_logs`)
 
 ### `GET /api/usage-summary` (`api/usage-summary.js`)
 
@@ -201,15 +223,18 @@ Built-in tiers:
 - Stripe checkout is configured with per-plan links (`regular`, `premium`) in client env vars.
 - Subscription UX is plan-first (`Gratuit`, `Régulier`, `Premium`) with factual perk summaries and direct plan CTAs.
 - Artist pool share is modeled at a fixed `15%` across paid tiers.
+- PayPal/Apple checkout URLs exist as optional placeholders in env but are not fully wired server-side yet.
 
 ## Persistence Strategy
 
 Persisted locally:
 
+- owner user id for account-scoped cache safety
 - selected artist
 - conversations
 - messages
 - active conversation id
+- UI preferences (`language`, `displayMode`, `reduceMotion`)
 
 Not persisted locally:
 
@@ -218,7 +243,7 @@ Not persisted locally:
 
 ## Prompt Personalization
 
-`buildSystemPrompt(modeId, userProfile)` appends `## PROFIL UTILISATEUR` when profile data exists.
+`buildSystemPromptForArtist(artistId, modeId, userProfile, language)` appends profile context only when profile data exists and adapts labels to FR/EN.
 
 ## Deployment Notes
 

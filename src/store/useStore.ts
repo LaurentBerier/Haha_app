@@ -25,7 +25,9 @@ export type StoreState = ArtistSlice &
   UsageSlice &
   UiSlice & {
     hasHydrated: boolean;
+    persistedOwnerUserId: string | null;
     hydrateStore: (snapshot: PersistedStoreSnapshot) => void;
+    clearAccountScopedState: () => void;
     markHydrated: () => void;
   };
 
@@ -98,6 +100,7 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createUsageSlice(...a),
   ...createUiSlice(...a),
   hasHydrated: false,
+  persistedOwnerUserId: null,
   hydrateStore: (snapshot) => {
     const current = a[1]();
     const nextLanguage = snapshot.preferences?.language === 'en-CA' ? 'en-CA' : 'fr-CA';
@@ -113,6 +116,7 @@ export const useStore = create<StoreState>()((...a) => ({
     setI18nLanguage(nextLanguage);
 
     a[0]({
+      persistedOwnerUserId: typeof snapshot.ownerUserId === 'string' ? snapshot.ownerUserId : null,
       selectedArtistId: snapshot.selectedArtistId,
       conversations: normalizeConversations(snapshot.conversations),
       activeConversationId: snapshot.activeConversationId,
@@ -122,6 +126,14 @@ export const useStore = create<StoreState>()((...a) => ({
       reduceMotion: snapshot.preferences?.reduceMotion ? nextReduceMotion : current.reduceMotion
     });
   },
+  clearAccountScopedState: () =>
+    a[0]({
+      persistedOwnerUserId: null,
+      selectedArtistId: null,
+      conversations: {},
+      activeConversationId: null,
+      messagesByConversation: {}
+    }),
   markHydrated: () => a[0]({ hasHydrated: true })
 }));
 
@@ -139,6 +151,7 @@ export function selectPersistedSnapshot(state: StoreState): PersistedStoreSnapsh
   );
 
   return {
+    ownerUserId: state.session?.user.id ?? null,
     selectedArtistId: state.selectedArtistId,
     conversations: state.conversations,
     activeConversationId: state.activeConversationId,

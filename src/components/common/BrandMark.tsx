@@ -35,8 +35,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   logoCompact: {
-    width: 32,
-    height: 32
+    width: 28,
+    height: 28
   },
   logoRegular: {
     width: 132,
@@ -46,11 +46,11 @@ const styles = StyleSheet.create({
   title: {
     marginLeft: 4,
     color: theme.colors.textPrimary,
-    fontSize: 19,
+    fontSize: 17,
     fontWeight: '700',
     letterSpacing: 0.2
   },
   titleWeb: {
-    fontSize: 23
+    fontSize: 19
   }
 });

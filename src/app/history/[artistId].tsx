@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
-import { Header } from '../../components/common/Header';
+import { BackButton } from '../../components/common/BackButton';
 import { getModeById } from '../../config/modes';
 import { t } from '../../i18n';
 import type { Conversation } from '../../models/Conversation';
@@ -149,17 +149,9 @@ export default function HistoryScreen() {
   return (
     <View style={styles.screen} testID="history-screen">
       <View style={styles.topRow}>
-        <Pressable
-          testID="history-back"
-          style={styles.backButton}
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel="back"
-        >
-          <Text style={styles.backText}>‹</Text>
-        </Pressable>
+        <BackButton testID="history-back" />
         <View style={styles.headerWrap}>
-          <Header title={t('historyScreenTitle')} subtitle={artist.name} />
+          <Text style={styles.subtitle}>{artist.name}</Text>
         </View>
       </View>
 
@@ -203,28 +195,16 @@ const styles = StyleSheet.create({
   },
   topRow: {
     flexDirection: 'row',
-    alignItems: 'center'
-  },
-  backButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-    marginRight: theme.spacing.sm
-  },
-  backText: {
-    color: theme.colors.textPrimary,
-    fontSize: 24,
-    lineHeight: 24,
-    marginTop: -2
+    gap: theme.spacing.sm
   },
   headerWrap: {
-    flex: 1,
-    marginRight: 34 + theme.spacing.sm
+    flex: 1
+  },
+  subtitle: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600'
   },
   listContent: {
     paddingTop: theme.spacing.sm,

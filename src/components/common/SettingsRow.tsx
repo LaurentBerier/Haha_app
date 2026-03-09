@@ -40,8 +40,8 @@ export function SettingsRow({
 
 const styles = StyleSheet.create({
   row: {
-    minHeight: 52,
-    borderRadius: 12,
+    minHeight: 48,
+    borderRadius: 10,
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -51,14 +51,15 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between'
   },
   pressed: {
-    opacity: 0.9
+    opacity: 0.94,
+    transform: [{ scale: 0.995 }]
   },
   disabled: {
     opacity: 1
   },
   label: {
     color: theme.colors.textPrimary,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600'
   },
   destructive: {
@@ -71,7 +72,7 @@ const styles = StyleSheet.create({
   },
   value: {
     color: theme.colors.textSecondary,
-    fontSize: 14
+    fontSize: 13
   },
   chevron: {
     color: theme.colors.textMuted,

@@ -31,6 +31,10 @@ Core targets:
   - visual step progress bar
   - explicit age-range validation message (13-120) before advancing
 - global app-style header (brand logo + hamburger) keeps settings/user-space reachable on authenticated app screens (web + mobile)
+- navigation UX hardening:
+  - universal back button on secondary routes
+  - home header keeps logo + hamburger with no redundant center title
+  - chat header center title reflects active mode (`emoji + mode label`)
 - settings flows:
   - edit profile
   - language + display preferences
@@ -82,10 +86,13 @@ Core targets:
   - smoother route transitions between mode/history/chat
   - Claude handler now overlaps prompt profile fetch with quota/rate-limit checks to reduce pre-stream latency
   - Claude handler now also preloads the rate-limit usage count in parallel with monthly quota verification
-  - chat screen now reuses artist data from `useChat` to avoid duplicate conversation lookups on each render
 - history UX polish:
   - conversations grouped by recency (`Today`, `Yesterday`, `This week`, `Earlier`)
   - history screen now shows loading skeleton cards while persisted store hydration is in progress
+- artist-selection UX polish:
+  - locked artists use a neutral comedian silhouette placeholder avatar (instead of `???`)
+  - legacy `PRO` lock badge replaced by a discrete "Disponible bientôt" badge/state
+  - available artist card exposes explicit CTA (`Parler avec Cathy`)
 - safety/empty-state polish:
   - delete-account flow now requires typed confirmation (`DELETE`) before irreversible action
   - richer chat empty state card (headline + guidance)
@@ -104,6 +111,10 @@ Core targets:
 - chat input memory optimization:
   - image attachments now keep URI in component state
   - base64 payload is generated only at send time
+- account-scoped persistence safety:
+  - persisted snapshot now stores `ownerUserId`
+  - local conversations/messages are cleared automatically when auth user changes
+  - prevents cross-account conversation bleed on shared browsers/devices
 - unit test baseline:
   - `npm run test:unit`
   - added tests for subscription sync/checkout URL shaping and for artist-aware prompt builder
@@ -151,10 +162,11 @@ Manual checks:
 3. Forgot password -> recovery email -> reset password -> login succeeds.
 4. Unauthenticated user is redirected to login.
 5. Authenticated user without onboarding is redirected to onboarding.
-6. `POST /api/claude` returns `401` without bearer token.
+6. `POST /api/claude` with invalid bearer returns `401` (and missing-origin/no-bearer requests are blocked with `403` by CORS guard).
 7. Stripe checkout completed event reaches `POST /api/stripe-webhook` with `200`.
 8. Subscription screen displays current plan + next cycle and can request cancellation.
 9. `npm run deploy:web` publishes a working web app (no white-screen bootstrap crash).
+10. Sign in with user A, create messages, sign out and sign in with user B -> no conversation history leakage from user A.
 
 ## Dependencies and Config
 
@@ -174,7 +186,7 @@ Required app env:
 Required backend env:
 
 - `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` (server secret; legacy JWT-style `eyJ...` or `sb_secret_...`)
 - `ANTHROPIC_API_KEY`
 - `REVENUECAT_WEBHOOK_SECRET` (required when webhook endpoint is enabled)
 - `STRIPE_WEBHOOK_SECRET` (required for `POST /api/stripe-webhook`)

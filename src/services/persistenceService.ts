@@ -125,6 +125,7 @@ function isValidSnapshot(data: unknown): data is PersistedStoreSnapshot {
   }
 
   return (
+    (data.ownerUserId === undefined || isStringOrNull(data.ownerUserId)) &&
     isStringOrNull(data.selectedArtistId) &&
     isValidConversationsMap(data.conversations) &&
     isStringOrNull(data.activeConversationId) &&

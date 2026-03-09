@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { BackButton } from '../../components/common/BackButton';
 import {
   HOROSCOPE_OPTIONS,
   INTEREST_OPTIONS,
@@ -96,6 +97,9 @@ export default function EditProfileScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.screen} testID="settings-edit-profile-screen">
+      <View style={styles.topRow}>
+        <BackButton testID="settings-edit-profile-back" />
+      </View>
       <Text style={styles.title}>Modifier mon profil</Text>
 
       <View style={styles.group}>
@@ -197,6 +201,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.xl,
     gap: theme.spacing.md
+  },
+  topRow: {
+    alignSelf: 'flex-start'
   },
   title: {
     color: theme.colors.textPrimary,

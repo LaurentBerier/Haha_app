@@ -1,5 +1,5 @@
-import { memo } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { memo, useEffect, useRef } from 'react';
+import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { t } from '../../i18n';
 import type { Message } from '../../models/Message';
 import { theme } from '../../theme';
@@ -12,6 +12,8 @@ interface ChatBubbleProps {
 }
 
 function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMessage }: ChatBubbleProps) {
+  const enterOpacity = useRef(new Animated.Value(0)).current;
+  const enterTranslateY = useRef(new Animated.Value(6)).current;
   const isUser = message.role === 'user';
   const imageUri = message.metadata?.imageUri;
   const errorMessage =
@@ -22,8 +24,31 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
   const shouldShowPlaceholder = !hasText && !imageUri;
   const senderName = isUser ? userDisplayName : artistDisplayName;
 
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(enterOpacity, {
+        toValue: 1,
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true
+      }),
+      Animated.timing(enterTranslateY, {
+        toValue: 0,
+        duration: 180,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true
+      })
+    ]).start();
+  }, [enterOpacity, enterTranslateY]);
+
   return (
-    <View style={[styles.row, isUser ? styles.userRow : styles.artistRow]}>
+    <Animated.View
+      style={[
+        styles.row,
+        isUser ? styles.userRow : styles.artistRow,
+        { opacity: enterOpacity, transform: [{ translateY: enterTranslateY }] }
+      ]}
+    >
       <View style={[styles.block, isUser ? styles.userBlock : styles.artistBlock]}>
         <Text
           style={[styles.senderName, isUser ? styles.userSenderName : styles.artistSenderName]}
@@ -63,7 +88,7 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
           ) : null}
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

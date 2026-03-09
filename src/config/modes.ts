@@ -5,43 +5,43 @@ export const modes: Mode[] = [
   {
     "id": "radar-attitude",
     "name": "Radar d’Attitude",
-    "description": "Le Radar d’Attitude active le mode approprié selon le comportement \"input\" de l'utilisateur",
+    "description": "Tu racontes une situation, Cathy scanne l'attitude et choisit le ton parfait: analyse cash, conseil utile ou petite claque humoristique.",
     "emoji": "🔥"
   },
   {
     "id": "roast",
     "name": "Roast",
-    "description": "Mode Roast."
+    "description": "Tu demandes le feu, Cathy sort le lance-flammes. Roast direct, créatif et sans coussin émotionnel."
   },
   {
     "id": "coach-de-vie",
     "name": "Coach de vie",
-    "description": "Des conseils francs, un peu sarcastiques, mais toujours lucides. Pas de câlins gratuits, juste la vérité qui pique un peu."
+    "description": "Ton amie la plus franche: conseils concrets, vérité qui pique un peu, et zéro bullshit motivant."
   },
   {
     "id": "phrase-du-jour",
     "name": "Phrase du jour",
-    "description": "Une citation originale, drôle ou absurde pour te partir la journée avec un petit coup de pied mental."
+    "description": "Une phrase punchée à envoyer, afficher ou méditer pendant 12 secondes avant de replonger."
   },
   {
     "id": "message-personnalise",
     "name": "Message personnalisé",
-    "description": "Bonne fête, retraite, rupture ou promotion. Cathy adapte son ton pour livrer le message que tu n’oses pas écrire."
+    "description": "Donne le contexte (fête, rupture, félicitations), Cathy écrit le message que t'oses pas envoyer toi-même."
   },
   {
     "id": "numero-de-show",
     "name": "Numéro de show",
-    "description": "Un extrait inédit ou inspiré de scène. Comme si tu avais Cathy en mini-spectacle privé dans ton téléphone."
+    "description": "Un mini-numéro privé: intro, montée, punchline. Comme un extrait de scène direct dans ton cell."
   },
   {
     "id": "horoscope",
     "name": "Horoscope",
-    "description": "Des prédictions douteuses, mais étrangement précises. Les astres parlent… et ils ne sont pas toujours gentils."
+    "description": "Les astres n'avaient rien demandé, mais Cathy lit ton destin avec panache et mauvaise foi assumée."
   },
   {
     "id": "meteo",
     "name": "Meteo",
-    "description": "Un bulletin météo revisité. Oui, il pleut. Non, tu ne vas pas prendre ton parapluie. Et oui, tu vas le regretter."
+    "description": "La météo sans filtre: température, humeur du ciel et niveau de regret vestimentaire."
   }
 ];
 

@@ -26,18 +26,25 @@ Implemented in this repository:
   - subscription plan screen with Stripe plan CTAs (regular/premium), current cycle, and cancel action
   - sign out
   - account deletion
-- Global app top bar/hamburger UI is unified across web and mobile app routes
+- Global app top bar/hamburger UI is unified across authenticated web/mobile app routes
+- Universal back button is now available across secondary pages (mode select, chat, history, settings subpages)
+- Chat header now displays the active mode name (emoji + label) instead of a generic title
+- Artist selection now uses clear availability states:
+  - available artist with explicit CTA (`Parler avec Cathy`)
+  - upcoming artists with silhouette placeholder + "Disponible bientôt"
 - Claude proxy bearer-token enforcement with Supabase validation
 - Account type infrastructure:
   - extensible tier model (`free`, `regular`, `premium`, `admin`, custom)
   - admin endpoint to assign account type
 - Payment webhook + Stripe billing endpoints now wired for tier updates and subscription state reads
+- Account-scoped persistence hardening now clears local conversations/messages automatically when switching users on the same device/browser
 
 ## Validation Commands
 
 ```bash
 npm run typecheck
 npm run lint
+npm run test:unit
 ```
 
 ## Cross-Repo Context

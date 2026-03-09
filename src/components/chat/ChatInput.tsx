@@ -409,7 +409,7 @@ const styles = StyleSheet.create({
     marginHorizontal: theme.spacing.sm,
     marginTop: theme.spacing.sm,
     marginBottom: theme.spacing.xs,
-    borderRadius: 14,
+    borderRadius: 12,
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -446,16 +446,16 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: theme.spacing.sm,
+    gap: theme.spacing.xs + 2,
     paddingHorizontal: theme.spacing.sm,
     paddingTop: theme.spacing.sm,
     paddingBottom: theme.spacing.sm,
     backgroundColor: theme.colors.surfaceSunken
   },
   leftAction: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: theme.colors.surfaceButton,
     justifyContent: 'center',
     alignItems: 'center',
@@ -463,16 +463,16 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border
   },
   leftActionText: {
-    fontSize: 34,
-    lineHeight: 36,
+    fontSize: 30,
+    lineHeight: 32,
     color: theme.colors.textSecondary,
     fontWeight: '300'
   },
   inputShell: {
     flex: 1,
-    minHeight: 56,
+    minHeight: 50,
     maxHeight: 120,
-    borderRadius: 28,
+    borderRadius: 25,
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 40,
+    minHeight: 36,
     maxHeight: 104,
     color: theme.colors.textPrimary,
     fontSize: 16,
@@ -504,16 +504,16 @@ const styles = StyleSheet.create({
     fontSize: 20
   },
   rightAction: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     backgroundColor: theme.colors.surfaceDeep,
     justifyContent: 'center',
     alignItems: 'center'
   },
   rightActionText: {
     color: theme.colors.textPrimary,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700'
   },
   disabledButton: {

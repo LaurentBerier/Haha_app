@@ -57,7 +57,7 @@ export default function RootLayout() {
   const navigateFromAccountMenu = (route: AccountMenuRoute) => {
     closeAccountMenu();
     requestAnimationFrame(() => {
-      router.replace(route);
+      router.push(route);
     });
   };
 
@@ -145,14 +145,14 @@ export default function RootLayout() {
               },
               headerTintColor: theme.colors.textPrimary,
               contentStyle: { backgroundColor: theme.colors.background },
-              headerTitleAlign: 'left',
-              headerTitle: showAccountMenu ? '' : undefined,
+              headerTitleAlign: 'center',
+              headerTitleStyle: styles.headerTitle,
               headerShadowVisible: false,
               headerLeft: () =>
                 showAccountMenu ? (
                   <Pressable
                     onPress={navigateHome}
-                    style={styles.headerBrandButton}
+                    style={({ pressed }) => [styles.headerBrandButton, pressed ? styles.headerPressed : null]}
                     accessibilityRole="button"
                     testID="header-home-button"
                   >
@@ -163,7 +163,7 @@ export default function RootLayout() {
                 showAccountMenu ? (
                   <Pressable
                     onPress={toggleAccountMenu}
-                    style={styles.headerMenuButton}
+                    style={({ pressed }) => [styles.headerMenuButton, pressed ? styles.headerPressed : null]}
                     accessibilityRole="button"
                     testID="header-menu-button"
                   >
@@ -175,7 +175,7 @@ export default function RootLayout() {
             }}
           >
             <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-            <Stack.Screen name="index" options={{ title: t('appName') }} />
+            <Stack.Screen name="index" options={{ title: '' }} />
             <Stack.Screen
               name="mode-select/[artistId]"
               options={{
@@ -248,6 +248,7 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   headerMenuButton: {
+    marginRight: theme.spacing.md,
     borderWidth: 1,
     borderColor: theme.colors.surfaceButton,
     backgroundColor: theme.colors.surfaceSunken,
@@ -259,8 +260,17 @@ const styles = StyleSheet.create({
     gap: 4
   },
   headerBrandButton: {
-    marginRight: theme.spacing.sm,
+    marginLeft: theme.spacing.md,
     paddingVertical: 4
+  },
+  headerPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.98 }]
+  },
+  headerTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700'
   },
   menuBar: {
     width: 16,

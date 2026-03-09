@@ -11,6 +11,7 @@ export function useAuth() {
   const setAuthStatus = useStore((state) => state.setAuthStatus);
   const clearSession = useStore((state) => state.clearSession);
   const clearUserProfile = useStore((state) => state.clearUserProfile);
+  const clearAccountScopedState = useStore((state) => state.clearAccountScopedState);
   const hydrateQuota = useStore((state) => state.hydrateQuota);
   const resetQuota = useStore((state) => state.resetQuota);
   const getCurrentUser = useStore((state) => state.getCurrentUser);
@@ -27,9 +28,26 @@ export function useAuth() {
         }
 
         await setSession(storedSession);
+        const hasLocalChatData = () => {
+          const state = useStore.getState();
+          return (
+            Object.keys(state.conversations).length > 0 ||
+            Object.keys(state.messagesByConversation).length > 0 ||
+            state.activeConversationId !== null
+          );
+        };
+
         if (!storedSession) {
+          if (hasLocalChatData()) {
+            clearAccountScopedState();
+          }
           resetQuota();
           return;
+        }
+
+        const currentOwnerUserId = useStore.getState().persistedOwnerUserId;
+        if (currentOwnerUserId !== storedSession.user.id && hasLocalChatData()) {
+          clearAccountScopedState();
         }
 
         const accountType = storedSession.user.accountType ?? 'free';
@@ -68,15 +86,29 @@ export function useAuth() {
       if (event === 'SIGNED_OUT') {
         clearSession();
         clearUserProfile();
+        clearAccountScopedState();
         resetQuota();
         return;
       }
 
       const syncSession = async () => {
+        const currentSessionUserId = useStore.getState().session?.user.id ?? null;
         await setSession(nextSession);
         if (!nextSession) {
+          clearAccountScopedState();
           resetQuota();
           return;
+        }
+
+        const hasLocalChatData =
+          Object.keys(useStore.getState().conversations).length > 0 ||
+          Object.keys(useStore.getState().messagesByConversation).length > 0 ||
+          useStore.getState().activeConversationId !== null;
+        const didUserChange = currentSessionUserId !== null && currentSessionUserId !== nextSession.user.id;
+
+        const currentOwnerUserId = useStore.getState().persistedOwnerUserId;
+        if ((currentOwnerUserId !== nextSession.user.id || didUserChange) && hasLocalChatData) {
+          clearAccountScopedState();
         }
 
         const accountType = nextSession.user.accountType ?? 'free';
@@ -102,7 +134,15 @@ export function useAuth() {
       isMounted = false;
       unsubscribe();
     };
-  }, [clearSession, clearUserProfile, hydrateQuota, resetQuota, setAuthStatus, setSession]);
+  }, [
+    clearAccountScopedState,
+    clearSession,
+    clearUserProfile,
+    hydrateQuota,
+    resetQuota,
+    setAuthStatus,
+    setSession
+  ]);
 
   const user = getCurrentUser();
   const accountType = user?.accountType ?? null;

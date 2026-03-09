@@ -13,7 +13,7 @@ describe('personalityEngineService', () => {
   it('builds fallback prompt for unknown artist profiles without Cathy mode coupling', () => {
     const prompt = buildSystemPromptForArtist(ARTIST_IDS.MYSTERY_ARTIST_ONE, 'roast', null, 'fr-CA');
 
-    expect(prompt).toContain('Tu es ???');
+    expect(prompt).toContain('Tu es Humoriste mystère');
     expect(prompt).toContain('## MODE ACTIF : roast');
     expect(prompt).toContain("Conversation libre. Reponds selon la personnalite de l'artiste selectionne");
     expect(prompt).not.toContain("L'utilisateur veut se faire roaster");
