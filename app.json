@@ -6,7 +6,7 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
-    "icon": "./assets/branding/logo-neon_NoText_BIG.png",
+    "icon": "./assets/branding/logo-neon_app.png",
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -30,7 +30,7 @@
       "typedRoutes": true
     },
     "ios": {
-      "icon": "./assets/branding/logo-neon_NoText_BIG.png",
+      "icon": "./assets/branding/logo-neon_app.png",
       "bundleIdentifier": "com.anonymous.ha-ha-ai",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Ha-Ha.ai uses your microphone to transcribe voice messages.",
@@ -40,7 +40,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/branding/logo-neon_NoText_BIG.png",
+        "foregroundImage": "./assets/branding/logo-neon_app.png",
         "backgroundColor": "#090D16"
       },
       "permissions": [
@@ -50,7 +50,7 @@
       "package": "com.anonymous.hahaai"
     },
     "web": {
-      "favicon": "./assets/branding/logo-neon_NoText_BIG.png"
+      "favicon": "./assets/branding/logo-neon_app.png"
     }
   }
 }

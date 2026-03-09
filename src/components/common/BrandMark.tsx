@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Image, Platform, StyleSheet, Text, View } from 'react-native';
-import logoMark from '../../../assets/branding/logo-neon_NoText_BIG.png';
+import logoMark from '../../../assets/branding/logo-neon_app.png';
 import { theme } from '../../theme';
 
 interface BrandMarkProps {

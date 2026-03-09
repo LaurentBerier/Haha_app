@@ -1,7 +1,7 @@
 import { Stack, router, usePathname, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Platform, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
 import { BrandMark } from '../components/common/BrandMark';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
@@ -13,6 +13,7 @@ import { signOut } from '../services/authService';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme';
 import { E2E_AUTH_BYPASS } from '../config/env';
+import neonBackground from '../../assets/branding/Neon_BG.jpg';
 
 type AccountMenuRoute = '/settings' | '/settings/edit-profile' | '/settings/subscription';
 
@@ -130,120 +131,135 @@ export default function RootLayout() {
   return (
     <ErrorBoundary>
       <ToastProvider>
-        {!hasHydrated || authStatus === 'loading' ? (
-          <View style={styles.loadingScreen} testID="loading-screen">
-            <LoadingSpinner />
-          </View>
-        ) : (
-          <>
-            <StatusBar style={effectiveDisplayMode === 'light' ? 'dark' : 'light'} />
-            <Stack
-            key={language}
-            screenOptions={{
-              headerStyle: {
-                backgroundColor: theme.colors.background
-              },
-              headerTintColor: theme.colors.textPrimary,
-              contentStyle: { backgroundColor: theme.colors.background },
-              headerTitleAlign: 'center',
-              headerTitleStyle: styles.headerTitle,
-              headerShadowVisible: false,
-              headerLeft: () =>
-                showAccountMenu ? (
-                  <Pressable
-                    onPress={navigateHome}
-                    style={({ pressed }) => [styles.headerBrandButton, pressed ? styles.headerPressed : null]}
-                    accessibilityRole="button"
-                    testID="header-home-button"
-                  >
-                    <BrandMark compact title={t('appName')} />
-                  </Pressable>
-                ) : null,
-              headerRight: () =>
-                showAccountMenu ? (
-                  <Pressable
-                    onPress={toggleAccountMenu}
-                    style={({ pressed }) => [styles.headerMenuButton, pressed ? styles.headerPressed : null]}
-                    accessibilityRole="button"
-                    testID="header-menu-button"
-                  >
-                    <View style={styles.menuBar} />
-                    <View style={styles.menuBar} />
-                    <View style={styles.menuBar} />
-                  </Pressable>
-                ) : null
-            }}
-          >
-            <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-            <Stack.Screen name="index" options={{ title: '' }} />
-            <Stack.Screen
-              name="mode-select/[artistId]"
-              options={{
-                title: t('modeSelectTitle'),
-                animation: 'fade_from_bottom',
-                animationDuration: 220
-              }}
-            />
-            <Stack.Screen
-              name="history/[artistId]"
-              options={{
-                title: t('historyScreenTitle'),
-                animation: 'slide_from_right',
-                animationDuration: 260
-              }}
-            />
-            <Stack.Screen
-              name="chat/[conversationId]"
-              options={{
-                title: t('chatTitle'),
-                animation: 'slide_from_right',
-                animationDuration: 280,
-                gestureEnabled: true
-              }}
-            />
-            <Stack.Screen name="settings/index" options={{ title: t('settingsTitle') }} />
-            <Stack.Screen name="settings/edit-profile" options={{ title: t('settingsEditProfile') }} />
-            <Stack.Screen name="settings/subscription" options={{ title: t('settingsSubscription') }} />
-            </Stack>
-            {isAccountMenuOpen ? (
-              <View style={styles.menuOverlay}>
-                <Pressable style={styles.menuBackdrop} onPress={closeAccountMenu} testID="account-menu-backdrop" />
-                <View style={styles.menuPanel}>
-                  <Text style={styles.menuTitle}>{t('settingsAccount')}</Text>
-                  {accountMenuItems.map((item) => (
+        <View style={styles.appShell}>
+          <Image source={neonBackground} style={styles.backgroundImage} resizeMode="cover" />
+          <View style={styles.backgroundOverlay} pointerEvents="none" />
+          {!hasHydrated || authStatus === 'loading' ? (
+            <View style={styles.loadingScreen} testID="loading-screen">
+              <LoadingSpinner />
+            </View>
+          ) : (
+            <>
+              <StatusBar style={effectiveDisplayMode === 'light' ? 'dark' : 'light'} />
+              <Stack
+                key={language}
+                screenOptions={{
+                  headerStyle: {
+                    backgroundColor: theme.colors.background
+                  },
+                  headerTintColor: theme.colors.textPrimary,
+                  contentStyle: { backgroundColor: theme.colors.background },
+                  headerTitleAlign: 'center',
+                  headerTitleStyle: styles.headerTitle,
+                  headerShadowVisible: false,
+                  headerLeft: () =>
+                    showAccountMenu ? (
+                      <Pressable
+                        onPress={navigateHome}
+                        style={({ pressed }) => [styles.headerBrandButton, pressed ? styles.headerPressed : null]}
+                        accessibilityRole="button"
+                        testID="header-home-button"
+                      >
+                        <BrandMark compact title={t('appName')} />
+                      </Pressable>
+                    ) : null,
+                  headerRight: () =>
+                    showAccountMenu ? (
+                      <Pressable
+                        onPress={toggleAccountMenu}
+                        style={({ pressed }) => [styles.headerMenuButton, pressed ? styles.headerPressed : null]}
+                        accessibilityRole="button"
+                        testID="header-menu-button"
+                      >
+                        <View style={styles.menuBar} />
+                        <View style={styles.menuBar} />
+                        <View style={styles.menuBar} />
+                      </Pressable>
+                    ) : null
+                }}
+              >
+                <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                <Stack.Screen name="index" options={{ title: '' }} />
+                <Stack.Screen
+                  name="mode-select/[artistId]"
+                  options={{
+                    title: t('modeSelectTitle'),
+                    animation: 'fade_from_bottom',
+                    animationDuration: 220
+                  }}
+                />
+                <Stack.Screen
+                  name="history/[artistId]"
+                  options={{
+                    title: t('historyScreenTitle'),
+                    animation: 'slide_from_right',
+                    animationDuration: 260
+                  }}
+                />
+                <Stack.Screen
+                  name="chat/[conversationId]"
+                  options={{
+                    title: t('chatTitle'),
+                    animation: 'slide_from_right',
+                    animationDuration: 280,
+                    gestureEnabled: true
+                  }}
+                />
+                <Stack.Screen name="settings/index" options={{ title: t('settingsTitle') }} />
+                <Stack.Screen name="settings/edit-profile" options={{ title: t('settingsEditProfile') }} />
+                <Stack.Screen name="settings/subscription" options={{ title: t('settingsSubscription') }} />
+              </Stack>
+              {isAccountMenuOpen ? (
+                <View style={styles.menuOverlay}>
+                  <Pressable style={styles.menuBackdrop} onPress={closeAccountMenu} testID="account-menu-backdrop" />
+                  <View style={styles.menuPanel}>
+                    <Text style={styles.menuTitle}>{t('settingsAccount')}</Text>
+                    {accountMenuItems.map((item) => (
+                      <Pressable
+                        key={item.route}
+                        onPress={() => navigateFromAccountMenu(item.route)}
+                        style={styles.menuItem}
+                        testID={`account-menu-item-${item.route.replace(/\//g, '-')}`}
+                      >
+                        <Text style={styles.menuItemLabel}>{item.label}</Text>
+                      </Pressable>
+                    ))}
+                    <View style={styles.menuDivider} />
                     <Pressable
-                      key={item.route}
-                      onPress={() => navigateFromAccountMenu(item.route)}
-                      style={styles.menuItem}
-                      testID={`account-menu-item-${item.route.replace(/\//g, '-')}`}
+                      onPress={() => void handleAuthMenuAction()}
+                      style={[styles.menuItem, isAuthenticated ? styles.menuItemDestructive : null]}
+                      testID="account-menu-auth-action"
                     >
-                      <Text style={styles.menuItemLabel}>{item.label}</Text>
+                      <Text style={[styles.menuItemLabel, isAuthenticated ? styles.menuItemLabelDestructive : null]}>
+                        {authMenuLabel}
+                      </Text>
                     </Pressable>
-                  ))}
-                  <View style={styles.menuDivider} />
-                  <Pressable
-                    onPress={() => void handleAuthMenuAction()}
-                    style={[styles.menuItem, isAuthenticated ? styles.menuItemDestructive : null]}
-                    testID="account-menu-auth-action"
-                  >
-                    <Text style={[styles.menuItemLabel, isAuthenticated ? styles.menuItemLabelDestructive : null]}>
-                      {authMenuLabel}
-                    </Text>
-                  </Pressable>
+                  </View>
                 </View>
-              </View>
-            ) : null}
-          </>
-        )}
+              ) : null}
+            </>
+          )}
+        </View>
       </ToastProvider>
     </ErrorBoundary>
   );
 }
 
 const styles = StyleSheet.create({
+  appShell: {
+    flex: 1,
+    backgroundColor: '#03070f'
+  },
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject
+  },
+  backgroundOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(4, 9, 18, 0.46)'
+  },
   loadingScreen: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center'
   },
