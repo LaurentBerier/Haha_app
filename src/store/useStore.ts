@@ -104,10 +104,7 @@ export const useStore = create<StoreState>()((...a) => ({
   hydrateStore: (snapshot) => {
     const current = a[1]();
     const nextLanguage = snapshot.preferences?.language === 'en-CA' ? 'en-CA' : 'fr-CA';
-    const nextDisplayMode =
-      snapshot.preferences?.displayMode === 'light' || snapshot.preferences?.displayMode === 'system'
-        ? snapshot.preferences.displayMode
-        : 'dark';
+    const nextDisplayMode = 'dark';
     const nextReduceMotion =
       snapshot.preferences?.reduceMotion === 'on' || snapshot.preferences?.reduceMotion === 'off'
         ? snapshot.preferences.reduceMotion
@@ -122,7 +119,7 @@ export const useStore = create<StoreState>()((...a) => ({
       activeConversationId: snapshot.activeConversationId,
       messagesByConversation: normalizeMessagesByConversation(snapshot.messagesByConversation),
       language: snapshot.preferences?.language ? nextLanguage : current.language,
-      displayMode: snapshot.preferences?.displayMode ? nextDisplayMode : current.displayMode,
+      displayMode: snapshot.preferences?.displayMode ? nextDisplayMode : 'dark',
       reduceMotion: snapshot.preferences?.reduceMotion ? nextReduceMotion : current.reduceMotion
     });
   },

@@ -152,13 +152,13 @@ const styles = StyleSheet.create({
     height: 440
   },
   layerFar: {
-    opacity: 0.24
+    opacity: 0.1
   },
   layerMid: {
-    opacity: 0.2
+    opacity: 0.08
   },
   layerNear: {
-    opacity: 0.17
+    opacity: 0.06
   },
   homeFar: {
     top: -210,
@@ -206,16 +206,16 @@ const styles = StyleSheet.create({
   },
   // Decorative orb colors - intentionally not in theme.
   orbBlue: {
-    backgroundColor: 'rgba(75, 112, 255, 0.2)'
+    backgroundColor: 'rgba(75, 112, 255, 0.1)'
   },
   orbViolet: {
-    backgroundColor: 'rgba(125, 86, 255, 0.18)'
+    backgroundColor: 'rgba(125, 86, 255, 0.09)'
   },
   orbIndigo: {
-    backgroundColor: 'rgba(47, 82, 219, 0.16)'
+    backgroundColor: 'rgba(47, 82, 219, 0.08)'
   },
   vignette: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(9, 13, 22, 0.16)'
+    backgroundColor: 'rgba(9, 13, 22, 0.04)'
   }
 });

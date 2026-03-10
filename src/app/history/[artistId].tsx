@@ -161,6 +161,7 @@ export default function HistoryScreen() {
         renderItem={renderItem}
         renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
         contentContainerStyle={styles.listContent}
+        style={styles.list}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={
           hasHydrated ? (
@@ -205,6 +206,11 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 13,
     fontWeight: '600'
+  },
+  list: {
+    width: '100%',
+    maxWidth: 608,
+    alignSelf: 'center'
   },
   listContent: {
     paddingTop: theme.spacing.sm,

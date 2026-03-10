@@ -54,19 +54,21 @@ export function ArtistCard({ artist, locked, onStart }: ArtistCardProps) {
 const styles = StyleSheet.create({
   card: {
     width: '100%',
+    maxWidth: 608,
+    alignSelf: 'center',
     alignItems: 'center',
     backgroundColor: theme.colors.surfaceRaised,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 1.9,
+    borderColor: theme.colors.neonRedSoft,
     borderRadius: 18,
     paddingVertical: theme.spacing.lg,
     paddingHorizontal: theme.spacing.md,
     gap: theme.spacing.sm,
-    shadowColor: theme.colors.shadowAccent,
-    shadowOpacity: 0.14,
-    shadowRadius: 12,
+    shadowColor: theme.colors.neonRed,
+    shadowOpacity: 0.28,
+    shadowRadius: 18,
     shadowOffset: { width: 0, height: 6 },
-    elevation: 2
+    elevation: 6
   },
   pressed: {
     transform: [{ scale: 0.985 }],
@@ -116,11 +118,16 @@ const styles = StyleSheet.create({
   ctaPill: {
     marginTop: 2,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 1.9,
+    borderColor: theme.colors.neonBlue,
     backgroundColor: theme.colors.surfaceSunken,
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: 6
+    paddingVertical: 6,
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 5
   },
   ctaLabel: {
     color: theme.colors.textPrimary,

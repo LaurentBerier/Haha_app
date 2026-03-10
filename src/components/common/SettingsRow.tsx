@@ -43,12 +43,17 @@ const styles = StyleSheet.create({
     minHeight: 48,
     borderRadius: 10,
     backgroundColor: theme.colors.surface,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 1.45,
+    borderColor: theme.colors.neonBlueSoft,
     paddingHorizontal: theme.spacing.md,
     alignItems: 'center',
     flexDirection: 'row',
-    justifyContent: 'space-between'
+    justifyContent: 'space-between',
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3
   },
   pressed: {
     opacity: 0.94,

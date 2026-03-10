@@ -132,7 +132,10 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: theme.spacing.md,
-    paddingBottom: theme.spacing.xl * 2
+    paddingBottom: theme.spacing.xl * 2,
+    width: '100%',
+    maxWidth: 608,
+    alignSelf: 'center'
   },
   header: {
     gap: 2,

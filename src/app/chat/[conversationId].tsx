@@ -98,7 +98,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background
   },
   container: {
-    flex: 1
+    flex: 1,
+    width: '100%',
+    maxWidth: 784,
+    alignSelf: 'center'
   },
   topRow: {
     paddingHorizontal: theme.spacing.md,

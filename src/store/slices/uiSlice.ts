@@ -5,7 +5,7 @@ import type { StoreState } from '../useStore';
 
 export type VoiceStatus = 'idle' | 'recording' | 'transcribing' | 'error';
 export type AppLanguage = 'fr-CA' | 'en-CA';
-export type DisplayMode = 'dark' | 'light' | 'system';
+export type DisplayMode = 'dark';
 export type ReduceMotionPreference = 'system' | 'on' | 'off';
 
 function resolveLanguage(language: string | null | undefined): AppLanguage {
@@ -45,6 +45,6 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set) =>
     setI18nLanguage(language);
     set({ language: resolveLanguage(language) });
   },
-  setDisplayMode: (mode) => set({ displayMode: mode }),
+  setDisplayMode: () => set({ displayMode: 'dark' }),
   setReduceMotion: (mode) => set({ reduceMotion: mode })
 });

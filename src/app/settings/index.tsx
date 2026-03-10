@@ -1,12 +1,12 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View, useColorScheme } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { BackButton } from '../../components/common/BackButton';
 import { useToast } from '../../components/common/ToastProvider';
 import { SettingsRow } from '../../components/common/SettingsRow';
 import { t } from '../../i18n';
 import { deleteAccount, signOut } from '../../services/authService';
-import type { AppLanguage, DisplayMode, ReduceMotionPreference } from '../../store/slices/uiSlice';
+import type { AppLanguage, ReduceMotionPreference } from '../../store/slices/uiSlice';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 
@@ -42,12 +42,9 @@ export default function SettingsScreen() {
   const user = session?.user ?? null;
   const clearSession = useStore((state) => state.clearSession);
   const language = useStore((state) => state.language);
-  const displayMode = useStore((state) => state.displayMode);
   const reduceMotion = useStore((state) => state.reduceMotion);
   const setLanguagePreference = useStore((state) => state.setLanguagePreference);
-  const setDisplayMode = useStore((state) => state.setDisplayMode);
   const setReduceMotion = useStore((state) => state.setReduceMotion);
-  const systemColorScheme = useColorScheme();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -62,17 +59,11 @@ export default function SettingsScreen() {
     { value: 'fr-CA', label: t('settingsLanguageFr') },
     { value: 'en-CA', label: t('settingsLanguageEn') }
   ];
-  const displayModeOptions: Array<{ value: DisplayMode; label: string }> = [
-    { value: 'dark', label: t('settingsDisplayDark') },
-    { value: 'light', label: t('settingsDisplayLight') },
-    { value: 'system', label: t('settingsDisplaySystem') }
-  ];
   const reduceMotionOptions: Array<{ value: ReduceMotionPreference; label: string }> = [
     { value: 'system', label: t('settingsReduceMotionSystem') },
     { value: 'off', label: t('settingsReduceMotionOff') },
     { value: 'on', label: t('settingsReduceMotionOn') }
   ];
-  const effectiveDisplayMode = displayMode === 'system' ? (systemColorScheme === 'light' ? 'light' : 'dark') : displayMode;
 
   const doLogout = async () => {
     setIsSubmitting(true);
@@ -169,26 +160,6 @@ export default function SettingsScreen() {
               </Pressable>
             ))}
           </View>
-        </View>
-        <View style={styles.preferenceCard}>
-          <Text style={styles.preferenceLabel}>{t('settingsDisplayMode')}</Text>
-          <View style={styles.choiceRow}>
-            {displayModeOptions.map((option) => (
-              <Pressable
-                key={option.value}
-                onPress={() => setDisplayMode(option.value)}
-                style={[styles.choiceChip, displayMode === option.value ? styles.choiceChipActive : null]}
-                testID={`settings-display-${option.value}`}
-              >
-                <Text style={[styles.choiceChipLabel, displayMode === option.value ? styles.choiceChipLabelActive : null]}>
-                  {option.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          {displayMode === 'system' ? (
-            <Text style={styles.preferenceHint}>{`${t('settingsDisplaySystem')} (${effectiveDisplayMode})`}</Text>
-          ) : null}
         </View>
         <View style={styles.preferenceCard}>
           <Text style={styles.preferenceLabel}>{t('settingsReduceMotion')}</Text>
@@ -295,6 +266,9 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   screen: {
+    width: '100%',
+    maxWidth: 656,
+    alignSelf: 'center',
     padding: theme.spacing.lg,
     gap: theme.spacing.lg,
     backgroundColor: theme.colors.background,
@@ -304,13 +278,18 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start'
   },
   profileCard: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 1.6,
+    borderColor: theme.colors.neonRedSoft,
     borderRadius: 14,
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.lg,
     alignItems: 'center',
-    gap: theme.spacing.sm
+    gap: theme.spacing.sm,
+    shadowColor: theme.colors.neonRed,
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4
   },
   avatar: {
     width: 68,
@@ -357,11 +336,16 @@ const styles = StyleSheet.create({
   },
   preferenceCard: {
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 1.45,
+    borderColor: theme.colors.neonBlueSoft,
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.md,
-    gap: theme.spacing.sm
+    gap: theme.spacing.sm,
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3
   },
   preferenceLabel: {
     color: theme.colors.textPrimary,
@@ -388,8 +372,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.xs
   },
   choiceChipActive: {
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.surfaceButton
+    borderColor: theme.colors.neonRed,
+    backgroundColor: theme.colors.surfaceButton,
+    shadowColor: theme.colors.neonRed,
+    shadowOpacity: 0.42,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 5
   },
   choiceChipLabel: {
     color: theme.colors.textSecondary,
@@ -397,7 +386,7 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   choiceChipLabelActive: {
-    color: theme.colors.textPrimary
+    color: theme.colors.neonRed
   },
   errorText: {
     color: theme.colors.error,
@@ -413,11 +402,16 @@ const styles = StyleSheet.create({
   },
   deleteConfirmCard: {
     borderRadius: 12,
-    borderWidth: 1,
+    borderWidth: 1.6,
     borderColor: theme.colors.error,
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.md,
-    gap: theme.spacing.sm
+    gap: theme.spacing.sm,
+    shadowColor: theme.colors.error,
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4
   },
   deleteConfirmText: {
     color: theme.colors.textPrimary,

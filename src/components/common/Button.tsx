@@ -29,9 +29,16 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: 10,
     backgroundColor: theme.colors.accent,
+    borderWidth: 1.7,
+    borderColor: theme.colors.neonBlue,
     paddingHorizontal: theme.spacing.lg,
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.4,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6
   },
   pressed: {
     opacity: 0.9

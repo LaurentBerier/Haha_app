@@ -1,7 +1,7 @@
 import { Stack, router, usePathname, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Image, Platform, Pressable, StyleSheet, Text, View, useColorScheme } from 'react-native';
+import { Image, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { BrandMark } from '../components/common/BrandMark';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
@@ -13,7 +13,8 @@ import { signOut } from '../services/authService';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme';
 import { E2E_AUTH_BYPASS } from '../config/env';
-import neonBackground from '../../assets/branding/Neon_BG.jpg';
+import cleanBackground from '../../assets/branding/Clean_BG.jpg';
+import neonTitleMark from '../../assets/branding/logo-neon-Trans.png';
 
 type AccountMenuRoute = '/settings' | '/settings/edit-profile' | '/settings/subscription';
 
@@ -21,12 +22,11 @@ export default function RootLayout() {
   useStorePersistence();
   const hasHydrated = useStore((state) => state.hasHydrated);
   const language = useStore((state) => state.language);
-  const displayMode = useStore((state) => state.displayMode);
   const clearSession = useStore((state) => state.clearSession);
   const { authStatus, isAuthenticated, userProfile } = useAuth();
   const segments = useSegments();
   const pathname = usePathname();
-  const systemColorScheme = useColorScheme();
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const inAuthGroup = segments[0] === '(auth)';
   const isAuthCallbackRoute = segments[0] === 'auth' && segments[1] === 'callback';
@@ -45,7 +45,24 @@ export default function RootLayout() {
     : segments[1] === 'login'
       ? t('menuAuthSignUp')
       : t('menuAuthSignIn');
-  const effectiveDisplayMode = displayMode === 'system' ? (systemColorScheme === 'light' ? 'light' : 'dark') : displayMode;
+  const webBackgroundUri = (cleanBackground as { uri?: string }).uri;
+  const imageAspectRatio = 1200 / 1753;
+  const viewportAspectRatio = viewportWidth / Math.max(viewportHeight, 1);
+  const requiredFillHeightVh = (viewportAspectRatio / imageAspectRatio) * 100;
+  const webBackgroundHeightVh = Math.min(190, Math.max(100, requiredFillHeightVh));
+  const webBackgroundSize = `auto ${webBackgroundHeightVh.toFixed(1)}vh`;
+  const headerContentMaxWidth = 680;
+  const headerHorizontalInset =
+    Platform.OS === 'web'
+      ? Math.max(theme.spacing.md, (viewportWidth - headerContentMaxWidth) / 2 + theme.spacing.md)
+      : theme.spacing.md;
+  const nativeBackgroundHeight = Math.max(viewportHeight, 1);
+  const nativeBackgroundWidth = nativeBackgroundHeight * imageAspectRatio;
+  const nativeBackgroundLeft = (viewportWidth - nativeBackgroundWidth) / 2;
+  const backgroundSource =
+    Platform.OS === 'web' && webBackgroundUri
+      ? { uri: webBackgroundUri }
+      : cleanBackground;
 
   const toggleAccountMenu = () => {
     setIsAccountMenuOpen((current) => !current);
@@ -128,11 +145,71 @@ export default function RootLayout() {
     setIsAccountMenuOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !webBackgroundUri || typeof document === 'undefined') {
+      return;
+    }
+
+    const { body, documentElement } = document;
+    const previous = {
+      bodyImage: body.style.backgroundImage,
+      bodySize: body.style.backgroundSize,
+      bodyPosition: body.style.backgroundPosition,
+      bodyRepeat: body.style.backgroundRepeat,
+      bodyAttachment: body.style.backgroundAttachment,
+      bodyColor: body.style.backgroundColor,
+      htmlColor: documentElement.style.backgroundColor
+    };
+    const styleId = 'haha-web-bg-runtime-fix';
+    const existingStyle = document.getElementById(styleId);
+    const styleElement = existingStyle ?? document.createElement('style');
+    styleElement.id = styleId;
+    styleElement.textContent =
+      '#root div[style*="background-color: rgb(242, 242, 242)"]{background-color:transparent !important;}';
+    if (!existingStyle) {
+      document.head.appendChild(styleElement);
+    }
+
+    body.style.backgroundImage = `url("${webBackgroundUri}")`;
+    body.style.backgroundSize = webBackgroundSize;
+    body.style.backgroundPosition = 'center center';
+    body.style.backgroundRepeat = 'no-repeat';
+    body.style.backgroundAttachment = 'fixed';
+    body.style.backgroundColor = '#090D16';
+    documentElement.style.backgroundColor = '#090D16';
+
+    return () => {
+      body.style.backgroundImage = previous.bodyImage;
+      body.style.backgroundSize = previous.bodySize;
+      body.style.backgroundPosition = previous.bodyPosition;
+      body.style.backgroundRepeat = previous.bodyRepeat;
+      body.style.backgroundAttachment = previous.bodyAttachment;
+      body.style.backgroundColor = previous.bodyColor;
+      documentElement.style.backgroundColor = previous.htmlColor;
+      if (!existingStyle && styleElement.parentNode) {
+        styleElement.parentNode.removeChild(styleElement);
+      }
+    };
+  }, [webBackgroundSize, webBackgroundUri]);
+
   return (
     <ErrorBoundary>
       <ToastProvider>
         <View style={styles.appShell}>
-          <Image source={neonBackground} style={styles.backgroundImage} resizeMode="cover" />
+          {Platform.OS !== 'web' ? (
+            <Image
+              source={backgroundSource}
+              style={[
+                styles.backgroundImageNative,
+                {
+                  width: nativeBackgroundWidth,
+                  height: nativeBackgroundHeight,
+                  left: nativeBackgroundLeft
+                }
+              ]}
+              resizeMode="cover"
+            />
+          ) : null}
           <View style={styles.backgroundOverlay} pointerEvents="none" />
           {!hasHydrated || authStatus === 'loading' ? (
             <View style={styles.loadingScreen} testID="loading-screen">
@@ -140,7 +217,7 @@ export default function RootLayout() {
             </View>
           ) : (
             <>
-              <StatusBar style={effectiveDisplayMode === 'light' ? 'dark' : 'light'} />
+              <StatusBar style="light" />
               <Stack
                 key={language}
                 screenOptions={{
@@ -151,23 +228,34 @@ export default function RootLayout() {
                   contentStyle: { backgroundColor: theme.colors.background },
                   headerTitleAlign: 'center',
                   headerTitleStyle: styles.headerTitle,
+                  headerTitle: showAccountMenu
+                    ? () => <Image source={neonTitleMark} style={styles.headerTitleLogo} resizeMode="contain" />
+                    : undefined,
                   headerShadowVisible: false,
                   headerLeft: () =>
                     showAccountMenu ? (
                       <Pressable
                         onPress={navigateHome}
-                        style={({ pressed }) => [styles.headerBrandButton, pressed ? styles.headerPressed : null]}
+                        style={({ pressed }) => [
+                          styles.headerBrandButton,
+                          { marginLeft: headerHorizontalInset },
+                          pressed ? styles.headerPressed : null
+                        ]}
                         accessibilityRole="button"
                         testID="header-home-button"
                       >
-                        <BrandMark compact title={t('appName')} />
+                        <BrandMark compact />
                       </Pressable>
                     ) : null,
                   headerRight: () =>
                     showAccountMenu ? (
                       <Pressable
                         onPress={toggleAccountMenu}
-                        style={({ pressed }) => [styles.headerMenuButton, pressed ? styles.headerPressed : null]}
+                        style={({ pressed }) => [
+                          styles.headerMenuButton,
+                          { marginRight: headerHorizontalInset },
+                          pressed ? styles.headerPressed : null
+                        ]}
                         accessibilityRole="button"
                         testID="header-menu-button"
                       >
@@ -212,7 +300,7 @@ export default function RootLayout() {
               {isAccountMenuOpen ? (
                 <View style={styles.menuOverlay}>
                   <Pressable style={styles.menuBackdrop} onPress={closeAccountMenu} testID="account-menu-backdrop" />
-                  <View style={styles.menuPanel}>
+                  <View style={[styles.menuPanel, Platform.OS === 'web' ? { right: headerHorizontalInset } : null]}>
                     <Text style={styles.menuTitle}>{t('settingsAccount')}</Text>
                     {accountMenuItems.map((item) => (
                       <Pressable
@@ -248,14 +336,20 @@ export default function RootLayout() {
 const styles = StyleSheet.create({
   appShell: {
     flex: 1,
-    backgroundColor: '#03070f'
+    backgroundColor: 'transparent'
   },
   backgroundImage: {
-    ...StyleSheet.absoluteFillObject
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.96
+  },
+  backgroundImageNative: {
+    position: 'absolute',
+    top: 0,
+    opacity: 0.96
   },
   backgroundOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(4, 9, 18, 0.24)'
+    backgroundColor: 'rgba(4, 9, 18, 0.02)'
   },
   loadingScreen: {
     flex: 1,
@@ -264,20 +358,33 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   headerMenuButton: {
-    marginRight: theme.spacing.md,
     borderWidth: 1,
-    borderColor: theme.colors.surfaceButton,
+    borderColor: theme.colors.neonBlueSoft,
     backgroundColor: theme.colors.surfaceSunken,
     borderRadius: 12,
     width: 44,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4
+    gap: 4,
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.34,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4
   },
   headerBrandButton: {
-    marginLeft: theme.spacing.md,
-    paddingVertical: 4
+    borderWidth: 1,
+    borderColor: theme.colors.neonBlueSoft,
+    backgroundColor: theme.colors.surfaceSunken,
+    borderRadius: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4
   },
   headerPressed: {
     opacity: 0.9,
@@ -287,6 +394,10 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
     fontSize: 15,
     fontWeight: '700'
+  },
+  headerTitleLogo: {
+    width: 176,
+    height: 38
   },
   menuBar: {
     width: 16,

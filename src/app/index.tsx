@@ -71,6 +71,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start'
   },
   list: {
+    width: '100%',
+    maxWidth: 608,
+    alignSelf: 'center',
     gap: theme.spacing.md,
     alignItems: 'stretch'
   },

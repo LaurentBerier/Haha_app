@@ -75,20 +75,21 @@ export function ModeCard({ mode, onPress }: ModeCardProps) {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: theme.colors.surfaceRaised,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 1.6,
+    borderColor: theme.colors.neonBlueSoft,
     borderRadius: 12,
     padding: theme.spacing.sm + 1,
-    shadowColor: theme.colors.shadowMode,
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.24,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 2
+    elevation: 5
   },
   cardHistory: {
     backgroundColor: theme.colors.surface,
     borderStyle: 'dashed',
-    borderColor: theme.colors.border
+    borderColor: theme.colors.border,
+    shadowOpacity: 0.1
   },
   pressed: {
     opacity: 0.94,

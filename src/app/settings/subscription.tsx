@@ -427,6 +427,9 @@ export default function SubscriptionScreen() {
 const styles = StyleSheet.create({
   screen: {
     backgroundColor: theme.colors.background,
+    width: '100%',
+    maxWidth: 656,
+    alignSelf: 'center',
     padding: theme.spacing.lg,
     gap: theme.spacing.lg,
     minHeight: '100%'
@@ -435,12 +438,17 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start'
   },
   heroCard: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 1.7,
+    borderColor: theme.colors.neonRedSoft,
     borderRadius: 14,
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.lg,
-    gap: theme.spacing.xs
+    gap: theme.spacing.xs,
+    shadowColor: theme.colors.neonRed,
+    shadowOpacity: 0.26,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6
   },
   heroTitle: {
     color: theme.colors.textPrimary,
@@ -463,12 +471,20 @@ const styles = StyleSheet.create({
   },
   cancelButton: {
     marginTop: theme.spacing.sm,
+    width: '100%',
+    maxWidth: 240,
+    alignSelf: 'center',
     minHeight: 42,
     borderRadius: 10,
-    borderWidth: 1,
+    borderWidth: 1.7,
     borderColor: theme.colors.error,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    shadowColor: theme.colors.error,
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 5
   },
   cancelButtonLabel: {
     color: theme.colors.error,
@@ -544,15 +560,22 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceSunken
   },
   planCard: {
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 1.6,
+    borderColor: theme.colors.neonBlueSoft,
     borderRadius: 14,
     backgroundColor: theme.colors.surface,
     padding: theme.spacing.md,
-    gap: theme.spacing.xs
+    gap: theme.spacing.xs,
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5
   },
   planCardCurrent: {
-    borderColor: theme.colors.accent
+    borderColor: theme.colors.neonRedSoft,
+    shadowColor: theme.colors.neonRed,
+    shadowOpacity: 0.25
   },
   planHeader: {
     flexDirection: 'row',
@@ -581,13 +604,21 @@ const styles = StyleSheet.create({
   },
   planCta: {
     marginTop: theme.spacing.sm,
+    width: '100%',
+    maxWidth: 240,
+    alignSelf: 'center',
     minHeight: 42,
     borderRadius: 10,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderWidth: 1.7,
+    borderColor: theme.colors.neonBlue,
     backgroundColor: theme.colors.surfaceSunken,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.42,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6
   },
   planCtaLabel: {
     color: theme.colors.textPrimary,
