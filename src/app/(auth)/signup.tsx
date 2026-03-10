@@ -14,6 +14,20 @@ export default function SignupScreen() {
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [showVerifyMessage, setShowVerifyMessage] = useState(false);
 
+  const formatAuthError = (error: unknown, fallback: string): string => {
+    if (error instanceof Error) {
+      const message = error.message.trim();
+      if (/network request failed|failed to fetch/i.test(message)) {
+        return "Connexion au service d'auth impossible. Vérifie la connexion internet et la config Supabase (URL + clé publique).";
+      }
+      if (message) {
+        return message;
+      }
+    }
+
+    return fallback;
+  };
+
   useEffect(() => {
     const checkAppleAvailability = async () => {
       const available = await AppleAuthentication.isAvailableAsync();
@@ -41,7 +55,8 @@ export default function SignupScreen() {
         setShowVerifyMessage(true);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Impossible de créer le compte.';
+      console.error('[Signup] signUpWithEmail failed', err);
+      const message = formatAuthError(err, 'Impossible de créer le compte.');
       setError(message);
     } finally {
       setIsSubmitting(false);
@@ -56,7 +71,8 @@ export default function SignupScreen() {
       await signInWithApple();
       router.replace('/');
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Connexion Apple impossible.';
+      console.error('[Signup] signInWithApple failed', err);
+      const message = formatAuthError(err, 'Connexion Apple impossible.');
       setError(message);
     } finally {
       setIsSubmitting(false);

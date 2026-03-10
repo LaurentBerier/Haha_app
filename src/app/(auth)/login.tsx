@@ -13,6 +13,20 @@ export default function LoginScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
 
+  const formatAuthError = (error: unknown, fallback: string): string => {
+    if (error instanceof Error) {
+      const message = error.message.trim();
+      if (/network request failed|failed to fetch/i.test(message)) {
+        return "Connexion au service d'auth impossible. Vérifie la connexion internet et la config Supabase (URL + clé publique).";
+      }
+      if (message) {
+        return message;
+      }
+    }
+
+    return fallback;
+  };
+
   useEffect(() => {
     const checkAppleAvailability = async () => {
       const available = await AppleAuthentication.isAvailableAsync();
@@ -30,7 +44,8 @@ export default function LoginScreen() {
       await signInWithEmail(email.trim(), password);
       router.replace('/');
     } catch (err) {
-      const message = err instanceof Error ? err.message : t('loginError');
+      console.error('[Login] signInWithEmail failed', err);
+      const message = formatAuthError(err, t('loginError'));
       setError(message);
     } finally {
       setIsSubmitting(false);
@@ -45,7 +60,8 @@ export default function LoginScreen() {
       await signInWithApple();
       router.replace('/');
     } catch (err) {
-      const message = err instanceof Error ? err.message : t('loginAppleError');
+      console.error('[Login] signInWithApple failed', err);
+      const message = formatAuthError(err, t('loginAppleError'));
       setError(message);
     } finally {
       setIsSubmitting(false);

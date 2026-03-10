@@ -12,6 +12,7 @@ function assertNotContains(haystack: string, needle: string): void {
 
 const populatedProfile: UserProfile = {
   id: 'user-1',
+  preferredName: 'Laurent',
   age: 28,
   sex: 'female',
   relationshipStatus: 'single',
@@ -23,6 +24,7 @@ const populatedProfile: UserProfile = {
 
 const promptWithProfile = buildSystemPrompt('radar-attitude', populatedProfile);
 assertContains(promptWithProfile, '## PROFIL UTILISATEUR');
+assertContains(promptWithProfile, "- Appelle l'utilisateur par ce prénom : Laurent");
 assertContains(promptWithProfile, '- Âge approximatif : 28 ans');
 assertContains(promptWithProfile, '- Genre : Femme');
 assertContains(promptWithProfile, '- Statut : Célibataire');
@@ -31,6 +33,7 @@ assertContains(promptWithProfile, '- Intérêts : Humour, Musique');
 
 const emptyProfile: UserProfile = {
   id: 'user-2',
+  preferredName: null,
   age: null,
   sex: null,
   relationshipStatus: null,

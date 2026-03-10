@@ -67,6 +67,7 @@ export function useChat(conversationId: string) {
   const incrementUsage = useStore((state) => state.incrementUsage);
   const updateConversation = useStore((state) => state.updateConversation);
   const userProfile = useStore((state) => state.userProfile);
+  const sessionDisplayName = useStore((state) => state.session?.user.displayName ?? null);
   const artists = useStore((state) => state.artists);
 
   const messages = useStore(
@@ -349,7 +350,8 @@ export function useChat(conversationId: string) {
         currentConversation.artistId,
         modeId,
         latestProfile,
-        languageForTurn
+        languageForTurn,
+        sessionDisplayName
       );
 
     queueRef.current.push({

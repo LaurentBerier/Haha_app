@@ -15,6 +15,7 @@ interface ProfileRow {
 function toUserProfile(row: ProfileRow): UserProfile {
   return {
     id: row.id,
+    preferredName: null,
     age: row.age,
     sex: row.sex,
     relationshipStatus: row.relationship_status,

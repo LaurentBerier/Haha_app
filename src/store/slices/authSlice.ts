@@ -34,10 +34,14 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
 
     try {
       const profile = await fetchProfile(session.user.id);
+      const preferredName =
+        typeof session.user.displayName === 'string' && session.user.displayName.trim().length > 0
+          ? session.user.displayName.trim()
+          : null;
       set({
         session,
         authStatus: 'authenticated',
-        userProfile: profile
+        userProfile: profile ? { ...profile, preferredName } : profile
       });
     } catch (error) {
       console.error('[authSlice] Failed to fetch profile for authenticated session', error);

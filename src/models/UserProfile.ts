@@ -23,6 +23,7 @@ export type HoroscopeSign =
 
 export interface UserProfile {
   id: string;
+  preferredName: string | null;
   age: number | null;
   sex: Sex | null;
   relationshipStatus: RelationshipStatus | null;

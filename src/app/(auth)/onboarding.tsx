@@ -8,12 +8,14 @@ import {
   SEX_OPTIONS
 } from '../../config/onboarding';
 import type { HoroscopeSign, RelationshipStatus, Sex } from '../../models/UserProfile';
+import { updatePreferredDisplayName } from '../../services/authService';
 import { completeOnboarding, skipOnboarding } from '../../services/profileService';
 import { t } from '../../i18n';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 
 type OnboardingAnswers = {
+  preferredName: string | null;
   age: number | null;
   sex: Sex | null;
   relationshipStatus: RelationshipStatus | null;
@@ -21,20 +23,33 @@ type OnboardingAnswers = {
   interests: string[];
 };
 
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 6;
+
+function normalizePreferredName(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.slice(0, 40);
+}
 
 export default function OnboardingScreen() {
   const userId = useStore((state) => state.session?.user.id ?? null);
   const userProfile = useStore((state) => state.userProfile);
   const setUserProfile = useStore((state) => state.setUserProfile);
+  const setSession = useStore((state) => state.setSession);
 
   const [step, setStep] = useState(0);
   const optionPulse = useState(() => new Animated.Value(1))[0];
+  const [preferredNameInput, setPreferredNameInput] = useState('');
+  const [preferredNameError, setPreferredNameError] = useState<string | null>(null);
   const [ageInput, setAgeInput] = useState('');
   const [ageError, setAgeError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [answers, setAnswers] = useState<OnboardingAnswers>({
+    preferredName: null,
     age: null,
     sex: null,
     relationshipStatus: null,
@@ -75,19 +90,25 @@ export default function OnboardingScreen() {
     setErrorMessage(null);
 
     if (step === 0) {
-      setAnswers((prev) => ({ ...prev, age: null }));
-      setAgeInput('');
+      setAnswers((prev) => ({ ...prev, preferredName: null }));
+      setPreferredNameInput('');
+      setPreferredNameError(null);
     }
     if (step === 1) {
-      setAnswers((prev) => ({ ...prev, sex: null }));
+      setAnswers((prev) => ({ ...prev, age: null }));
+      setAgeInput('');
+      setAgeError(null);
     }
     if (step === 2) {
-      setAnswers((prev) => ({ ...prev, relationshipStatus: null }));
+      setAnswers((prev) => ({ ...prev, sex: null }));
     }
     if (step === 3) {
-      setAnswers((prev) => ({ ...prev, horoscopeSign: null }));
+      setAnswers((prev) => ({ ...prev, relationshipStatus: null }));
     }
     if (step === 4) {
+      setAnswers((prev) => ({ ...prev, horoscopeSign: null }));
+    }
+    if (step === 5) {
       setAnswers((prev) => ({ ...prev, interests: [] }));
     }
 
@@ -135,6 +156,7 @@ export default function OnboardingScreen() {
     setIsSubmitting(true);
     setErrorMessage(null);
     try {
+      const preferredName = normalizePreferredName(preferredNameInput);
       const profile = await completeOnboarding(userId, {
         age: answers.age,
         sex: answers.sex,
@@ -148,10 +170,20 @@ export default function OnboardingScreen() {
         return;
       }
 
-      setUserProfile(profile);
+      try {
+        const refreshedSession = await updatePreferredDisplayName(preferredName);
+        await setSession(refreshedSession);
+      } catch (metadataError) {
+        console.error('[Onboarding] preferred display name update failed', metadataError);
+      }
+      setUserProfile({ ...profile, preferredName });
       router.replace('/');
-    } catch {
-      setErrorMessage("Une erreur réseau est survenue. Vérifie ta connexion et réessaie.");
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message.trim()
+          ? error.message.trim()
+          : "Une erreur réseau est survenue. Vérifie ta connexion et réessaie.";
+      setErrorMessage(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -184,6 +216,26 @@ export default function OnboardingScreen() {
     }
 
     setAgeError(t('onboardingAgeInvalidRange'));
+  };
+
+  const onPreferredNameNext = () => {
+    const normalized = normalizePreferredName(preferredNameInput);
+    if (!normalized) {
+      setPreferredNameError(null);
+      setAnswers((prev) => ({ ...prev, preferredName: null }));
+      goNext();
+      return;
+    }
+
+    if (normalized.length < 2) {
+      setPreferredNameError(t('onboardingPreferredNameTooShort'));
+      return;
+    }
+
+    setPreferredNameError(null);
+    setAnswers((prev) => ({ ...prev, preferredName: normalized }));
+    setPreferredNameInput(normalized);
+    goNext();
   };
 
   const animateOptionSelection = () => {
@@ -228,6 +280,34 @@ export default function OnboardingScreen() {
 
       {step === 0 ? (
         <View style={styles.stepBlock}>
+          <Text style={styles.question}>{t('onboardingPreferredNameQuestion')}</Text>
+          <TextInput
+            value={preferredNameInput}
+            onChangeText={(value) => {
+              setPreferredNameInput(value);
+              if (preferredNameError) {
+                setPreferredNameError(null);
+              }
+            }}
+            placeholder={t('onboardingPreferredNamePlaceholder')}
+            placeholderTextColor={theme.colors.textDisabled}
+            style={styles.input}
+            maxLength={40}
+            autoCapitalize="words"
+          />
+          {preferredNameError ? <Text style={styles.errorText}>{preferredNameError}</Text> : null}
+          <Pressable
+            style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
+            onPress={onPreferredNameNext}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? <ActivityIndicator color={theme.colors.textPrimary} /> : <Text style={styles.primaryLabel}>Continuer</Text>}
+          </Pressable>
+        </View>
+      ) : null}
+
+      {step === 1 ? (
+        <View style={styles.stepBlock}>
           <Text style={styles.question}>Quel est ton âge ?</Text>
           <TextInput
             value={ageInput}
@@ -253,7 +333,7 @@ export default function OnboardingScreen() {
         </View>
       ) : null}
 
-      {step === 1 ? (
+      {step === 2 ? (
         <View style={styles.stepBlock}>
           <Text style={styles.question}>Comment tu te identifies ?</Text>
           <Animated.View style={[styles.optionsWrap, { transform: [{ scale: optionPulse }] }]}>
@@ -278,7 +358,7 @@ export default function OnboardingScreen() {
         </View>
       ) : null}
 
-      {step === 2 ? (
+      {step === 3 ? (
         <View style={styles.stepBlock}>
           <Text style={styles.question}>Ton statut amoureux ?</Text>
           <Animated.View style={[styles.optionsWrap, { transform: [{ scale: optionPulse }] }]}>
@@ -306,7 +386,7 @@ export default function OnboardingScreen() {
         </View>
       ) : null}
 
-      {step === 3 ? (
+      {step === 4 ? (
         <View style={styles.stepBlock}>
           <Text style={styles.question}>Ton signe astrologique ?</Text>
           <Animated.View style={[styles.gridWrap, { transform: [{ scale: optionPulse }] }]}>
@@ -334,7 +414,7 @@ export default function OnboardingScreen() {
         </View>
       ) : null}
 
-      {step === 4 ? (
+      {step === 5 ? (
         <View style={styles.stepBlock}>
           <Text style={styles.question}>Tes centres d'intérêt ?</Text>
           <Animated.View style={[styles.optionsWrap, { transform: [{ scale: optionPulse }] }]}>

@@ -46,24 +46,46 @@ function resolvePromptLanguage(language: string | undefined): 'fr' | 'en' {
   return 'fr';
 }
 
-function buildUserProfileSection(profile: UserProfile | null | undefined, language: 'fr' | 'en'): string {
-  if (!profile) {
+function normalizePreferredName(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function buildUserProfileSection(
+  profile: UserProfile | null | undefined,
+  language: 'fr' | 'en',
+  preferredName?: string | null
+): string {
+  if (!profile && !preferredName) {
     return '';
   }
 
   const lines: string[] = [];
   const localizedSexLabel = language === 'en' ? sexLabelEn : sexLabel;
   const localizedStatusLabel = language === 'en' ? statusLabelEn : statusLabel;
+  const contactName = normalizePreferredName(preferredName ?? profile?.preferredName ?? null);
 
-  if (typeof profile.age === 'number') {
+  if (contactName) {
+    lines.push(
+      language === 'en'
+        ? `- Call the user by this name: ${contactName}`
+        : `- Appelle l'utilisateur par ce prénom : ${contactName}`
+    );
+  }
+
+  if (typeof profile?.age === 'number') {
     lines.push(language === 'en' ? `- Approximate age: ${profile.age}` : `- Âge approximatif : ${profile.age} ans`);
   }
 
-  if (profile.sex) {
+  if (profile?.sex) {
     lines.push(language === 'en' ? `- Gender: ${localizedSexLabel[profile.sex]}` : `- Genre : ${localizedSexLabel[profile.sex]}`);
   }
 
-  if (profile.relationshipStatus) {
+  if (profile?.relationshipStatus) {
     lines.push(
       language === 'en'
         ? `- Relationship status: ${localizedStatusLabel[profile.relationshipStatus]}`
@@ -71,11 +93,11 @@ function buildUserProfileSection(profile: UserProfile | null | undefined, langua
     );
   }
 
-  if (profile.horoscopeSign) {
+  if (profile?.horoscopeSign) {
     lines.push(language === 'en' ? `- Horoscope sign: ${profile.horoscopeSign}` : `- Signe astro : ${profile.horoscopeSign}`);
   }
 
-  if (profile.interests.length > 0) {
+  if (profile?.interests.length) {
     lines.push(language === 'en' ? `- Interests: ${profile.interests.join(', ')}` : `- Intérêts : ${profile.interests.join(', ')}`);
   }
 
@@ -94,12 +116,13 @@ export function buildSystemPromptForArtist(
   artistId: string,
   modeId: string,
   userProfile?: UserProfile | null,
-  language?: string
+  language?: string,
+  preferredName?: string | null
 ): string {
   const b = resolveArtistPromptBlueprint(artistId);
   const modePrompt = resolveArtistModePrompt(artistId, modeId);
   const promptLanguage = resolvePromptLanguage(language);
-  const userProfileSection = buildUserProfileSection(userProfile, promptLanguage);
+  const userProfileSection = buildUserProfileSection(userProfile, promptLanguage, preferredName);
 
   if (promptLanguage === 'en') {
     return `
@@ -184,9 +207,10 @@ export function buildSystemPrompt(
   modeId: string,
   userProfile?: UserProfile | null,
   language?: string,
-  artistId: string = ARTIST_IDS.CATHY_GAUTHIER
+  artistId: string = ARTIST_IDS.CATHY_GAUTHIER,
+  preferredName?: string | null
 ): string {
-  return buildSystemPromptForArtist(artistId, modeId, userProfile, language);
+  return buildSystemPromptForArtist(artistId, modeId, userProfile, language, preferredName);
 }
 
 function toHistoryContent(message: Message): string {

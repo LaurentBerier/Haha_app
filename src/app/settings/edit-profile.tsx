@@ -9,11 +9,13 @@ import {
   SEX_OPTIONS
 } from '../../config/onboarding';
 import type { HoroscopeSign, RelationshipStatus, Sex, UserProfile } from '../../models/UserProfile';
+import { updatePreferredDisplayName } from '../../services/authService';
 import { updateProfile } from '../../services/profileService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 
 interface DraftProfile {
+  preferredName: string;
   age: string;
   sex: Sex | null;
   relationshipStatus: RelationshipStatus | null;
@@ -21,8 +23,18 @@ interface DraftProfile {
   interests: string[];
 }
 
+function normalizePreferredName(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.slice(0, 40);
+}
+
 function fromProfile(profile: UserProfile | null): DraftProfile {
   return {
+    preferredName: profile?.preferredName ?? '',
     age: typeof profile?.age === 'number' ? String(profile.age) : '',
     sex: profile?.sex ?? null,
     relationshipStatus: profile?.relationshipStatus ?? null,
@@ -35,6 +47,7 @@ export default function EditProfileScreen() {
   const userId = useStore((state) => state.session?.user.id ?? null);
   const userProfile = useStore((state) => state.userProfile);
   const setUserProfile = useStore((state) => state.setUserProfile);
+  const setSession = useStore((state) => state.setSession);
   const [draft, setDraft] = useState<DraftProfile>(() => fromProfile(userProfile));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -45,6 +58,7 @@ export default function EditProfileScreen() {
     }
 
     return (
+      draft.preferredName.trim() !== (userProfile.preferredName ?? '') ||
       draft.age !== (userProfile.age === null ? '' : String(userProfile.age)) ||
       draft.sex !== userProfile.sex ||
       draft.relationshipStatus !== userProfile.relationshipStatus ||
@@ -67,6 +81,7 @@ export default function EditProfileScreen() {
       return;
     }
 
+    const preferredName = normalizePreferredName(draft.preferredName);
     const ageValue = Number.parseInt(draft.age, 10);
     const age = Number.isFinite(ageValue) && ageValue >= 13 && ageValue <= 120 ? ageValue : null;
 
@@ -86,10 +101,17 @@ export default function EditProfileScreen() {
         return;
       }
 
-      setUserProfile(updated);
+      try {
+        const refreshedSession = await updatePreferredDisplayName(preferredName);
+        await setSession(refreshedSession);
+      } catch (metadataError) {
+        console.error('[EditProfile] preferred display name update failed', metadataError);
+      }
+      setUserProfile({ ...updated, preferredName });
       router.back();
-    } catch {
-      setErrorMessage('Une erreur réseau est survenue. Réessaie.');
+    } catch (error) {
+      const message = error instanceof Error && error.message.trim() ? error.message.trim() : 'Une erreur réseau est survenue. Réessaie.';
+      setErrorMessage(message);
     } finally {
       setIsSubmitting(false);
     }
@@ -101,6 +123,19 @@ export default function EditProfileScreen() {
         <BackButton testID="settings-edit-profile-back" />
       </View>
       <Text style={styles.title}>Modifier mon profil</Text>
+
+      <View style={styles.group}>
+        <Text style={styles.label}>Comment Cathy doit t'appeler ?</Text>
+        <TextInput
+          value={draft.preferredName}
+          onChangeText={(value) => setDraft((prev) => ({ ...prev, preferredName: value }))}
+          placeholder="Ex: Laurent"
+          placeholderTextColor={theme.colors.textDisabled}
+          style={styles.input}
+          maxLength={40}
+          autoCapitalize="words"
+        />
+      </View>
 
       <View style={styles.group}>
         <Text style={styles.label}>Quel est ton âge ?</Text>
@@ -124,7 +159,7 @@ export default function EditProfileScreen() {
               onPress={() => setDraft((prev) => ({ ...prev, sex: option.value }))}
               disabled={isSubmitting}
             >
-              <Text style={styles.optionLabel}>{option.label}</Text>
+              <Text style={[styles.optionLabel, draft.sex === option.value && styles.optionLabelSelected]}>{option.label}</Text>
             </Pressable>
           ))}
         </View>
@@ -143,7 +178,14 @@ export default function EditProfileScreen() {
               onPress={() => setDraft((prev) => ({ ...prev, relationshipStatus: option.value }))}
               disabled={isSubmitting}
             >
-              <Text style={styles.optionLabel}>{option.label}</Text>
+              <Text
+                style={[
+                  styles.optionLabel,
+                  draft.relationshipStatus === option.value && styles.optionLabelSelected
+                ]}
+              >
+                {option.label}
+              </Text>
             </Pressable>
           ))}
         </View>
@@ -159,7 +201,9 @@ export default function EditProfileScreen() {
               onPress={() => setDraft((prev) => ({ ...prev, horoscopeSign: option.value }))}
               disabled={isSubmitting}
             >
-              <Text style={styles.optionLabel}>{option.label}</Text>
+              <Text style={[styles.optionLabel, draft.horoscopeSign === option.value && styles.optionLabelSelected]}>
+                {option.label}
+              </Text>
             </Pressable>
           ))}
         </View>
@@ -175,7 +219,9 @@ export default function EditProfileScreen() {
               onPress={() => toggleInterest(interest)}
               disabled={isSubmitting}
             >
-              <Text style={styles.optionLabel}>{interest}</Text>
+              <Text style={[styles.optionLabel, draft.interests.includes(interest) && styles.optionLabelSelected]}>
+                {interest}
+              </Text>
             </Pressable>
           ))}
         </View>
@@ -197,6 +243,9 @@ export default function EditProfileScreen() {
 const styles = StyleSheet.create({
   screen: {
     minHeight: '100%',
+    width: '100%',
+    maxWidth: 656,
+    alignSelf: 'center',
     backgroundColor: theme.colors.background,
     paddingHorizontal: theme.spacing.lg,
     paddingVertical: theme.spacing.xl,
@@ -220,8 +269,8 @@ const styles = StyleSheet.create({
   },
   input: {
     backgroundColor: theme.colors.surface,
-    borderColor: theme.colors.border,
-    borderWidth: 1,
+    borderColor: theme.colors.neonBlueSoft,
+    borderWidth: 1.3,
     borderRadius: 12,
     color: theme.colors.textPrimary,
     paddingHorizontal: theme.spacing.md,
@@ -238,8 +287,8 @@ const styles = StyleSheet.create({
   },
   optionButton: {
     backgroundColor: theme.colors.surface,
-    borderColor: theme.colors.border,
-    borderWidth: 1,
+    borderColor: theme.colors.neonBlueSoft,
+    borderWidth: 1.3,
     borderRadius: 12,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm
@@ -247,20 +296,29 @@ const styles = StyleSheet.create({
   gridButton: {
     width: '47%',
     backgroundColor: theme.colors.surface,
-    borderColor: theme.colors.border,
-    borderWidth: 1,
+    borderColor: theme.colors.neonBlueSoft,
+    borderWidth: 1.3,
     borderRadius: 12,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm
   },
   optionButtonSelected: {
-    borderColor: theme.colors.accent,
-    backgroundColor: theme.colors.surfaceRaised
+    borderColor: theme.colors.neonRed,
+    backgroundColor: theme.colors.surfaceRaised,
+    shadowColor: theme.colors.neonRed,
+    shadowOpacity: 0.42,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 5
   },
   optionLabel: {
     color: theme.colors.textPrimary,
     fontSize: 14,
     fontWeight: '600'
+  },
+  optionLabelSelected: {
+    color: theme.colors.neonRed,
+    fontWeight: '700'
   },
   errorText: {
     color: theme.colors.error,
@@ -268,12 +326,22 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     marginTop: theme.spacing.sm,
+    width: '100%',
+    maxWidth: 256,
+    alignSelf: 'center',
     backgroundColor: theme.colors.accent,
+    borderWidth: 1.7,
+    borderColor: theme.colors.neonBlue,
     borderRadius: 12,
     minHeight: 48,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: theme.spacing.md
+    paddingHorizontal: theme.spacing.md,
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6
   },
   primaryButtonDisabled: {
     opacity: 0.7

@@ -1,7 +1,8 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Linking from 'expo-linking';
+import { AUTH_CALLBACK_SCHEME_URL } from '../../config/constants';
 import { assertSupabaseConfigured, supabase } from '../../services/supabaseClient';
 import { theme } from '../../theme';
 
@@ -39,6 +40,52 @@ function getWebCurrentUrl(): string | null {
   return typeof window.location?.href === 'string' && window.location.href ? window.location.href : null;
 }
 
+function hasAuthPayload(url: URL): boolean {
+  const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''));
+  const keys = ['code', 'token_hash', 'type', 'access_token', 'refresh_token', 'error', 'error_description', 'flow'] as const;
+  return keys.some((key) => Boolean(url.searchParams.get(key) || hashParams.get(key)));
+}
+
+function shouldTryOpenNativeApp(url: URL): boolean {
+  if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof navigator === 'undefined') {
+    return false;
+  }
+
+  const userAgent = navigator.userAgent.toLowerCase();
+  const isMobileBrowser = /iphone|ipad|ipod|android/.test(userAgent);
+  if (!isMobileBrowser) {
+    return false;
+  }
+
+  if (!hasAuthPayload(url)) {
+    return false;
+  }
+
+  const alreadyOpenedInApp = url.searchParams.get('opened_in_app') === '1';
+  if (alreadyOpenedInApp) {
+    return false;
+  }
+
+  try {
+    const previous = window.sessionStorage.getItem('haha-auth-native-handoff-url');
+    if (previous === url.href) {
+      return false;
+    }
+  } catch {
+    // Ignore unavailable session storage.
+  }
+
+  return true;
+}
+
+function buildNativeCallbackUrl(url: URL): string {
+  const nextSearch = new URLSearchParams(url.searchParams);
+  nextSearch.set('opened_in_app', '1');
+  const search = nextSearch.toString();
+  const hash = url.hash || '';
+  return `${AUTH_CALLBACK_SCHEME_URL}${search ? `?${search}` : ''}${hash}`;
+}
+
 export default function AuthCallbackScreen() {
   const params = useLocalSearchParams<{
     code?: string;
@@ -64,6 +111,18 @@ export default function AuthCallbackScreen() {
 
         const incomingUrl = await Linking.getInitialURL();
         const callbackUrl = incomingUrl ?? getWebCurrentUrl();
+        if (Platform.OS === 'web' && callbackUrl) {
+          try {
+            const webUrl = new URL(callbackUrl);
+            if (shouldTryOpenNativeApp(webUrl)) {
+              const nativeUrl = buildNativeCallbackUrl(webUrl);
+              window.sessionStorage.setItem('haha-auth-native-handoff-url', webUrl.href);
+              window.location.assign(nativeUrl);
+            }
+          } catch {
+            // Keep normal callback flow as fallback.
+          }
+        }
         const url = callbackUrl ? new URL(callbackUrl) : null;
         const hash = new URLSearchParams(url?.hash.replace(/^#/, ''));
         const query = url?.searchParams ?? new URLSearchParams();

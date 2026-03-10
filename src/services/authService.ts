@@ -1,5 +1,6 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
+import { Platform } from 'react-native';
 import { API_BASE_URL, CLAUDE_PROXY_URL } from '../config/env';
 import type { AccountTypeId } from '../config/accountTypes';
 import { AUTH_CALLBACK_SCHEME_URL } from '../config/constants';
@@ -17,7 +18,33 @@ export interface UsageSummary {
   resetDate: string;
 }
 
+function isNetworkFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes('network request failed') || message.includes('failed to fetch');
+}
+
+async function withNetworkRetry<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!isNetworkFailure(error)) {
+      throw error;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    return operation();
+  }
+}
+
 function getAuthCallbackUrl(flow?: 'recovery'): string {
+  if (Platform.OS !== 'web') {
+    return flow ? `${AUTH_CALLBACK_SCHEME_URL}?flow=${flow}` : AUTH_CALLBACK_SCHEME_URL;
+  }
+
   if (
     typeof window !== 'undefined' &&
     typeof window.location?.origin === 'string' &&
@@ -71,7 +98,7 @@ function toAuthSession(session: Session | null): AuthSession {
 
 export async function signInWithEmail(email: string, password: string): Promise<AuthSession> {
   assertSupabaseConfigured();
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await withNetworkRetry(() => supabase.auth.signInWithPassword({ email, password }));
   if (error) {
     throw error;
   }
@@ -80,13 +107,15 @@ export async function signInWithEmail(email: string, password: string): Promise<
 
 export async function signUpWithEmail(email: string, password: string): Promise<SignUpResult> {
   assertSupabaseConfigured();
-  const { data, error } = await supabase.auth.signUp({
+  const { data, error } = await withNetworkRetry(() =>
+    supabase.auth.signUp({
     email,
     password,
     options: {
       emailRedirectTo: getAuthCallbackUrl()
     }
-  });
+    })
+  );
   if (error) {
     throw error;
   }
@@ -114,6 +143,40 @@ export async function updatePassword(password: string): Promise<void> {
   if (error) {
     throw error;
   }
+}
+
+function normalizeDisplayName(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.slice(0, 40);
+}
+
+export async function updatePreferredDisplayName(displayName: string | null): Promise<AuthSession> {
+  assertSupabaseConfigured();
+
+  const normalizedDisplayName = normalizeDisplayName(displayName);
+  const { error } = await supabase.auth.updateUser({
+    data: {
+      display_name: normalizedDisplayName
+    }
+  });
+  if (error) {
+    throw error;
+  }
+
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) {
+    throw sessionError;
+  }
+
+  return toAuthSession(sessionData.session);
 }
 
 export async function signInWithApple(): Promise<AuthSession> {

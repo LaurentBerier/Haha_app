@@ -3,11 +3,11 @@ import { createClient } from '@supabase/supabase-js';
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from '../config/env';
 
 export const SUPABASE_CONFIG = {
-  url: SUPABASE_URL,
-  anonKey: SUPABASE_ANON_KEY
+  url: SUPABASE_URL.trim(),
+  anonKey: SUPABASE_ANON_KEY.trim()
 } as const;
 
-const hasSupabaseConfig = Boolean(SUPABASE_URL.trim()) && Boolean(SUPABASE_ANON_KEY.trim());
+const hasSupabaseConfig = Boolean(SUPABASE_CONFIG.url) && Boolean(SUPABASE_CONFIG.anonKey);
 const fallbackUrl = 'https://placeholder.supabase.co';
 const fallbackAnonKey = 'placeholder-anon-key';
 
@@ -21,7 +21,7 @@ export function assertSupabaseConfigured(): void {
   );
 }
 
-export const supabase = createClient(hasSupabaseConfig ? SUPABASE_URL : fallbackUrl, hasSupabaseConfig ? SUPABASE_ANON_KEY : fallbackAnonKey, {
+export const supabase = createClient(hasSupabaseConfig ? SUPABASE_CONFIG.url : fallbackUrl, hasSupabaseConfig ? SUPABASE_CONFIG.anonKey : fallbackAnonKey, {
   auth: {
     storage: AsyncStorage,
     autoRefreshToken: true,
