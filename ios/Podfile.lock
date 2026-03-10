@@ -37,6 +37,8 @@ PODS:
     - ExpoModulesCore
   - ExpoAsset (11.1.7):
     - ExpoModulesCore
+  - ExpoHaptics (14.1.4):
+    - ExpoModulesCore
   - ExpoHead (5.1.11):
     - ExpoModulesCore
   - ExpoImagePicker (16.1.4):
@@ -1886,6 +1888,7 @@ DEPENDENCIES:
   - Expo (from `../node_modules/expo`)
   - ExpoAppleAuthentication (from `../node_modules/expo-apple-authentication/ios`)
   - ExpoAsset (from `../node_modules/expo-asset/ios`)
+  - ExpoHaptics (from `../node_modules/expo-haptics/ios`)
   - ExpoHead (from `../node_modules/expo-router/ios`)
   - ExpoImagePicker (from `../node_modules/expo-image-picker/ios`)
   - ExpoLinking (from `../node_modules/expo-linking/ios`)
@@ -1985,6 +1988,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-apple-authentication/ios"
   ExpoAsset:
     :path: "../node_modules/expo-asset/ios"
+  ExpoHaptics:
+    :path: "../node_modules/expo-haptics/ios"
   ExpoHead:
     :path: "../node_modules/expo-router/ios"
   ExpoImagePicker:
@@ -2149,6 +2154,7 @@ SPEC CHECKSUMS:
   Expo: 7e07803ccc34cdf144a0d51cc2684a60628b6593
   ExpoAppleAuthentication: 4d2e0c88a4463229760f1fbb9a937a810efb6863
   ExpoAsset: ef06e880126c375f580d4923fdd1cdf4ee6ee7d6
+  ExpoHaptics: 0ff6e0d83cd891178a306e548da1450249d54500
   ExpoHead: cfc12096c9a68cbe25de93a8bfc4781c7689467e
   ExpoImagePicker: 0963da31800c906e01c03e25d7c849f16ebf02a2
   ExpoLinking: 8f0aaf69aa56f832913030503b6263dc6f647f37
