@@ -9,7 +9,7 @@ Implemented in this repository:
 - Mobile app (`src/`) with Expo Router, Zustand, strict TypeScript.
 - Supabase auth integration (email/password + Apple Sign-In).
 - Auth gate and onboarding flow in app routing.
-- Settings flow (profile edit, language/display preferences, subscription plan management, sign out, account deletion).
+- Settings flow (profile edit, language preferences, motion preferences, subscription plan management, sign out, account deletion).
 - Unified app-style top bar (logo left, center title, hamburger right) across authenticated mobile/web app screens.
 - Universal back button on secondary routes (chat, mode selection, history, settings subpages).
 - Header logo remains a home shortcut to artist selection (`/`) and never replaces back behavior.
@@ -145,10 +145,11 @@ Behavior:
 
 - Unauthenticated users are redirected to login.
 - Authenticated users without completed/skipped onboarding are redirected to onboarding.
-- Onboarding completion writes profile data to Supabase.
+- Onboarding completion writes profile data to Supabase and saves the preferred display name used by Cathy.
 - Signup confirmation screen instructs users to check spam/junk for Ha-Ha.ai confirmation emails.
 - Password recovery links (`flow=recovery`) are handled by `/auth/callback` and routed to `/(auth)/reset-password`.
 - Expired/invalid callback links now show a recovery screen with explicit actions to either sign in (resume onboarding) or restart signup.
+- On native (iOS/Android), signup/reset redirects are forced to `hahaha://auth/callback`; web uses `/auth/callback`.
 - E2E-only bypass exists via `EXPO_PUBLIC_E2E_AUTH_BYPASS=true` (used in Detox scripts; keep disabled outside tests).
 - `Paramètres` (`/settings`) stays reachable from authenticated screens via header shortcut.
 - Header logo returns to artist selection (`/`) and hamburger menu includes account routes plus auth action (sign in/sign up/sign out depending on state).
@@ -157,8 +158,16 @@ Behavior:
 Supabase URL configuration should include:
 
 - `hahaha://auth/callback`
-- `https://www.ha-ha.ai/auth/callback`
-- `https://ha-ha.ai/auth/callback`
+- `hahaha://auth/callback?flow=recovery`
+- `https://haha-app-web.vercel.app/auth/callback`
+- `https://www.ha-ha.ai/auth/callback` (if used as app web entry)
+- `https://ha-ha.ai/auth/callback` (if used as app web entry)
+
+Supabase email templates should use:
+
+- `{{ .ConfirmationURL }}`
+
+Do not hardcode callback links with `{{ .SiteURL }}/auth/callback?...` in templates, otherwise mobile deep links can break.
 
 ## Account Types and Admin
 

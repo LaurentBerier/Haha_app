@@ -1,6 +1,6 @@
 # Phase 2 Status (Mobile + API)
 
-Last updated: **2026-03-08**
+Last updated: **2026-03-10**
 
 ## Scope
 
@@ -24,10 +24,13 @@ Core targets:
 - Apple Sign-In support
 - auth callback handling for signup and recovery flows
 - auth callback recovery UX for expired/invalid links (resume via login or restart signup)
+- native auth redirect hardening: iOS/Android signup/reset now force `hahaha://auth/callback`
+- web callback mobile-browser handoff to native app deep link when auth payload is present
 - signup confirmation copy includes spam/junk reminder for Ha-Ha.ai email delivery
 - auth gate + onboarding redirect in root routing
 - onboarding data persisted to `public.profiles`
 - onboarding UX polish:
+  - preferred display-name question added during onboarding (used by Cathy personalization)
   - visual step progress bar
   - explicit age-range validation message (13-120) before advancing
 - global app-style header (brand logo + hamburger) keeps settings/user-space reachable on authenticated app screens (web + mobile)
@@ -37,7 +40,8 @@ Core targets:
   - chat header center title reflects active mode (`emoji + mode label`)
 - settings flows:
   - edit profile
-  - language + display preferences
+  - preferred display-name editing
+  - language + motion preferences (dark mode is fixed)
   - subscription plan screen (`Gratuit`, `Régulier`, `Premium`) with plan perks and direct Stripe CTAs
   - current plan + next billing cycle display
   - cancellation at period end for active Stripe subscriptions
@@ -201,5 +205,10 @@ Required backend env:
 Supabase URL config must include:
 
 - `hahaha://auth/callback`
-- `https://www.ha-ha.ai/auth/callback`
-- `https://ha-ha.ai/auth/callback`
+- `hahaha://auth/callback?flow=recovery`
+- `https://haha-app-web.vercel.app/auth/callback` (or your app-web custom domain)
+- `https://www.ha-ha.ai/auth/callback` / `https://ha-ha.ai/auth/callback` if used as callback domains
+
+Supabase email templates must use:
+
+- `{{ .ConfirmationURL }}` (avoid hardcoded `{{ .SiteURL }}/auth/callback?...` links)

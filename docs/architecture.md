@@ -31,7 +31,7 @@ Supabase is the source of truth for:
   - `/(auth)/reset-password`
   - `/(auth)/onboarding`
 - Auth callback route:
-  - `/auth/callback` (handles signup + recovery links, detects expired/invalid links, and renders resume/restart actions)
+  - `/auth/callback` (handles signup + recovery links, detects expired/invalid links, renders resume/restart actions, and performs web-to-native auth-link handoff on mobile browsers)
 - Main app routes:
   - `/`
   - `/mode-select/[artistId]`
@@ -76,6 +76,7 @@ Store-level account isolation:
   - `getStoredSession`
   - `refreshSession`
   - `onAuthStateChange`
+  - native auth redirects are forced to `hahaha://auth/callback`; web redirects use `/auth/callback`
 - `profileService.ts`: fetch/update profile, onboarding complete/skip
 - `claudeApiService.ts`: proxy calls with Bearer token
 - `personalityEngineService.ts`: prompt generation + profile personalization
@@ -190,12 +191,14 @@ Signup confirmation UX:
 - callback route handles stale links without dead-end loops by offering:
   - sign in to resume onboarding
   - restart signup
+- onboarding and profile edit let the user set a preferred name used in personalized prompts
 
 ### Profile (`src/models/UserProfile.ts`)
 
 `UserProfile` fields:
 
 - `id`
+- `preferredName`
 - `age`
 - `sex`
 - `relationshipStatus`
@@ -234,12 +237,16 @@ Persisted locally:
 - conversations
 - messages
 - active conversation id
-- UI preferences (`language`, `displayMode`, `reduceMotion`)
+- UI preferences (`language`, `reduceMotion`)
 
 Not persisted locally:
 
 - Supabase auth session (managed by Supabase SDK)
 - server-sourced account type truth
+
+Display mode note:
+
+- app visual mode is intentionally dark-only; `displayMode` remains a compatibility field in store but is fixed to `dark`
 
 ## Prompt Personalization
 

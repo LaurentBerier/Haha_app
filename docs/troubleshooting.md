@@ -29,10 +29,14 @@ Checklist in Supabase `Authentication -> URL Configuration`:
 - Site URL set to your canonical web domain (for web)
 - Redirect URLs include:
   - `hahaha://auth/callback`
-  - `https://www.ha-ha.ai/auth/callback`
-  - `https://ha-ha.ai/auth/callback`
+  - `hahaha://auth/callback?flow=recovery`
+  - `https://haha-app-web.vercel.app/auth/callback` (or your app-web custom domain)
+  - `https://www.ha-ha.ai/auth/callback` / `https://ha-ha.ai/auth/callback` only if used as callback domains
 
-Also ensure the email template uses `{{ .ConfirmationURL }}`.
+Email template requirement (critical):
+
+- Use `{{ .ConfirmationURL }}` for confirmation/reset links.
+- Do not build links manually with `{{ .SiteURL }}/auth/callback?token_hash=...`.
 
 User guidance:
 
@@ -40,6 +44,11 @@ User guidance:
 - If callback opens with an expired/invalid link, the app now shows recovery actions:
   - `Se connecter pour reprendre`
   - `Recommencer l'inscription`
+
+Validation tip:
+
+- In the received email link, confirm `redirect_to=` points to `hahaha://auth/callback` (URL-encoded).
+- If not, update template/config and send a brand new confirmation email.
 
 ## 3) Password reset link opens but does not reach reset screen
 
@@ -67,6 +76,10 @@ Fix:
 - App must use publishable/anon key only
 - URL must match `https://<project-ref>.supabase.co`
 - rebuild app after env update
+
+Important scope:
+
+- `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` are app/env vars (Expo local + web build), not backend-only Vercel secrets.
 
 ## 5) Device build cannot connect to development server
 

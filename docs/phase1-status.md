@@ -6,7 +6,7 @@
 - Original MVP scope (single-artist chat) delivered
 - Current execution tracking moved to `docs/phase2-status.md`
 
-## Current State (2026-03-08)
+## Current State (2026-03-10)
 
 Implemented in this repository:
 
@@ -19,10 +19,12 @@ Implemented in this repository:
   - login, signup, forgot-password, reset-password, onboarding, callback
 - Signup confirmation UX now explicitly instructs users to check spam/junk for Ha-Ha.ai confirmation email
 - Auth callback now handles expired/invalid links with recovery actions (resume via login or restart signup)
+- Native auth redirects now force `hahaha://auth/callback` on iOS/Android; web callback supports mobile handoff to app deep link
 - Onboarding persisted to `public.profiles`
 - Settings flows:
   - edit profile
-  - language and display preferences
+  - preferred display-name editing
+  - language and motion preferences (dark mode is fixed)
   - subscription plan screen with Stripe plan CTAs (regular/premium), current cycle, and cancel action
   - sign out
   - account deletion
