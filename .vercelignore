@@ -1,6 +1,9 @@
-*
-!api
-!api/**
-!package.json
-!package-lock.json
-!vercel.json
+node_modules
+.git
+.expo
+dist
+dist-web
+.DS_Store
+.env
+.env.*
+!.env.example
