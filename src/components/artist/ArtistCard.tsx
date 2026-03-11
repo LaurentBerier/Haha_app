@@ -26,7 +26,12 @@ export function ArtistCard({ artist, locked, onStart }: ArtistCardProps) {
 
   return (
     <Pressable
-      style={({ pressed }) => [styles.card, pressed && !locked && styles.pressed, locked && styles.locked]}
+      style={({ pressed, hovered }) => [
+        styles.card,
+        hovered && !locked ? styles.hovered : null,
+        pressed && !locked && styles.pressed,
+        locked && styles.locked
+      ]}
       testID={`artist-start-${artist.id}`}
       accessibilityRole="button"
       accessibilityLabel={locked ? `${artist.name} ${availabilityLabel}` : `${ctaLabel}`}
@@ -73,6 +78,10 @@ const styles = StyleSheet.create({
   pressed: {
     transform: [{ scale: 0.985 }],
     opacity: 0.94
+  },
+  hovered: {
+    borderColor: theme.colors.neonBlue,
+    shadowOpacity: 0.4
   },
   locked: {
     opacity: 0.86

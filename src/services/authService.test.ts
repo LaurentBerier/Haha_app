@@ -30,6 +30,12 @@ jest.mock('expo-apple-authentication', () => ({
   }
 }));
 
+jest.mock('react-native', () => ({
+  Platform: {
+    OS: 'web'
+  }
+}));
+
 import { deleteAccount, getUsageSummary, signUpWithEmail } from './authService';
 
 describe('authService', () => {

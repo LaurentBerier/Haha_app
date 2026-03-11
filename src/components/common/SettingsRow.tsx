@@ -23,8 +23,9 @@ export function SettingsRow({
       testID={testID}
       onPress={onPress}
       disabled={!onPress}
-      style={({ pressed }) => [
+      style={({ pressed, hovered }) => [
         styles.row,
+        hovered && onPress ? styles.hovered : null,
         onPress && pressed ? styles.pressed : null,
         !onPress ? styles.disabled : null
       ]}
@@ -58,6 +59,10 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.94,
     transform: [{ scale: 0.995 }]
+  },
+  hovered: {
+    borderColor: theme.colors.neonBlue,
+    shadowOpacity: 0.3
   },
   disabled: {
     opacity: 1

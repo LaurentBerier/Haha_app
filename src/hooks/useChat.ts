@@ -8,12 +8,15 @@ import type { ChatSendPayload } from '../models/ChatSendPayload';
 import type { Message } from '../models/Message';
 import type { ClaudeContentBlock, ClaudeMessage } from '../services/claudeApiService';
 import { streamClaudeResponse } from '../services/claudeApiService';
+import { detectImageIntent, type ImageIntent } from '../services/imageIntentService';
 import { streamMockReply } from '../services/mockLlmService';
 import { buildSystemPromptForArtist, formatConversationHistory } from '../services/personalityEngineService';
+import { addScore } from '../services/scoreManager';
 import { useStore } from '../store/useStore';
 import { findConversationById } from '../utils/conversationUtils';
 import { shouldAutoSwitchToEnglish } from '../utils/languageDetection';
 import { generateId } from '../utils/generateId';
+import type { ScoreAction } from '../models/Gamification';
 
 interface StreamJob {
   artistMessageId: string;
@@ -25,6 +28,7 @@ interface StreamJob {
   language: string;
   modeFewShots: ReturnType<typeof getCathyModeFewShots>;
   modeId: string;
+  imageIntent: ImageIntent;
 }
 
 const EMPTY_MESSAGES: Message[] = [];
@@ -57,6 +61,63 @@ function createMockUserTurn(text: string, hasImage: boolean): string {
   }
 
   return text ? `${text}\n[Image jointe]` : '[Image jointe]';
+}
+
+function getImageIntentPromptPrefix(intent: ImageIntent): string {
+  switch (intent) {
+    case 'photo-roast':
+      return 'INTENT IMAGE: Tu recu une photo a roaster. Analyse visuelle + humour specifique.';
+    case 'meme-generator':
+      return 'INTENT IMAGE: Genere des captions courtes et partageables pour un meme.';
+    case 'screenshot-analyzer':
+      return 'INTENT IMAGE: Decode le screenshot, puis donne une lecture + une replique utile.';
+    default:
+      return '';
+  }
+}
+
+function detectBattleResult(content: string): 'light' | 'solid' | 'destruction' | null {
+  const normalized = content.toLowerCase();
+  if (normalized.includes('verdict: 💀') || normalized.includes('💀 destruction')) {
+    return 'destruction';
+  }
+  if (normalized.includes('verdict: 🎤') || normalized.includes('🎤 solide')) {
+    return 'solid';
+  }
+  if (normalized.includes('verdict: 🔥') || normalized.includes('🔥 leger')) {
+    return 'light';
+  }
+  return null;
+}
+
+function resolveScoreActions(modeId: string, imageIntent: ImageIntent, battleResult: 'light' | 'solid' | 'destruction' | null): ScoreAction[] {
+  const actions = new Set<ScoreAction>();
+
+  if (modeId === MODE_IDS.ROAST || modeId === MODE_IDS.COACH_BRUTAL) {
+    actions.add('roast_generated');
+  }
+
+  if (modeId === MODE_IDS.PHRASE_DU_JOUR || modeId === MODE_IDS.RELAX || modeId === MODE_IDS.VICTIME_DU_JOUR) {
+    actions.add('punchline_created');
+  }
+
+  if (modeId === MODE_IDS.VICTIME_DU_JOUR) {
+    actions.add('daily_participation');
+  }
+
+  if (imageIntent === 'photo-roast') {
+    actions.add('photo_roasted');
+  }
+
+  if (imageIntent === 'meme-generator') {
+    actions.add('meme_generated');
+  }
+
+  if (modeId === MODE_IDS.ROAST_BATTLE && battleResult === 'destruction') {
+    actions.add('battle_win');
+  }
+
+  return [...actions];
 }
 
 export function useChat(conversationId: string) {
@@ -131,7 +192,8 @@ export function useChat(conversationId: string) {
         history,
         language,
         modeFewShots,
-        modeId
+        modeId,
+        imageIntent
       } = nextJob;
       const jobConversationId = conversationId;
       isStreamingRef.current = true;
@@ -205,12 +267,34 @@ export function useChat(conversationId: string) {
           resetStreamState();
           return;
         }
+        const latestMessages = useStore.getState().messagesByConversation[jobConversationId]?.messages ?? [];
+        const latestArtistMessage = latestMessages.find((message) => message.id === artistMessageId);
+        const finalContent = latestArtistMessage?.content ?? '';
+        const battleResult = modeId === MODE_IDS.ROAST_BATTLE ? detectBattleResult(finalContent) : null;
+        const scoreActions = resolveScoreActions(modeId, imageIntent, battleResult);
+
         failedJobsRef.current.delete(artistMessageId);
         updateMessage(jobConversationId, artistMessageId, {
           status: 'complete',
-          metadata: { tokensUsed }
+          metadata: {
+            tokensUsed,
+            battleResult: battleResult ?? undefined
+          }
         });
         incrementUsage();
+        if (scoreActions.length > 0) {
+          void (async () => {
+            for (const action of scoreActions) {
+              try {
+                await addScore(action);
+              } catch (error) {
+                if (__DEV__) {
+                  console.warn('[useChat] score action failed', action, error);
+                }
+              }
+            }
+          })();
+        }
         resetStreamState();
         runNext();
       };
@@ -253,6 +337,7 @@ export function useChat(conversationId: string) {
           modeId,
           language,
           messages: [...history, claudeUserMessage],
+          imageIntent,
           onToken,
           onComplete,
           onError: failStream
@@ -344,15 +429,20 @@ export function useChat(conversationId: string) {
     addMessage(conversationId, userMessage);
     addMessage(conversationId, placeholder);
 
-      const modeId = currentConversation.modeId || MODE_IDS.DEFAULT;
+    const modeId = currentConversation.modeId || MODE_IDS.DEFAULT;
+    const imageIntent = hasImage ? detectImageIntent(modeId, trimmed.length > 0) : 'default';
+    const imageIntentPromptPrefix = getImageIntentPromptPrefix(imageIntent);
       const latestProfile = useStore.getState().userProfile ?? userProfile;
-      const systemPrompt = buildSystemPromptForArtist(
+      const baseSystemPrompt = buildSystemPromptForArtist(
         currentConversation.artistId,
         modeId,
         latestProfile,
         languageForTurn,
         sessionDisplayName
       );
+    const systemPrompt = imageIntentPromptPrefix
+      ? `${imageIntentPromptPrefix}\n\n${baseSystemPrompt}`
+      : baseSystemPrompt;
 
     queueRef.current.push({
       artistMessageId,
@@ -366,7 +456,8 @@ export function useChat(conversationId: string) {
       history: historyBeforeSend,
       language: languageForTurn,
       modeFewShots,
-      modeId
+      modeId,
+      imageIntent
     });
     runNext();
 

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { BackButton } from '../../components/common/BackButton';
 import { useToast } from '../../components/common/ToastProvider';
+import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import { getLanguage, t } from '../../i18n';
 import {
   cancelSubscription,
@@ -71,6 +72,7 @@ function formatBillingDate(iso: string | null): string | null {
 }
 
 export default function SubscriptionScreen() {
+  const headerHorizontalInset = useHeaderHorizontalInset();
   const session = useStore((state) => state.session);
   const user = session?.user ?? null;
 
@@ -310,10 +312,11 @@ export default function SubscriptionScreen() {
   const hasStripePlansConfigured = isCheckoutConfigured('stripe', 'regular') && isCheckoutConfigured('stripe', 'premium');
 
   return (
-    <ScrollView contentContainerStyle={styles.screen} testID="settings-subscription-screen">
-      <View style={styles.topRow}>
+    <View style={styles.root}>
+      <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
         <BackButton testID="settings-subscription-back" />
       </View>
+      <ScrollView contentContainerStyle={styles.screen} testID="settings-subscription-screen">
       <View style={styles.heroCard}>
         <Text style={styles.heroTitle}>{t('settingsSubscription')}</Text>
         <Text style={styles.heroLine}>{`${t('settingsCurrentSubscription')} ${currentPlanLabel}`}</Text>
@@ -420,11 +423,16 @@ export default function SubscriptionScreen() {
               </View>
             ))}
       </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: theme.colors.background
+  },
   screen: {
     backgroundColor: theme.colors.background,
     width: '100%',
@@ -435,7 +443,8 @@ const styles = StyleSheet.create({
     minHeight: '100%'
   },
   topRow: {
-    alignSelf: 'flex-start'
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs
   },
   heroCard: {
     borderWidth: 1.7,

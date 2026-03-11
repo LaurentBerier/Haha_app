@@ -16,7 +16,9 @@ import { E2E_AUTH_BYPASS } from '../config/env';
 import cleanBackground from '../../assets/branding/Clean_BG.jpg';
 import neonTitleMark from '../../assets/branding/logo-neon-Trans.png';
 
-type AccountMenuRoute = '/settings' | '/settings/edit-profile' | '/settings/subscription';
+type AccountMenuRoute = '/settings' | '/settings/edit-profile' | '/settings/subscription' | '/stats';
+const WEB_BACKGROUND_MIN_HEIGHT_VH = 100;
+const WEB_BACKGROUND_MAX_HEIGHT_VH = 170;
 
 export default function RootLayout() {
   useStorePersistence();
@@ -36,8 +38,9 @@ export default function RootLayout() {
   const showAccountMenu = isAuthenticated && !inAuthGroup;
 
   const accountMenuItems = [
-    { label: t('settingsTitle'), route: '/settings' as const },
     { label: t('settingsEditProfile'), route: '/settings/edit-profile' as const },
+    { label: t('settingsStats'), route: '/stats' as const },
+    { label: t('settingsTitle'), route: '/settings' as const },
     { label: t('settingsSubscription'), route: '/settings/subscription' as const }
   ];
   const authMenuLabel = isAuthenticated
@@ -49,7 +52,10 @@ export default function RootLayout() {
   const imageAspectRatio = 1200 / 1753;
   const viewportAspectRatio = viewportWidth / Math.max(viewportHeight, 1);
   const requiredFillHeightVh = (viewportAspectRatio / imageAspectRatio) * 100;
-  const webBackgroundHeightVh = Math.min(190, Math.max(100, requiredFillHeightVh));
+  const webBackgroundHeightVh = Math.max(
+    WEB_BACKGROUND_MIN_HEIGHT_VH,
+    Math.min(WEB_BACKGROUND_MAX_HEIGHT_VH, requiredFillHeightVh)
+  );
   const webBackgroundSize = `auto ${webBackgroundHeightVh.toFixed(1)}vh`;
   const headerContentMaxWidth = 680;
   const headerHorizontalInset =
@@ -165,7 +171,9 @@ export default function RootLayout() {
     const styleElement = existingStyle ?? document.createElement('style');
     styleElement.id = styleId;
     styleElement.textContent =
-      '#root div[style*="background-color: rgb(242, 242, 242)"]{background-color:transparent !important;}';
+      '#root div[style*="background-color: rgb(242, 242, 242)"]{background-color:transparent !important;}' +
+      '#root [role="button"],#root [tabindex="0"]{cursor:pointer;transition:filter .14s ease, transform .14s ease, box-shadow .14s ease;}' +
+      '#root [role="button"]:hover,#root [tabindex="0"]:hover{filter:brightness(1.08);}';
     if (!existingStyle) {
       document.head.appendChild(styleElement);
     }
@@ -236,9 +244,10 @@ export default function RootLayout() {
                     showAccountMenu ? (
                       <Pressable
                         onPress={navigateHome}
-                        style={({ pressed }) => [
+                        style={({ hovered, pressed }) => [
                           styles.headerBrandButton,
                           { marginLeft: headerHorizontalInset },
+                          hovered ? styles.headerHovered : null,
                           pressed ? styles.headerPressed : null
                         ]}
                         accessibilityRole="button"
@@ -251,9 +260,10 @@ export default function RootLayout() {
                     showAccountMenu ? (
                       <Pressable
                         onPress={toggleAccountMenu}
-                        style={({ pressed }) => [
+                        style={({ hovered, pressed }) => [
                           styles.headerMenuButton,
                           { marginRight: headerHorizontalInset },
+                          hovered ? styles.headerHovered : null,
                           pressed ? styles.headerPressed : null
                         ]}
                         accessibilityRole="button"
@@ -269,11 +279,19 @@ export default function RootLayout() {
                 <Stack.Screen name="(auth)" options={{ headerShown: false }} />
                 <Stack.Screen name="index" options={{ title: '' }} />
                 <Stack.Screen
-                  name="mode-select/[artistId]"
+                  name="mode-select/[artistId]/index"
                   options={{
                     title: t('modeSelectTitle'),
                     animation: 'fade_from_bottom',
                     animationDuration: 220
+                  }}
+                />
+                <Stack.Screen
+                  name="mode-select/[artistId]/[categoryId]"
+                  options={{
+                    title: t('modeSelectTitle'),
+                    animation: 'slide_from_right',
+                    animationDuration: 240
                   }}
                 />
                 <Stack.Screen
@@ -296,6 +314,7 @@ export default function RootLayout() {
                 <Stack.Screen name="settings/index" options={{ title: t('settingsTitle') }} />
                 <Stack.Screen name="settings/edit-profile" options={{ title: t('settingsEditProfile') }} />
                 <Stack.Screen name="settings/subscription" options={{ title: t('settingsSubscription') }} />
+                <Stack.Screen name="stats/index" options={{ title: t('settingsStats') }} />
               </Stack>
               {isAccountMenuOpen ? (
                 <View style={styles.menuOverlay}>
@@ -306,7 +325,12 @@ export default function RootLayout() {
                       <Pressable
                         key={item.route}
                         onPress={() => navigateFromAccountMenu(item.route)}
-                        style={styles.menuItem}
+                        style={({ hovered, pressed }) => [
+                          styles.menuItem,
+                          hovered ? styles.menuItemHovered : null,
+                          pressed ? styles.menuItemPressed : null
+                        ]}
+                        accessibilityRole="button"
                         testID={`account-menu-item-${item.route.replace(/\//g, '-')}`}
                       >
                         <Text style={styles.menuItemLabel}>{item.label}</Text>
@@ -315,7 +339,13 @@ export default function RootLayout() {
                     <View style={styles.menuDivider} />
                     <Pressable
                       onPress={() => void handleAuthMenuAction()}
-                      style={[styles.menuItem, isAuthenticated ? styles.menuItemDestructive : null]}
+                      style={({ hovered, pressed }) => [
+                        styles.menuItem,
+                        hovered ? styles.menuItemHovered : null,
+                        pressed ? styles.menuItemPressed : null,
+                        isAuthenticated ? styles.menuItemDestructive : null
+                      ]}
+                      accessibilityRole="button"
                       testID="account-menu-auth-action"
                     >
                       <Text style={[styles.menuItemLabel, isAuthenticated ? styles.menuItemLabelDestructive : null]}>
@@ -390,6 +420,14 @@ const styles = StyleSheet.create({
     opacity: 0.9,
     transform: [{ scale: 0.98 }]
   },
+  headerHovered: {
+    borderColor: theme.colors.neonBlue,
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.46,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 7
+  },
   headerTitle: {
     color: theme.colors.textPrimary,
     fontSize: 15,
@@ -451,6 +489,17 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceSunken,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm
+  },
+  menuItemHovered: {
+    borderColor: theme.colors.neonBlue,
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.34,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 5
+  },
+  menuItemPressed: {
+    opacity: 0.94
   },
   menuItemDestructive: {
     borderColor: theme.colors.error

@@ -10,13 +10,20 @@ interface ModeCardProps {
 
 const MODE_EMOJI_BY_ID: Record<string, string> = {
   [MODE_IDS.RADAR_ATTITUDE]: '🔥',
+  [MODE_IDS.RELAX]: '😌',
   [MODE_IDS.ROAST]: '😈',
+  [MODE_IDS.COACH_BRUTAL]: '💪',
+  [MODE_IDS.JE_CASSE_TOUT]: '💀',
   [MODE_IDS.COACH_DE_VIE]: '🧭',
   [MODE_IDS.PHRASE_DU_JOUR]: '💬',
   [MODE_IDS.MESSAGE_PERSONNALISE]: '🎁',
   [MODE_IDS.NUMERO_DE_SHOW]: '🎤',
   [MODE_IDS.HOROSCOPE]: '🔮',
-  [MODE_IDS.METEO]: '⛅'
+  [MODE_IDS.METEO]: '⛅',
+  [MODE_IDS.MEME_GENERATOR]: '😂',
+  [MODE_IDS.SCREENSHOT_ANALYZER]: '🔍',
+  [MODE_IDS.ROAST_BATTLE]: '⚔️',
+  [MODE_IDS.VICTIME_DU_JOUR]: '📅'
 };
 
 const MODE_EMOJI_FALLBACK_POOL = ['🎭', '🎯', '⚡', '🧨', '🗣️', '🧠', '🎬', '🤹', '🧩', '🎪'];
@@ -53,7 +60,12 @@ export function ModeCard({ mode, onPress }: ModeCardProps) {
       accessibilityRole="button"
       accessibilityLabel={mode.name}
       onPress={onPress}
-      style={({ pressed }) => [styles.card, isHistoryMode && styles.cardHistory, pressed && styles.pressed]}
+      style={({ pressed, hovered }) => [
+        styles.card,
+        isHistoryMode && styles.cardHistory,
+        hovered ? styles.hovered : null,
+        pressed && styles.pressed
+      ]}
     >
       <View style={styles.row}>
         <View style={[styles.emojiContainer, isHistoryMode && styles.emojiContainerHistory]}>
@@ -94,6 +106,10 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.94,
     transform: [{ scale: 0.995 }]
+  },
+  hovered: {
+    borderColor: theme.colors.neonBlue,
+    shadowOpacity: 0.34
   },
   row: {
     flexDirection: 'row',

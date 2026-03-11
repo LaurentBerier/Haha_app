@@ -14,14 +14,24 @@ Implemented in this repository:
 - Universal back button on secondary routes (chat, mode selection, history, settings subpages).
 - Header logo remains a home shortcut to artist selection (`/`) and never replaces back behavior.
 - Chat header title reflects the active mode label (for example `🔥 Radar d’Attitude`) instead of a static "Discussion" title.
+- Mode selection is now split into:
+  - a category hub (`2x2` animated buttons)
+  - a dedicated category page showing only its sub-modes/actions
+- Main category labels:
+  - `On Jase?`
+  - `Blagues & Gagets`
+  - `Jeux`
+  - `Profil`
 - Artist selection now distinguishes available vs upcoming artists with a clear CTA for available artists and "Disponible bientôt" cards for locked artists.
 - Paid-tier voice strategy currently targets ElevenLabs.
 - Subscription screen includes current plan, next billing cycle, and cancel-at-period-end for Stripe subscriptions.
 - User profile model and profile personalization injection in system prompts.
+- Gamification layer (score, titles, streak, mode-driven scoring) persisted in Zustand and synced with Supabase.
 - Claude proxy (`api/claude.js`) with JWT validation via Supabase service role.
 - Admin endpoint (`api/admin-account-type.js`) for account type assignment.
 - Account deletion endpoint (`api/delete-account.js`).
 - Usage summary endpoint (`api/usage-summary.js`) for monthly quota hydration.
+- Score endpoint (`api/score.js`) for gamification actions and stats hydration.
 - Payment webhooks:
   - RevenueCat (`api/payment-webhook.js`)
   - Stripe (`api/stripe-webhook.js`)
@@ -137,9 +147,12 @@ Routes:
 - `/(auth)/reset-password`
 - `/(auth)/onboarding`
 - `/auth/callback`
+- `/mode-select/[artistId]` (category hub)
+- `/mode-select/[artistId]/[categoryId]` (category detail)
 - `/settings`
 - `/settings/edit-profile`
 - `/settings/subscription`
+- `/stats`
 
 Behavior:
 
@@ -154,6 +167,7 @@ Behavior:
 - `Paramètres` (`/settings`) stays reachable from authenticated screens via header shortcut.
 - Header logo returns to artist selection (`/`) and hamburger menu includes account routes plus auth action (sign in/sign up/sign out depending on state).
 - Account-scoped local chat state is cleared automatically when session user changes, preventing cross-account conversation mixing on shared devices.
+- Web controls now include subtle mouse-hover feedback (glow/brightness) on interactive buttons for clearer affordance.
 
 Supabase URL configuration should include:
 
@@ -237,6 +251,8 @@ Endpoint:
 - `POST /api/stripe-webhook`
 - `GET /api/subscription-summary`
 - `POST /api/subscription-cancel`
+- `GET /api/score`
+- `POST /api/score`
 
 Notes:
 
@@ -245,9 +261,21 @@ Notes:
 - Maps product IDs to account types, updates `profiles.account_type_id`, and syncs JWT metadata.
 - Fails closed in every environment when `REVENUECAT_WEBHOOK_SECRET` is missing.
 - `usage-summary` returns `{ messagesUsed, messagesCap, resetDate }` for post-login quota hydration.
+- `score` returns/stores gamification stats:
+  - `GET /api/score` -> current counters (`score`, `roastsGenerated`, `punchlinesCreated`, `destructions`, `photosRoasted`, `memesGenerated`, `battleWins`, `dailyStreak`, `lastActiveDate`)
+  - `POST /api/score` -> applies one `action` (`roast_generated`, `punchline_created`, `meme_generated`, `battle_win`, `daily_participation`, `photo_roasted`) and returns updated counters.
 - Stripe webhook verifies `Stripe-Signature`, stores events in `public.payment_events`, maps plan IDs to tiers, and syncs account type claims.
 - Stripe subscription endpoints allow client UI to display next billing cycle and request cancellation at period end.
 - Subscription UI is plan-first (`Gratuit`, `Régulier`, `Premium`) and triggers Stripe checkout URLs directly for paid plans.
+- Chat UI now exposes a compact score bar (`🔥 Score | 🎤 Titre`) linking to `/stats`.
+- Mode browsing flow:
+  - Category hub (`/mode-select/[artistId]`) with `On Jase?`, `Blagues & Gagets`, `Jeux`, `Profil`
+  - Category detail (`/mode-select/[artistId]/[categoryId]`) with only relevant modes/actions
+- Mode catalog currently includes:
+  - `On Jase?`: `Radar d'Attitude`, `Roast`, `Relax`, `Coach brutal`, `Je casse tout`
+  - `Blagues & Gagets`: `Générateur de Meme`, `Analyste de Screenshots`, `Victime du Jour`, `Phrase du Jour`, `Numéro de Show`
+  - `Jeux`: `Bataille de Roast`
+  - `Profil`: profile edit + recent chat history shortcuts
 
 ## Run
 

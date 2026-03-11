@@ -4,6 +4,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { BackButton } from '../../components/common/BackButton';
 import { useToast } from '../../components/common/ToastProvider';
 import { SettingsRow } from '../../components/common/SettingsRow';
+import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import { t } from '../../i18n';
 import { deleteAccount, signOut } from '../../services/authService';
 import type { AppLanguage, ReduceMotionPreference } from '../../store/slices/uiSlice';
@@ -38,6 +39,7 @@ function initialsFromIdentity(value: string | null | undefined): string {
 }
 
 export default function SettingsScreen() {
+  const headerHorizontalInset = useHeaderHorizontalInset();
   const session = useStore((state) => state.session);
   const user = session?.user ?? null;
   const clearSession = useStore((state) => state.clearSession);
@@ -117,10 +119,11 @@ export default function SettingsScreen() {
   const isDeleteConfirmValid = deleteConfirmInput.trim().toUpperCase() === 'DELETE';
 
   return (
-    <ScrollView contentContainerStyle={styles.screen} testID="settings-screen">
-      <View style={styles.topRow}>
+    <View style={styles.root}>
+      <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
         <BackButton testID="settings-back" />
       </View>
+      <ScrollView contentContainerStyle={styles.screen} testID="settings-screen">
       <View style={styles.profileCard}>
         <View style={styles.avatar}>
           <Text style={styles.avatarLabel}>{initials}</Text>
@@ -260,11 +263,16 @@ export default function SettingsScreen() {
           <Text style={styles.blockerLabel}>{t('loadingA11y')}</Text>
         </Pressable>
       ) : null}
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: theme.colors.background
+  },
   screen: {
     width: '100%',
     maxWidth: 656,
@@ -275,7 +283,8 @@ const styles = StyleSheet.create({
     minHeight: '100%'
   },
   topRow: {
-    alignSelf: 'flex-start'
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs
   },
   profileCard: {
     borderWidth: 1.6,

@@ -7,6 +7,7 @@ export interface MessageMetadata {
   imageUri?: string;
   imageMediaType?: string;
   errorMessage?: string;
+  battleResult?: 'light' | 'solid' | 'destruction';
 }
 
 export interface Message {

@@ -1,4 +1,5 @@
 import { API_BASE_URL, CLAUDE_PROXY_URL } from '../config/env';
+import type { ImageIntent } from './imageIntentService';
 import { useStore } from '../store/useStore';
 
 export type ClaudeImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
@@ -29,6 +30,7 @@ export interface ClaudeStreamParams {
   artistId: string;
   modeId: string;
   language: string;
+  imageIntent?: ImageIntent;
   maxTokens?: number;
   temperature?: number;
   onToken: (token: string) => void;
@@ -196,7 +198,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
   };
 
   const runStream = async () => {
-    const { artistId, modeId, language, messages, maxTokens = 300, temperature = 0.9 } = params;
+    const { artistId, modeId, language, imageIntent, messages, maxTokens = 300, temperature = 0.9 } = params;
 
     if (proxyUrlCandidates.length === 0) {
       emitError(new Error('Missing Claude proxy URL. Set EXPO_PUBLIC_CLAUDE_PROXY_URL.'));
@@ -219,6 +221,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
           artistId,
           modeId,
           language,
+          imageIntent,
           messages
         }),
         signal: controller.signal

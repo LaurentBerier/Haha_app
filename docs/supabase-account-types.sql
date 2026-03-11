@@ -252,11 +252,213 @@ alter table public.profiles
 alter table public.profiles
   add column if not exists monthly_reset_at timestamptz not null default date_trunc('month', now());
 
+-- Gamification counters.
+alter table public.profiles
+  add column if not exists score integer not null default 0;
+
+alter table public.profiles
+  add column if not exists roasts_generated integer not null default 0;
+
+alter table public.profiles
+  add column if not exists punchlines_created integer not null default 0;
+
+alter table public.profiles
+  add column if not exists destructions integer not null default 0;
+
+alter table public.profiles
+  add column if not exists photos_roasted integer not null default 0;
+
+alter table public.profiles
+  add column if not exists memes_generated integer not null default 0;
+
+alter table public.profiles
+  add column if not exists battle_wins integer not null default 0;
+
+alter table public.profiles
+  add column if not exists daily_streak integer not null default 0;
+
+alter table public.profiles
+  add column if not exists last_active_date date;
+
 update public.profiles
 set monthly_message_count = coalesce(monthly_message_count, 0),
     monthly_reset_at = coalesce(monthly_reset_at, date_trunc('month', now()))
 where monthly_message_count is null
    or monthly_reset_at is null;
+
+-- Atomic score updates for gamification actions.
+create or replace function public.apply_score_action(
+  p_user_id uuid,
+  p_action text
+)
+returns table (
+  score integer,
+  roasts_generated integer,
+  punchlines_created integer,
+  destructions integer,
+  photos_roasted integer,
+  memes_generated integer,
+  battle_wins integer,
+  daily_streak integer,
+  last_active_date date
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_action text := trim(coalesce(p_action, ''));
+  v_today date := timezone('utc', now())::date;
+begin
+  if p_user_id is null then
+    raise exception 'user_id is required';
+  end if;
+
+  if v_action not in (
+    'roast_generated',
+    'punchline_created',
+    'meme_generated',
+    'battle_win',
+    'daily_participation',
+    'photo_roasted'
+  ) then
+    raise exception 'unsupported action';
+  end if;
+
+  if v_action = 'daily_participation' then
+    update public.profiles
+    set
+      score = score + case when last_active_date is distinct from v_today then 5 else 0 end,
+      daily_streak = case
+        when last_active_date = v_today then daily_streak
+        when last_active_date = (v_today - interval '1 day')::date then daily_streak + 1
+        else 1
+      end,
+      last_active_date = case
+        when last_active_date = v_today then last_active_date
+        else v_today
+      end
+    where id = p_user_id
+    returning
+      profiles.score,
+      profiles.roasts_generated,
+      profiles.punchlines_created,
+      profiles.destructions,
+      profiles.photos_roasted,
+      profiles.memes_generated,
+      profiles.battle_wins,
+      profiles.daily_streak,
+      profiles.last_active_date
+    into score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date;
+
+    return next;
+    return;
+  end if;
+
+  if v_action = 'roast_generated' then
+    update public.profiles
+    set score = score + 5,
+        roasts_generated = roasts_generated + 1
+    where id = p_user_id
+    returning
+      profiles.score,
+      profiles.roasts_generated,
+      profiles.punchlines_created,
+      profiles.destructions,
+      profiles.photos_roasted,
+      profiles.memes_generated,
+      profiles.battle_wins,
+      profiles.daily_streak,
+      profiles.last_active_date
+    into score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date;
+    return next;
+    return;
+  end if;
+
+  if v_action = 'punchline_created' then
+    update public.profiles
+    set score = score + 10,
+        punchlines_created = punchlines_created + 1
+    where id = p_user_id
+    returning
+      profiles.score,
+      profiles.roasts_generated,
+      profiles.punchlines_created,
+      profiles.destructions,
+      profiles.photos_roasted,
+      profiles.memes_generated,
+      profiles.battle_wins,
+      profiles.daily_streak,
+      profiles.last_active_date
+    into score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date;
+    return next;
+    return;
+  end if;
+
+  if v_action = 'meme_generated' then
+    update public.profiles
+    set score = score + 8,
+        memes_generated = memes_generated + 1
+    where id = p_user_id
+    returning
+      profiles.score,
+      profiles.roasts_generated,
+      profiles.punchlines_created,
+      profiles.destructions,
+      profiles.photos_roasted,
+      profiles.memes_generated,
+      profiles.battle_wins,
+      profiles.daily_streak,
+      profiles.last_active_date
+    into score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date;
+    return next;
+    return;
+  end if;
+
+  if v_action = 'photo_roasted' then
+    update public.profiles
+    set score = score + 5,
+        photos_roasted = photos_roasted + 1
+    where id = p_user_id
+    returning
+      profiles.score,
+      profiles.roasts_generated,
+      profiles.punchlines_created,
+      profiles.destructions,
+      profiles.photos_roasted,
+      profiles.memes_generated,
+      profiles.battle_wins,
+      profiles.daily_streak,
+      profiles.last_active_date
+    into score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date;
+    return next;
+    return;
+  end if;
+
+  -- battle_win
+  update public.profiles
+  set score = score + 25,
+      battle_wins = battle_wins + 1,
+      destructions = destructions + 1
+  where id = p_user_id
+  returning
+    profiles.score,
+    profiles.roasts_generated,
+    profiles.punchlines_created,
+    profiles.destructions,
+    profiles.photos_roasted,
+    profiles.memes_generated,
+    profiles.battle_wins,
+    profiles.daily_streak,
+    profiles.last_active_date
+  into score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date;
+
+  return next;
+end;
+$$;
+
+revoke all on function public.apply_score_action(uuid, text) from public;
+grant execute on function public.apply_score_action(uuid, text) to service_role;
 
 -- Optional RPC path to collapse quota check + rate-limit check + usage insert
 -- into one server round-trip (used by /api/claude when CLAUDE_LIMITS_RPC=true).
@@ -388,3 +590,4 @@ create policy "usage_events: service-role only"
 
 -- Verification query.
 -- select id, label, rank from public.account_types order by rank;
+-- select public.apply_score_action('<user-uuid>', 'roast_generated');

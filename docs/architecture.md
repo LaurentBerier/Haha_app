@@ -19,6 +19,7 @@ Supabase is the source of truth for:
 
 - Root layout (`_layout.tsx`): hydration, error boundary, auth/onboarding gate
 - Root layout also owns the global app top bar (brand logo left, screen title center, hamburger menu right) and account menu overlay for authenticated users.
+- Root layout adds web hover affordances on interactive controls (subtle glow/brightness feedback).
 - Root layout supports an E2E-only auth bypass gate via `EXPO_PUBLIC_E2E_AUTH_BYPASS=true`.
 - Home route (`/`) intentionally uses an empty center title for a cleaner artist-selection header.
 - Chat route dynamically sets the center title to active mode (`emoji + mode name`).
@@ -34,9 +35,11 @@ Supabase is the source of truth for:
   - `/auth/callback` (handles signup + recovery links, detects expired/invalid links, renders resume/restart actions, and performs web-to-native auth-link handoff on mobile browsers)
 - Main app routes:
   - `/`
-  - `/mode-select/[artistId]`
+  - `/mode-select/[artistId]` (category hub)
+  - `/mode-select/[artistId]/[categoryId]` (category detail)
   - `/chat/[conversationId]`
   - `/history/[artistId]`
+  - `/stats`
   - `/settings`
   - `/settings/edit-profile`
   - `/settings/subscription`
@@ -53,6 +56,7 @@ Active slices:
 - `conversationSlice`
 - `messageSlice`
 - `subscriptionSlice`
+- `gamificationSlice`
 - `uiSlice`
 - `usageSlice`
 - `userProfileSlice`
@@ -84,10 +88,20 @@ Store-level account isolation:
 - `subscriptionService.ts`: Stripe checkout launcher (regular/premium), subscription summary fetch, and cancel-at-period-end action
 - `persistenceService.ts`: local cache persistence (conversations/messages/ui selections)
 
+### Mode Selection UX
+
+- Category configuration: `src/config/modeCategories.ts`
+- Hub screen: `src/app/mode-select/[artistId]/index.tsx`
+  - 4 animated `2x2` category buttons
+  - labels: `On Jase?`, `Blagues & Gagets`, `Jeux`, `Profil`
+- Category screen: `src/app/mode-select/[artistId]/[categoryId].tsx`
+  - shows only sub-modes for selected category
+  - `Profil` category shows profile/history shortcuts instead of chat modes
+
 ### Hooks (`src/hooks`)
 
-- `useAuth`: bootstraps stored session, hydrates usage quota from `/api/usage-summary`, and subscribes to Supabase auth changes
-- `useChat`: queue-driven streaming orchestration, retry support, and route-safe stream cleanup
+- `useAuth`: bootstraps stored session, hydrates usage quota from `/api/usage-summary`, hydrates gamification stats from `/api/score`, and subscribes to Supabase auth changes
+- `useChat`: queue-driven streaming orchestration, retry support, image-intent routing, mode-based score triggers, and route-safe stream cleanup
 - `useStorePersistence`: hydration/debounced persistence
 
 ## Backend Endpoints (`api`)
@@ -153,6 +167,14 @@ Store-level account isolation:
   - `messagesUsed`
   - `messagesCap` (`null` for `admin`)
   - `resetDate` (UTC next month start)
+
+### `GET|POST /api/score` (`api/score.js`)
+
+- validates bearer token via Supabase admin API
+- `GET`: returns current gamification counters from `profiles`
+- `POST`: accepts `{ action }` and applies score/counter updates
+- uses SQL RPC `public.apply_score_action(...)` when available (atomic path)
+- includes fallback update path for older environments where RPC is not installed yet
 
 ### `GET /api/subscription-summary` (`api/subscription-summary.js`)
 
@@ -237,6 +259,7 @@ Persisted locally:
 - conversations
 - messages
 - active conversation id
+- gamification counters (score, streak, stats)
 - UI preferences (`language`, `reduceMotion`)
 
 Not persisted locally:
@@ -251,6 +274,8 @@ Display mode note:
 ## Prompt Personalization
 
 `buildSystemPromptForArtist(artistId, modeId, userProfile, language)` appends profile context only when profile data exists and adapts labels to FR/EN.
+
+For image-enabled chats, `imageIntent` (`photo-roast`, `meme-generator`, `screenshot-analyzer`) is passed to the backend so prompt assembly can specialize behavior even when the same mode is reused.
 
 ## Deployment Notes
 

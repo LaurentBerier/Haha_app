@@ -1,7 +1,9 @@
 import { useEffect, useMemo } from 'react';
 import { hasPermission } from '../config/accountTypes';
 import { getStoredSession, getUsageSummary, onAuthStateChange } from '../services/authService';
+import { getUserStats } from '../services/scoreManager';
 import { useStore } from '../store/useStore';
+import { EMPTY_GAMIFICATION_STATS } from '../models/Gamification';
 
 export function useAuth() {
   const session = useStore((state) => state.session);
@@ -14,6 +16,8 @@ export function useAuth() {
   const clearAccountScopedState = useStore((state) => state.clearAccountScopedState);
   const hydrateQuota = useStore((state) => state.hydrateQuota);
   const resetQuota = useStore((state) => state.resetQuota);
+  const hydrateGamification = useStore((state) => state.hydrateGamification);
+  const resetGamification = useStore((state) => state.resetGamification);
   const getCurrentUser = useStore((state) => state.getCurrentUser);
 
   useEffect(() => {
@@ -42,6 +46,7 @@ export function useAuth() {
             clearAccountScopedState();
           }
           resetQuota();
+          resetGamification();
           return;
         }
 
@@ -62,12 +67,24 @@ export function useAuth() {
             hydrateQuota(0, accountType);
           }
         }
+
+        try {
+          await getUserStats(storedSession.accessToken);
+          if (!isMounted) {
+            return;
+          }
+        } catch {
+          if (isMounted) {
+            hydrateGamification(EMPTY_GAMIFICATION_STATS);
+          }
+        }
       } catch {
         if (!isMounted) {
           return;
         }
         clearSession();
         resetQuota();
+        resetGamification();
       }
     };
 
@@ -88,6 +105,7 @@ export function useAuth() {
         clearUserProfile();
         clearAccountScopedState();
         resetQuota();
+        resetGamification();
         return;
       }
 
@@ -97,6 +115,7 @@ export function useAuth() {
         if (!nextSession) {
           clearAccountScopedState();
           resetQuota();
+          resetGamification();
           return;
         }
 
@@ -123,6 +142,17 @@ export function useAuth() {
             hydrateQuota(0, accountType);
           }
         }
+
+        try {
+          await getUserStats(nextSession.accessToken);
+          if (!isMounted) {
+            return;
+          }
+        } catch {
+          if (isMounted) {
+            hydrateGamification(EMPTY_GAMIFICATION_STATS);
+          }
+        }
       };
 
       syncSession().catch((error) => {
@@ -139,7 +169,9 @@ export function useAuth() {
     clearSession,
     clearUserProfile,
     hydrateQuota,
+    hydrateGamification,
     resetQuota,
+    resetGamification,
     setAuthStatus,
     setSession
   ]);

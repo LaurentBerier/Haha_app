@@ -3,9 +3,11 @@ import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 import { ChatInput } from '../../components/chat/ChatInput';
 import { MessageList } from '../../components/chat/MessageList';
+import { ScoreBar } from '../../components/chat/ScoreBar';
 import { StreamingIndicator } from '../../components/chat/StreamingIndicator';
 import { BackButton } from '../../components/common/BackButton';
 import { getModeById } from '../../config/modes';
+import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import { useChat } from '../../hooks/useChat';
 import { t } from '../../i18n';
 import { useStore } from '../../store/useStore';
@@ -39,6 +41,7 @@ export default function ChatScreen() {
   const params = useLocalSearchParams<{ conversationId: string }>();
   const conversationId = params.conversationId ?? '';
   const isValidConversation = conversationId.length > 0;
+  const headerHorizontalInset = useHeaderHorizontalInset();
 
   const sessionUser = useStore((state) => state.session?.user ?? null);
   const currentConversation = useStore(
@@ -69,10 +72,11 @@ export default function ChatScreen() {
       testID="chat-screen"
       keyboardVerticalOffset={88}
     >
+      <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
+        <BackButton testID="chat-back" />
+      </View>
       <View style={styles.container}>
-        <View style={styles.topRow}>
-          <BackButton testID="chat-back" />
-        </View>
+        {isValidConversation ? <ScoreBar /> : null}
         {isValidConversation ? (
           <MessageList
             messages={messages}
@@ -104,7 +108,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center'
   },
   topRow: {
-    paddingHorizontal: theme.spacing.md,
     paddingTop: theme.spacing.sm,
     paddingBottom: theme.spacing.xs
   },

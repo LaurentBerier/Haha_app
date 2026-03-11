@@ -6,42 +6,99 @@ export const modes: Mode[] = [
     "id": "radar-attitude",
     "name": "Radar d’Attitude",
     "description": "Tu racontes une situation, Cathy scanne l'attitude et choisit le ton parfait: analyse cash, conseil utile ou petite claque humoristique.",
-    "emoji": "🔥"
+    "emoji": "🔥",
+    "kind": "chat"
+  },
+  {
+    "id": "relax",
+    "name": "Relax",
+    "description": "Tu veux décompresser sans te faire bercer. Cathy te calme... à sa manière.",
+    "emoji": "😌",
+    "kind": "delire"
   },
   {
     "id": "roast",
     "name": "Roast",
-    "description": "Tu demandes le feu, Cathy sort le lance-flammes. Roast direct, créatif et sans coussin émotionnel."
+    "description": "Tu demandes le feu, Cathy sort le lance-flammes. Roast direct, créatif et sans coussin émotionnel.",
+    "kind": "chat"
+  },
+  {
+    "id": "coach-brutal",
+    "name": "Coach brutal",
+    "description": "Version coaching sans sucre ajouté: clarté, pression, et excuses refusées.",
+    "emoji": "💪",
+    "kind": "delire"
+  },
+  {
+    "id": "je-casse-tout",
+    "name": "Je casse tout",
+    "description": "Mode catharsis: tu vides ton sac, Cathy te donne un exutoire verbal digne d'un micro ouvert.",
+    "emoji": "💀",
+    "kind": "delire"
   },
   {
     "id": "coach-de-vie",
     "name": "Coach de vie",
-    "description": "Ton amie la plus franche: conseils concrets, vérité qui pique un peu, et zéro bullshit motivant."
+    "description": "Ton amie la plus franche: conseils concrets, vérité qui pique un peu, et zéro bullshit motivant.",
+    "kind": "chat"
   },
   {
     "id": "phrase-du-jour",
     "name": "Phrase du jour",
-    "description": "Une phrase punchée à envoyer, afficher ou méditer pendant 12 secondes avant de replonger."
+    "description": "Une phrase punchée à envoyer, afficher ou méditer pendant 12 secondes avant de replonger.",
+    "kind": "chat"
   },
   {
     "id": "message-personnalise",
     "name": "Message personnalisé",
-    "description": "Donne le contexte (fête, rupture, félicitations), Cathy écrit le message que t'oses pas envoyer toi-même."
+    "description": "Donne le contexte (fête, rupture, félicitations), Cathy écrit le message que t'oses pas envoyer toi-même.",
+    "kind": "chat"
   },
   {
     "id": "numero-de-show",
     "name": "Numéro de show",
-    "description": "Un mini-numéro privé: intro, montée, punchline. Comme un extrait de scène direct dans ton cell."
+    "description": "Un mini-numéro privé: intro, montée, punchline. Comme un extrait de scène direct dans ton cell.",
+    "kind": "chat"
   },
   {
     "id": "horoscope",
     "name": "Horoscope",
-    "description": "Les astres n'avaient rien demandé, mais Cathy lit ton destin avec panache et mauvaise foi assumée."
+    "description": "Les astres n'avaient rien demandé, mais Cathy lit ton destin avec panache et mauvaise foi assumée.",
+    "kind": "chat"
   },
   {
     "id": "meteo",
     "name": "Meteo",
-    "description": "La météo sans filtre: température, humeur du ciel et niveau de regret vestimentaire."
+    "description": "La météo sans filtre: température, humeur du ciel et niveau de regret vestimentaire.",
+    "kind": "chat"
+  },
+  {
+    "id": "meme-generator",
+    "name": "Générateur de Meme",
+    "description": "Tu envoies une image, Cathy te sort le caption qui fait rire avant même le deuxième scroll.",
+    "emoji": "😂",
+    "kind": "image"
+  },
+  {
+    "id": "screenshot-analyzer",
+    "name": "Analyste de Screenshots",
+    "description": "Capture d'écran à l'appui, Cathy lit entre les lignes et décortique le drama sans anesthésie.",
+    "emoji": "🔍",
+    "kind": "image"
+  },
+  {
+    "id": "roast-battle",
+    "name": "Bataille de Roast",
+    "description": "Tu lances un roast, Cathy répond et arbitre: léger, solide ou destruction totale.",
+    "emoji": "⚔️",
+    "kind": "battle"
+  },
+  {
+    "id": "victime-du-jour",
+    "name": "Victime du Jour",
+    "description": "Chaque jour, une cible. Tu balances ta punchline, Cathy juge la frappe.",
+    "emoji": "📅",
+    "kind": "daily"
   }
 ];
 

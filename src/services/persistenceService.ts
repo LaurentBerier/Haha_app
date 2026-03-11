@@ -53,7 +53,12 @@ function isValidMessageMetadata(value: unknown): boolean {
   const voiceUrlValid = value.voiceUrl === undefined || typeof value.voiceUrl === 'string';
   const imageUriValid = value.imageUri === undefined || typeof value.imageUri === 'string';
   const imageMediaTypeValid = value.imageMediaType === undefined || typeof value.imageMediaType === 'string';
-  return tokensUsedValid && voiceUrlValid && imageUriValid && imageMediaTypeValid;
+  const battleResultValid =
+    value.battleResult === undefined ||
+    value.battleResult === 'light' ||
+    value.battleResult === 'solid' ||
+    value.battleResult === 'destruction';
+  return tokensUsedValid && voiceUrlValid && imageUriValid && imageMediaTypeValid && battleResultValid;
 }
 
 function isValidMessage(value: unknown): boolean {
@@ -119,6 +124,34 @@ function isValidPreferences(value: unknown): boolean {
   return hasValidLanguage && hasValidDisplayMode && hasValidReduceMotion;
 }
 
+function isValidGamification(value: unknown): boolean {
+  if (value === undefined) {
+    return true;
+  }
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const numericKeys = [
+    'score',
+    'roastsGenerated',
+    'punchlinesCreated',
+    'destructions',
+    'photosRoasted',
+    'memesGenerated',
+    'battleWins',
+    'dailyStreak'
+  ] as const;
+
+  const hasValidNumbers = numericKeys.every((key) => {
+    const raw = value[key];
+    return raw === undefined || (typeof raw === 'number' && Number.isFinite(raw) && raw >= 0);
+  });
+
+  const lastActiveDateValid = value.lastActiveDate === undefined || typeof value.lastActiveDate === 'string' || value.lastActiveDate === null;
+  return hasValidNumbers && lastActiveDateValid;
+}
+
 function isValidSnapshot(data: unknown): data is PersistedStoreSnapshot {
   if (!isRecord(data)) {
     return false;
@@ -130,6 +163,7 @@ function isValidSnapshot(data: unknown): data is PersistedStoreSnapshot {
     isValidConversationsMap(data.conversations) &&
     isStringOrNull(data.activeConversationId) &&
     isValidMessagesMap(data.messagesByConversation) &&
+    isValidGamification(data.gamification) &&
     isValidPreferences(data.preferences)
   );
 }

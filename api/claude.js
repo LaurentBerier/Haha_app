@@ -35,9 +35,18 @@ const MODE_PROMPTS = {
   'radar-attitude': `L'utilisateur te decrit une situation ou un comportement.
 Analyse l'attitude de la personne decrite avec ton regard mordant et sans filtre.
 Donne un verdict specifique a la situation, comme sur scene.`,
+  relax: `L'utilisateur veut relacher la pression.
+Reponds avec humour calme, concret et utile.
+Garde un ton direct sans devenir agressive.`,
   roast: `L'utilisateur veut se faire roaster.
 Utilise exactement ce qu'il te dit pour le detruire avec humour.
 Sois creative, specifique, mordante et sans compliments caches.`,
+  'coach-brutal': `L'utilisateur veut une mise au point franche.
+Donne des actions simples, fermes, sans flatterie.
+Priorise clarte, execution et responsabilite.`,
+  'je-casse-tout': `L'utilisateur vide son sac.
+Canalise l'emotion en humour percutant mais constructif.
+Transforme le chaos en angle utile.`,
   horoscope: `L'utilisateur te donne un signe astro.
 Donne un horoscope completement bidon mais hilarant dans ton style.
 Sois specifique au signe et au theme quand il y en a un.`,
@@ -47,7 +56,31 @@ Ecris un message dans ton style avec ces details.`,
   'message-perso': `L'utilisateur veut un message personnalise pour quelqu'un.
 Extrait le prenom, l'age et le contexte de la demande quand possible.
 Ecris un message dans ton style avec ces details.`,
+  'meme-generator': `L'utilisateur envoie une image pour creer un meme.
+Propose 3 captions tres courtes, partageables et originales.
+Reste dans le style Cathy, sans texte inutile.`,
+  'screenshot-analyzer': `L'utilisateur envoie une capture d'ecran.
+Analyse les signaux sociaux et l'intention cachee.
+Termine avec une reponse suggeree en une phrase.`,
+  'roast-battle': `Tu participes a une bataille de roast.
+Reponds au roast de l'utilisateur puis termine par UN verdict unique:
+- "Verdict: 🔥 leger"
+- "Verdict: 🎤 solide"
+- "Verdict: 💀 destruction"`,
+  'victime-du-jour': `Mode quotidien: sujet impose.
+Aide l'utilisateur a formuler une punchline plus forte et plus precise.`,
   default: DEFAULT_MODE_PROMPT
+};
+const IMAGE_INTENT_PROMPTS = {
+  'photo-roast': `INTENT IMAGE:
+- Tu recu une photo a roaster.
+- Decris d'abord l'element marquant, puis livre le roast.`,
+  'meme-generator': `INTENT IMAGE:
+- Genere des captions courtes et partageables.
+- Evite les paragraphs; vise des lignes nettes.`,
+  'screenshot-analyzer': `INTENT IMAGE:
+- Decode le screenshot.
+- Donne une lecture + une reponse concrete a envoyer.`
 };
 const CATHY_BLUEPRINT = {
   identity: {
@@ -315,7 +348,8 @@ function normalizePromptContext(body) {
       ok: true,
       artistId: DEFAULT_ARTIST_ID,
       modeId: DEFAULT_MODE_ID,
-      language: 'fr-CA'
+      language: 'fr-CA',
+      imageIntent: null
     };
   }
 
@@ -328,12 +362,15 @@ function normalizePromptContext(body) {
   const modeId = rawModeId && rawModeId.length <= 80 ? rawModeId : DEFAULT_MODE_ID;
   const rawLanguage = typeof body.language === 'string' ? body.language.trim() : '';
   const language = rawLanguage && rawLanguage.length <= 24 ? rawLanguage : 'fr-CA';
+  const rawImageIntent = typeof body.imageIntent === 'string' ? body.imageIntent.trim() : '';
+  const imageIntent = rawImageIntent && IMAGE_INTENT_PROMPTS[rawImageIntent] ? rawImageIntent : null;
 
   return {
     ok: true,
     artistId: rawArtistId || DEFAULT_ARTIST_ID,
     modeId,
-    language
+    language,
+    imageIntent
   };
 }
 
@@ -427,6 +464,7 @@ function buildServerSystemPrompt(context, profile) {
   const artistId = typeof context.artistId === 'string' ? context.artistId : DEFAULT_ARTIST_ID;
   const isCathy = artistId === DEFAULT_ARTIST_ID;
   const modePrompt = isCathy ? MODE_PROMPTS[context.modeId] ?? DEFAULT_MODE_PROMPT : GENERIC_MODE_PROMPT;
+  const imageIntentPrompt = context.imageIntent ? IMAGE_INTENT_PROMPTS[context.imageIntent] ?? '' : '';
   const userProfileSection = buildUserProfileSection(profile, promptLanguage);
   const b = ARTIST_BLUEPRINTS[artistId] ?? CATHY_BLUEPRINT;
   const speechStyleLines = isCathy
@@ -477,6 +515,7 @@ ${b.thematicAnchors.map((theme) => `- ${theme}`).join('\n')}
 
 ## MODE ACTIF : ${context.modeId}
 ${modePrompt}
+${imageIntentPrompt ? `\n## CONTEXTE IMAGE\n${imageIntentPrompt}` : ''}
 
 ## GUARDRAILS
 INTERDITS ABSOLUS :

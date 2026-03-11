@@ -19,7 +19,11 @@ export function BackButton({ testID = 'universal-back' }: BackButtonProps) {
   return (
     <Pressable
       testID={testID}
-      style={styles.backButton}
+      style={({ hovered, pressed }) => [
+        styles.backButton,
+        hovered ? styles.backButtonHover : null,
+        pressed ? styles.backButtonPressed : null
+      ]}
       onPress={handleBack}
       accessibilityRole="button"
       accessibilityLabel="back"
@@ -39,6 +43,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.surface
+  },
+  backButtonHover: {
+    borderColor: theme.colors.neonBlueSoft,
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 3
+  },
+  backButtonPressed: {
+    opacity: 0.94
   },
   backText: {
     color: theme.colors.textPrimary,

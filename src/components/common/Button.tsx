@@ -17,7 +17,12 @@ export function Button({ label, onPress, disabled, testID }: ButtonProps) {
       android_ripple={{ color: 'rgba(255,255,255,0.12)', borderless: false }}
       onPress={onPress}
       disabled={disabled}
-      style={({ pressed }) => [styles.button, pressed && styles.pressed, disabled && styles.disabled]}
+      style={({ pressed, hovered }) => [
+        styles.button,
+        hovered && !disabled ? styles.hovered : null,
+        pressed && styles.pressed,
+        disabled && styles.disabled
+      ]}
     >
       <Text style={styles.label}>{label}</Text>
     </Pressable>
@@ -42,6 +47,10 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.9
+  },
+  hovered: {
+    borderColor: theme.colors.neonBlue,
+    shadowOpacity: 0.55
   },
   disabled: {
     opacity: 0.5

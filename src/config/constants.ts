@@ -14,12 +14,19 @@ export const ARTIST_IDS = {
 export const MODE_IDS = {
   DEFAULT: 'default',
   RADAR_ATTITUDE: 'radar-attitude',
+  RELAX: 'relax',
   ROAST: 'roast',
+  COACH_BRUTAL: 'coach-brutal',
+  JE_CASSE_TOUT: 'je-casse-tout',
   COACH_DE_VIE: 'coach-de-vie',
   PHRASE_DU_JOUR: 'phrase-du-jour',
   MESSAGE_PERSONNALISE: 'message-personnalise',
   NUMERO_DE_SHOW: 'numero-de-show',
   HOROSCOPE: 'horoscope',
   METEO: 'meteo',
+  MEME_GENERATOR: 'meme-generator',
+  SCREENSHOT_ANALYZER: 'screenshot-analyzer',
+  ROAST_BATTLE: 'roast-battle',
+  VICTIME_DU_JOUR: 'victime-du-jour',
   HISTORY: 'history'
 } as const;

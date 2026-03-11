@@ -2,6 +2,7 @@
 const { create } = require('zustand') as typeof import('zustand');
 import { MODE_IDS } from '../config/constants';
 import { setLanguage as setI18nLanguage } from '../i18n';
+import { EMPTY_GAMIFICATION_STATS } from '../models/Gamification';
 import type { Conversation } from '../models/Conversation';
 import type { PersistedStoreSnapshot } from '../models/Persistence';
 import type { Message, MessagePage } from '../models/Message';
@@ -9,6 +10,7 @@ import { createArtistAccessSlice, type ArtistAccessSlice } from './slices/artist
 import { createArtistSlice, type ArtistSlice } from './slices/artistSlice';
 import { createAuthSlice, type AuthSlice } from './slices/authSlice';
 import { createConversationSlice, type ConversationSlice } from './slices/conversationSlice';
+import { createGamificationSlice, type GamificationSlice } from './slices/gamificationSlice';
 import { createMessageSlice, type MessageSlice } from './slices/messageSlice';
 import { createSubscriptionSlice, type SubscriptionSlice } from './slices/subscriptionSlice';
 import { createUiSlice, type UiSlice } from './slices/uiSlice';
@@ -23,6 +25,7 @@ export type StoreState = ArtistSlice &
   SubscriptionSlice &
   ArtistAccessSlice &
   UsageSlice &
+  GamificationSlice &
   UiSlice & {
     hasHydrated: boolean;
     persistedOwnerUserId: string | null;
@@ -98,6 +101,7 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createSubscriptionSlice(...a),
   ...createArtistAccessSlice(...a),
   ...createUsageSlice(...a),
+  ...createGamificationSlice(...a),
   ...createUiSlice(...a),
   hasHydrated: false,
   persistedOwnerUserId: null,
@@ -118,6 +122,8 @@ export const useStore = create<StoreState>()((...a) => ({
       conversations: normalizeConversations(snapshot.conversations),
       activeConversationId: snapshot.activeConversationId,
       messagesByConversation: normalizeMessagesByConversation(snapshot.messagesByConversation),
+      ...EMPTY_GAMIFICATION_STATS,
+      ...(snapshot.gamification ?? {}),
       language: snapshot.preferences?.language ? nextLanguage : current.language,
       displayMode: snapshot.preferences?.displayMode ? nextDisplayMode : 'dark',
       reduceMotion: snapshot.preferences?.reduceMotion ? nextReduceMotion : current.reduceMotion
@@ -129,7 +135,8 @@ export const useStore = create<StoreState>()((...a) => ({
       selectedArtistId: null,
       conversations: {},
       activeConversationId: null,
-      messagesByConversation: {}
+      messagesByConversation: {},
+      ...EMPTY_GAMIFICATION_STATS
     }),
   markHydrated: () => a[0]({ hasHydrated: true })
 }));
@@ -153,6 +160,17 @@ export function selectPersistedSnapshot(state: StoreState): PersistedStoreSnapsh
     conversations: state.conversations,
     activeConversationId: state.activeConversationId,
     messagesByConversation,
+    gamification: {
+      score: state.score,
+      roastsGenerated: state.roastsGenerated,
+      punchlinesCreated: state.punchlinesCreated,
+      destructions: state.destructions,
+      photosRoasted: state.photosRoasted,
+      memesGenerated: state.memesGenerated,
+      battleWins: state.battleWins,
+      dailyStreak: state.dailyStreak,
+      lastActiveDate: state.lastActiveDate
+    },
     preferences: {
       language: state.language,
       displayMode: state.displayMode,

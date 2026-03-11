@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useMemo } from 'react';
 import { Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import { BackButton } from '../../components/common/BackButton';
+import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import { getModeById } from '../../config/modes';
 import { t } from '../../i18n';
 import type { Conversation } from '../../models/Conversation';
@@ -87,6 +88,7 @@ function truncate(text: string, maxLength: number): string {
 export default function HistoryScreen() {
   const params = useLocalSearchParams<{ artistId: string }>();
   const artistId = params.artistId ?? '';
+  const headerHorizontalInset = useHeaderHorizontalInset();
 
   const artists = useStore((state) => state.artists);
   const conversationsByArtist = useStore((state) => state.conversations);
@@ -148,7 +150,7 @@ export default function HistoryScreen() {
 
   return (
     <View style={styles.screen} testID="history-screen">
-      <View style={styles.topRow}>
+      <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
         <BackButton testID="history-back" />
         <View style={styles.headerWrap}>
           <Text style={styles.subtitle}>{artist.name}</Text>
@@ -191,12 +193,12 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: theme.colors.background,
-    paddingHorizontal: theme.spacing.md,
     paddingTop: theme.spacing.sm
   },
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingBottom: theme.spacing.xs,
     gap: theme.spacing.sm
   },
   headerWrap: {
@@ -213,6 +215,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center'
   },
   listContent: {
+    paddingHorizontal: theme.spacing.md,
     paddingTop: theme.spacing.sm,
     paddingBottom: theme.spacing.xl * 2
   },

@@ -8,6 +8,7 @@ import {
   RELATIONSHIP_OPTIONS,
   SEX_OPTIONS
 } from '../../config/onboarding';
+import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import type { HoroscopeSign, RelationshipStatus, Sex, UserProfile } from '../../models/UserProfile';
 import { updatePreferredDisplayName } from '../../services/authService';
 import { updateProfile } from '../../services/profileService';
@@ -44,6 +45,7 @@ function fromProfile(profile: UserProfile | null): DraftProfile {
 }
 
 export default function EditProfileScreen() {
+  const headerHorizontalInset = useHeaderHorizontalInset();
   const userId = useStore((state) => state.session?.user.id ?? null);
   const userProfile = useStore((state) => state.userProfile);
   const setUserProfile = useStore((state) => state.setUserProfile);
@@ -118,10 +120,11 @@ export default function EditProfileScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.screen} testID="settings-edit-profile-screen">
-      <View style={styles.topRow}>
+    <View style={styles.root}>
+      <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
         <BackButton testID="settings-edit-profile-back" />
       </View>
+      <ScrollView contentContainerStyle={styles.screen} testID="settings-edit-profile-screen">
       <Text style={styles.title}>Modifier mon profil</Text>
 
       <View style={styles.group}>
@@ -236,11 +239,16 @@ export default function EditProfileScreen() {
       >
         <Text style={styles.primaryLabel}>{isSubmitting ? 'Enregistrement...' : 'Enregistrer'}</Text>
       </Pressable>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: theme.colors.background
+  },
   screen: {
     minHeight: '100%',
     width: '100%',
@@ -252,7 +260,8 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md
   },
   topRow: {
-    alignSelf: 'flex-start'
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs
   },
   title: {
     color: theme.colors.textPrimary,

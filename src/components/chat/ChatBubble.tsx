@@ -23,6 +23,15 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
   const hasText = message.content.trim().length > 0;
   const shouldShowPlaceholder = !hasText && !imageUri;
   const senderName = isUser ? userDisplayName : artistDisplayName;
+  const battleResult = message.metadata?.battleResult;
+  const battleBadgeLabel =
+    battleResult === 'destruction'
+      ? '💀 Destruction'
+      : battleResult === 'solid'
+        ? '🎤 Solide'
+        : battleResult === 'light'
+          ? '🔥 Léger'
+          : null;
 
   useEffect(() => {
     Animated.parallel([
@@ -68,6 +77,12 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
             <Text style={styles.content} testID={`chat-bubble-content-${message.id}`}>
               {hasText ? message.content : '...'}
             </Text>
+          ) : null}
+
+          {battleBadgeLabel ? (
+            <View style={styles.battleBadge} testID={`chat-bubble-battle-${message.id}`}>
+              <Text style={styles.battleBadgeLabel}>{battleBadgeLabel}</Text>
+            </View>
           ) : null}
 
           {message.status === 'error' ? (
@@ -158,6 +173,21 @@ const styles = StyleSheet.create({
     color: theme.colors.error,
     marginTop: theme.spacing.xs,
     fontSize: 11
+  },
+  battleBadge: {
+    marginTop: theme.spacing.xs,
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.colors.neonBlueSoft,
+    backgroundColor: theme.colors.surfaceRaised,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 4
+  },
+  battleBadgeLabel: {
+    color: theme.colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700'
   },
   retryButton: {
     marginTop: theme.spacing.xs,

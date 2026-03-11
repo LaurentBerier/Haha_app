@@ -1,0 +1,293 @@
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
+import { useCallback, useEffect, useMemo } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AmbientGlow } from '../../../components/common/AmbientGlow';
+import { BackButton } from '../../../components/common/BackButton';
+import { ModeCard } from '../../../components/mode/ModeCard';
+import { MODE_IDS } from '../../../config/constants';
+import { CATEGORY_MODE_IDS, MODE_CATEGORY_META, isModeCategoryId } from '../../../config/modeCategories';
+import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
+import { getModeById } from '../../../config/modes';
+import { getLanguage, t } from '../../../i18n';
+import type { Mode } from '../../../models/Mode';
+import { generateModeIntro } from '../../../services/modeIntroService';
+import { useStore } from '../../../store/useStore';
+import { theme } from '../../../theme';
+import { generateId } from '../../../utils/generateId';
+
+function resolveConversationLanguage(artist: { supportedLanguages: string[]; defaultLanguage: string }): string {
+  const appLanguage = getLanguage();
+  if (artist.supportedLanguages.includes(appLanguage)) {
+    return appLanguage;
+  }
+
+  const languagePrefix = appLanguage.toLowerCase().split('-')[0];
+  const familyMatch = artist.supportedLanguages.find((language) =>
+    language.toLowerCase().startsWith(languagePrefix ?? '')
+  );
+
+  return familyMatch ?? artist.defaultLanguage;
+}
+
+export default function ModeCategoryScreen() {
+  const navigation = useNavigation();
+  const params = useLocalSearchParams<{ artistId: string; categoryId: string }>();
+  const artistId = params.artistId ?? '';
+  const categoryIdParam = params.categoryId ?? '';
+  const headerHorizontalInset = useHeaderHorizontalInset();
+
+  const artists = useStore((state) => state.artists);
+  const createConversation = useStore((state) => state.createConversation);
+  const setActiveConversation = useStore((state) => state.setActiveConversation);
+  const addMessage = useStore((state) => state.addMessage);
+  const updateConversation = useStore((state) => state.updateConversation);
+  const userProfile = useStore((state) => state.userProfile);
+
+  const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
+  const categoryId = isModeCategoryId(categoryIdParam) ? categoryIdParam : null;
+
+  const categoryTitle = categoryId ? t(MODE_CATEGORY_META[categoryId].labelKey) : t('modeSelectTitle');
+
+  useEffect(() => {
+    navigation.setOptions({ title: categoryTitle });
+  }, [categoryTitle, navigation]);
+
+  const availableModes = useMemo(() => {
+    if (!artist || !categoryId || categoryId === 'profile') {
+      return [] as Mode[];
+    }
+
+    const supported = [MODE_IDS.RADAR_ATTITUDE, ...artist.supportedModeIds]
+      .map((modeId) => getModeById(modeId))
+      .filter((mode): mode is Mode => mode !== null);
+
+    const byId = supported.reduce<Record<string, Mode>>((acc, mode) => {
+      acc[mode.id] = mode;
+      return acc;
+    }, {});
+
+    return CATEGORY_MODE_IDS[categoryId].map((modeId) => byId[modeId]).filter((mode): mode is Mode => Boolean(mode));
+  }, [artist, categoryId]);
+
+  const handleModeSelect = useCallback(
+    (modeId: string) => {
+      if (!artist) {
+        return;
+      }
+      const nextConversation = createConversation(artist.id, resolveConversationLanguage(artist), modeId);
+      const introMessage = generateModeIntro(modeId, userProfile);
+      const now = new Date().toISOString();
+      addMessage(nextConversation.id, {
+        id: generateId('msg'),
+        conversationId: nextConversation.id,
+        role: 'artist',
+        content: introMessage,
+        status: 'complete',
+        timestamp: now
+      });
+      updateConversation(
+        nextConversation.id,
+        {
+          lastMessagePreview: introMessage.slice(0, 120),
+          title: introMessage.slice(0, 30)
+        },
+        artist.id
+      );
+      setActiveConversation(nextConversation.id);
+      router.push(`/chat/${nextConversation.id}`);
+    },
+    [addMessage, artist, createConversation, setActiveConversation, updateConversation, userProfile]
+  );
+
+  if (!artist || !categoryId) {
+    return (
+      <View style={styles.center} testID="mode-category-invalid">
+        <Text style={styles.errorText}>{t('invalidConversation')}</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.screen}>
+      <AmbientGlow variant="mode" />
+      <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
+        <BackButton testID="mode-category-back" />
+      </View>
+      <ScrollView testID="mode-category-screen" style={styles.list} contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.title}>{`${MODE_CATEGORY_META[categoryId].emoji} ${categoryTitle}`}</Text>
+          <Text style={styles.subtitle}>{artist.name}</Text>
+        </View>
+
+        {categoryId === 'profile' ? (
+          <View style={styles.profileActionGroup}>
+            <View style={styles.profileActionCard}>
+              <Text style={styles.profileActionTitle}>{t('settingsEditProfile')}</Text>
+              <Text style={styles.profileActionDescription}>{t('modeProfileEditDescription')}</Text>
+              <Pressable
+                onPress={() => router.push('/settings/edit-profile')}
+                style={({ hovered, pressed }) => [
+                  styles.profileActionButton,
+                  hovered ? styles.profileActionButtonHover : null,
+                  pressed ? styles.profileActionButtonPressed : null
+                ]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.profileActionLink}>{t('settingsEditProfile')}</Text>
+              </Pressable>
+            </View>
+            <View style={styles.profileActionCard}>
+              <Text style={styles.profileActionTitle}>{t('historyModeTitle')}</Text>
+              <Text style={styles.profileActionDescription}>{t('historyModeDescription')}</Text>
+              <Pressable
+                onPress={() => router.push(`/history/${artist.id}`)}
+                style={({ hovered, pressed }) => [
+                  styles.profileActionButton,
+                  hovered ? styles.profileActionButtonHover : null,
+                  pressed ? styles.profileActionButtonPressed : null
+                ]}
+                accessibilityRole="button"
+              >
+                <Text style={styles.profileActionLink}>{t('historyScreenTitle')}</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : availableModes.length > 0 ? (
+          <View style={styles.modeList}>
+            {availableModes.map((mode) => (
+              <ModeCard key={mode.id} mode={mode} onPress={() => handleModeSelect(mode.id)} />
+            ))}
+          </View>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyEmoji}>🎭</Text>
+            <Text style={styles.emptyTitle}>{t('modeSelectCategoryEmptyTitle')}</Text>
+            <Text style={styles.emptySubtitle}>{t('modeSelectCategoryEmptySubtitle')}</Text>
+          </View>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: theme.colors.background
+  },
+  list: {
+    backgroundColor: 'transparent',
+    flex: 1
+  },
+  topRow: {
+    paddingHorizontal: theme.spacing.md,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.xs
+  },
+  content: {
+    padding: theme.spacing.md,
+    paddingBottom: theme.spacing.xl * 2,
+    width: '100%',
+    maxWidth: 608,
+    alignSelf: 'center'
+  },
+  header: {
+    gap: 4,
+    marginBottom: theme.spacing.md,
+    paddingHorizontal: 2
+  },
+  title: {
+    color: theme.colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '800'
+  },
+  subtitle: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600'
+  },
+  modeList: {
+    gap: theme.spacing.sm
+  },
+  profileActionGroup: {
+    gap: theme.spacing.sm
+  },
+  profileActionCard: {
+    borderWidth: 1.5,
+    borderColor: theme.colors.neonBlueSoft,
+    borderRadius: 12,
+    backgroundColor: theme.colors.surfaceRaised,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm
+  },
+  profileActionTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  profileActionDescription: {
+    marginTop: 4,
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    lineHeight: 16
+  },
+  profileActionLink: {
+    color: theme.colors.neonBlue,
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  profileActionButton: {
+    marginTop: theme.spacing.sm,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: theme.colors.neonBlueSoft,
+    borderRadius: 999,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 6
+  },
+  profileActionButtonHover: {
+    borderColor: theme.colors.neonBlue,
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4
+  },
+  profileActionButtonPressed: {
+    opacity: 0.94
+  },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: theme.colors.background
+  },
+  errorText: {
+    color: theme.colors.error
+  },
+  emptyState: {
+    marginTop: theme.spacing.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 16,
+    backgroundColor: theme.colors.surface,
+    paddingHorizontal: theme.spacing.lg,
+    paddingVertical: theme.spacing.lg,
+    alignItems: 'center',
+    gap: theme.spacing.xs
+  },
+  emptyEmoji: {
+    fontSize: 24
+  },
+  emptyTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center'
+  },
+  emptySubtitle: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    textAlign: 'center'
+  }
+});
