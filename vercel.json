@@ -9,6 +9,9 @@
     "api/game-judge.js": {
       "maxDuration": 60
     },
+    "api/game-questions.js": {
+      "maxDuration": 60
+    },
     "api/stripe-webhook.js": {
       "maxDuration": 60
     }

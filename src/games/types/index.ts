@@ -1,54 +1,49 @@
-export type GameType = 'roast-duel';
+export type GameType = 'impro-chain' | 'vrai-ou-invente';
 
-export type GameStatus =
-  | 'lobby'
-  | 'coin-flip'
-  | 'user-turn'
-  | 'artist-streaming'
-  | 'judging'
-  | 'round-result'
-  | 'game-over'
-  | 'abandoned';
+export type ImproStatus = 'active' | 'cathy-ending' | 'complete';
+export type VraiInventeStatus = 'loading' | 'question' | 'revealed' | 'complete';
+export type GameStatus = ImproStatus | VraiInventeStatus | 'abandoned';
 
-export interface JudgeScore {
-  wit: number;
-  specificity: number;
-  delivery: number;
-  crowdReaction: number;
-  comebackPotential: number;
-  total: number;
-  verdict: string;
+export interface ImproTurn {
+  role: 'user' | 'artist';
+  content: string;
 }
 
-export interface RoastRound {
-  roundNumber: number;
-  userRoast: string;
-  artistRoast: string;
+export interface ImproChainData {
+  type: 'impro-chain';
+  turns: ImproTurn[];
   streamingContent: string;
   isStreaming: boolean;
-  isJudging: boolean;
-  userScore: JudgeScore | null;
-  artistScore: JudgeScore | null;
-  winner: 'user' | 'artist' | 'tie' | null;
 }
 
-export interface GameConfig {
-  roundCount: 3 | 5 | 7;
-  theme: string | null;
+export interface VraiInventeStatement {
+  text: string;
+  isTrue: boolean;
 }
+
+export interface VraiInventeQuestion {
+  statements: VraiInventeStatement[];
+  explanation: string;
+  userAnswerIndex: number | null;
+  isCorrect: boolean | null;
+}
+
+export interface VraiInventeData {
+  type: 'vrai-ou-invente';
+  questions: VraiInventeQuestion[];
+  currentIndex: number;
+  score: number;
+  isLoading: boolean;
+}
+
+export type GameData = ImproChainData | VraiInventeData;
 
 export interface Game {
   id: string;
   gameType: GameType;
   artistId: string;
   status: GameStatus;
-  config: GameConfig;
-  rounds: RoastRound[];
-  currentRound: number;
-  firstRoaster: 'user' | 'artist';
-  userTotalScore: number;
-  artistTotalScore: number;
-  winner: 'user' | 'artist' | 'tie' | null;
+  gameData: GameData;
   startedAt: string;
   endedAt: string | null;
   error: string | null;
@@ -56,20 +51,26 @@ export interface Game {
 
 export interface GameTypeConfig {
   id: GameType;
-  labelKey: 'gameRoastDuelTitle';
-  descriptionKey: 'gameRoastDuelDescription';
+  labelKey: 'gameImproTitle' | 'gameVraiInventeTitle';
+  descriptionKey: 'gameImproDescription' | 'gameVraiInventeDescription';
   emoji: string;
-  defaultRounds: number;
   available: boolean;
 }
 
-export const GAME_TYPE_CONFIGS: Record<GameType, GameTypeConfig> = {
-  'roast-duel': {
-    id: 'roast-duel',
-    labelKey: 'gameRoastDuelTitle',
-    descriptionKey: 'gameRoastDuelDescription',
-    emoji: '⚔️',
-    defaultRounds: 3,
+export const GAME_TYPE_CONFIGS: GameTypeConfig[] = [
+  {
+    id: 'impro-chain',
+    labelKey: 'gameImproTitle',
+    descriptionKey: 'gameImproDescription',
+    emoji: '📖',
+    available: true
+  },
+  {
+    id: 'vrai-ou-invente',
+    labelKey: 'gameVraiInventeTitle',
+    descriptionKey: 'gameVraiInventeDescription',
+    emoji: '🎭',
     available: true
   }
-};
+];
+

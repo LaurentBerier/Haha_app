@@ -320,9 +320,17 @@ export default function RootLayout() {
                   }}
                 />
                 <Stack.Screen
-                  name="games/[artistId]/roast-duel"
+                  name="games/[artistId]/impro-chain"
                   options={{
-                    title: t('gameRoastDuelTitle'),
+                    title: t('gameImproTitle'),
+                    animation: 'slide_from_right',
+                    animationDuration: 260
+                  }}
+                />
+                <Stack.Screen
+                  name="games/[artistId]/vrai-ou-invente"
+                  options={{
+                    title: t('gameVraiInventeTitle'),
                     animation: 'slide_from_right',
                     animationDuration: 260
                   }}

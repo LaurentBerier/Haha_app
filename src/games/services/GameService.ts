@@ -1,66 +1,74 @@
-import type { RoastRound } from '../types';
 import { streamClaudeResponse, type ClaudeMessage } from '../../services/claudeApiService';
+import type { ImproTurn } from '../types';
 
-interface RunArtistTurnParams {
+interface RunImproTurnParams {
   artistId: string;
-  roundNumber: number;
-  totalRounds: number;
-  userRoast: string;
-  userTotalScore: number;
-  artistTotalScore: number;
-  conversationHistory: RoastRound[];
+  history: ImproTurn[];
   language: string;
   onToken: (token: string) => void;
-  onComplete: () => void;
+  onComplete: (content: string, isEnding: boolean) => void;
   onError: (error: Error) => void;
 }
 
-function normalizeRoundText(value: string): string {
+function normalizeText(value: string): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
 export class GameService {
-  static buildGameHistory(completedRounds: RoastRound[]): ClaudeMessage[] {
-    const rounds = completedRounds
-      .filter((round) => normalizeRoundText(round.userRoast) && normalizeRoundText(round.artistRoast))
-      .slice(-6);
+  static buildImproHistory(turns: ImproTurn[]): ClaudeMessage[] {
+    const history = turns
+      .map((turn) => ({
+        role: turn.role === 'artist' ? 'assistant' : 'user',
+        content: normalizeText(turn.content)
+      }))
+      .filter((message) => Boolean(message.content)) as ClaudeMessage[];
 
-    const history: ClaudeMessage[] = [];
-    rounds.forEach((round) => {
-      history.push({
+    if (history.length > 0) {
+      return history;
+    }
+
+    return [
+      {
         role: 'user',
-        content: `Round ${round.roundNumber} - Mon roast: ${normalizeRoundText(round.userRoast)}`
-      });
-      history.push({
-        role: 'assistant',
-        content: `Round ${round.roundNumber} - Contre-attaque: ${normalizeRoundText(round.artistRoast)}`
-      });
-    });
-
-    return history;
+        content: "Lance l'histoire avec une premiere phrase absurde."
+      }
+    ];
   }
 
-  static async runArtistTurn(params: RunArtistTurnParams): Promise<() => void> {
-    const history = GameService.buildGameHistory(params.conversationHistory);
-    const roundPrompt = `[Round ${params.roundNumber}/${params.totalRounds} | Toi: ${params.userTotalScore} pts - Adversaire: ${params.artistTotalScore} pts]
-Roast recu: "${normalizeRoundText(params.userRoast)}"`;
+  static extractFin(content: string): { clean: string; isEnding: boolean } {
+    const normalized = typeof content === 'string' ? content : '';
+    const markerIndex = normalized.indexOf('[FIN]');
+    if (markerIndex < 0) {
+      return { clean: normalized.trim(), isEnding: false };
+    }
+
+    const before = normalized.slice(0, markerIndex).trim();
+    const after = normalized.slice(markerIndex + 5).trim();
+    const clean = `${before}${before && after ? ' ' : ''}${after}`.trim();
+    return { clean, isEnding: true };
+  }
+
+  static async runImproTurn(params: RunImproTurnParams): Promise<() => void> {
+    let streamedText = '';
+    const messages = GameService.buildImproHistory(params.history).slice(-30);
 
     const cancel = streamClaudeResponse({
       artistId: params.artistId,
-      modeId: 'roast-duel-game',
+      modeId: 'impro-chain',
       language: params.language,
-      messages: [
-        ...history,
-        {
-          role: 'user',
-          content: roundPrompt
-        }
-      ],
-      onToken: params.onToken,
-      onComplete: () => params.onComplete(),
+      messages,
+      onToken: (token) => {
+        streamedText += token;
+        params.onToken(token);
+      },
+      onComplete: () => {
+        const parsed = GameService.extractFin(streamedText);
+        params.onComplete(parsed.clean, parsed.isEnding);
+      },
       onError: params.onError
     });
 
     return cancel;
   }
 }
+

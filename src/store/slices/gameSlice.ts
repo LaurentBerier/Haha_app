@@ -1,354 +1,360 @@
 import type { StateCreator } from 'zustand';
-import type { Game, GameConfig, GameStatus, GameType, JudgeScore, RoastRound } from '../../games/types';
+import type {
+  Game,
+  GameStatus,
+  ImproChainData,
+  ImproTurn,
+  VraiInventeData,
+  VraiInventeQuestion
+} from '../../games/types';
 import { generateId } from '../../utils/generateId';
 import type { StoreState } from '../useStore';
 
-function createRound(roundNumber: number): RoastRound {
+const VRAI_INVENTE_TOTAL_ROUNDS = 5;
+
+function normalizeText(value: string): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isImproData(data: Game['gameData']): data is ImproChainData {
+  return data.type === 'impro-chain';
+}
+
+function isVraiInventeData(data: Game['gameData']): data is VraiInventeData {
+  return data.type === 'vrai-ou-invente';
+}
+
+function withActiveGame(
+  state: StoreState,
+  updater: (game: Game) => Game
+): StoreState | Pick<StoreState, 'activeGame'> {
+  if (!state.activeGame) {
+    return state;
+  }
+
+  return { activeGame: updater(state.activeGame) };
+}
+
+function pushImproTurn(data: ImproChainData, turn: ImproTurn): ImproChainData {
+  const content = normalizeText(turn.content);
+  if (!content) {
+    return data;
+  }
+
   return {
-    roundNumber,
-    userRoast: '',
-    artistRoast: '',
-    streamingContent: '',
-    isStreaming: false,
-    isJudging: false,
-    userScore: null,
-    artistScore: null,
-    winner: null
+    ...data,
+    turns: [...data.turns, { role: turn.role, content }]
   };
 }
 
-function clampRoundCount(value: number | undefined): 3 | 5 | 7 {
-  if (value === 5 || value === 7) {
-    return value;
-  }
-  return 3;
+function buildImproGame(artistId: string): Game {
+  return {
+    id: generateId('game'),
+    gameType: 'impro-chain',
+    artistId,
+    status: 'active',
+    gameData: {
+      type: 'impro-chain',
+      turns: [],
+      streamingContent: '',
+      isStreaming: false
+    },
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    error: null
+  };
 }
 
-function getWinnerFromTotals(userTotal: number, artistTotal: number): 'user' | 'artist' | 'tie' {
-  if (userTotal > artistTotal) {
-    return 'user';
-  }
-  if (artistTotal > userTotal) {
-    return 'artist';
-  }
-  return 'tie';
-}
-
-function getRoundWinner(userScore: JudgeScore, artistScore: JudgeScore): 'user' | 'artist' | 'tie' {
-  return getWinnerFromTotals(userScore.total, artistScore.total);
+function buildVraiInventeGame(artistId: string): Game {
+  return {
+    id: generateId('game'),
+    gameType: 'vrai-ou-invente',
+    artistId,
+    status: 'loading',
+    gameData: {
+      type: 'vrai-ou-invente',
+      questions: [],
+      currentIndex: 0,
+      score: 0,
+      isLoading: true
+    },
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    error: null
+  };
 }
 
 export interface GameSlice {
   activeGame: Game | null;
-  startGame: (artistId: string, gameType: GameType, config?: Partial<GameConfig>) => Game;
-  setCoinFlipResult: (firstRoaster: 'user' | 'artist') => void;
+  startImproGame: (artistId: string) => Game;
+  addImproTurn: (role: ImproTurn['role'], content: string) => void;
+  beginImproArtistStream: () => void;
+  appendImproStreamToken: (token: string) => void;
+  finalizeImproArtistTurn: (content: string, isEnding: boolean) => void;
+  submitUserImproTurn: (text: string) => void;
+
+  startVraiInventeGame: (artistId: string) => Game;
+  receiveVraiInventeQuestion: (question: VraiInventeQuestion) => void;
+  submitVraiInventeAnswer: (index: number) => void;
+  nextVraiInventeQuestion: () => void;
+
   setGameStatus: (status: GameStatus) => void;
-  submitUserRoast: (text: string) => void;
-  beginArtistStream: () => void;
-  appendArtistStreamToken: (token: string) => void;
-  finalizeArtistRoast: () => void;
-  beginJudging: () => void;
-  receiveJudgeVerdict: (userScore: JudgeScore, artistScore: JudgeScore) => void;
-  advanceRound: () => void;
-  endGame: () => void;
+  setGameError: (message: string | null) => void;
   abandonGame: () => void;
   clearGame: () => void;
-  setGameError: (message: string | null) => void;
 }
 
 export const createGameSlice: StateCreator<StoreState, [], [], GameSlice> = (set) => ({
   activeGame: null,
-  startGame: (artistId, gameType, config = {}) => {
-    const game: Game = {
-      id: generateId('game'),
-      gameType,
-      artistId,
-      status: 'lobby',
-      config: {
-        roundCount: clampRoundCount(config.roundCount),
-        theme: typeof config.theme === 'string' && config.theme.trim() ? config.theme.trim() : null
-      },
-      rounds: [createRound(1)],
-      currentRound: 1,
-      firstRoaster: 'user',
-      userTotalScore: 0,
-      artistTotalScore: 0,
-      winner: null,
-      startedAt: new Date().toISOString(),
-      endedAt: null,
-      error: null
-    };
 
+  startImproGame: (artistId) => {
+    const game = buildImproGame(artistId);
     set({ activeGame: game });
     return game;
   },
-  setCoinFlipResult: (firstRoaster) =>
-    set((state) => {
-      if (!state.activeGame) {
-        return state;
-      }
-      return {
-        activeGame: {
-          ...state.activeGame,
-          firstRoaster,
-          status: 'coin-flip',
-          error: null
+
+  addImproTurn: (role, content) =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'impro-chain' || !isImproData(game.gameData)) {
+          return game;
         }
-      };
-    }),
-  setGameStatus: (status) =>
-    set((state) => {
-      if (!state.activeGame) {
-        return state;
-      }
-      return {
-        activeGame: {
-          ...state.activeGame,
-          status
-        }
-      };
-    }),
-  submitUserRoast: (text) =>
-    set((state) => {
-      const game = state.activeGame;
-      if (!game) {
-        return state;
-      }
-      const currentIndex = Math.max(0, game.currentRound - 1);
-      const currentRound = game.rounds[currentIndex];
-      if (!currentRound) {
-        return state;
-      }
-      const normalized = typeof text === 'string' ? text.trim() : '';
-      if (!normalized) {
-        return state;
-      }
 
-      const nextRounds = game.rounds.slice();
-      nextRounds[currentIndex] = {
-        ...currentRound,
-        userRoast: normalized
-      };
-
-      return {
-        activeGame: {
-          ...game,
-          rounds: nextRounds,
-          status: 'artist-streaming',
-          error: null
-        }
-      };
-    }),
-  beginArtistStream: () =>
-    set((state) => {
-      const game = state.activeGame;
-      if (!game) {
-        return state;
-      }
-      const currentIndex = Math.max(0, game.currentRound - 1);
-      const currentRound = game.rounds[currentIndex];
-      if (!currentRound) {
-        return state;
-      }
-
-      const nextRounds = game.rounds.slice();
-      nextRounds[currentIndex] = {
-        ...currentRound,
-        isStreaming: true,
-        streamingContent: ''
-      };
-
-      return {
-        activeGame: {
-          ...game,
-          rounds: nextRounds,
-          status: 'artist-streaming'
-        }
-      };
-    }),
-  appendArtistStreamToken: (token) =>
-    set((state) => {
-      const game = state.activeGame;
-      if (!game || !token) {
-        return state;
-      }
-      const currentIndex = Math.max(0, game.currentRound - 1);
-      const currentRound = game.rounds[currentIndex];
-      if (!currentRound) {
-        return state;
-      }
-
-      const nextRounds = game.rounds.slice();
-      nextRounds[currentIndex] = {
-        ...currentRound,
-        streamingContent: `${currentRound.streamingContent}${token}`,
-        isStreaming: true
-      };
-
-      return {
-        activeGame: {
-          ...game,
-          rounds: nextRounds
-        }
-      };
-    }),
-  finalizeArtistRoast: () =>
-    set((state) => {
-      const game = state.activeGame;
-      if (!game) {
-        return state;
-      }
-      const currentIndex = Math.max(0, game.currentRound - 1);
-      const currentRound = game.rounds[currentIndex];
-      if (!currentRound) {
-        return state;
-      }
-
-      const artistRoast = currentRound.streamingContent.trim();
-      const nextRounds = game.rounds.slice();
-      nextRounds[currentIndex] = {
-        ...currentRound,
-        artistRoast,
-        isStreaming: false
-      };
-
-      return {
-        activeGame: {
-          ...game,
-          rounds: nextRounds
-        }
-      };
-    }),
-  beginJudging: () =>
-    set((state) => {
-      const game = state.activeGame;
-      if (!game) {
-        return state;
-      }
-      const currentIndex = Math.max(0, game.currentRound - 1);
-      const currentRound = game.rounds[currentIndex];
-      if (!currentRound) {
-        return state;
-      }
-
-      const nextRounds = game.rounds.slice();
-      nextRounds[currentIndex] = {
-        ...currentRound,
-        isJudging: true
-      };
-
-      return {
-        activeGame: {
-          ...game,
-          rounds: nextRounds,
-          status: 'judging'
-        }
-      };
-    }),
-  receiveJudgeVerdict: (userScore, artistScore) =>
-    set((state) => {
-      const game = state.activeGame;
-      if (!game) {
-        return state;
-      }
-
-      const currentIndex = Math.max(0, game.currentRound - 1);
-      const currentRound = game.rounds[currentIndex];
-      if (!currentRound) {
-        return state;
-      }
-
-      const winner = getRoundWinner(userScore, artistScore);
-      const nextRounds = game.rounds.slice();
-      nextRounds[currentIndex] = {
-        ...currentRound,
-        isJudging: false,
-        userScore,
-        artistScore,
-        winner
-      };
-
-      return {
-        activeGame: {
-          ...game,
-          rounds: nextRounds,
-          userTotalScore: game.userTotalScore + userScore.total,
-          artistTotalScore: game.artistTotalScore + artistScore.total,
-          status: 'round-result',
-          error: null
-        }
-      };
-    }),
-  advanceRound: () =>
-    set((state) => {
-      const game = state.activeGame;
-      if (!game) {
-        return state;
-      }
-
-      if (game.currentRound >= game.config.roundCount) {
         return {
-          activeGame: {
-            ...game,
-            status: 'game-over',
-            endedAt: game.endedAt ?? new Date().toISOString(),
-            winner: getWinnerFromTotals(game.userTotalScore, game.artistTotalScore)
+          ...game,
+          gameData: pushImproTurn(game.gameData, { role, content }),
+          error: null
+        };
+      })
+    ),
+
+  beginImproArtistStream: () =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'impro-chain' || !isImproData(game.gameData)) {
+          return game;
+        }
+
+        return {
+          ...game,
+          status: 'active',
+          gameData: {
+            ...game.gameData,
+            streamingContent: '',
+            isStreaming: true
           }
         };
-      }
+      })
+    ),
 
-      const nextRoundNumber = game.currentRound + 1;
-      return {
-        activeGame: {
-          ...game,
-          currentRound: nextRoundNumber,
-          rounds: [...game.rounds, createRound(nextRoundNumber)],
-          status: 'user-turn',
-          error: null
+  appendImproStreamToken: (token) =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'impro-chain' || !isImproData(game.gameData) || !token) {
+          return game;
         }
-      };
-    }),
-  endGame: () =>
-    set((state) => {
-      const game = state.activeGame;
-      if (!game) {
-        return state;
-      }
-      return {
-        activeGame: {
+
+        return {
           ...game,
-          status: 'game-over',
+          gameData: {
+            ...game.gameData,
+            streamingContent: `${game.gameData.streamingContent}${token}`,
+            isStreaming: true
+          }
+        };
+      })
+    ),
+
+  finalizeImproArtistTurn: (content, isEnding) =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'impro-chain' || !isImproData(game.gameData)) {
+          return game;
+        }
+
+        const normalized = normalizeText(content);
+        const nextData = {
+          ...pushImproTurn(
+            {
+              ...game.gameData,
+              isStreaming: false,
+              streamingContent: ''
+            },
+            { role: 'artist', content: normalized }
+          ),
+          isStreaming: false,
+          streamingContent: ''
+        };
+
+        if (!isEnding) {
+          return {
+            ...game,
+            status: 'active',
+            gameData: nextData,
+            error: null
+          };
+        }
+
+        return {
+          ...game,
+          status: 'cathy-ending',
+          gameData: nextData,
           endedAt: game.endedAt ?? new Date().toISOString(),
-          winner: getWinnerFromTotals(game.userTotalScore, game.artistTotalScore)
+          error: null
+        };
+      })
+    ),
+
+  submitUserImproTurn: (text) =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'impro-chain' || !isImproData(game.gameData)) {
+          return game;
         }
-      };
-    }),
-  abandonGame: () =>
-    set((state) => {
-      const game = state.activeGame;
-      if (!game) {
-        return state;
-      }
-      return {
-        activeGame: {
+
+        return {
           ...game,
-          status: 'abandoned',
-          endedAt: game.endedAt ?? new Date().toISOString()
+          status: 'active',
+          gameData: pushImproTurn(game.gameData, { role: 'user', content: text }),
+          error: null
+        };
+      })
+    ),
+
+  startVraiInventeGame: (artistId) => {
+    const game = buildVraiInventeGame(artistId);
+    set({ activeGame: game });
+    return game;
+  },
+
+  receiveVraiInventeQuestion: (question) =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'vrai-ou-invente' || !isVraiInventeData(game.gameData)) {
+          return game;
         }
-      };
-    }),
-  clearGame: () => set({ activeGame: null }),
+
+        const index = Math.max(0, game.gameData.currentIndex);
+        const questions = game.gameData.questions.slice();
+        if (questions.length <= index) {
+          questions.push(question);
+        } else {
+          questions[index] = question;
+        }
+
+        return {
+          ...game,
+          status: 'question',
+          gameData: {
+            ...game.gameData,
+            questions,
+            isLoading: false
+          },
+          error: null
+        };
+      })
+    ),
+
+  submitVraiInventeAnswer: (index) =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'vrai-ou-invente' || !isVraiInventeData(game.gameData)) {
+          return game;
+        }
+
+        const current = game.gameData.questions[game.gameData.currentIndex];
+        if (!current || current.userAnswerIndex !== null) {
+          return game;
+        }
+
+        const isCorrect = Boolean(current.statements[index]?.isTrue);
+        const questions = game.gameData.questions.slice();
+        questions[game.gameData.currentIndex] = {
+          ...current,
+          userAnswerIndex: index,
+          isCorrect
+        };
+
+        return {
+          ...game,
+          status: 'revealed',
+          gameData: {
+            ...game.gameData,
+            questions,
+            score: game.gameData.score + (isCorrect ? 1 : 0),
+            isLoading: false
+          },
+          error: null
+        };
+      })
+    ),
+
+  nextVraiInventeQuestion: () =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'vrai-ou-invente' || !isVraiInventeData(game.gameData)) {
+          return game;
+        }
+
+        const nextIndex = game.gameData.currentIndex + 1;
+        if (nextIndex >= VRAI_INVENTE_TOTAL_ROUNDS) {
+          return {
+            ...game,
+            status: 'complete',
+            gameData: {
+              ...game.gameData,
+              isLoading: false
+            },
+            endedAt: game.endedAt ?? new Date().toISOString(),
+            error: null
+          };
+        }
+
+        return {
+          ...game,
+          status: 'loading',
+          gameData: {
+            ...game.gameData,
+            currentIndex: nextIndex,
+            isLoading: true
+          },
+          error: null
+        };
+      })
+    ),
+
+  setGameStatus: (status) =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        const nextEndedAt =
+          status === 'complete' || status === 'abandoned'
+            ? game.endedAt ?? new Date().toISOString()
+            : game.endedAt;
+        return {
+          ...game,
+          status,
+          endedAt: nextEndedAt
+        };
+      })
+    ),
+
   setGameError: (message) =>
-    set((state) => {
-      const game = state.activeGame;
-      if (!game) {
-        return state;
-      }
-      return {
-        activeGame: {
-          ...game,
-          error: typeof message === 'string' && message.trim() ? message.trim() : null
-        }
-      };
-    })
+    set((state) =>
+      withActiveGame(state, (game) => ({
+        ...game,
+        error: normalizeText(message ?? '') || null
+      }))
+    ),
+
+  abandonGame: () =>
+    set((state) =>
+      withActiveGame(state, (game) => ({
+        ...game,
+        status: 'abandoned',
+        endedAt: game.endedAt ?? new Date().toISOString()
+      }))
+    ),
+
+  clearGame: () => set({ activeGame: null })
 });
+
