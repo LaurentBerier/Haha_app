@@ -311,6 +311,22 @@ export default function RootLayout() {
                     gestureEnabled: true
                   }}
                 />
+                <Stack.Screen
+                  name="games/[artistId]/index"
+                  options={{
+                    title: t('gamesSection'),
+                    animation: 'slide_from_right',
+                    animationDuration: 240
+                  }}
+                />
+                <Stack.Screen
+                  name="games/[artistId]/roast-duel"
+                  options={{
+                    title: t('gameRoastDuelTitle'),
+                    animation: 'slide_from_right',
+                    animationDuration: 260
+                  }}
+                />
                 <Stack.Screen name="settings/index" options={{ title: t('settingsTitle') }} />
                 <Stack.Screen name="settings/edit-profile" options={{ title: t('settingsEditProfile') }} />
                 <Stack.Screen name="settings/subscription" options={{ title: t('settingsSubscription') }} />

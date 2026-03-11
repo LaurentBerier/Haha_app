@@ -113,6 +113,10 @@ export default function HistoryScreen() {
     [setActiveConversation]
   );
 
+  const openGames = useCallback(() => {
+    router.push(`/games/${artistId}`);
+  }, [artistId]);
+
   const renderItem = useCallback(
     ({ item }: { item: Conversation }) => {
       const mode = getModeById(item.modeId);
@@ -162,6 +166,23 @@ export default function HistoryScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         renderSectionHeader={({ section }) => <Text style={styles.sectionHeader}>{section.title}</Text>}
+        ListHeaderComponent={
+          <Pressable
+            onPress={openGames}
+            style={({ pressed }) => [styles.gamesBanner, pressed ? styles.gamesBannerPressed : null]}
+            accessibilityRole="button"
+            testID="history-games-banner"
+          >
+            <View style={styles.gamesBannerIconWrap}>
+              <Text style={styles.gamesBannerIcon}>🎮</Text>
+            </View>
+            <View style={styles.gamesBannerTextWrap}>
+              <Text style={styles.gamesBannerTitle}>{t('gamesSection')}</Text>
+              <Text style={styles.gamesBannerSubtitle}>{t('gamesSectionSubtitle')}</Text>
+            </View>
+            <Text style={styles.gamesBannerChevron}>›</Text>
+          </Pressable>
+        }
         contentContainerStyle={styles.listContent}
         style={styles.list}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
@@ -218,6 +239,48 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     paddingTop: theme.spacing.sm,
     paddingBottom: theme.spacing.xl * 2
+  },
+  gamesBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderLeftWidth: 2,
+    borderLeftColor: theme.colors.neonBlue,
+    borderRadius: 12,
+    backgroundColor: theme.colors.artistBubble,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    marginBottom: theme.spacing.sm
+  },
+  gamesBannerPressed: {
+    opacity: 0.94
+  },
+  gamesBannerIconWrap: {
+    width: 30,
+    alignItems: 'center'
+  },
+  gamesBannerIcon: {
+    fontSize: 18
+  },
+  gamesBannerTextWrap: {
+    flex: 1,
+    gap: 2
+  },
+  gamesBannerTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  gamesBannerSubtitle: {
+    color: theme.colors.textMuted,
+    fontSize: 12
+  },
+  gamesBannerChevron: {
+    color: theme.colors.textMuted,
+    fontSize: 24,
+    lineHeight: 24
   },
   separator: {
     height: theme.spacing.sm

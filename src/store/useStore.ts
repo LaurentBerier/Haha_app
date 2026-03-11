@@ -11,6 +11,7 @@ import { createArtistSlice, type ArtistSlice } from './slices/artistSlice';
 import { createAuthSlice, type AuthSlice } from './slices/authSlice';
 import { createConversationSlice, type ConversationSlice } from './slices/conversationSlice';
 import { createGamificationSlice, type GamificationSlice } from './slices/gamificationSlice';
+import { createGameSlice, type GameSlice } from './slices/gameSlice';
 import { createMessageSlice, type MessageSlice } from './slices/messageSlice';
 import { createSubscriptionSlice, type SubscriptionSlice } from './slices/subscriptionSlice';
 import { createUiSlice, type UiSlice } from './slices/uiSlice';
@@ -26,6 +27,7 @@ export type StoreState = ArtistSlice &
   ArtistAccessSlice &
   UsageSlice &
   GamificationSlice &
+  GameSlice &
   UiSlice & {
     hasHydrated: boolean;
     persistedOwnerUserId: string | null;
@@ -102,6 +104,7 @@ export const useStore = create<StoreState>()((...a) => ({
   ...createArtistAccessSlice(...a),
   ...createUsageSlice(...a),
   ...createGamificationSlice(...a),
+  ...createGameSlice(...a),
   ...createUiSlice(...a),
   hasHydrated: false,
   persistedOwnerUserId: null,
@@ -136,6 +139,7 @@ export const useStore = create<StoreState>()((...a) => ({
       conversations: {},
       activeConversationId: null,
       messagesByConversation: {},
+      activeGame: null,
       ...EMPTY_GAMIFICATION_STATS
     }),
   markHydrated: () => a[0]({ hasHydrated: true })
