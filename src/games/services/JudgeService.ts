@@ -56,13 +56,27 @@ function clamp(value: unknown, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function readNumber(source: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
 function normalizeScore(raw: unknown): JudgeScore {
   const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  const wit = clamp(source.wit, 0, 10);
-  const specificity = clamp(source.specificity, 0, 10);
-  const delivery = clamp(source.delivery, 0, 10);
-  const crowdReaction = clamp(source.crowdReaction, 0, 10);
-  const comebackPotential = clamp(source.comebackPotential, 0, 10);
+  const wit = clamp(readNumber(source, ['wit', 'wit_originality', 'witOriginality']) ?? 0, 0, 10);
+  const specificity = clamp(readNumber(source, ['specificity']) ?? 0, 0, 10);
+  const delivery = clamp(readNumber(source, ['delivery', 'delivery_timing', 'deliveryTiming']) ?? 0, 0, 10);
+  const crowdReaction = clamp(readNumber(source, ['crowdReaction', 'crowd_reaction', 'crowd']) ?? 0, 0, 10);
+  const comebackPotential = clamp(
+    readNumber(source, ['comebackPotential', 'comeback_potential', 'comeback']) ?? 0,
+    0,
+    10
+  );
   const computedTotal = wit + specificity + delivery + crowdReaction + comebackPotential;
   const providedTotal = typeof source.total === 'number' && Number.isFinite(source.total) ? source.total : computedTotal;
   const total = clamp(providedTotal, 0, 50);

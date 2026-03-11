@@ -225,6 +225,23 @@ function normalizeRoundValue(value, fallback) {
   return Math.max(1, Math.floor(value));
 }
 
+function toNumeric(value) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function pickNumeric(source, keys) {
+  for (const key of keys) {
+    if (!isRecord(source)) {
+      return null;
+    }
+    const value = toNumeric(source[key]);
+    if (value !== null) {
+      return value;
+    }
+  }
+  return null;
+}
+
 function parsePayload(body) {
   if (!isRecord(body)) {
     throw new Error('JSON body is required.');
@@ -261,7 +278,7 @@ function buildJudgeSystemPrompt(language) {
   const isEnglish = typeof language === 'string' && language.toLowerCase().startsWith('en');
   if (isEnglish) {
     return `You are the official judge of a roast duel. Evaluate both roasts impartially.
-Criteria (0-10): wit_originality, specificity, delivery_timing, crowd_reaction, comeback_potential.
+Criteria (0-10): wit, specificity, delivery, crowdReaction, comebackPotential.
 Return ONLY valid JSON:
 {
   "userScore": { "wit": X, "specificity": X, "delivery": X, "crowdReaction": X, "comebackPotential": X, "total": X, "verdict": "1-2 funny lines" },
@@ -270,7 +287,7 @@ Return ONLY valid JSON:
   }
 
   return `Tu es l'arbitre officiel d'un duel de roast. Evalue les deux roasts avec impartialite.
-Criteres (0-10): wit_originality, specificity, delivery_timing, crowd_reaction, comeback_potential.
+Criteres (0-10): wit, specificity, delivery, crowdReaction, comebackPotential.
 Retourne UNIQUEMENT un JSON valide:
 {
   "userScore": { "wit": X, "specificity": X, "delivery": X, "crowdReaction": X, "comebackPotential": X, "total": X, "verdict": "1-2 phrases comiques" },
@@ -328,11 +345,15 @@ function clamp(value, min, max) {
 
 function normalizeJudgeScore(raw, fallbackVerdict) {
   const safe = isRecord(raw) ? raw : {};
-  const wit = clamp(safe.wit, 0, 10);
-  const specificity = clamp(safe.specificity, 0, 10);
-  const delivery = clamp(safe.delivery, 0, 10);
-  const crowdReaction = clamp(safe.crowdReaction, 0, 10);
-  const comebackPotential = clamp(safe.comebackPotential, 0, 10);
+  const wit = clamp(pickNumeric(safe, ['wit', 'wit_originality', 'witOriginality']) ?? 0, 0, 10);
+  const specificity = clamp(pickNumeric(safe, ['specificity']) ?? 0, 0, 10);
+  const delivery = clamp(pickNumeric(safe, ['delivery', 'delivery_timing', 'deliveryTiming']) ?? 0, 0, 10);
+  const crowdReaction = clamp(pickNumeric(safe, ['crowdReaction', 'crowd_reaction', 'crowd']) ?? 0, 0, 10);
+  const comebackPotential = clamp(
+    pickNumeric(safe, ['comebackPotential', 'comeback_potential', 'comeback']) ?? 0,
+    0,
+    10
+  );
   const computedTotal = wit + specificity + delivery + crowdReaction + comebackPotential;
   const providedTotal = typeof safe.total === 'number' && Number.isFinite(safe.total) ? safe.total : computedTotal;
   const total = clamp(providedTotal, 0, 50);

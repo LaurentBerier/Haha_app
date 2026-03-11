@@ -137,7 +137,8 @@ export function useRoastDuel(artistId: string): UseRoastDuelResult {
       });
       receiveJudgeVerdict(verdict.userScore, verdict.artistScore);
       incrementUsage();
-    } catch {
+    } catch (error) {
+      console.error('[useRoastDuel] Judge evaluation failed', error);
       const fallbackUser = buildFallbackJudgeScore(t('gameErrorJudgeUnavailable'));
       const fallbackArtist = buildFallbackJudgeScore(t('gameErrorJudgeUnavailable'));
       receiveJudgeVerdict(fallbackUser, fallbackArtist);
@@ -181,7 +182,8 @@ export function useRoastDuel(artistId: string): UseRoastDuelResult {
           incrementUsage();
           void runJudge();
         },
-        onError: () => {
+        onError: (error) => {
+          console.error('[useRoastDuel] Artist turn failed', error);
           setGameError(t('gameErrorArtistFailed'));
           setGameStatus('user-turn');
         }
