@@ -1,4 +1,7 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run export:web",
+  "outputDirectory": "dist-web",
   "functions": {
     "api/claude.js": {
       "maxDuration": 60
@@ -15,5 +18,14 @@
     "api/stripe-webhook.js": {
       "maxDuration": 60
     }
-  }
+  },
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/.*",
+      "dest": "/index.html"
+    }
+  ]
 }
