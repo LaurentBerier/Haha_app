@@ -6,7 +6,7 @@
 - Original MVP scope (single-artist chat) delivered
 - Current execution tracking moved to `docs/phase2-status.md`
 
-## Current State (2026-03-10)
+## Current State (2026-03-11)
 
 Implemented in this repository:
 
@@ -51,12 +51,15 @@ npm run test:unit
 
 ## Cross-Repo Context
 
-The website repo (`ha-ha.ai`) now has Supabase auth + onboarding + reset password flows and bridges `/app*` routes to the real Expo web build from this mobile repo (`HAHA_app`). Both repos should be validated/deployed in lockstep.
+Production now uses two distinct repos/projects with clear ownership:
 
-Web deployment for this repo is now documented and automated via:
+- Landing repo -> Vercel project `ha-ha-ai` -> `https://ha-ha.ai`
+- App repo (`HAHA_app`, this repo) -> Vercel project `haha-app` -> `https://app.ha-ha.ai`
 
-- `npm run export:web`
-- `npm run deploy:web`
+Deployment for this repo:
+
+- `npx vercel --prod --yes` (project `haha-app`)
+- Vercel build uses `npm run export:web` via `vercel.json`
 
 ## Next Priorities
 

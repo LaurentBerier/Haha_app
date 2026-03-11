@@ -38,7 +38,28 @@ Implemented in this repository:
 - Shared API utilities (`api/_utils.js`) for CORS, bearer token extraction, request IDs, env checks, and standardized errors.
 - Extensible account type model (`free`, `regular`, `premium`, `admin`, plus custom).
 - Unit test baseline (Jest) for API security contracts and core store slices.
-- Web integration target: website repo (`ha-ha.ai`) routes `/app*` into this app's Expo web build.
+- App web + API are deployed together from this repo to the Vercel project `haha-app` (custom domain: `app.ha-ha.ai`).
+- Marketing/landing is maintained in a separate repo and deployed to a separate Vercel project (`ha-ha-ai`, domain `ha-ha.ai`).
+
+## Repos and Vercel Projects
+
+Two repositories and two Vercel projects are used in production:
+
+1. Landing repo (separate)
+   - Purpose: marketing/landing pages only
+   - Vercel project: `ha-ha-ai`
+   - Domain: `https://ha-ha.ai`
+
+2. App repo (this repository)
+   - Purpose: Expo app (web + mobile) and serverless API (`/api/*`)
+   - Vercel project: `haha-app`
+   - Domains: `https://app.ha-ha.ai` and project alias (`https://haha-app-delta.vercel.app`)
+
+Important:
+
+- The landing project no longer needs to bridge `/app*` routes.
+- The app runs directly on `app.ha-ha.ai`.
+- API calls should target the same app origin (`https://app.ha-ha.ai/api`).
 
 ## Stack
 
@@ -88,6 +109,9 @@ Notes:
 - These are public client vars; they are not server secrets.
 - `EXPO_PUBLIC_USE_MOCK_LLM` defaults to `false` and should stay disabled in production.
 - Current default Claude model: `claude-sonnet-4-6`.
+- Production app-web values should typically be:
+  - `EXPO_PUBLIC_API_BASE_URL=https://app.ha-ha.ai/api`
+  - `EXPO_PUBLIC_CLAUDE_PROXY_URL=https://app.ha-ha.ai/api/claude`
 
 ### Vercel backend vars
 
@@ -173,9 +197,8 @@ Supabase URL configuration should include:
 
 - `hahaha://auth/callback`
 - `hahaha://auth/callback?flow=recovery`
-- `https://haha-app-web.vercel.app/auth/callback`
-- `https://www.ha-ha.ai/auth/callback` (if used as app web entry)
-- `https://ha-ha.ai/auth/callback` (if used as app web entry)
+- `https://app.ha-ha.ai/auth/callback`
+- `https://haha-app-delta.vercel.app/auth/callback` (optional preview/alias)
 
 Supabase email templates should use:
 
@@ -324,44 +347,37 @@ npm run e2e:build:ios
 npm run e2e:ios
 ```
 
-## Deploy to Vercel
+## Deploy to Vercel (`haha-app`)
 
 ```bash
 npx vercel --prod --yes
 ```
 
-Deploy web app static build (recommended in separate Vercel project, e.g. `haha-app-web`):
+This repository deploys both:
+
+- Expo web app (exported to `dist-web`)
+- Serverless API (`api/*.js`)
+
+Current Vercel build settings are in [`vercel.json`](/Users/laurentbernier/Documents/HAHA_app/vercel.json):
+
+- `buildCommand: npm run export:web`
+- `outputDirectory: dist-web`
+- SPA route fallback to `/index.html`
+
+Optional local verification before deploy:
 
 ```bash
-npm run deploy:web
+npm run export:web
 ```
 
-This command:
+Domain mapping (production):
 
-- exports Expo web to `dist-web`
-- patches `dist-web/index.html` to load JS as module
-- writes `dist-web/vercel.web.json` (SPA fallback)
-- links `dist-web` to Vercel project `haha-app-web`
-- deploys `dist-web` to Vercel production
+- Landing: `https://ha-ha.ai` (separate repo/project)
+- App: `https://app.ha-ha.ai` (this repo, `haha-app`)
 
-After deployment, set this URL in the website repo (`ha-ha.ai`) as:
+`npm run deploy:web` now runs `npm run export:web` then `npx vercel --prod --yes` for the current `haha-app` topology.
 
-- `VITE_HAHA_APP_WEB_URL=https://<your-haha-app-web-domain>`
-
-Important behavior:
-
-- when redirected from `www.ha-ha.ai` to `haha-app-web.vercel.app`, the browser origin changes
-- Supabase session storage is origin-scoped, so user may need to sign in again on first arrival
-- to reduce this friction, use a stable custom domain for the app web project and keep it consistent
-
-Current `.vercelignore` intentionally includes:
-
-- `api/**`
-- `vercel.json`
-- `package.json`
-- `package-lock.json`
-
-This is required so function dependencies (for example `@supabase/supabase-js`) are available at runtime.
+Current [`.vercelignore`](/Users/laurentbernier/Documents/HAHA_app/.vercelignore) intentionally ignores only local/dev artifacts while keeping app source and API files deployable.
 
 ## Repo Layout
 
@@ -373,6 +389,7 @@ This is required so function dependencies (for example `@supabase/supabase-js`) 
 ## Additional Docs
 
 - `docs/architecture.md`
+- `docs/repo-topology.md`
 - `docs/economics.md`
 - `docs/phase1-status.md`
 - `docs/phase2-status.md`

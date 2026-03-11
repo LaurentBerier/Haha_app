@@ -291,15 +291,21 @@ Vercel functions require project dependencies at runtime; `.vercelignore` must i
 - Store slice tests: `src/store/slices/*.test.ts`
 - Command: `npm run test:unit`
 
-## Cross-Repo Web Integration
+## Repos and Hosting Topology
 
-The website repo (`ha-ha.ai`) keeps the marketing landing page and bridges `/app*` routes to this Expo app's web build URL (configured there via `VITE_HAHA_APP_WEB_URL`).
+Production is intentionally split across two repositories and two Vercel projects:
 
-Web bridge mapping:
+1. Landing repository (separate from this repo)
+   - Vercel project: `ha-ha-ai`
+   - Domain: `https://ha-ha.ai`
+   - Responsibility: marketing/landing only
 
-- `/app` -> `HAHA_app` web `/`
-- `/app/chat/cathy-gauthier` -> `HAHA_app` web `/mode-select/cathy-gauthier`
-- `/app/account` -> `HAHA_app` web `/settings`
+2. App repository (this repo: `HAHA_app`)
+   - Vercel project: `haha-app`
+   - Domain: `https://app.ha-ha.ai`
+   - Responsibility: Expo web app + mobile codebase + serverless API (`/api/*`)
+
+This replaces the previous `/app*` bridge approach. The app is now served directly on `app.ha-ha.ai`.
 
 ## Web Build Pipeline (`HAHA_app`)
 
@@ -309,7 +315,9 @@ Scripts:
   - runs Expo web export into `dist-web`
   - patches exported `index.html` script tag to `type="module"` for browser compatibility
   - writes `dist-web/vercel.web.json` for SPA fallback on Vercel
-- `npm run deploy:web`:
-  - calls `export:web`
-  - links `dist-web` to Vercel project `haha-app-web`
-  - deploys production static build
+
+Vercel deploys from project root using [`vercel.json`](/Users/laurentbernier/Documents/HAHA_app/vercel.json):
+
+- `buildCommand`: `npm run export:web`
+- `outputDirectory`: `dist-web`
+- API functions in `api/*` deploy in the same project

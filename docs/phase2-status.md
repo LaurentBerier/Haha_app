@@ -1,6 +1,6 @@
 # Phase 2 Status (Mobile + API)
 
-Last updated: **2026-03-10**
+Last updated: **2026-03-11**
 
 ## Scope
 
@@ -48,10 +48,12 @@ Core targets:
   - sign out
   - delete account
 - paid-tier voice direction set to ElevenLabs (strategy-level decision)
-- website integration: `ha-ha.ai` now bridges authenticated `/app*` routes to this Expo app's web build
+- deployment topology now split cleanly:
+  - landing website in separate repo/project (`ha-ha-ai`) on `https://ha-ha.ai`
+  - app web + API in this repo/project (`haha-app`) on `https://app.ha-ha.ai`
 - web deployment pipeline stabilized:
   - `npm run export:web` applies module-script compatibility patch
-  - `npm run deploy:web` targets Vercel project `haha-app-web`
+  - Vercel production deploy uses `npx vercel --prod --yes` on project `haha-app`
 - `POST /api/claude` protected with bearer token validation
   - server-side model whitelist
   - server-side artist-aware prompt assembly (Cathy + placeholder artists)
@@ -169,7 +171,7 @@ Manual checks:
 6. `POST /api/claude` with invalid bearer returns `401` (and missing-origin/no-bearer requests are blocked with `403` by CORS guard).
 7. Stripe checkout completed event reaches `POST /api/stripe-webhook` with `200`.
 8. Subscription screen displays current plan + next cycle and can request cancellation.
-9. `npm run deploy:web` publishes a working web app (no white-screen bootstrap crash).
+9. `npx vercel --prod --yes` publishes a working web app (no white-screen bootstrap crash).
 10. Sign in with user A, create messages, sign out and sign in with user B -> no conversation history leakage from user A.
 
 ## Dependencies and Config
@@ -206,8 +208,8 @@ Supabase URL config must include:
 
 - `hahaha://auth/callback`
 - `hahaha://auth/callback?flow=recovery`
-- `https://haha-app-web.vercel.app/auth/callback` (or your app-web custom domain)
-- `https://www.ha-ha.ai/auth/callback` / `https://ha-ha.ai/auth/callback` if used as callback domains
+- `https://app.ha-ha.ai/auth/callback`
+- `https://haha-app-delta.vercel.app/auth/callback` (optional preview/alias)
 
 Supabase email templates must use:
 

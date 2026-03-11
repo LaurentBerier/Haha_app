@@ -30,8 +30,8 @@ Checklist in Supabase `Authentication -> URL Configuration`:
 - Redirect URLs include:
   - `hahaha://auth/callback`
   - `hahaha://auth/callback?flow=recovery`
-  - `https://haha-app-web.vercel.app/auth/callback` (or your app-web custom domain)
-  - `https://www.ha-ha.ai/auth/callback` / `https://ha-ha.ai/auth/callback` only if used as callback domains
+  - `https://app.ha-ha.ai/auth/callback`
+  - `https://haha-app-delta.vercel.app/auth/callback` (optional preview/alias)
 
 Email template requirement (critical):
 
@@ -106,15 +106,13 @@ Common cause:
 
 - runtime dependencies unavailable in deployment bundle
 
-Required `.vercelignore` entries:
+Check that [`.vercelignore`](/Users/laurentbernier/Documents/HAHA_app/.vercelignore) does not exclude required deploy files:
 
-```text
-!api
-!api/**
-!package.json
-!package-lock.json
-!vercel.json
-```
+- `api/**`
+- `src/**`
+- `scripts/exportWeb.mjs`
+- `package.json` and `package-lock.json`
+- `vercel.json`
 
 Redeploy:
 
@@ -277,7 +275,7 @@ limit 20;
 
 Symptom:
 
-- redirect to `https://haha-app-web.vercel.app/` succeeds
+- redirect to `https://app.ha-ha.ai/` succeeds
 - page stays blank
 
 Cause:
@@ -289,14 +287,14 @@ Fix:
 
 ```bash
 cd /Users/laurentbernier/Documents/HAHA_app
-npm run deploy:web
+npx vercel --prod --yes
 ```
 
 This rebuilds and patches `dist-web/index.html` with `type="module"` before deployment.
 
 ## 18) Redirect to web app asks login again
 
-This is expected when crossing domains (for example `www.ha-ha.ai` -> `haha-app-web.vercel.app`).
+This is expected when crossing domains (for example `ha-ha.ai` landing -> `app.ha-ha.ai` app).
 
 Reason:
 
@@ -346,7 +344,7 @@ Fix:
 
 ```bash
 cd /Users/laurentbernier/Documents/HAHA_app
-npm run deploy:web
+npx vercel --prod --yes
 ```
 
 ## 21) `POST /api/stripe-webhook` returns 404
@@ -466,7 +464,7 @@ npx expo start -c
 
 ```bash
 cd /Users/laurentbernier/Documents/HAHA_app
-npm run deploy:web
+npx vercel --prod --yes
 ```
 
 4. Verify proxy health directly (replace domain):
