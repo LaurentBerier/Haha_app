@@ -86,7 +86,7 @@ async function readProfileMonthlyCounter(supabaseAdmin, userId, requestId) {
       return { ok: true, unsupported: true };
     }
 
-    console.error(`[api/game-questions][${requestId}] Failed to read profile monthly counter`, error);
+    console.error(`[api/impro-themes][${requestId}] Failed to read profile monthly counter`, error);
     return { ok: false, error };
   }
 
@@ -119,7 +119,7 @@ async function writeProfileMonthlyCounter(supabaseAdmin, userId, monthStartIso, 
       return { ok: true, unsupported: true };
     }
 
-    console.error(`[api/game-questions][${requestId}] Failed to write profile monthly counter`, error);
+    console.error(`[api/impro-themes][${requestId}] Failed to write profile monthly counter`, error);
     return { ok: false, error };
   }
 
@@ -171,7 +171,7 @@ async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId
     .gte('created_at', monthStartIso);
 
   if (error) {
-    console.error(`[api/game-questions][${requestId}] Failed to read monthly usage`, error);
+    console.error(`[api/impro-themes][${requestId}] Failed to read monthly usage`, error);
     return {
       ok: false,
       status: 500,
@@ -196,7 +196,7 @@ async function recordUsageEvent(supabaseAdmin, userId, requestId) {
   const nowIso = new Date().toISOString();
   const insertPayload = {
     user_id: userId,
-    endpoint: 'game-questions',
+    endpoint: 'impro-themes',
     request_id: requestId,
     created_at: nowIso
   };
@@ -205,7 +205,7 @@ async function recordUsageEvent(supabaseAdmin, userId, requestId) {
   if (error && isMissingUsageEventsRequestIdColumn(error)) {
     const fallbackPayload = {
       user_id: userId,
-      endpoint: 'game-questions',
+      endpoint: 'impro-themes',
       created_at: nowIso
     };
     ({ error } = await supabaseAdmin.from('usage_events').insert(fallbackPayload));
@@ -218,77 +218,163 @@ async function recordUsageEvent(supabaseAdmin, userId, requestId) {
   return { ok: true };
 }
 
+function normalizeText(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeUserProfile(rawProfile) {
+  const source = isRecord(rawProfile) ? rawProfile : {};
+  const interestsRaw = Array.isArray(source.interests) ? source.interests : [];
+
+  const interests = interestsRaw
+    .map((interest) => normalizeText(interest))
+    .filter(Boolean)
+    .slice(0, 8);
+
+  const age = Number.isFinite(source.age) ? Math.max(0, Math.floor(source.age)) : null;
+
+  return {
+    preferredName: normalizeText(source.preferredName),
+    age,
+    horoscopeSign: normalizeText(source.horoscopeSign),
+    interests,
+    relationshipStatus: normalizeText(source.relationshipStatus),
+    city: normalizeText(source.city),
+    job: normalizeText(source.job)
+  };
+}
+
 function parsePayload(body) {
   if (!isRecord(body)) {
     throw new Error('JSON body is required.');
   }
 
-  const artistId = typeof body.artistId === 'string' ? body.artistId.trim() : '';
-  const gameType = typeof body.gameType === 'string' ? body.gameType.trim() : '';
   const language = typeof body.language === 'string' && body.language.trim() ? body.language.trim() : 'fr-CA';
-
-  if (!artistId) {
-    throw new Error('artistId is required.');
-  }
-  if (gameType !== 'vrai-ou-invente') {
-    throw new Error('Unsupported gameType.');
-  }
+  const userProfile = normalizeUserProfile(body.userProfile);
+  const nonce =
+    Number.isFinite(body.nonce) && Number.isInteger(body.nonce) ? Number(body.nonce) : Date.now();
+  const avoidThemes = Array.isArray(body.avoidThemes)
+    ? body.avoidThemes
+        .map((entry) => normalizeText(entry))
+        .filter(Boolean)
+        .slice(0, 20)
+    : [];
 
   return {
-    artistId,
-    gameType,
-    language
+    language,
+    userProfile,
+    nonce,
+    avoidThemes
   };
 }
 
-function buildQuestionSystemPrompt(language) {
+function applyTemplate(template, values) {
+  return Object.entries(values).reduce((output, [key, value]) => {
+    const pattern = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
+    return output.replace(pattern, String(value));
+  }, template);
+}
+
+function buildImproSystemPrompt(language, userProfile) {
   const isEnglish = typeof language === 'string' && language.toLowerCase().startsWith('en');
+  const interestsText = userProfile.interests.length > 0 ? userProfile.interests.join(', ') : 'non fournis';
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  const values = {
+    user_first_name: userProfile.preferredName || 'non fourni',
+    user_age: userProfile.age ?? 'non fourni',
+    user_zodiac_sign: userProfile.horoscopeSign || 'non fourni',
+    user_interests: interestsText,
+    user_city: userProfile.city || 'non fournie',
+    user_relationship_status: userProfile.relationshipStatus || 'non fourni',
+    user_job: userProfile.job || 'non fourni',
+    current_date: todayIso
+  };
 
   if (isEnglish) {
-    return `You are Cathy Gauthier. Generate exactly 3 statements about yourself.
-2 must be true or highly plausible. 1 must be invented but credible.
-The invented one must not be obvious.
-Prioritize Quebec/Canada references and, when relevant, major widely-known current events.
-Do not invent precise facts, numbers, or dates when uncertain.
-Keep the statements punchy, funny, and surprising while remaining plausible.
+    const template = `You are Cathy Gauthier creating improv story themes.
+Generate exactly 4 short themes, personalized to the user profile below.
+Use concrete, real references from Quebec/Canada (known places, known public figures, known brands).
+No fictional people, no fictional bands, no invented places.
+Tone: funny, punchy, simple spoken language.
 
-Return ONLY this JSON:
+User profile:
+- first_name: {{user_first_name}}
+- age: {{user_age}}
+- zodiac_sign: {{user_zodiac_sign}}
+- interests: {{user_interests}}
+- city: {{user_city}}
+- relationship_status: {{user_relationship_status}}
+- job: {{user_job}}
+- current_date: {{current_date}}
+
+Strict anti-repeat rules:
+- Avoid overused references unless absolutely needed: Centre Bell, Tim Hortons, Martin Matte, Celine Dion, Guy A. Lepage.
+- Use concrete, real Quebec/Canada anchors and vary them from one request to the next.
+- 4 themes must be clearly different in setting and vibe.
+
+Return ONLY valid JSON with this exact shape:
 {
-  "statements": [
-    { "text": "I already...", "isTrue": true },
-    { "text": "I already...", "isTrue": false },
-    { "text": "I already...", "isTrue": true }
-  ],
-  "explanation": "1-2 funny Cathy-style lines explaining which one is fake and why it was credible"
+  "themes": [
+    { "id": 1, "type": "perso_forte", "titre": "...", "premisse": "..." },
+    { "id": 2, "type": "universel", "titre": "...", "premisse": "..." },
+    { "id": 3, "type": "wildcard", "titre": "...", "premisse": "..." },
+    { "id": 4, "type": "universel", "titre": "...", "premisse": "..." }
+  ]
 }
 
-Shuffle order randomly.`;
+Types allowed only: perso_forte, universel, wildcard.
+Titre max 80 chars, premisse max 200 chars.`;
+
+    return applyTemplate(template, values);
   }
 
-  return `Tu es Cathy Gauthier. Genere exactement 3 affirmations sur toi-meme.
-2 doivent etre vraies ou tres plausibles. 1 doit etre inventee mais credible.
-L'inventee ne doit pas etre evidente.
-Priorise des references Quebec/Canada et, quand pertinent, des faits d'actualite marquants largement connus.
-N'invente pas de faits precis, chiffres ou dates si tu n'es pas certaine.
-Garde des affirmations punchy, droles et surprenantes tout en restant plausibles.
+  const template = `Tu es Cathy Gauthier et tu crees des themes d'histoire improvisee.
+Genere exactement 4 themes courts, personnalises selon le profil utilisateur ci-dessous.
+Utilise des references concretes et reelles du Quebec/Canada (villes, lieux connus, personnalites publiques, marques connues).
+N'invente pas de noms de personnes, de bands ou de lieux fictifs.
+Ton: drole, punch, simple, langage parle.
 
-Retourne UNIQUEMENT ce JSON:
+Profil utilisateur:
+- prenom: {{user_first_name}}
+- age: {{user_age}}
+- signe: {{user_zodiac_sign}}
+- interets: {{user_interests}}
+- ville: {{user_city}}
+- statut relationnel: {{user_relationship_status}}
+- job: {{user_job}}
+- date: {{current_date}}
+
+Regles anti-repetition (obligatoires):
+- Evite les references usees, sauf si vraiment necessaire: Centre Bell, Tim Hortons, Martin Matte, Celine Dion, Guy A. Lepage.
+- Utilise des ancrages concrets et reels du Quebec/Canada, et varie-les d'une requete a l'autre.
+- Les 4 themes doivent etre clairement differents (lieu, situation, vibe).
+
+Retourne UNIQUEMENT un JSON valide avec exactement ce format:
 {
-  "statements": [
-    { "text": "J'ai deja...", "isTrue": true },
-    { "text": "J'ai deja...", "isTrue": false },
-    { "text": "J'ai deja...", "isTrue": true }
-  ],
-  "explanation": "1-2 phrases en mode Cathy expliquant quelle est la fausse et pourquoi c'etait credible"
+  "themes": [
+    { "id": 1, "type": "perso_forte", "titre": "...", "premisse": "..." },
+    { "id": 2, "type": "universel", "titre": "...", "premisse": "..." },
+    { "id": 3, "type": "wildcard", "titre": "...", "premisse": "..." },
+    { "id": 4, "type": "universel", "titre": "...", "premisse": "..." }
+  ]
 }
 
-Melange l'ordre aleatoirement.`;
+Types permis seulement: perso_forte, universel, wildcard.
+Titre max 80 caracteres, premisse max 200 caracteres.`;
+
+  return applyTemplate(template, values);
 }
 
-function buildQuestionUserPrompt(input) {
-  return `ArtistId: ${input.artistId}
-Game: ${input.gameType}
-Language: ${input.language}`;
+function buildImproUserPrompt(input) {
+  const avoidLine =
+    input.avoidThemes.length > 0 ? input.avoidThemes.map((value) => `- ${value}`).join('\n') : '- none';
+  return `Language: ${input.language}
+Nonce: ${input.nonce}
+Avoid reusing these exact ideas:
+${avoidLine}
+
+Generate improv themes now.`;
 }
 
 function extractResponseText(payload) {
@@ -323,7 +409,7 @@ function extractJsonObject(input) {
   return input.slice(start, end + 1);
 }
 
-function parseQuestionPayload(rawText) {
+function parseThemesPayload(rawText) {
   const text = stripCodeFences(rawText);
   let payload = null;
 
@@ -332,42 +418,43 @@ function parseQuestionPayload(rawText) {
   } catch {
     const extracted = extractJsonObject(text);
     if (!extracted) {
-      throw new Error('Question response is not valid JSON.');
+      throw new Error('Themes response is not valid JSON.');
     }
     payload = JSON.parse(extracted);
   }
 
-  if (!isRecord(payload) || !Array.isArray(payload.statements)) {
-    throw new Error('Question response has invalid shape.');
+  if (!isRecord(payload) || !Array.isArray(payload.themes)) {
+    throw new Error('Themes response has invalid shape.');
   }
 
-  const statements = payload.statements
+  const allowedTypes = new Set(['perso_forte', 'universel', 'wildcard']);
+  const themes = payload.themes
     .filter((entry) => isRecord(entry))
-    .map((entry) => ({
-      text: typeof entry.text === 'string' ? entry.text.trim().slice(0, 220) : '',
-      isTrue: entry.isTrue === true
-    }))
-    .filter((entry) => Boolean(entry.text))
-    .slice(0, 3);
+    .map((entry, index) => {
+      const maybeId = Number.parseInt(String(entry.id ?? ''), 10);
+      const typeRaw = normalizeText(entry.type);
+      const type = allowedTypes.has(typeRaw) ? typeRaw : 'universel';
+      const titre = normalizeText(entry.titre).slice(0, 80);
+      const premisse = normalizeText(entry.premisse).slice(0, 200);
 
-  if (statements.length !== 3) {
-    throw new Error('Question must contain exactly 3 statements.');
+      return {
+        id: Number.isFinite(maybeId) && maybeId > 0 ? maybeId : index + 1,
+        type,
+        titre,
+        premisse
+      };
+    })
+    .filter((entry) => Boolean(entry.titre) && Boolean(entry.premisse))
+    .slice(0, 4);
+
+  if (themes.length !== 4) {
+    throw new Error('Themes response must contain exactly 4 valid themes.');
   }
 
-  const falseCount = statements.filter((entry) => !entry.isTrue).length;
-  if (falseCount !== 1) {
-    throw new Error('Question must contain exactly one invented statement.');
-  }
-
-  const explanation =
-    typeof payload.explanation === 'string' && payload.explanation.trim()
-      ? payload.explanation.trim().slice(0, 320)
-      : 'La fausse etait la plus credible. Bien joue.';
-
-  return { statements, explanation };
+  return { themes };
 }
 
-async function callQuestionModel(input) {
+async function callImproThemeModel(input) {
   const apiKey = process.env.ANTHROPIC_API_KEY ?? '';
   const timeoutMs = parsePositiveInt(process.env.ANTHROPIC_FETCH_TIMEOUT_MS, DEFAULT_FETCH_TIMEOUT_MS);
   const controller = new AbortController();
@@ -383,11 +470,11 @@ async function callQuestionModel(input) {
       },
       body: JSON.stringify({
         model: DEFAULT_MODEL,
-        max_tokens: 350,
-        temperature: 0.85,
+        max_tokens: 500,
+        temperature: 0.9,
         stream: false,
-        system: buildQuestionSystemPrompt(input.language),
-        messages: [{ role: 'user', content: buildQuestionUserPrompt(input) }]
+        system: buildImproSystemPrompt(input.language, input.userProfile),
+        messages: [{ role: 'user', content: buildImproUserPrompt(input) }]
       }),
       signal: controller.signal
     });
@@ -400,7 +487,7 @@ async function callQuestionModel(input) {
         typeof payload.error.message === 'string' &&
         payload.error.message
           ? payload.error.message
-          : 'Question generation failed.';
+          : 'Impro themes generation failed.';
       const error = new Error(message);
       error.status = response.status;
       throw error;
@@ -408,14 +495,14 @@ async function callQuestionModel(input) {
 
     const rawText = extractResponseText(payload);
     if (!rawText.trim()) {
-      throw new Error('Question response is empty.');
+      throw new Error('Impro themes response is empty.');
     }
 
     try {
-      return parseQuestionPayload(rawText);
+      return parseThemesPayload(rawText);
     } catch (error) {
-      const parseError = new Error(error instanceof Error ? error.message : 'Question parse failed.');
-      parseError.code = 'QUESTIONS_PARSE_FAILED';
+      const parseError = new Error(error instanceof Error ? error.message : 'Impro themes parse failed.');
+      parseError.code = 'THEMES_PARSE_FAILED';
       throw parseError;
     }
   } finally {
@@ -495,22 +582,22 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  let question;
+  let payload;
   try {
-    question = await callQuestionModel(input);
+    payload = await callImproThemeModel(input);
   } catch (error) {
-    if (isRecord(error) && error.code === 'QUESTIONS_PARSE_FAILED') {
-      sendError(res, 422, 'Question output is invalid.', { code: 'QUESTIONS_PARSE_FAILED', requestId });
+    if (isRecord(error) && error.code === 'THEMES_PARSE_FAILED') {
+      sendError(res, 422, 'Theme output is invalid.', { code: 'THEMES_PARSE_FAILED', requestId });
       return;
     }
-    const message = error instanceof Error && error.message ? error.message : 'Question generator unavailable.';
+    const message = error instanceof Error && error.message ? error.message : 'Theme generator unavailable.';
     sendError(res, 502, message, { code: 'UPSTREAM_ERROR', requestId });
     return;
   }
 
   const usageInsert = await recordUsageEvent(supabaseAdmin, user.id, requestId);
   if (!usageInsert.ok) {
-    console.error(`[api/game-questions][${requestId}] Failed to write usage_events`, usageInsert.error);
+    console.error(`[api/impro-themes][${requestId}] Failed to write usage_events`, usageInsert.error);
     sendError(res, 500, 'Usage store unavailable.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
   }
@@ -531,5 +618,5 @@ module.exports = async function handler(req, res) {
     }
   }
 
-  res.status(200).json(question);
+  res.status(200).json(payload);
 };

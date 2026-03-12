@@ -1,10 +1,11 @@
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { BackButton } from '../../../components/common/BackButton';
 import { GameResultPanel } from '../../../components/games/GameResultPanel';
 import { ImproStory } from '../../../components/games/ImproStory';
 import { useImproChain } from '../../../games/hooks/useImproChain';
+import { ImproThemesService } from '../../../games/services/ImproThemesService';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
 import { t } from '../../../i18n';
 import type { UserProfile } from '../../../models/UserProfile';
@@ -36,48 +37,156 @@ function pick<T>(items: T[], seed: number, offset: number): T {
   return items[0] as T;
 }
 
-function buildThemeSuggestions(userProfile: UserProfile | null, language: string): string[] {
+interface ImproTheme {
+  id: number;
+  type: string;
+  titre: string;
+  premisse: string;
+}
+
+function normalizeThemeSignature(theme: ImproTheme): string {
+  return `${normalizeThemeInput(theme.titre).toLowerCase()}|${normalizeThemeInput(theme.premisse).toLowerCase()}`;
+}
+
+function createThemesFingerprint(themes: ImproTheme[]): string {
+  return themes.map((theme) => normalizeThemeSignature(theme)).join('::');
+}
+
+function mergeUniqueThemes(primary: ImproTheme[], secondary: ImproTheme[]): ImproTheme[] {
+  const seen = new Set<string>();
+  const merged: ImproTheme[] = [];
+
+  [...primary, ...secondary].forEach((theme) => {
+    const signature = normalizeThemeSignature(theme);
+    if (!signature || seen.has(signature)) {
+      return;
+    }
+    seen.add(signature);
+    merged.push(theme);
+  });
+
+  return merged;
+}
+
+function toAvoidThemes(themes: ImproTheme[]): string[] {
+  return themes.map((theme) => `${theme.titre} - ${theme.premisse}`);
+}
+
+function buildFallbackThemes(userProfile: UserProfile | null, language: string, variationSeed = 0): ImproTheme[] {
   const isEnglish = language.startsWith('en');
-  const interests = Array.isArray(userProfile?.interests)
-    ? userProfile.interests.map((interest) => normalizeThemeInput(interest)).filter(Boolean)
-    : [];
-  const primaryInterest = interests[0] ?? (isEnglish ? 'your weird hobbies' : 'tes passions bizarres');
-  const secondaryInterest = interests[1] ?? (isEnglish ? 'your daily routine' : 'ta routine quotidienne');
-  const horoscope = normalizeThemeInput(userProfile?.horoscopeSign ?? '');
   const preferredName = normalizeThemeInput(userProfile?.preferredName ?? '');
-  const dayKey = new Date().toISOString().slice(0, 10);
-  const seed = hashString(`${preferredName}|${primaryInterest}|${secondaryInterest}|${horoscope}|${dayKey}`);
+  const primaryInterest = normalizeThemeInput(userProfile?.interests?.[0] ?? '');
+  const runtimeSalt = Math.floor(Math.random() * 1_000_000_000);
+  const seed = hashString(`${preferredName}|${primaryInterest}|${Date.now()}|${variationSeed}|${runtimeSalt}`);
 
-  const qcPlaces = isEnglish
-    ? ['Montreal metro', 'Centre Bell', 'Old Quebec']
-    : ['metro de Montreal', 'Centre Bell', 'Vieux-Quebec'];
-  const publicFigures = isEnglish
-    ? ['a mayor in campaign mode', 'a loud hockey pundit', 'a TV host on live air']
-    : ['un maire en campagne', 'un chroniqueur hockey trop confiant', 'une animatrice en direct'];
-  const currentEvents = isEnglish
-    ? ['a citywide outage', 'a viral trend gone wrong', 'an international summit that derails']
-    : ['une panne geante', 'une tendance virale qui derape', 'un sommet international qui part en vrille'];
-  const cathyHooks = isEnglish
-    ? ['Cathy takes over the mic', 'Cathy runs the chaos like a stage manager', 'Cathy turns it into stand-up material']
-    : ['Cathy prend le micro', 'Cathy gere le chaos comme une directrice de scene', 'Cathy transforme ca en number de stand-up'];
+  const places = isEnglish
+    ? [
+        'at Granby Zoo',
+        'at Parc Jean-Drapeau',
+        'at Quartier Dix30',
+        'in Old Quebec',
+        'at Mont-Tremblant',
+        'at Place des Arts',
+        'at Montreal airport',
+        'at the Bell Centre',
+        'at a CEGEP in Montreal',
+        'at a Costco in Laval'
+      ]
+    : [
+        'au Zoo de Granby',
+        'au Parc Jean-Drapeau',
+        'au Quartier Dix30',
+        'dans le Vieux-Quebec',
+        'a Mont-Tremblant',
+        'a Place des Arts',
+        "a l'aeroport de Montreal",
+        'au Centre Bell',
+        'dans un cegep de Montreal',
+        'dans un Costco a Laval'
+      ];
 
-  const suggestionOne = isEnglish
-    ? `${primaryInterest} collides with ${pick(currentEvents, seed, 1)} at the ${pick(qcPlaces, seed, 2)}, and ${pick(cathyHooks, seed, 3)}.`
-    : `${primaryInterest} rencontre ${pick(currentEvents, seed, 1)} au ${pick(qcPlaces, seed, 2)}, puis ${pick(cathyHooks, seed, 3)}.`;
+  const incidents = isEnglish
+    ? [
+        'a peacock steals your backpack',
+        'you get announced on stage by mistake',
+        'your voice note plays on loudspeakers',
+        'you become event captain by accident',
+        'a live camera locks on you for ten minutes',
+        'you must replace the host in 30 seconds',
+        'a mascot starts following you everywhere',
+        'your food order starts a crowd debate'
+      ]
+    : [
+        'un paon te vole ton sac',
+        'on t annonce sur scene par erreur',
+        'ton vocal part sur les haut-parleurs',
+        "tu deviens chef d'evenement sans le vouloir",
+        'une camera live te suit pendant 10 minutes',
+        'tu dois remplacer lanimateur dans 30 secondes',
+        'une mascotte te suit partout',
+        'ta commande de bouffe lance un debat dans la foule'
+      ];
 
-  const suggestionTwo = isEnglish
-    ? `${secondaryInterest} explodes when ${pick(publicFigures, seed, 4)} calls you on live TV, and Cathy has to save the segment.`
-    : `${secondaryInterest} explose quand ${pick(publicFigures, seed, 4)} t'appelle en direct, et Cathy doit sauver le segment.`;
+  const knownPeople = isEnglish
+    ? [
+        'Rachid Badouri',
+        'Veronic DiCaire',
+        'PY Lord',
+        'Mitsou',
+        'Sonia Benezra',
+        'Patrick Huard',
+        'Sugar Sammy',
+        'Jean-Rene Dufort'
+      ]
+    : [
+        'Rachid Badouri',
+        'Veronic DiCaire',
+        'PY Lord',
+        'Mitsou',
+        'Sonia Benezra',
+        'Patrick Huard',
+        'Sugar Sammy',
+        'Jean-Rene Dufort'
+      ];
 
-  const suggestionThree = horoscope
-    ? isEnglish
-      ? `Your ${horoscope} sign gets a mission: survive ${pick(currentEvents, seed, 5)} in Quebec without losing your cool.`
-      : `Ton signe ${horoscope} recoit une mission: survivre a ${pick(currentEvents, seed, 5)} au Quebec sans perdre ton sang-froid.`
-    : isEnglish
-      ? `Cathy drags you into a backstage Quebec comedy crisis with ${pick(publicFigures, seed, 6)} and zero preparation.`
-      : `Cathy te traine dans une crise backstage d'humour au Quebec avec ${pick(publicFigures, seed, 6)} et zero preparation.`;
+  const titles = isEnglish
+    ? [
+        'Total chaos',
+        'Wrong place, wrong time',
+        'No plan, full panic',
+        'Caught on live TV',
+        'Instant improv crisis',
+        'Public meltdown'
+      ]
+    : [
+        'Chaos total',
+        'Mauvaise place, mauvais timing',
+        'Pas de plan, panique totale',
+        'Pris en direct',
+        'Crise improv instantanee',
+        'Meltdown public'
+      ];
 
-  return [suggestionOne, suggestionTwo, suggestionThree];
+  const selected: ImproTheme[] = [];
+  for (let index = 0; index < 3; index += 1) {
+    const place = pick(places, seed, index * 5 + 1);
+    const incident = pick(incidents, seed, index * 5 + 2);
+    const person = pick(knownPeople, seed, index * 5 + 3);
+    const titleRoot = pick(titles, seed, index * 5 + 4);
+    const title = `${titleRoot} #${index + 1}`;
+    const premisse = isEnglish
+      ? `You are ${place}, ${incident}, and ${person} says: "you fix this now".`
+      : `Tu es ${place}, ${incident}, pis ${person} te dit: "c est toi qui gere ca la".`;
+
+    selected.push({
+      id: index + 1,
+      type: 'universel',
+      titre: title,
+      premisse
+    });
+  }
+
+  return selected;
 }
 
 export default function ImproChainScreen() {
@@ -86,13 +195,18 @@ export default function ImproChainScreen() {
   const navigation = useNavigation();
   const headerHorizontalInset = useHeaderHorizontalInset();
   const [draft, setDraft] = useState('');
-  const [selectedTheme, setSelectedTheme] = useState('');
+  const [selectedTheme, setSelectedTheme] = useState<ImproTheme | null>(null);
   const [customTheme, setCustomTheme] = useState('');
+  const [themeSuggestionNonce, setThemeSuggestionNonce] = useState(0);
+  const [suggestedThemes, setSuggestedThemes] = useState<ImproTheme[]>([]);
+  const [themesLoading, setThemesLoading] = useState(false);
+  const [themesError, setThemesError] = useState(false);
+  const lastThemesFingerprintRef = useRef('');
+  const avoidThemesRef = useRef<string[]>([]);
   const artists = useStore((state) => state.artists);
   const userProfile = useStore((state) => state.userProfile);
   const language = useStore((state) => state.language);
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
-  const suggestedThemes = useMemo(() => buildThemeSuggestions(userProfile, language), [language, userProfile]);
 
   const {
     game,
@@ -109,6 +223,7 @@ export default function ImproChainScreen() {
     abandon,
     clear
   } = useImproChain(artistId);
+  const gameStatus = game?.status ?? 'none';
 
   const handleBack = () => {
     if (game && game.status !== 'complete' && game.status !== 'abandoned') {
@@ -136,6 +251,87 @@ export default function ImproChainScreen() {
     return unsubscribe;
   }, [abandon, clear, game, navigation]);
 
+  useEffect(() => {
+    if (gameStatus !== 'none' && gameStatus !== 'abandoned') {
+      return;
+    }
+
+    let cancelled = false;
+    setThemesLoading(true);
+    setThemesError(false);
+
+    const fetchThemes = async () => {
+      const firstNonce = Date.now() + themeSuggestionNonce * 997 + 1;
+      const firstBatch = await ImproThemesService.fetchThemes({
+        language,
+        userProfile,
+        nonce: firstNonce,
+        avoidThemes: avoidThemesRef.current
+      });
+
+      let mergedThemes = firstBatch;
+
+      if (mergedThemes.length < 4) {
+        const secondNonce = firstNonce + 17;
+        const topUpBatch = await ImproThemesService.fetchThemes({
+          language,
+          userProfile,
+          nonce: secondNonce,
+          avoidThemes: [...avoidThemesRef.current, ...toAvoidThemes(mergedThemes)]
+        });
+        mergedThemes = mergeUniqueThemes(mergedThemes, topUpBatch);
+      }
+
+      let nextThemes = mergedThemes.slice(0, 4);
+      let nextFingerprint = createThemesFingerprint(nextThemes);
+
+      if (nextThemes.length > 0 && nextFingerprint && nextFingerprint === lastThemesFingerprintRef.current) {
+        const retryNonce = firstNonce + 37;
+        const retryBatch = await ImproThemesService.fetchThemes({
+          language,
+          userProfile,
+          nonce: retryNonce,
+          avoidThemes: [...avoidThemesRef.current, ...toAvoidThemes(nextThemes)]
+        });
+        const retriedThemes = mergeUniqueThemes(retryBatch, nextThemes).slice(0, 4);
+        if (retriedThemes.length > 0) {
+          nextThemes = retriedThemes;
+          nextFingerprint = createThemesFingerprint(nextThemes);
+        }
+      }
+
+      if (cancelled) {
+        return;
+      }
+
+      setSuggestedThemes(nextThemes);
+      setThemesLoading(false);
+      if (nextFingerprint) {
+        lastThemesFingerprintRef.current = nextFingerprint;
+      }
+      avoidThemesRef.current = [...toAvoidThemes(nextThemes), ...avoidThemesRef.current].slice(0, 40);
+    };
+
+    void fetchThemes().catch(() => {
+      if (cancelled) {
+        return;
+      }
+      const fallbackThemes = buildFallbackThemes(userProfile, language, themeSuggestionNonce);
+      const fallbackFingerprint = createThemesFingerprint(fallbackThemes);
+      setSuggestedThemes(fallbackThemes);
+      setThemesError(true);
+      setThemesLoading(false);
+      if (fallbackFingerprint) {
+        lastThemesFingerprintRef.current = fallbackFingerprint;
+      }
+      avoidThemesRef.current = [...toAvoidThemes(fallbackThemes), ...avoidThemesRef.current].slice(0, 40);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [gameStatus, language, themeSuggestionNonce, userProfile]);
+
   if (!artist) {
     return (
       <View style={styles.center} testID="impro-invalid-artist">
@@ -144,7 +340,12 @@ export default function ImproChainScreen() {
     );
   }
 
-  const resolvedTheme = normalizeThemeInput(customTheme) || normalizeThemeInput(selectedTheme);
+  const normalizedCustomTheme = normalizeThemeInput(customTheme);
+  const resolvedTheme = normalizedCustomTheme
+    ? normalizedCustomTheme
+    : selectedTheme
+      ? `${selectedTheme.titre} - ${selectedTheme.premisse}`
+      : '';
   const showLobby = !game || game.status === 'abandoned';
   const handleSubmit = async () => {
     const text = draft.trim();
@@ -174,36 +375,72 @@ export default function ImproChainScreen() {
             <Text style={styles.lobbyTitle}>{t('gameImproThemeSelectionTitle')}</Text>
             <Text style={styles.lobbyHint}>{t('gameImproThemeSelectionSubtitle')}</Text>
 
-            <View style={styles.themeGrid}>
-              {suggestedThemes.map((themeOption) => {
-                const active = normalizeThemeInput(selectedTheme) === themeOption && !normalizeThemeInput(customTheme);
+            {themesLoading ? (
+              <View style={styles.themesLoadingRow}>
+                <ActivityIndicator size="small" color={theme.colors.neonBlue} />
+                <Text style={styles.themesLoadingText}>{t('gameImproThemesLoading')}</Text>
+              </View>
+            ) : (
+              <View style={styles.themeGrid}>
+                {suggestedThemes.map((themeOption) => {
+                  const active =
+                    selectedTheme?.id === themeOption.id &&
+                    selectedTheme?.titre === themeOption.titre &&
+                    !normalizeThemeInput(customTheme);
 
-                return (
-                  <Pressable
-                    key={`impro-theme-${themeOption}`}
-                    onPress={() => {
-                      setSelectedTheme(themeOption);
-                      setCustomTheme('');
-                    }}
-                    style={({ hovered, pressed }) => [
-                      styles.themeChip,
-                      active ? styles.themeChipActive : null,
-                      hovered ? styles.buttonHover : null,
-                      pressed ? styles.buttonPressed : null
-                    ]}
-                    accessibilityRole="button"
-                    testID={`impro-theme-${themeOption}`}
-                  >
-                    <Text style={[styles.themeChipLabel, active ? styles.themeChipLabelActive : null]}>{themeOption}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+                  return (
+                    <Pressable
+                      key={`impro-theme-${themeOption.id}-${themeOption.titre}`}
+                      onPress={() => {
+                        setSelectedTheme(themeOption);
+                        setCustomTheme('');
+                      }}
+                      style={({ hovered, pressed }) => [
+                        styles.themeChip,
+                        active ? styles.themeChipActive : null,
+                        hovered ? styles.buttonHover : null,
+                        pressed ? styles.buttonPressed : null
+                      ]}
+                      accessibilityRole="button"
+                      testID={`impro-theme-${themeOption.id}`}
+                    >
+                      <Text style={[styles.themeChipTitle, active ? styles.themeChipLabelActive : null]}>
+                        {themeOption.titre}
+                      </Text>
+                      <Text style={[styles.themeChipPremise, active ? styles.themeChipPremiseActive : null]}>
+                        {themeOption.premisse}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+
+            {themesError ? (
+              <View style={styles.fallbackRow}>
+                <Text style={styles.fallbackHint}>{t('gameImproThemesFallback')}</Text>
+                <Pressable
+                  onPress={() => setThemeSuggestionNonce((previous) => previous + 1)}
+                  style={({ hovered, pressed }) => [
+                    styles.retryButton,
+                    hovered ? styles.buttonHover : null,
+                    pressed ? styles.buttonPressed : null
+                  ]}
+                  accessibilityRole="button"
+                  testID="impro-themes-retry"
+                >
+                  <Text style={styles.retryButtonLabel}>{t('gameErrorRetry')}</Text>
+                </Pressable>
+              </View>
+            ) : null}
 
             <Text style={styles.customThemeLabel}>{t('gameLobbyTheme')}</Text>
             <TextInput
               value={customTheme}
-              onChangeText={setCustomTheme}
+              onChangeText={(value) => {
+                setCustomTheme(value);
+                setSelectedTheme(null);
+              }}
               style={styles.input}
               placeholder={t('gameLobbyThemePlaceholder')}
               placeholderTextColor={theme.colors.textDisabled}
@@ -293,6 +530,9 @@ export default function ImproChainScreen() {
             onReplay={() => {
               clear();
               setDraft('');
+              setSelectedTheme(null);
+              setCustomTheme('');
+              setThemeSuggestionNonce((previous) => previous + 1);
             }}
             onExit={() => {
               clear();
@@ -391,26 +631,84 @@ const styles = StyleSheet.create({
   themeGrid: {
     gap: theme.spacing.xs
   },
-  themeChip: {
-    minHeight: 40,
-    borderRadius: 10,
-    borderWidth: 1.2,
-    borderColor: theme.colors.border,
+  themesLoadingRow: {
+    minHeight: 52,
+    borderRadius: 12,
+    borderWidth: 1.4,
+    borderColor: theme.colors.neonBlueSoft,
     backgroundColor: theme.colors.surfaceSunken,
+    paddingHorizontal: theme.spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs
+  },
+  themesLoadingText: {
+    color: theme.colors.textSecondary,
+    fontSize: 13,
+    fontWeight: '600'
+  },
+  themeChip: {
+    minHeight: 70,
+    borderRadius: 12,
+    borderWidth: 1.6,
+    borderColor: theme.colors.neonBlueSoft,
+    backgroundColor: 'rgba(10, 20, 45, 0.72)',
     justifyContent: 'center',
-    paddingHorizontal: theme.spacing.sm
+    gap: 4,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 10,
+    shadowColor: theme.colors.neonBlue,
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4
   },
   themeChipActive: {
     borderColor: theme.colors.neonBlue,
-    backgroundColor: 'rgba(58, 141, 255, 0.12)'
+    backgroundColor: 'rgba(58, 141, 255, 0.16)',
+    shadowOpacity: 0.42,
+    shadowRadius: 12,
+    elevation: 6
   },
-  themeChipLabel: {
+  themeChipTitle: {
     color: theme.colors.textSecondary,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700'
+  },
+  themeChipPremise: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    lineHeight: 16
+  },
+  themeChipPremiseActive: {
+    color: theme.colors.textSecondary
   },
   themeChipLabelActive: {
     color: theme.colors.textPrimary
+  },
+  fallbackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing.sm
+  },
+  fallbackHint: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600'
+  },
+  retryButton: {
+    borderRadius: 999,
+    borderWidth: 1.2,
+    borderColor: theme.colors.neonBlueSoft,
+    backgroundColor: 'rgba(58, 141, 255, 0.1)',
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 6
+  },
+  retryButtonLabel: {
+    color: theme.colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '700'
   },
   customThemeLabel: {
     color: theme.colors.textSecondary,
