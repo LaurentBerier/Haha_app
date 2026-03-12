@@ -343,13 +343,17 @@ export default function ImproChainScreen() {
 
       if (mergedThemes.length < 3) {
         const secondNonce = firstNonce + 17;
-        const topUpBatch = await ImproThemesService.fetchThemes({
-          language,
-          userProfile,
-          nonce: secondNonce,
-          avoidThemes: [...avoidThemesRef.current, ...toAvoidThemes(mergedThemes)]
-        });
-        mergedThemes = mergeUniqueThemes(mergedThemes, topUpBatch);
+        try {
+          const topUpBatch = await ImproThemesService.fetchThemes({
+            language,
+            userProfile,
+            nonce: secondNonce,
+            avoidThemes: [...avoidThemesRef.current, ...toAvoidThemes(mergedThemes)]
+          });
+          mergedThemes = mergeUniqueThemes(mergedThemes, topUpBatch);
+        } catch (error) {
+          console.warn('[impro-chain] Theme top-up fetch failed, keeping first batch', error);
+        }
       }
 
       let nextThemes = mergedThemes.slice(0, 3);
@@ -357,16 +361,20 @@ export default function ImproChainScreen() {
 
       if (nextThemes.length > 0 && nextFingerprint && nextFingerprint === lastThemesFingerprintRef.current) {
         const retryNonce = firstNonce + 37;
-        const retryBatch = await ImproThemesService.fetchThemes({
-          language,
-          userProfile,
-          nonce: retryNonce,
-          avoidThemes: [...avoidThemesRef.current, ...toAvoidThemes(nextThemes)]
-        });
-        const retriedThemes = mergeUniqueThemes(retryBatch, nextThemes).slice(0, 3);
-        if (retriedThemes.length > 0) {
-          nextThemes = retriedThemes;
-          nextFingerprint = createThemesFingerprint(nextThemes);
+        try {
+          const retryBatch = await ImproThemesService.fetchThemes({
+            language,
+            userProfile,
+            nonce: retryNonce,
+            avoidThemes: [...avoidThemesRef.current, ...toAvoidThemes(nextThemes)]
+          });
+          const retriedThemes = mergeUniqueThemes(nextThemes, retryBatch).slice(0, 3);
+          if (retriedThemes.length > 0) {
+            nextThemes = retriedThemes;
+            nextFingerprint = createThemesFingerprint(nextThemes);
+          }
+        } catch (error) {
+          console.warn('[impro-chain] Theme retry fetch failed, keeping current themes', error);
         }
       }
 
@@ -410,12 +418,16 @@ export default function ImproChainScreen() {
     );
   }
 
-  const normalizedCustomTheme = normalizeThemeInput(customTheme);
-  const resolvedTheme = normalizedCustomTheme
-    ? normalizedCustomTheme
-    : selectedTheme
-      ? `${selectedTheme.titre} - ${selectedTheme.premisse}`
-      : '';
+  const normalizedCustomTheme = useMemo(() => normalizeThemeInput(customTheme), [customTheme]);
+  const resolvedTheme = useMemo(
+    () =>
+      normalizedCustomTheme
+        ? normalizedCustomTheme
+        : selectedTheme
+          ? `${selectedTheme.titre} - ${selectedTheme.premisse}`
+          : '',
+    [normalizedCustomTheme, selectedTheme]
+  );
   const showLobby = !game || game.status === 'abandoned';
   const handleSubmit = async () => {
     const text = draft.trim();
@@ -423,13 +435,20 @@ export default function ImproChainScreen() {
       return;
     }
     setDraft('');
-    await submitTurn(text);
+    try {
+      await submitTurn(text);
+    } catch (error) {
+      console.error('[impro-chain] Failed to submit user turn', error);
+    }
   };
 
   const showComposer = Boolean(
     game && !isComplete && game.status !== 'cathy-ending' && userTurnsCount < targetUserTurns
   );
-  const interventionsLeft = Math.max(0, targetUserTurns - userTurnsCount);
+  const interventionsLeft = useMemo(
+    () => Math.max(0, targetUserTurns - userTurnsCount),
+    [targetUserTurns, userTurnsCount]
+  );
 
   return (
     <View style={styles.screen}>
@@ -524,7 +543,15 @@ export default function ImproChainScreen() {
             />
 
             <Pressable
-              onPress={() => void startGame(resolvedTheme)}
+              onPress={() => {
+                void (async () => {
+                  try {
+                    await startGame(resolvedTheme);
+                  } catch (error) {
+                    console.error('[impro-chain] Failed to start game', error);
+                  }
+                })();
+              }}
               disabled={!resolvedTheme}
               style={({ hovered, pressed }) => [
                 styles.startButton,

@@ -1329,7 +1329,6 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const profileForPromptPromise = fetchUserProfileForPrompt(supabaseAdmin, auth.userId, requestId);
   const now = Date.now();
   const windowMs = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_WINDOW_MS, DEFAULT_RATE_LIMIT_WINDOW_MS);
   const maxRequests = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS, DEFAULT_RATE_LIMIT_MAX_REQUESTS);
@@ -1390,7 +1389,7 @@ module.exports = async function handler(req, res) {
   }
 
   const tierMaxTokens = getMaxTokensForTier(auth.accountType);
-  const profileForPrompt = await profileForPromptPromise;
+  const profileForPrompt = await fetchUserProfileForPrompt(supabaseAdmin, auth.userId, requestId);
   const serverSystemPrompt = buildServerSystemPrompt(promptContext, profileForPrompt, req.body?.messages);
 
   let payload;

@@ -34,6 +34,7 @@ function isImproGame(game: Game | null, artistId: string): game is ImproGame {
 }
 
 const INTERVENTION_POINTS = 10;
+const IMPRO_END_TRANSITION_MS = 280;
 const REWARD_VARIANTS = [
   { emoji: '❤️', fr: 'Touché en plein coeur', en: 'Right in the feels' },
   { emoji: '👍', fr: 'Solide repartie', en: 'Solid comeback' },
@@ -100,34 +101,41 @@ export function useImproChain(artistId: string): UseImproChainResult {
     async (snapshot: ImproGame) => {
       const gameId = snapshot.id;
       beginImproArtistStream();
-      cancelStreamRef.current = await GameService.runImproTurn({
-        artistId,
-        history: snapshot.gameData.turns,
-        theme: snapshot.gameData.theme,
-        targetUserTurns: snapshot.gameData.targetUserTurns,
-        userTurnCount: snapshot.gameData.userTurnsCount,
-        language,
-        userProfile,
-        onToken: (token) => appendImproStreamToken(token),
-        onComplete: (content, isEnding) => {
-          finalizeImproArtistTurn(content, isEnding);
-          incrementUsage();
+      try {
+        cancelStreamRef.current = await GameService.runImproTurn({
+          artistId,
+          history: snapshot.gameData.turns,
+          theme: snapshot.gameData.theme,
+          targetUserTurns: snapshot.gameData.targetUserTurns,
+          userTurnCount: snapshot.gameData.userTurnsCount,
+          language,
+          userProfile,
+          onToken: (token) => appendImproStreamToken(token),
+          onComplete: (content, isEnding) => {
+            finalizeImproArtistTurn(content, isEnding);
+            incrementUsage();
 
-          if (isEnding) {
-            setTimeout(() => {
-              const latest = useStore.getState().activeGame;
-              if (!latest || latest.id !== gameId || latest.status === 'abandoned') {
-                return;
-              }
-              useStore.getState().setGameStatus('complete');
-            }, 280);
+            if (isEnding) {
+              // Keep a short delay so the last Cathy line is visible before result transition.
+              setTimeout(() => {
+                const latest = useStore.getState().activeGame;
+                if (!latest || latest.id !== gameId || latest.status === 'abandoned') {
+                  return;
+                }
+                useStore.getState().setGameStatus('complete');
+              }, IMPRO_END_TRANSITION_MS);
+            }
+          },
+          onError: (error) => {
+            console.error('[useImproChain] Impro turn failed', error);
+            setGameError(t('gameErrorGeneric'));
           }
-        },
-        onError: (error) => {
-          console.error('[useImproChain] Impro turn failed', error);
-          setGameError(t('gameErrorGeneric'));
-        }
-      });
+        });
+      } catch (error) {
+        console.error('[useImproChain] Unable to start impro stream', error);
+        cancelStreamRef.current = null;
+        setGameError(t('gameErrorGeneric'));
+      }
     },
     [
       appendImproStreamToken,

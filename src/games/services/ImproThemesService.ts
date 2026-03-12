@@ -95,8 +95,8 @@ function normalizeThemes(raw: unknown): ImproTheme[] {
     })
     .filter((entry) => Boolean(entry.titre) && Boolean(entry.premisse));
 
-  if (normalized.length < 2) {
-    throw new Error('Theme payload is invalid.');
+  if (normalized.length !== 3) {
+    throw new Error('Theme payload must include exactly 3 themes.');
   }
 
   return normalized;

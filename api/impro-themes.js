@@ -269,9 +269,19 @@ function parsePayload(body) {
 }
 
 function applyTemplate(template, values) {
+  const toTemplateValue = (value) => {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    if (typeof value === 'string') {
+      return value;
+    }
+    return String(value);
+  };
+
   return Object.entries(values).reduce((output, [key, value]) => {
     const pattern = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
-    return output.replace(pattern, String(value));
+    return output.replace(pattern, toTemplateValue(value));
   }, template);
 }
 
@@ -338,17 +348,19 @@ function getZodiacTrait(sign, isEnglish) {
 
 function buildImproSystemPrompt(language, userProfile) {
   const isEnglish = typeof language === 'string' && language.toLowerCase().startsWith('en');
-  const interestsText = userProfile.interests.length > 0 ? userProfile.interests.join(', ') : 'non fournis';
+  const missingValue = isEnglish ? 'not provided' : 'non fourni';
+  const missingCity = isEnglish ? 'not provided' : 'non fournie';
+  const interestsText = userProfile.interests.length > 0 ? userProfile.interests.join(', ') : missingValue;
   const todayIso = new Date().toISOString().slice(0, 10);
   const zodiacTrait = getZodiacTrait(userProfile.horoscopeSign, isEnglish);
 
   const values = {
-    user_age: userProfile.age ?? 'non fourni',
+    user_age: userProfile.age === null ? missingValue : userProfile.age,
     user_zodiac_trait: zodiacTrait,
     user_interests: interestsText,
-    user_city: userProfile.city || 'non fournie',
-    user_relationship_status: userProfile.relationshipStatus || 'non fourni',
-    user_job: userProfile.job || 'non fourni',
+    user_city: userProfile.city || missingCity,
+    user_relationship_status: userProfile.relationshipStatus || missingValue,
+    user_job: userProfile.job || missingValue,
     current_date: todayIso
   };
 
