@@ -72,117 +72,187 @@ function toAvoidThemes(themes: ImproTheme[]): string[] {
   return themes.map((theme) => `${theme.titre} - ${theme.premisse}`);
 }
 
+function getAstroTrait(userProfile: UserProfile | null, language: string): string {
+  const normalizedSign = normalizeThemeInput(userProfile?.horoscopeSign ?? '').toLowerCase();
+  const isEnglish = language.startsWith('en');
+  const traitsFr: Record<string, string> = {
+    aries: 'ton cote fonceur',
+    taurus: 'ton cote tete dure',
+    gemini: 'ton cote jasette rapide',
+    cancer: 'ton cote emotif',
+    leo: 'ton cote showman',
+    virgo: 'ton cote perfectionniste',
+    libra: 'ton cote diplomate',
+    scorpio: 'ton cote intense',
+    sagittarius: 'ton cote aventurier',
+    capricorn: 'ton cote focus resultat',
+    aquarius: 'ton cote rebelle',
+    pisces: 'ton cote intuitif',
+    belier: 'ton cote fonceur',
+    taureau: 'ton cote tete dure',
+    gemeaux: 'ton cote jasette rapide',
+    lion: 'ton cote showman',
+    vierge: 'ton cote perfectionniste',
+    balance: 'ton cote diplomate',
+    scorpion: 'ton cote intense',
+    sagittaire: 'ton cote aventurier',
+    capricorne: 'ton cote focus resultat',
+    verseau: 'ton cote rebelle',
+    poissons: 'ton cote intuitif'
+  };
+  const traitsEn: Record<string, string> = {
+    aries: 'your bold side',
+    taurus: 'your stubborn side',
+    gemini: 'your fast-talking side',
+    cancer: 'your emotional side',
+    leo: 'your spotlight side',
+    virgo: 'your perfectionist side',
+    libra: 'your diplomatic side',
+    scorpio: 'your intense side',
+    sagittarius: 'your adventurous side',
+    capricorn: 'your results-first side',
+    aquarius: 'your rebel side',
+    pisces: 'your intuitive side',
+    belier: 'your bold side',
+    taureau: 'your stubborn side',
+    gemeaux: 'your fast-talking side',
+    lion: 'your spotlight side',
+    vierge: 'your perfectionist side',
+    balance: 'your diplomatic side',
+    scorpion: 'your intense side',
+    sagittaire: 'your adventurous side',
+    capricorne: 'your results-first side',
+    verseau: 'your rebel side',
+    poissons: 'your intuitive side'
+  };
+
+  if (isEnglish) {
+    return traitsEn[normalizedSign] ?? 'your wild card side';
+  }
+  return traitsFr[normalizedSign] ?? 'ton cote imprenable';
+}
+
 function buildFallbackThemes(userProfile: UserProfile | null, language: string, variationSeed = 0): ImproTheme[] {
   const isEnglish = language.startsWith('en');
-  const preferredName = normalizeThemeInput(userProfile?.preferredName ?? '');
-  const primaryInterest = normalizeThemeInput(userProfile?.interests?.[0] ?? '');
   const runtimeSalt = Math.floor(Math.random() * 1_000_000_000);
-  const seed = hashString(`${preferredName}|${primaryInterest}|${Date.now()}|${variationSeed}|${runtimeSalt}`);
+  const seed = hashString(`${Date.now()}|${variationSeed}|${runtimeSalt}`);
+  const astroTrait = getAstroTrait(userProfile, language);
+  const includeAstroTheme = ((seed >>> 2) % 4) === 0;
 
-  const places = isEnglish
+  const baseFallbackThemes = isEnglish
     ? [
-        'at Granby Zoo',
-        'at Parc Jean-Drapeau',
-        'at Quartier Dix30',
-        'in Old Quebec',
-        'at Mont-Tremblant',
-        'at Place des Arts',
-        'at Montreal airport',
-        'at the Bell Centre',
-        'at a CEGEP in Montreal',
-        'at a Costco in Laval'
+        {
+          id: 1,
+          type: 'universel',
+          titre: 'Granby chaos',
+          premisse: 'You and Cathy visit Granby Zoo; a lion escapes because of your selfie.'
+        },
+        {
+          id: 2,
+          type: 'perso_forte',
+          titre: 'Metro mission',
+          premisse: 'Your OPUS card fails, and Cathy makes you run STM service for one night.'
+        },
+        {
+          id: 3,
+          type: 'wildcard',
+          titre: 'Costco meltdown',
+          premisse: 'At Costco Laval, you start a line war and Cathy becomes your lawyer.'
+        },
+        {
+          id: 5,
+          type: 'universel',
+          titre: 'Old Quebec stunt',
+          premisse: 'In Old Quebec, Cathy bets you cannot survive one day as tour guide.'
+        },
+        {
+          id: 6,
+          type: 'wildcard',
+          titre: 'Jean-Drapeau fail',
+          premisse: 'At Parc Jean-Drapeau, your plan fails and Cathy sends you on stage anyway.'
+        },
+        {
+          id: 7,
+          type: 'universel',
+          titre: 'SAQ emergency',
+          premisse: 'At SAQ Berri, you grab the wrong case and Cathy asks you to fake being sommelier.'
+        },
+        {
+          id: 8,
+          type: 'wildcard',
+          titre: 'IKEA survival',
+          premisse: 'At IKEA Montreal, you get lost in shortcuts and Cathy turns it into a live challenge.'
+        }
       ]
     : [
-        'au Zoo de Granby',
-        'au Parc Jean-Drapeau',
-        'au Quartier Dix30',
-        'dans le Vieux-Quebec',
-        'a Mont-Tremblant',
-        'a Place des Arts',
-        "a l'aeroport de Montreal",
-        'au Centre Bell',
-        'dans un cegep de Montreal',
-        'dans un Costco a Laval'
+        {
+          id: 1,
+          type: 'universel',
+          titre: 'Chaos a Granby',
+          premisse: 'Toi et Cathy allez au Zoo de Granby, pis un lion se sauve a cause de toi.'
+        },
+        {
+          id: 2,
+          type: 'perso_forte',
+          titre: 'Mission metro',
+          premisse: 'Ta carte OPUS plante, pis Cathy te force a faire rouler le metro ce soir.'
+        },
+        {
+          id: 3,
+          type: 'wildcard',
+          titre: 'Drame au Costco',
+          premisse: 'Au Costco Laval, tu pars une guerre de file, pis Cathy devient ton avocate.'
+        },
+        {
+          id: 5,
+          type: 'universel',
+          titre: 'Vieux-Quebec',
+          premisse: 'Dans le Vieux-Quebec, Cathy te met guide touristique sans formation.'
+        },
+        {
+          id: 6,
+          type: 'wildcard',
+          titre: 'Parc en panique',
+          premisse: 'Au Parc Jean-Drapeau, ton plan saute, pis Cathy te pitche sur scene.'
+        },
+        {
+          id: 7,
+          type: 'universel',
+          titre: 'Urgence SAQ',
+          premisse: 'A la SAQ Berri, tu pognes la mauvaise caisse, pis Cathy te nomme sommelier de crise.'
+        },
+        {
+          id: 8,
+          type: 'wildcard',
+          titre: 'Deroute IKEA',
+          premisse: 'Au IKEA Montreal, tu te perds solide, pis Cathy transforme ca en defi live.'
+        }
       ];
 
-  const incidents = isEnglish
+  const fallbackThemes = includeAstroTheme
     ? [
-        'a peacock steals your backpack',
-        'you get announced on stage by mistake',
-        'your voice note plays on loudspeakers',
-        'you become event captain by accident',
-        'a live camera locks on you for ten minutes',
-        'you must replace the host in 30 seconds',
-        'a mascot starts following you everywhere',
-        'your food order starts a crowd debate'
+        ...baseFallbackThemes,
+        isEnglish
+          ? {
+              id: 9,
+              type: 'perso_forte',
+              titre: 'Astrology overload',
+              premisse: `Tonight, your astrology traits (${astroTrait}) explode, and Cathy throws you on live TV.`
+            }
+          : {
+              id: 9,
+              type: 'perso_forte',
+              titre: 'Virage astrologie',
+              premisse: `Ce soir, ton astrologie (${astroTrait}) prend toute la place, pis Cathy t envoie en direct.`
+            }
       ]
-    : [
-        'un paon te vole ton sac',
-        'on t annonce sur scene par erreur',
-        'ton vocal part sur les haut-parleurs',
-        "tu deviens chef d'evenement sans le vouloir",
-        'une camera live te suit pendant 10 minutes',
-        'tu dois remplacer lanimateur dans 30 secondes',
-        'une mascotte te suit partout',
-        'ta commande de bouffe lance un debat dans la foule'
-      ];
-
-  const knownPeople = isEnglish
-    ? [
-        'Rachid Badouri',
-        'Veronic DiCaire',
-        'PY Lord',
-        'Mitsou',
-        'Sonia Benezra',
-        'Patrick Huard',
-        'Sugar Sammy',
-        'Jean-Rene Dufort'
-      ]
-    : [
-        'Rachid Badouri',
-        'Veronic DiCaire',
-        'PY Lord',
-        'Mitsou',
-        'Sonia Benezra',
-        'Patrick Huard',
-        'Sugar Sammy',
-        'Jean-Rene Dufort'
-      ];
-
-  const titles = isEnglish
-    ? [
-        'Total chaos',
-        'Wrong place, wrong time',
-        'No plan, full panic',
-        'Caught on live TV',
-        'Instant improv crisis',
-        'Public meltdown'
-      ]
-    : [
-        'Chaos total',
-        'Mauvaise place, mauvais timing',
-        'Pas de plan, panique totale',
-        'Pris en direct',
-        'Crise improv instantanee',
-        'Meltdown public'
-      ];
+    : baseFallbackThemes;
 
   const selected: ImproTheme[] = [];
-  for (let index = 0; index < 3; index += 1) {
-    const place = pick(places, seed, index * 5 + 1);
-    const incident = pick(incidents, seed, index * 5 + 2);
-    const person = pick(knownPeople, seed, index * 5 + 3);
-    const titleRoot = pick(titles, seed, index * 5 + 4);
-    const title = `${titleRoot} #${index + 1}`;
-    const premisse = isEnglish
-      ? `You are ${place}, ${incident}, and ${person} says: "you fix this now".`
-      : `Tu es ${place}, ${incident}, pis ${person} te dit: "c est toi qui gere ca la".`;
-
+  for (let index = 0; index < 4; index += 1) {
     selected.push({
-      id: index + 1,
-      type: 'universel',
-      titre: title,
-      premisse
+      ...pick(fallbackThemes, seed, index * 5 + 3),
+      id: index + 1
     });
   }
 
@@ -419,20 +489,26 @@ export default function ImproChainScreen() {
             {themesError ? (
               <View style={styles.fallbackRow}>
                 <Text style={styles.fallbackHint}>{t('gameImproThemesFallback')}</Text>
-                <Pressable
-                  onPress={() => setThemeSuggestionNonce((previous) => previous + 1)}
-                  style={({ hovered, pressed }) => [
-                    styles.retryButton,
-                    hovered ? styles.buttonHover : null,
-                    pressed ? styles.buttonPressed : null
-                  ]}
-                  accessibilityRole="button"
-                  testID="impro-themes-retry"
-                >
-                  <Text style={styles.retryButtonLabel}>{t('gameErrorRetry')}</Text>
-                </Pressable>
               </View>
             ) : null}
+
+            <Pressable
+              onPress={() => {
+                setSelectedTheme(null);
+                setThemeSuggestionNonce((previous) => previous + 1);
+              }}
+              disabled={themesLoading}
+              style={({ hovered, pressed }) => [
+                styles.retryButton,
+                hovered ? styles.buttonHover : null,
+                pressed ? styles.buttonPressed : null,
+                themesLoading ? styles.disabledButton : null
+              ]}
+              accessibilityRole="button"
+              testID="impro-themes-regenerate"
+            >
+              <Text style={styles.retryButtonLabel}>{t('gameImproRegenerateThemes')}</Text>
+            </Pressable>
 
             <Text style={styles.customThemeLabel}>{t('gameLobbyTheme')}</Text>
             <TextInput

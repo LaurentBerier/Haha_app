@@ -123,6 +123,7 @@ export const fr = {
   gameImproThemeSelectionSubtitle: 'Cathy te propose 4 themes, ou tu peux imposer le tien.',
   gameImproThemesLoading: 'Cathy genere tes themes...',
   gameImproThemesFallback: 'Themes generes localement',
+  gameImproRegenerateThemes: 'Regenerer les themes',
   gameImproThemeBadge: 'Theme:',
   gameImproInterventionsLabel: 'Interventions',
   gameImproInterventionsLeftLabel: 'Restantes',

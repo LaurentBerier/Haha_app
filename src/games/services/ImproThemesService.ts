@@ -83,8 +83,8 @@ function normalizeThemes(raw: unknown): ImproTheme[] {
       const theme = entry as Record<string, unknown>;
       const idFromPayload = Number.parseInt(String(theme.id ?? ''), 10);
       const type = normalizeText(theme.type).slice(0, 32) || 'universel';
-      const titre = normalizeText(theme.titre).slice(0, 80);
-      const premisse = normalizeText(theme.premisse).slice(0, 200);
+      const titre = normalizeText(theme.titre);
+      const premisse = normalizeText(theme.premisse);
 
       return {
         id: Number.isFinite(idFromPayload) && idFromPayload > 0 ? idFromPayload : index + 1,

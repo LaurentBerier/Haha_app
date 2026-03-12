@@ -123,6 +123,7 @@ export const en = {
   gameImproThemeSelectionSubtitle: 'Cathy suggests 4 themes, or write your own.',
   gameImproThemesLoading: 'Cathy is generating your themes...',
   gameImproThemesFallback: 'Themes generated locally',
+  gameImproRegenerateThemes: 'Regenerate themes',
   gameImproThemeBadge: 'Theme:',
   gameImproInterventionsLabel: 'Interventions',
   gameImproInterventionsLeftLabel: 'Left',
