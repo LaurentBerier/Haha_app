@@ -1,81 +1,122 @@
 import { StyleSheet, Text, View } from 'react-native';
-import type { ImproTurn } from '../../games/types';
+import type { ImproReward, ImproTurn } from '../../games/types';
 import { theme } from '../../theme';
 
 interface ImproStoryProps {
   turns: ImproTurn[];
+  rewards: ImproReward[];
   streamingContent: string;
 }
 
-export function ImproStory({ turns, streamingContent }: ImproStoryProps) {
+export function ImproStory({ turns, rewards, streamingContent }: ImproStoryProps) {
   const hasStreaming = Boolean(streamingContent.trim());
+  const rewardByTurn = new Map<number, ImproReward>();
+  rewards.forEach((reward) => {
+    rewardByTurn.set(reward.userTurnNumber, reward);
+  });
+
+  const rows: Array<{
+    key: string;
+    role: 'user' | 'artist';
+    label: string;
+    content: string;
+    reward?: ImproReward;
+  }> = [];
+
+  let userTurnCursor = 0;
+  turns.forEach((turn, index) => {
+    if (turn.role === 'user') {
+      userTurnCursor += 1;
+    }
+
+    rows.push({
+      key: `impro-turn-${index}`,
+      role: turn.role,
+      label: turn.role === 'user' ? 'Toi' : 'Cathy',
+      content: turn.content,
+      reward: turn.role === 'user' ? rewardByTurn.get(userTurnCursor) : undefined
+    });
+  });
+
+  if (hasStreaming) {
+    rows.push({
+      key: 'impro-streaming-row',
+      role: 'artist',
+      label: 'Cathy',
+      content: streamingContent
+    });
+  }
 
   return (
     <View style={styles.storyPanel}>
-      {turns.map((turn, index) => (
+      <Text style={styles.sheetTitle}>Scenario en cours</Text>
+
+      {rows.map((row) => (
         <View
-          key={`impro-turn-${index}`}
+          key={row.key}
           style={[
-            styles.bubble,
-            turn.role === 'user' ? styles.userBubble : styles.artistBubble
+            styles.lineRow,
+            row.role === 'user' ? styles.userRow : styles.artistRow
           ]}
         >
-          <Text style={styles.roleLabel}>{turn.role === 'user' ? 'Toi' : 'Cathy'}</Text>
-          <Text style={styles.content}>{turn.content}</Text>
+          <Text style={styles.roleLabel}>{row.label}:</Text>
+          <Text style={styles.content}>{row.content}</Text>
+          {row.reward ? (
+            <Text style={styles.rewardLine}>
+              {row.reward.emoji} +{row.reward.points} {row.reward.label}
+            </Text>
+          ) : null}
         </View>
       ))}
-
-      {hasStreaming ? (
-        <View style={[styles.bubble, styles.artistBubble, styles.streamingBubble]}>
-          <Text style={styles.roleLabel}>Cathy</Text>
-          <Text style={styles.content}>{streamingContent}</Text>
-        </View>
-      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   storyPanel: {
-    borderWidth: 1.3,
+    borderWidth: 1.2,
     borderColor: theme.colors.border,
     borderRadius: 14,
-    backgroundColor: theme.colors.surface,
-    padding: theme.spacing.sm,
-    gap: theme.spacing.xs
-  },
-  bubble: {
-    borderWidth: 1,
-    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: theme.colors.neonBlueSoft,
+    backgroundColor: 'rgba(248, 250, 255, 0.08)',
     paddingHorizontal: theme.spacing.sm,
     paddingVertical: theme.spacing.xs,
+    gap: 0
+  },
+  sheetTitle: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: theme.spacing.xs
+  },
+  lineRow: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(148, 163, 184, 0.22)',
+    paddingVertical: 8,
     gap: 4
   },
-  userBubble: {
-    alignSelf: 'flex-end',
-    borderColor: theme.colors.neonBlueSoft,
-    backgroundColor: theme.colors.surfaceRaised,
-    maxWidth: '90%'
+  userRow: {
+    paddingLeft: 4
   },
-  artistBubble: {
-    alignSelf: 'flex-start',
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.artistBubble,
-    maxWidth: '95%'
-  },
-  streamingBubble: {
-    borderColor: theme.colors.neonBlue
+  artistRow: {
+    paddingLeft: 0
   },
   roleLabel: {
-    color: theme.colors.textSecondary,
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase'
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '800'
   },
   content: {
     color: theme.colors.textPrimary,
-    fontSize: 14,
-    lineHeight: 19
+    fontSize: 15,
+    lineHeight: 21
+  },
+  rewardLine: {
+    color: theme.colors.neonBlue,
+    fontSize: 12,
+    fontWeight: '700'
   }
 });
-

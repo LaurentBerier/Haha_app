@@ -2,16 +2,21 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { t } from '../../i18n';
 import { addScore } from '../../services/scoreManager';
 import { useStore } from '../../store/useStore';
+import { generateId } from '../../utils/generateId';
 import { GameService } from '../services/GameService';
-import type { Game, ImproChainData, ImproTurn } from '../types';
+import type { Game, ImproChainData, ImproReward, ImproTurn } from '../types';
 
 interface UseImproChainResult {
   game: Game | null;
   turns: ImproTurn[];
+  rewards: ImproReward[];
+  theme: string | null;
+  targetUserTurns: 3 | 4;
+  userTurnsCount: number;
   streamingContent: string;
   isStreaming: boolean;
   isComplete: boolean;
-  startGame: () => Promise<void>;
+  startGame: (theme?: string | null) => Promise<void>;
   submitTurn: (text: string) => Promise<void>;
   abandon: () => void;
   clear: () => void;
@@ -28,10 +33,34 @@ function isImproGame(game: Game | null, artistId: string): game is ImproGame {
   );
 }
 
+const INTERVENTION_POINTS = 10;
+const REWARD_VARIANTS = [
+  { emoji: '❤️', fr: 'Touché en plein coeur', en: 'Right in the feels' },
+  { emoji: '👍', fr: 'Solide repartie', en: 'Solid comeback' },
+  { emoji: '😂', fr: 'Punchline qui frappe', en: 'Punchline landed' },
+  { emoji: '🔥', fr: 'Ca chauffe fort', en: 'That was spicy' },
+  { emoji: '‼️', fr: 'Moment legendaire', en: 'Legendary moment' }
+] as const;
+
+function pickRewardLabel(text: string, turnNumber: number, language: string): { emoji: string; label: string } {
+  const seed = `${text}-${turnNumber}`;
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
+  }
+
+  const choice = REWARD_VARIANTS[hash % REWARD_VARIANTS.length] ?? REWARD_VARIANTS[0];
+  return {
+    emoji: choice.emoji,
+    label: language.startsWith('en') ? choice.en : choice.fr
+  };
+}
+
 export function useImproChain(artistId: string): UseImproChainResult {
   const activeGame = useStore((state) => state.activeGame);
   const startImproGame = useStore((state) => state.startImproGame);
   const submitUserImproTurn = useStore((state) => state.submitUserImproTurn);
+  const addImproReward = useStore((state) => state.addImproReward);
   const beginImproArtistStream = useStore((state) => state.beginImproArtistStream);
   const appendImproStreamToken = useStore((state) => state.appendImproStreamToken);
   const finalizeImproArtistTurn = useStore((state) => state.finalizeImproArtistTurn);
@@ -39,9 +68,10 @@ export function useImproChain(artistId: string): UseImproChainResult {
   const abandonGame = useStore((state) => state.abandonGame);
   const clearGame = useStore((state) => state.clearGame);
   const incrementUsage = useStore((state) => state.incrementUsage);
+  const userProfile = useStore((state) => state.userProfile);
+  const language = useStore((state) => state.language);
 
   const cancelStreamRef = useRef<null | (() => void)>(null);
-  const scoredGameIdRef = useRef<string | null>(null);
 
   const game = useMemo(() => {
     if (!isImproGame(activeGame, artistId)) {
@@ -51,6 +81,10 @@ export function useImproChain(artistId: string): UseImproChainResult {
   }, [activeGame, artistId]);
 
   const turns = useMemo(() => (game && game.gameData.type === 'impro-chain' ? game.gameData.turns : []), [game]);
+  const rewards = useMemo(() => (game && game.gameData.type === 'impro-chain' ? game.gameData.rewards : []), [game]);
+  const theme = game && game.gameData.type === 'impro-chain' ? game.gameData.theme : null;
+  const targetUserTurns = game && game.gameData.type === 'impro-chain' ? game.gameData.targetUserTurns : 3;
+  const userTurnsCount = game && game.gameData.type === 'impro-chain' ? game.gameData.userTurnsCount : 0;
   const streamingContent = game && game.gameData.type === 'impro-chain' ? game.gameData.streamingContent : '';
   const isStreaming = game && game.gameData.type === 'impro-chain' ? game.gameData.isStreaming : false;
   const isComplete = game?.status === 'complete';
@@ -63,12 +97,17 @@ export function useImproChain(artistId: string): UseImproChainResult {
   }, []);
 
   const runCathyTurn = useCallback(
-    async (history: ImproTurn[], gameId: string) => {
+    async (snapshot: ImproGame) => {
+      const gameId = snapshot.id;
       beginImproArtistStream();
       cancelStreamRef.current = await GameService.runImproTurn({
         artistId,
-        history,
-        language: 'fr-CA',
+        history: snapshot.gameData.turns,
+        theme: snapshot.gameData.theme,
+        targetUserTurns: snapshot.gameData.targetUserTurns,
+        userTurnCount: snapshot.gameData.userTurnsCount,
+        language,
+        userProfile,
         onToken: (token) => appendImproStreamToken(token),
         onComplete: (content, isEnding) => {
           finalizeImproArtistTurn(content, isEnding);
@@ -82,16 +121,6 @@ export function useImproChain(artistId: string): UseImproChainResult {
               }
               useStore.getState().setGameStatus('complete');
             }, 280);
-
-            if (scoredGameIdRef.current !== gameId) {
-              void addScore('punchline_created')
-                .then(() => {
-                  scoredGameIdRef.current = gameId;
-                })
-                .catch(() => {
-                  // Best effort for gamification scoring.
-                });
-            }
           }
         },
         onError: (error) => {
@@ -100,15 +129,29 @@ export function useImproChain(artistId: string): UseImproChainResult {
         }
       });
     },
-    [appendImproStreamToken, artistId, beginImproArtistStream, finalizeImproArtistTurn, incrementUsage, setGameError]
+    [
+      appendImproStreamToken,
+      artistId,
+      beginImproArtistStream,
+      finalizeImproArtistTurn,
+      incrementUsage,
+      language,
+      setGameError,
+      userProfile
+    ]
   );
 
-  const startGame = useCallback(async () => {
+  const startGame = useCallback(async (themeValue?: string | null) => {
     cancelActiveStream();
-    const created = startImproGame(artistId);
+    const created = startImproGame(artistId, {
+      theme: typeof themeValue === 'string' ? themeValue.trim() : '',
+      targetUserTurns: Math.random() < 0.5 ? 3 : 4
+    });
+    if (!isImproGame(created, artistId)) {
+      return;
+    }
     setGameError(null);
-    scoredGameIdRef.current = null;
-    await runCathyTurn([], created.id);
+    await runCathyTurn(created);
   }, [artistId, cancelActiveStream, runCathyTurn, setGameError, startImproGame]);
 
   const submitTurn = useCallback(
@@ -132,9 +175,23 @@ export function useImproChain(artistId: string): UseImproChainResult {
       if (!isImproGame(refreshed, artistId)) {
         return;
       }
-      await runCathyTurn(refreshed.gameData.turns, refreshed.id);
+
+      const rewardMeta = pickRewardLabel(normalized, refreshed.gameData.userTurnsCount, language);
+      addImproReward({
+        id: generateId('impro-reward'),
+        userTurnNumber: refreshed.gameData.userTurnsCount,
+        emoji: rewardMeta.emoji,
+        label: rewardMeta.label,
+        points: INTERVENTION_POINTS
+      });
+
+      void addScore('punchline_created').catch(() => {
+        // Best effort for gamification scoring.
+      });
+
+      await runCathyTurn(refreshed);
     },
-    [artistId, runCathyTurn, setGameError, submitUserImproTurn]
+    [addImproReward, artistId, language, runCathyTurn, setGameError, submitUserImproTurn]
   );
 
   const abandon = useCallback(() => {
@@ -157,6 +214,10 @@ export function useImproChain(artistId: string): UseImproChainResult {
   return {
     game,
     turns,
+    rewards,
+    theme,
+    targetUserTurns,
+    userTurnsCount,
     streamingContent,
     isStreaming,
     isComplete,

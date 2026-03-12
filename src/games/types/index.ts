@@ -9,9 +9,21 @@ export interface ImproTurn {
   content: string;
 }
 
+export interface ImproReward {
+  id: string;
+  userTurnNumber: number;
+  emoji: string;
+  label: string;
+  points: number;
+}
+
 export interface ImproChainData {
   type: 'impro-chain';
+  theme: string | null;
+  targetUserTurns: 3 | 4;
+  userTurnsCount: number;
   turns: ImproTurn[];
+  rewards: ImproReward[];
   streamingContent: string;
   isStreaming: boolean;
 }
@@ -73,4 +85,3 @@ export const GAME_TYPE_CONFIGS: GameTypeConfig[] = [
     available: true
   }
 ];
-

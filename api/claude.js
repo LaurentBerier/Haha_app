@@ -51,7 +51,8 @@ Transforme le chaos en angle utile.`,
 Regles:
 - Chaque reponse = UNE seule phrase (max 2 si tu ne peux pas te retenir)
 - Enchaine sur ce que l'utilisateur vient d'ecrire - sois absurde, escalade
-- Quand tu sens que la chute parfaite est la (minimum 4 tours chacun), termine ta phrase puis ecris exactement: [FIN]
+- Partie courte: vise une conclusion naturelle apres 3-4 interventions utilisateur
+- Quand tu sens que la chute parfaite est la, termine ta phrase puis ecris exactement: [FIN]
 - Apres [FIN], ne dis plus rien - le client affiche la story complete`,
   horoscope: `L'utilisateur te donne un signe astro.
 Donne un horoscope completement bidon mais hilarant dans ton style.
@@ -394,6 +395,8 @@ function normalizeProfileForPrompt(row) {
     : [];
 
   return {
+    preferredName:
+      typeof row.preferred_name === 'string' && row.preferred_name.trim() ? row.preferred_name.trim().slice(0, 80) : null,
     age: typeof row.age === 'number' && Number.isFinite(row.age) ? Math.floor(row.age) : null,
     sex: typeof row.sex === 'string' ? row.sex : null,
     relationshipStatus: typeof row.relationship_status === 'string' ? row.relationship_status : null,
@@ -405,7 +408,7 @@ function normalizeProfileForPrompt(row) {
 async function fetchUserProfileForPrompt(supabaseAdmin, userId, requestId) {
   const { data, error } = await supabaseAdmin
     .from('profiles')
-    .select('age, sex, relationship_status, horoscope_sign, interests')
+    .select('preferred_name, age, sex, relationship_status, horoscope_sign, interests')
     .eq('id', userId)
     .maybeSingle();
 
@@ -425,6 +428,14 @@ function buildUserProfileSection(profile, promptLanguage) {
   const sexLabels = promptLanguage === 'en' ? PROFILE_SEX_LABEL_EN : PROFILE_SEX_LABEL_FR;
   const statusLabels = promptLanguage === 'en' ? PROFILE_STATUS_LABEL_EN : PROFILE_STATUS_LABEL_FR;
   const lines = [];
+
+  if (typeof profile.preferredName === 'string' && profile.preferredName) {
+    lines.push(
+      promptLanguage === 'en'
+        ? `- Preferred first name to use: ${profile.preferredName}`
+        : `- Prenom prefere a utiliser: ${profile.preferredName}`
+    );
+  }
 
   if (typeof profile.age === 'number') {
     lines.push(promptLanguage === 'en' ? `- Approximate age: ${profile.age}` : `- Age approximatif : ${profile.age} ans`);
@@ -469,14 +480,133 @@ function buildUserProfileSection(profile, promptLanguage) {
   return `\n## PROFIL UTILISATEUR\nAdapte ton humour et tes references a ce profil :\n${lines.join('\n')}`;
 }
 
-function buildServerSystemPrompt(context, profile) {
+function extractTextFromRawMessageContent(content) {
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+
+  if (!Array.isArray(content)) {
+    return '';
+  }
+
+  return content
+    .filter((block) => isRecord(block) && block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text.trim())
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+}
+
+function collectRecentUserMemoryHints(rawMessages, promptLanguage) {
+  if (!Array.isArray(rawMessages)) {
+    return [];
+  }
+
+  const lines = [];
+  const seen = new Set();
+  const firstPersonPattern = promptLanguage === 'en'
+    ? /\b(i|i'm|i am|my|me|i like|i love|i work|i live|i prefer)\b/i
+    : /\b(je|j'|moi|mon|ma|mes|j'aime|j adore|je suis|je travaille|je vis|je prefere)\b/i;
+
+  for (let index = rawMessages.length - 1; index >= 0; index -= 1) {
+    const message = rawMessages[index];
+    if (!isRecord(message) || message.role !== 'user') {
+      continue;
+    }
+
+    const text = extractTextFromRawMessageContent(message.content);
+    if (!text) {
+      continue;
+    }
+
+    const candidates = text.split(/[\n.!?]/g);
+    for (const candidate of candidates) {
+      const clean = candidate.replace(/\s+/g, ' ').trim();
+      if (clean.length < 10 || clean.length > 140) {
+        continue;
+      }
+      if (!firstPersonPattern.test(clean)) {
+        continue;
+      }
+
+      const key = clean.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      lines.push(clean);
+      if (lines.length >= 6) {
+        return lines;
+      }
+    }
+  }
+
+  return lines;
+}
+
+function buildConversationMemorySection(rawMessages, promptLanguage) {
+  const hints = collectRecentUserMemoryHints(rawMessages, promptLanguage);
+  if (hints.length === 0) {
+    return '';
+  }
+
+  if (promptLanguage === 'en') {
+    return `\n## CONVERSATION MEMORY
+Recent user details to remember and reuse when relevant:
+${hints.map((line) => `- ${line}`).join('\n')}
+
+Rules:
+- Reuse at most 1-2 details per response when useful.
+- Do not repeat the same detail verbatim every turn.
+- If details conflict, trust the most recent statement.`;
+  }
+
+  return `\n## MEMOIRE DE CONVERSATION
+Infos recentes que l'utilisateur t'a revelees (a reutiliser quand pertinent) :
+${hints.map((line) => `- ${line}`).join('\n')}
+
+Regles :
+- Reutilise 1-2 details max par reponse, seulement si utile.
+- Ne repete pas mot a mot la meme info a chaque tour.
+- Si infos contradictoires, privilegie la plus recente.`;
+}
+
+function buildServerSystemPrompt(context, profile, rawMessages) {
   const promptLanguage = resolvePromptLanguage(context.language);
   const artistId = typeof context.artistId === 'string' ? context.artistId : DEFAULT_ARTIST_ID;
   const isCathy = artistId === DEFAULT_ARTIST_ID;
   const modePrompt = isCathy ? MODE_PROMPTS[context.modeId] ?? DEFAULT_MODE_PROMPT : GENERIC_MODE_PROMPT;
   const imageIntentPrompt = context.imageIntent ? IMAGE_INTENT_PROMPTS[context.imageIntent] ?? '' : '';
   const userProfileSection = buildUserProfileSection(profile, promptLanguage);
+  const memorySection = buildConversationMemorySection(rawMessages, promptLanguage);
   const b = ARTIST_BLUEPRINTS[artistId] ?? CATHY_BLUEPRINT;
+  const cultureAnchorRules = promptLanguage === 'en'
+    ? [
+        '- Prefer Quebec/Canada references whenever relevant (culture, places, habits, media, sports).',
+        '- Connect references to user profile, interests, and behavior when possible.',
+        '- You may use major current events (local or global) only if broadly known and safely contextualized.',
+        '- Never invent specific facts, numbers, or dates when uncertain.'
+      ]
+    : [
+        '- Priorise des references Quebec/Canada des que pertinent (culture, villes, habitudes, medias, sport).',
+        "- Fais des liens concrets avec le profil, les gouts et le comportement de l'utilisateur.",
+        "- Tu peux utiliser des faits d'actualite marquants (locaux ou internationaux) s'ils sont largement connus.",
+        "- N'invente jamais de faits precis, chiffres ou dates quand tu n'es pas certaine."
+      ];
+  const comedicDynamicsRules = promptLanguage === 'en'
+    ? [
+        '- Every response should contain a clear comedic move: twist, escalation, contrast, callback, or absurd comparison.',
+        '- Avoid flat generic replies; be specific and vivid.',
+        '- Prefer one concrete scene (place/person/event) over vague abstractions.',
+        '- Rotate references and punchline angles to keep responses fresh.'
+      ]
+    : [
+        '- Chaque reponse doit contenir un vrai mouvement comique: twist, escalation, contraste, callback ou analogie absurde.',
+        '- Evite les reponses plates et generiques; sois specifique et imagée.',
+        '- Priorise une scene concrete (lieu/personne/evenement) plutot que des generalites.',
+        '- Fais varier les references et les angles de punchline pour garder la surprise.'
+      ];
   const speechStyleLines = isCathy
     ? [
         '- Phrases courtes et punchy, rythme percussif',
@@ -527,6 +657,12 @@ ${b.thematicAnchors.map((theme) => `- ${theme}`).join('\n')}
 ${modePrompt}
 ${imageIntentPrompt ? `\n## CONTEXTE IMAGE\n${imageIntentPrompt}` : ''}
 
+## ANCRAGE CULTUREL ET ACTUALITE
+${cultureAnchorRules.join('\n')}
+
+## DYNAMIQUE COMIQUE
+${comedicDynamicsRules.join('\n')}
+
 ## GUARDRAILS
 INTERDITS ABSOLUS :
 ${b.guardrails.hardNo.map((rule) => `- ${rule}`).join('\n')}
@@ -537,6 +673,7 @@ ${b.guardrails.softZones.map((zone) => `- ${zone.topic} : ${zone.rule}`).join('\
 ## REGLES ABSOLUES
 ${absoluteRules.join('\n')}
 ${userProfileSection}
+${memorySection}
 `.trim();
 }
 
@@ -1254,7 +1391,7 @@ module.exports = async function handler(req, res) {
 
   const tierMaxTokens = getMaxTokensForTier(auth.accountType);
   const profileForPrompt = await profileForPromptPromise;
-  const serverSystemPrompt = buildServerSystemPrompt(promptContext, profileForPrompt);
+  const serverSystemPrompt = buildServerSystemPrompt(promptContext, profileForPrompt, req.body?.messages);
 
   let payload;
   try {

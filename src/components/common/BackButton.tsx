@@ -4,10 +4,16 @@ import { theme } from '../../theme';
 
 interface BackButtonProps {
   testID?: string;
+  onPress?: () => void;
 }
 
-export function BackButton({ testID = 'universal-back' }: BackButtonProps) {
+export function BackButton({ testID = 'universal-back', onPress }: BackButtonProps) {
   const handleBack = () => {
+    if (onPress) {
+      onPress();
+      return;
+    }
+
     if (router.canGoBack()) {
       router.back();
       return;

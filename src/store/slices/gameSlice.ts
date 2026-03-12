@@ -3,6 +3,7 @@ import type {
   Game,
   GameStatus,
   ImproChainData,
+  ImproReward,
   ImproTurn,
   VraiInventeData,
   VraiInventeQuestion
@@ -14,6 +15,10 @@ const VRAI_INVENTE_TOTAL_ROUNDS = 5;
 
 function normalizeText(value: string): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeTargetTurns(value: number | undefined): 3 | 4 {
+  return value === 4 ? 4 : 3;
 }
 
 function isImproData(data: Game['gameData']): data is ImproChainData {
@@ -47,7 +52,15 @@ function pushImproTurn(data: ImproChainData, turn: ImproTurn): ImproChainData {
   };
 }
 
-function buildImproGame(artistId: string): Game {
+interface StartImproGameOptions {
+  theme?: string | null;
+  targetUserTurns?: number;
+}
+
+function buildImproGame(artistId: string, options?: StartImproGameOptions): Game {
+  const theme = normalizeText(options?.theme ?? '');
+  const targetUserTurns = normalizeTargetTurns(options?.targetUserTurns);
+
   return {
     id: generateId('game'),
     gameType: 'impro-chain',
@@ -55,7 +68,11 @@ function buildImproGame(artistId: string): Game {
     status: 'active',
     gameData: {
       type: 'impro-chain',
+      theme: theme || null,
+      targetUserTurns,
+      userTurnsCount: 0,
       turns: [],
+      rewards: [],
       streamingContent: '',
       isStreaming: false
     },
@@ -86,8 +103,9 @@ function buildVraiInventeGame(artistId: string): Game {
 
 export interface GameSlice {
   activeGame: Game | null;
-  startImproGame: (artistId: string) => Game;
+  startImproGame: (artistId: string, options?: StartImproGameOptions) => Game;
   addImproTurn: (role: ImproTurn['role'], content: string) => void;
+  addImproReward: (reward: ImproReward) => void;
   beginImproArtistStream: () => void;
   appendImproStreamToken: (token: string) => void;
   finalizeImproArtistTurn: (content: string, isEnding: boolean) => void;
@@ -107,8 +125,8 @@ export interface GameSlice {
 export const createGameSlice: StateCreator<StoreState, [], [], GameSlice> = (set) => ({
   activeGame: null,
 
-  startImproGame: (artistId) => {
-    const game = buildImproGame(artistId);
+  startImproGame: (artistId, options) => {
+    const game = buildImproGame(artistId, options);
     set({ activeGame: game });
     return game;
   },
@@ -124,6 +142,37 @@ export const createGameSlice: StateCreator<StoreState, [], [], GameSlice> = (set
           ...game,
           gameData: pushImproTurn(game.gameData, { role, content }),
           error: null
+        };
+      })
+    ),
+
+  addImproReward: (reward) =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'impro-chain' || !isImproData(game.gameData)) {
+          return game;
+        }
+
+        const label = normalizeText(reward.label);
+        if (!label || typeof reward.points !== 'number' || !Number.isFinite(reward.points) || reward.points <= 0) {
+          return game;
+        }
+
+        return {
+          ...game,
+          gameData: {
+            ...game.gameData,
+            rewards: [
+              ...game.gameData.rewards,
+              {
+                id: reward.id || generateId('impro-reward'),
+                userTurnNumber: Math.max(1, Math.floor(reward.userTurnNumber || 1)),
+                emoji: reward.emoji || '🎉',
+                label,
+                points: Math.max(1, Math.floor(reward.points))
+              }
+            ]
+          }
         };
       })
     ),
@@ -215,7 +264,10 @@ export const createGameSlice: StateCreator<StoreState, [], [], GameSlice> = (set
         return {
           ...game,
           status: 'active',
-          gameData: pushImproTurn(game.gameData, { role: 'user', content: text }),
+          gameData: {
+            ...pushImproTurn(game.gameData, { role: 'user', content: text }),
+            userTurnsCount: game.gameData.userTurnsCount + 1
+          },
           error: null
         };
       })
@@ -357,4 +409,3 @@ export const createGameSlice: StateCreator<StoreState, [], [], GameSlice> = (set
 
   clearGame: () => set({ activeGame: null })
 });
-

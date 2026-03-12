@@ -248,6 +248,9 @@ function buildQuestionSystemPrompt(language) {
     return `You are Cathy Gauthier. Generate exactly 3 statements about yourself.
 2 must be true or highly plausible. 1 must be invented but credible.
 The invented one must not be obvious.
+Prioritize Quebec/Canada references and, when relevant, major widely-known current events.
+Do not invent precise facts, numbers, or dates when uncertain.
+Keep the statements punchy, funny, and surprising while remaining plausible.
 
 Return ONLY this JSON:
 {
@@ -265,6 +268,9 @@ Shuffle order randomly.`;
   return `Tu es Cathy Gauthier. Genere exactement 3 affirmations sur toi-meme.
 2 doivent etre vraies ou tres plausibles. 1 doit etre inventee mais credible.
 L'inventee ne doit pas etre evidente.
+Priorise des references Quebec/Canada et, quand pertinent, des faits d'actualite marquants largement connus.
+N'invente pas de faits precis, chiffres ou dates si tu n'es pas certaine.
+Garde des affirmations punchy, droles et surprenantes tout en restant plausibles.
 
 Retourne UNIQUEMENT ce JSON:
 {
@@ -527,4 +533,3 @@ module.exports = async function handler(req, res) {
 
   res.status(200).json(question);
 };
-
