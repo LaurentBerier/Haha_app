@@ -44,7 +44,7 @@ function CategoryMenuButton({ artistId, id, index }: CategoryMenuButtonProps) {
       toValue: 0.96,
       friction: 8,
       tension: 180,
-      useNativeDriver: true
+      useNativeDriver: false
     }).start();
   };
 
@@ -53,7 +53,7 @@ function CategoryMenuButton({ artistId, id, index }: CategoryMenuButtonProps) {
       toValue: 1,
       friction: 7,
       tension: 120,
-      useNativeDriver: true
+      useNativeDriver: false
     }).start();
   };
 
