@@ -44,6 +44,28 @@ function setCorsHeaders(req, res, options = {}) {
     return { ok: false, reason: 'origin_required' };
   }
 
+  // Always allow same-origin calls (web app and API served from the same host).
+  const forwardedHostRaw = req.headers['x-forwarded-host'];
+  const forwardedHost = Array.isArray(forwardedHostRaw) ? forwardedHostRaw[0] : forwardedHostRaw;
+  const host = typeof forwardedHost === 'string' && forwardedHost.trim()
+    ? forwardedHost.trim()
+    : typeof req.headers.host === 'string' && req.headers.host.trim()
+      ? req.headers.host.trim()
+      : '';
+
+  if (host) {
+    try {
+      const originHost = new URL(origin).host;
+      if (originHost === host) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+        return { ok: true, reason: null };
+      }
+    } catch {
+      // Ignore malformed Origin and continue with explicit allow-list checks.
+    }
+  }
+
   if (allowedOrigins.length === 0) {
     return { ok: false, reason: 'cors_not_configured' };
   }
