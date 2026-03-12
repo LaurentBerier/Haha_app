@@ -31,7 +31,7 @@ export const CATEGORY_MODE_IDS: Record<Exclude<ModeCategoryId, 'profile'>, strin
     MODE_IDS.PHRASE_DU_JOUR,
     MODE_IDS.NUMERO_DE_SHOW
   ],
-  battles: [MODE_IDS.ROAST_BATTLE]
+  battles: []
 };
 
 export function isModeCategoryId(value: string): value is ModeCategoryId {

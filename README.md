@@ -301,7 +301,7 @@ Notes:
 - Mode catalog currently includes:
   - `On Jase?`: `Radar d'Attitude`, `Roast`, `Relax`, `Coach brutal`, `Je casse tout`
   - `Blagues & Gagets`: `Générateur de Meme`, `Analyste de Screenshots`, `Victime du Jour`, `Phrase du Jour`, `Numéro de Show`
-  - `Jeux`: `Bataille de Roast`
+  - `Jeux`: `Impro Chaîne`, `Vrai ou Inventé`
   - `Profil`: profile edit + recent chat history shortcuts
 
 ## Run

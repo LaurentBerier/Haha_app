@@ -9,6 +9,7 @@ import { CATEGORY_MODE_IDS, MODE_CATEGORY_META, isModeCategoryId } from '../../.
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
 import { getModeById } from '../../../config/modes';
 import { getLanguage, t } from '../../../i18n';
+import { GAME_TYPE_CONFIGS } from '../../../games/types';
 import type { Mode } from '../../../models/Mode';
 import { generateModeIntro } from '../../../services/modeIntroService';
 import { useStore } from '../../../store/useStore';
@@ -68,6 +69,18 @@ export default function ModeCategoryScreen() {
 
     return CATEGORY_MODE_IDS[categoryId].map((modeId) => byId[modeId]).filter((mode): mode is Mode => Boolean(mode));
   }, [artist, categoryId]);
+
+  const availableGames = useMemo(
+    () =>
+      GAME_TYPE_CONFIGS.filter((gameType) => gameType.available).map((gameType) => ({
+        id: gameType.id,
+        name: t(gameType.labelKey),
+        description: t(gameType.descriptionKey),
+        emoji: gameType.emoji,
+        kind: 'battle' as const
+      })),
+    []
+  );
 
   const handleModeSelect = useCallback(
     (modeId: string) => {
@@ -151,6 +164,16 @@ export default function ModeCategoryScreen() {
                 <Text style={styles.profileActionLink}>{t('historyScreenTitle')}</Text>
               </Pressable>
             </View>
+          </View>
+        ) : categoryId === 'battles' ? (
+          <View style={styles.modeList}>
+            {availableGames.map((gameMode) => (
+              <ModeCard
+                key={gameMode.id}
+                mode={gameMode}
+                onPress={() => router.push(`/games/${artist.id}/${gameMode.id}`)}
+              />
+            ))}
           </View>
         ) : availableModes.length > 0 ? (
           <View style={styles.modeList}>
