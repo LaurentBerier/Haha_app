@@ -120,7 +120,7 @@ export const fr = {
   gameImproTitle: 'Histoire improvisée',
   gameImproDescription: 'Construis une histoire absurde ensemble. Cathy décide de la fin.',
   gameImproThemeSelectionTitle: "Choisis ton theme d'impro",
-  gameImproThemeSelectionSubtitle: 'Cathy te propose 4 themes, ou tu peux imposer le tien.',
+  gameImproThemeSelectionSubtitle: 'Cathy te propose 3 themes, ou tu peux imposer le tien.',
   gameImproThemesLoading: 'Cathy genere tes themes...',
   gameImproThemesFallback: 'Themes generes localement',
   gameImproRegenerateThemes: 'Regenerer les themes',

@@ -275,78 +275,76 @@ function applyTemplate(template, values) {
   }, template);
 }
 
-function getZodiacTraits(sign, language) {
+function getZodiacTrait(sign, isEnglish) {
   const normalized = normalizeText(sign).toLowerCase();
-  const isEnglish = typeof language === 'string' && language.toLowerCase().startsWith('en');
-
   const frTraits = {
-    aries: 'tu fonces vite et tu decides sur un coup de tete',
-    taurus: 'tu restes solide, tetu, et tu laches pas le morceau',
-    gemini: 'tu jases vite, tu changes didee, et tu improvises fort',
-    leo: 'tu veux briller, prendre la place, et assumer le show',
-    virgo: 'tu remarques tout, tu analyses, et tu veux que ca marche',
-    libra: 'tu cherches le juste milieu, mais tu peux virer indecis',
-    scorpio: 'tu sens tout, tu gardes le controle, et tu piques juste',
-    sagittarius: 'tu vis grand, tu niaises fort, et tu detestes la routine',
-    capricorn: 'tu veux du concret, du resultat, et zero perte de temps',
-    aquarius: 'tu penses hors cadre, un peu rebelle, souvent en avance',
-    pisces: 'tu es intuitif, tres imaginaire, et parfois dans la lune',
-    belier: 'tu fonces vite et tu decides sur un coup de tete',
-    taureau: 'tu restes solide, tetu, et tu laches pas le morceau',
-    gemeaux: 'tu jases vite, tu changes didee, et tu improvises fort',
-    cancer: 'tu captes l ambiance, t es protecteur, mais emotif',
-    lion: 'tu veux briller, prendre la place, et assumer le show',
-    vierge: 'tu remarques tout, tu analyses, et tu veux que ca marche',
-    balance: 'tu cherches le juste milieu, mais tu peux virer indecis',
-    scorpion: 'tu sens tout, tu gardes le controle, et tu piques juste',
-    sagittaire: 'tu vis grand, tu niaises fort, et tu detestes la routine',
-    capricorne: 'tu veux du concret, du resultat, et zero perte de temps',
-    verseau: 'tu penses hors cadre, un peu rebelle, souvent en avance',
-    poissons: 'tu es intuitif, tres imaginaire, et parfois dans la lune'
+    aries: 'ton cote fonceur',
+    taurus: 'ton cote tete dure',
+    gemini: 'ton cote jasette rapide',
+    cancer: 'ton cote emotif',
+    leo: 'ton cote showman',
+    virgo: 'ton cote perfectionniste',
+    libra: 'ton cote diplomate',
+    scorpio: 'ton cote intense',
+    sagittarius: 'ton cote aventurier',
+    capricorn: 'ton cote focus resultat',
+    aquarius: 'ton cote rebelle',
+    pisces: 'ton cote intuitif',
+    belier: 'ton cote fonceur',
+    taureau: 'ton cote tete dure',
+    gemeaux: 'ton cote jasette rapide',
+    lion: 'ton cote showman',
+    vierge: 'ton cote perfectionniste',
+    balance: 'ton cote diplomate',
+    scorpion: 'ton cote intense',
+    sagittaire: 'ton cote aventurier',
+    capricorne: 'ton cote focus resultat',
+    verseau: 'ton cote rebelle',
+    poissons: 'ton cote intuitif'
   };
 
   const enTraits = {
-    aries: 'you move fast and decide on instinct',
-    taurus: 'you are steady, stubborn, and persistent',
-    gemini: 'you talk fast, pivot quickly, and improvise a lot',
-    cancer: 'you read the room and react emotionally',
-    leo: 'you like to shine and own the stage',
-    virgo: 'you notice details and try to fix everything',
-    libra: 'you aim for balance but can overthink choices',
-    scorpio: 'you read people deeply and strike at the right time',
-    sagittarius: 'you go big, joke hard, and hate routine',
-    capricorn: 'you want concrete results and no wasted time',
-    aquarius: 'you think outside the box and break patterns',
-    pisces: 'you are intuitive, imaginative, and often in your own world',
-    belier: 'you move fast and decide on instinct',
-    taureau: 'you are steady, stubborn, and persistent',
-    gemeaux: 'you talk fast, pivot quickly, and improvise a lot',
-    lion: 'you like to shine and own the stage',
-    vierge: 'you notice details and try to fix everything',
-    balance: 'you aim for balance but can overthink choices',
-    scorpion: 'you read people deeply and strike at the right time',
-    sagittaire: 'you go big, joke hard, and hate routine',
-    capricorne: 'you want concrete results and no wasted time',
-    verseau: 'you think outside the box and break patterns',
-    poissons: 'you are intuitive, imaginative, and often in your own world'
+    aries: 'your bold side',
+    taurus: 'your stubborn side',
+    gemini: 'your fast-talking side',
+    cancer: 'your emotional side',
+    leo: 'your spotlight side',
+    virgo: 'your perfectionist side',
+    libra: 'your diplomatic side',
+    scorpio: 'your intense side',
+    sagittarius: 'your adventurous side',
+    capricorn: 'your results-first side',
+    aquarius: 'your rebel side',
+    pisces: 'your intuitive side',
+    belier: 'your bold side',
+    taureau: 'your stubborn side',
+    gemeaux: 'your fast-talking side',
+    lion: 'your spotlight side',
+    vierge: 'your perfectionist side',
+    balance: 'your diplomatic side',
+    scorpion: 'your intense side',
+    sagittaire: 'your adventurous side',
+    capricorne: 'your results-first side',
+    verseau: 'your rebel side',
+    poissons: 'your intuitive side'
   };
 
   if (isEnglish) {
-    return enTraits[normalized] ?? 'you react fast, think creatively, and adapt on the fly';
+    return enTraits[normalized] ?? 'your unpredictable side';
   }
 
-  return frTraits[normalized] ?? 'tu reagis vite, t improvises, et tu trouves une sortie de secours';
+  return frTraits[normalized] ?? 'ton cote imprenable';
 }
 
 function buildImproSystemPrompt(language, userProfile) {
   const isEnglish = typeof language === 'string' && language.toLowerCase().startsWith('en');
   const interestsText = userProfile.interests.length > 0 ? userProfile.interests.join(', ') : 'non fournis';
   const todayIso = new Date().toISOString().slice(0, 10);
-  const zodiacTraits = getZodiacTraits(userProfile.horoscopeSign, language);
+  const zodiacTrait = getZodiacTrait(userProfile.horoscopeSign, isEnglish);
 
   const values = {
     user_age: userProfile.age ?? 'non fourni',
-    user_zodiac_traits: zodiacTraits,
+    user_zodiac_trait: zodiacTrait,
     user_interests: interestsText,
     user_city: userProfile.city || 'non fournie',
     user_relationship_status: userProfile.relationshipStatus || 'non fourni',
@@ -356,14 +354,14 @@ function buildImproSystemPrompt(language, userProfile) {
 
   if (isEnglish) {
     const template = `You are Cathy Gauthier creating improv story themes.
-Generate exactly 4 short themes, personalized to the user profile below.
+Generate exactly 3 short themes, personalized to the user profile below.
 Use concrete, real references from Quebec/Canada (known places, known public figures, known brands).
 No fictional people, no fictional bands, no invented places.
 Tone: funny, punchy, simple spoken language.
 
 User profile:
 - age: {{user_age}}
-- zodiac_traits: {{user_zodiac_traits}}
+- zodiac_trait: {{user_zodiac_trait}}
 - interests: {{user_interests}}
 - city: {{user_city}}
 - relationship_status: {{user_relationship_status}}
@@ -373,24 +371,22 @@ User profile:
 Strict anti-repeat rules:
 - Avoid overused references unless absolutely needed: Centre Bell, Tim Hortons, Martin Matte, Celine Dion, Guy A. Lepage.
 - Use concrete, real Quebec/Canada anchors and vary them from one request to the next.
-- 4 themes must be clearly different in setting and vibe.
+- 3 themes must be clearly different in setting and vibe.
 - Use the nonce as a creative seed and do NOT repeat your previous default patterns.
 
-Quality rules:
-- Make themes as concise as possible, short and punchy.
-- Every premisse must clearly include the user as "you" taking action.
-- Never use the user's first name. Use only "you".
-- Include Cathy explicitly in at least 3 themes out of 4.
-- Astrology is optional and should appear in at most 1 theme out of 4.
-- If astrology is used, say "astrology" and personality traits only. Never name the zodiac sign. Never use the word Pisces.
+Style rules (all mandatory):
+1. LENGTH: title max 5 words, premisse max 15 words (one short sentence)
+2. ADDRESS: always "you", never the user's first name
+3. INCLUSION: the user ("you") must appear in every theme
+4. CATHY: Cathy must appear in at least 2 themes out of 3, ideally all 3
+5. ASTROLOGY: use the personality trait (user_zodiac_trait) instead of the zodiac sign name
 
 Return ONLY valid JSON with this exact shape:
 {
   "themes": [
     { "id": 1, "type": "perso_forte", "titre": "...", "premisse": "..." },
     { "id": 2, "type": "universel", "titre": "...", "premisse": "..." },
-    { "id": 3, "type": "wildcard", "titre": "...", "premisse": "..." },
-    { "id": 4, "type": "universel", "titre": "...", "premisse": "..." }
+    { "id": 3, "type": "wildcard", "titre": "...", "premisse": "..." }
   ]
 }
 
@@ -400,14 +396,14 @@ Types allowed only: perso_forte, universel, wildcard.`;
   }
 
   const template = `Tu es Cathy Gauthier et tu crees des themes d'histoire improvisee.
-Genere exactement 4 themes courts, personnalises selon le profil utilisateur ci-dessous.
+Genere exactement 3 themes courts, personnalises selon le profil utilisateur ci-dessous.
 Utilise des references concretes et reelles du Quebec/Canada (villes, lieux connus, personnalites publiques, marques connues).
 N'invente pas de noms de personnes, de bands ou de lieux fictifs.
 Ton: drole, punch, simple, langage parle.
 
 Profil utilisateur:
 - age: {{user_age}}
-- traits astro: {{user_zodiac_traits}}
+- trait astro: {{user_zodiac_trait}}
 - interets: {{user_interests}}
 - ville: {{user_city}}
 - statut relationnel: {{user_relationship_status}}
@@ -417,25 +413,22 @@ Profil utilisateur:
 Regles anti-repetition (obligatoires):
 - Evite les references usees, sauf si vraiment necessaire: Centre Bell, Tim Hortons, Martin Matte, Celine Dion, Guy A. Lepage.
 - Utilise des ancrages concrets et reels du Quebec/Canada, et varie-les d'une requete a l'autre.
-- Les 4 themes doivent etre clairement differents (lieu, situation, vibe).
+- Les 3 themes doivent etre clairement differents (lieu, situation, vibe).
 - Utilise le nonce comme seed creatif et evite de recycler tes patterns habituels.
 
-Regles qualite:
-- Fais des themes le plus concis possible, courts et punches.
-- Chaque premisse doit inclure clairement l utilisateur (tu) en action.
-- N utilise jamais le prenom de l utilisateur. Utilise seulement "tu".
-- Inclure Cathy explicitement dans au moins 3 themes sur 4.
-- L astrologie est optionnelle et doit apparaitre au maximum dans 1 theme sur 4.
-- Si tu touches a l astrologie, parle en termes d astrologie et de traits de personnalite seulement.
-- Ne nomme jamais le signe. N utilise jamais le mot Pisces.
+Regles de style (toutes obligatoires):
+1. LONGUEUR: titre max 5 mots, premisse max 15 mots (1 phrase courte)
+2. ADRESSE: toujours "tu", jamais le prenom de l utilisateur
+3. INCLUSION: l utilisateur ("tu") doit etre present dans chaque theme
+4. CATHY: Cathy doit apparaitre dans au moins 2 themes sur 3, idealement les 3
+5. ASTROLOGIE: utilise le trait de personnalite (user_zodiac_trait) plutot que le nom du signe
 
 Retourne UNIQUEMENT un JSON valide avec exactement ce format:
 {
   "themes": [
     { "id": 1, "type": "perso_forte", "titre": "...", "premisse": "..." },
     { "id": 2, "type": "universel", "titre": "...", "premisse": "..." },
-    { "id": 3, "type": "wildcard", "titre": "...", "premisse": "..." },
-    { "id": 4, "type": "universel", "titre": "...", "premisse": "..." }
+    { "id": 3, "type": "wildcard", "titre": "...", "premisse": "..." }
   ]
 }
 
@@ -498,6 +491,41 @@ function hasUserReference(premisse, language) {
   return /\b(tu|toi|ton|ta|tes)\b/.test(value);
 }
 
+function containsZodiacName(input) {
+  const value = normalizeText(input).toLowerCase();
+  if (!value) {
+    return false;
+  }
+
+  const zodiacNames = [
+    'aries',
+    'taurus',
+    'gemini',
+    'cancer',
+    'leo',
+    'virgo',
+    'libra',
+    'scorpio',
+    'sagittarius',
+    'capricorn',
+    'aquarius',
+    'pisces',
+    'belier',
+    'taureau',
+    'gemeaux',
+    'lion',
+    'vierge',
+    'balance',
+    'scorpion',
+    'sagittaire',
+    'capricorne',
+    'verseau',
+    'poissons'
+  ];
+
+  return zodiacNames.some((name) => new RegExp(`\\b${name}\\b`, 'i').test(value));
+}
+
 function parseThemesPayload(rawText, language = 'fr-CA', preferredName = '') {
   const text = stripCodeFences(rawText);
   let payload = null;
@@ -534,10 +562,10 @@ function parseThemesPayload(rawText, language = 'fr-CA', preferredName = '') {
       };
     })
     .filter((entry) => Boolean(entry.titre) && Boolean(entry.premisse))
-    .slice(0, 4);
+    .slice(0, 3);
 
-  if (themes.length !== 4) {
-    throw new Error('Themes response must contain exactly 4 valid themes.');
+  if (themes.length !== 3) {
+    throw new Error('Themes response must contain exactly 3 valid themes.');
   }
 
   const missingUserReference = themes.some((entry) => !hasUserReference(entry.premisse, language));
@@ -546,8 +574,8 @@ function parseThemesPayload(rawText, language = 'fr-CA', preferredName = '') {
   }
 
   const cathyCount = themes.filter((entry) => /\bcathy\b/i.test(entry.premisse)).length;
-  if (cathyCount < 3) {
-    throw new Error('At least three themes must include Cathy explicitly.');
+  if (cathyCount < 2) {
+    throw new Error('At least two themes must include Cathy explicitly.');
   }
 
   const normalizedPreferredName = normalizeText(preferredName).toLowerCase();
@@ -560,9 +588,11 @@ function parseThemesPayload(rawText, language = 'fr-CA', preferredName = '') {
     }
   }
 
-  const containsPisces = themes.some((entry) => /\bpisces\b/i.test(entry.titre) || /\bpisces\b/i.test(entry.premisse));
-  if (containsPisces) {
-    throw new Error('Themes must not include the word Pisces.');
+  const containsSignName = themes.some(
+    (entry) => containsZodiacName(entry.titre) || containsZodiacName(entry.premisse)
+  );
+  if (containsSignName) {
+    throw new Error('Themes must not include zodiac sign names.');
   }
 
   const astrologyThemeCount = themes.filter((entry) => /\b(astrologie|astrology|horoscope|zodiac)\b/i.test(entry.premisse)).length;

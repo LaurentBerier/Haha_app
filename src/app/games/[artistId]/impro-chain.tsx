@@ -145,43 +145,43 @@ function buildFallbackThemes(userProfile: UserProfile | null, language: string, 
           id: 1,
           type: 'universel',
           titre: 'Granby chaos',
-          premisse: 'You and Cathy visit Granby Zoo; a lion escapes because of your selfie.'
+          premisse: 'At Granby Zoo, your selfie frees a lion - Cathy has to fix it.'
         },
         {
           id: 2,
           type: 'perso_forte',
           titre: 'Metro mission',
-          premisse: 'Your OPUS card fails, and Cathy makes you run STM service for one night.'
+          premisse: 'Your OPUS card dies, and Cathy makes you run STM tonight.'
         },
         {
           id: 3,
           type: 'wildcard',
           titre: 'Costco meltdown',
-          premisse: 'At Costco Laval, you start a line war and Cathy becomes your lawyer.'
+          premisse: 'At Costco Laval, you spark line chaos, and Cathy defends you.'
         },
         {
           id: 5,
           type: 'universel',
           titre: 'Old Quebec stunt',
-          premisse: 'In Old Quebec, Cathy bets you cannot survive one day as tour guide.'
+          premisse: 'In Old Quebec, Cathy makes you fake a tour guide shift.'
         },
         {
           id: 6,
           type: 'wildcard',
           titre: 'Jean-Drapeau fail',
-          premisse: 'At Parc Jean-Drapeau, your plan fails and Cathy sends you on stage anyway.'
+          premisse: 'At Parc Jean-Drapeau, your plan explodes, and Cathy sends you onstage.'
         },
         {
           id: 7,
           type: 'universel',
           titre: 'SAQ emergency',
-          premisse: 'At SAQ Berri, you grab the wrong case and Cathy asks you to fake being sommelier.'
+          premisse: 'At SAQ Berri, you pick wrong wine, and Cathy names you sommelier.'
         },
         {
           id: 8,
           type: 'wildcard',
           titre: 'IKEA survival',
-          premisse: 'At IKEA Montreal, you get lost in shortcuts and Cathy turns it into a live challenge.'
+          premisse: 'At IKEA Montreal, you get lost, and Cathy turns it into a show.'
         }
       ]
     : [
@@ -189,25 +189,25 @@ function buildFallbackThemes(userProfile: UserProfile | null, language: string, 
           id: 1,
           type: 'universel',
           titre: 'Chaos a Granby',
-          premisse: 'Toi et Cathy allez au Zoo de Granby, pis un lion se sauve a cause de toi.'
+          premisse: 'Au Zoo de Granby, ton selfie libere un lion, et Cathy gere la crise.'
         },
         {
           id: 2,
           type: 'perso_forte',
           titre: 'Mission metro',
-          premisse: 'Ta carte OPUS plante, pis Cathy te force a faire rouler le metro ce soir.'
+          premisse: 'Ta carte OPUS meurt, Cathy te force a faire rouler le metro ce soir.'
         },
         {
           id: 3,
           type: 'wildcard',
           titre: 'Drame au Costco',
-          premisse: 'Au Costco Laval, tu pars une guerre de file, pis Cathy devient ton avocate.'
+          premisse: 'Au Costco Laval, tu pars le chaos, et Cathy devient ton avocate.'
         },
         {
           id: 5,
           type: 'universel',
           titre: 'Vieux-Quebec',
-          premisse: 'Dans le Vieux-Quebec, Cathy te met guide touristique sans formation.'
+          premisse: 'Dans le Vieux-Quebec, Cathy te force a guider des touristes toute la journee.'
         },
         {
           id: 6,
@@ -219,13 +219,13 @@ function buildFallbackThemes(userProfile: UserProfile | null, language: string, 
           id: 7,
           type: 'universel',
           titre: 'Urgence SAQ',
-          premisse: 'A la SAQ Berri, tu pognes la mauvaise caisse, pis Cathy te nomme sommelier de crise.'
+          premisse: 'A la SAQ Berri, tu choisis mal, et Cathy te nomme sommelier.'
         },
         {
           id: 8,
           type: 'wildcard',
           titre: 'Deroute IKEA',
-          premisse: 'Au IKEA Montreal, tu te perds solide, pis Cathy transforme ca en defi live.'
+          premisse: 'Au IKEA Montreal, tu te perds, et Cathy transforme ca en spectacle.'
         }
       ];
 
@@ -237,19 +237,19 @@ function buildFallbackThemes(userProfile: UserProfile | null, language: string, 
               id: 9,
               type: 'perso_forte',
               titre: 'Astrology overload',
-              premisse: `Tonight, your astrology traits (${astroTrait}) explode, and Cathy throws you on live TV.`
+              premisse: `Tonight, your astrology side (${astroTrait}) flips, and Cathy sends you live.`
             }
           : {
               id: 9,
               type: 'perso_forte',
               titre: 'Virage astrologie',
-              premisse: `Ce soir, ton astrologie (${astroTrait}) prend toute la place, pis Cathy t envoie en direct.`
+              premisse: `Ce soir, ton astrologie (${astroTrait}) vire fort, pis Cathy t envoie en direct.`
             }
       ]
     : baseFallbackThemes;
 
   const selected: ImproTheme[] = [];
-  for (let index = 0; index < 4; index += 1) {
+  for (let index = 0; index < 3; index += 1) {
     selected.push({
       ...pick(fallbackThemes, seed, index * 5 + 3),
       id: index + 1
@@ -341,7 +341,7 @@ export default function ImproChainScreen() {
 
       let mergedThemes = firstBatch;
 
-      if (mergedThemes.length < 4) {
+      if (mergedThemes.length < 3) {
         const secondNonce = firstNonce + 17;
         const topUpBatch = await ImproThemesService.fetchThemes({
           language,
@@ -352,7 +352,7 @@ export default function ImproChainScreen() {
         mergedThemes = mergeUniqueThemes(mergedThemes, topUpBatch);
       }
 
-      let nextThemes = mergedThemes.slice(0, 4);
+      let nextThemes = mergedThemes.slice(0, 3);
       let nextFingerprint = createThemesFingerprint(nextThemes);
 
       if (nextThemes.length > 0 && nextFingerprint && nextFingerprint === lastThemesFingerprintRef.current) {
@@ -363,7 +363,7 @@ export default function ImproChainScreen() {
           nonce: retryNonce,
           avoidThemes: [...avoidThemesRef.current, ...toAvoidThemes(nextThemes)]
         });
-        const retriedThemes = mergeUniqueThemes(retryBatch, nextThemes).slice(0, 4);
+        const retriedThemes = mergeUniqueThemes(retryBatch, nextThemes).slice(0, 3);
         if (retriedThemes.length > 0) {
           nextThemes = retriedThemes;
           nextFingerprint = createThemesFingerprint(nextThemes);
