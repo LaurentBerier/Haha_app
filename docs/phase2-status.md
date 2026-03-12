@@ -1,6 +1,6 @@
 # Phase 2 Status (Mobile + API)
 
-Last updated: **2026-03-11**
+Last updated: **2026-03-12**
 
 ## Scope
 
@@ -38,6 +38,7 @@ Core targets:
   - universal back button on secondary routes
   - home header keeps logo + hamburger with no redundant center title
   - chat header center title reflects active mode (`emoji + mode label`)
+  - iOS category-menu stability fix: resolved animated-driver conflict that could crash when opening `On Jase?`, `Blagues & Gagets`, `Jeux`, or `Profil`
 - settings flows:
   - edit profile
   - preferred display-name editing
@@ -99,6 +100,10 @@ Core targets:
   - locked artists use a neutral comedian silhouette placeholder avatar (instead of `???`)
   - legacy `PRO` lock badge replaced by a discrete "Disponible bientôt" badge/state
   - available artist card exposes explicit CTA (`Parler avec Cathy`)
+- games module (phase 1) active via history banner:
+  - game hub: `/games/[artistId]`
+  - `Impro Chaîne` (streaming collaborative story)
+  - `Vrai ou Inventé` (5-round quiz flow)
 - safety/empty-state polish:
   - delete-account flow now requires typed confirmation (`DELETE`) before irreversible action
   - richer chat empty state card (headline + guidance)

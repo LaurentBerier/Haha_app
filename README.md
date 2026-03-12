@@ -17,6 +17,7 @@ Implemented in this repository:
 - Mode selection is now split into:
   - a category hub (`2x2` animated buttons)
   - a dedicated category page showing only its sub-modes/actions
+- iOS mode-category navigation crash fix applied: category card animations now use a consistent JS driver on the same animated node (prevents `Attempting to run JS driven animation...` crash when opening `On Jase?`, `Blagues & Gagets`, `Jeux`, `Profil`).
 - Main category labels:
   - `On Jase?`
   - `Blagues & Gagets`
@@ -294,6 +295,9 @@ Notes:
 - Mode browsing flow:
   - Category hub (`/mode-select/[artistId]`) with `On Jase?`, `Blagues & Gagets`, `Jeux`, `Profil`
   - Category detail (`/mode-select/[artistId]/[categoryId]`) with only relevant modes/actions
+- Games flow:
+  - Entry banner from history (`/history/[artistId]` -> `/games/[artistId]`)
+  - Current game screens: `Impro Chaîne` and `Vrai ou Inventé`
 - Mode catalog currently includes:
   - `On Jase?`: `Radar d'Attitude`, `Roast`, `Relax`, `Coach brutal`, `Je casse tout`
   - `Blagues & Gagets`: `Générateur de Meme`, `Analyste de Screenshots`, `Victime du Jour`, `Phrase du Jour`, `Numéro de Show`

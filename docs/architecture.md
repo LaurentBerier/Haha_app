@@ -94,9 +94,17 @@ Store-level account isolation:
 - Hub screen: `src/app/mode-select/[artistId]/index.tsx`
   - 4 animated `2x2` category buttons
   - labels: `On Jase?`, `Blagues & Gagets`, `Jeux`, `Profil`
+  - animation safety guard: category cards keep one consistent animation driver per animated node (JS driver) to avoid iOS runtime crashes when opening category subpages
 - Category screen: `src/app/mode-select/[artistId]/[categoryId].tsx`
   - shows only sub-modes for selected category
   - `Profil` category shows profile/history shortcuts instead of chat modes
+
+### Games UX
+
+- Entry point is the history banner (`src/app/history/[artistId].tsx`) -> `/games/[artistId]`
+- Available games in Phase 1:
+  - `Impro Chaîne` (`/games/[artistId]/impro-chain`)
+  - `Vrai ou Inventé` (`/games/[artistId]/vrai-ou-invente`)
 
 ### Hooks (`src/hooks`)
 

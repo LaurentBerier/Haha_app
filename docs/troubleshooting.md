@@ -526,3 +526,39 @@ If you still see old mixed data (usually from older cached builds):
    - sign out
    - user B signs in
    - history for user B should not include user A messages
+
+## 28) iOS crash when opening mode categories (`On Jase?`, `Blagues & Gagets`, `Jeux`, `Profil`)
+
+Symptom:
+
+- Red screen with:
+  - `Attempting to run JS driven animation on animated node that has been moved to "native"...`
+- Triggered right after tapping a mode category card.
+
+Cause:
+
+- Same `Animated.View` node received both:
+  - color/shadow animations on JS driver (`useNativeDriver: false`)
+  - press scale animation on native driver (`useNativeDriver: true`)
+
+Fix in code:
+
+- File: [`src/app/mode-select/[artistId]/index.tsx`](/Users/laurentbernier/Documents/HAHA_app/src/app/mode-select/[artistId]/index.tsx)
+- Category-card press animations now also use `useNativeDriver: false` to keep one driver per node.
+
+If you still hit it on device:
+
+1. Rebuild/reinstall the iOS app:
+
+```bash
+cd /Users/laurentbernier/Documents/HAHA_app
+npx expo run:ios --device
+```
+
+2. Restart Metro with clean cache:
+
+```bash
+npx expo start -c
+```
+
+3. Open the app and retest category navigation.
