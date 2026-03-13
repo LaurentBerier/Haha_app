@@ -339,6 +339,7 @@ export default function ImproChainScreen() {
   const artists = useStore((state) => state.artists);
   const userProfile = useStore((state) => state.userProfile);
   const language = useStore((state) => state.language);
+  const accessToken = useStore((state) => state.session?.accessToken ?? '');
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
 
   const {
@@ -389,30 +390,46 @@ export default function ImproChainScreen() {
       return;
     }
 
+    if (!accessToken) {
+      setThemesLoading(true);
+      setThemesError(false);
+      return;
+    }
+
     let cancelled = false;
     setThemesLoading(true);
     setThemesError(false);
 
     const fetchThemes = async () => {
+      const fetchWithRetry = async (nonce: number, avoidThemes: string[]): Promise<ImproTheme[]> => {
+        try {
+          return await ImproThemesService.fetchThemes({
+            language,
+            userProfile,
+            nonce,
+            avoidThemes
+          });
+        } catch (firstError) {
+          const secondNonce = nonce + 101;
+          console.warn('[impro-chain] Theme fetch failed, retrying once', firstError);
+          return ImproThemesService.fetchThemes({
+            language,
+            userProfile,
+            nonce: secondNonce,
+            avoidThemes
+          });
+        }
+      };
+
       const firstNonce = Date.now() + themeSuggestionNonce * 997 + 1;
-      const firstBatch = await ImproThemesService.fetchThemes({
-        language,
-        userProfile,
-        nonce: firstNonce,
-        avoidThemes: avoidThemesRef.current
-      });
+      const firstBatch = await fetchWithRetry(firstNonce, avoidThemesRef.current);
 
       let mergedThemes = firstBatch;
 
       if (mergedThemes.length < 3) {
         const secondNonce = firstNonce + 17;
         try {
-          const topUpBatch = await ImproThemesService.fetchThemes({
-            language,
-            userProfile,
-            nonce: secondNonce,
-            avoidThemes: [...avoidThemesRef.current, ...toAvoidThemes(mergedThemes)]
-          });
+          const topUpBatch = await fetchWithRetry(secondNonce, [...avoidThemesRef.current, ...toAvoidThemes(mergedThemes)]);
           mergedThemes = mergeUniqueThemes(mergedThemes, topUpBatch);
         } catch (error) {
           console.warn('[impro-chain] Theme top-up fetch failed, keeping first batch', error);
@@ -425,12 +442,7 @@ export default function ImproChainScreen() {
       if (nextThemes.length > 0 && nextFingerprint && nextFingerprint === lastThemesFingerprintRef.current) {
         const retryNonce = firstNonce + 37;
         try {
-          const retryBatch = await ImproThemesService.fetchThemes({
-            language,
-            userProfile,
-            nonce: retryNonce,
-            avoidThemes: [...avoidThemesRef.current, ...toAvoidThemes(nextThemes)]
-          });
+          const retryBatch = await fetchWithRetry(retryNonce, [...avoidThemesRef.current, ...toAvoidThemes(nextThemes)]);
           const retriedThemes = mergeUniqueThemes(nextThemes, retryBatch).slice(0, 3);
           if (retriedThemes.length > 0) {
             nextThemes = retriedThemes;
@@ -472,7 +484,7 @@ export default function ImproChainScreen() {
     return () => {
       cancelled = true;
     };
-  }, [gameStatus, language, themeSuggestionNonce, userProfile]);
+  }, [accessToken, gameStatus, language, themeSuggestionNonce, userProfile]);
 
   if (!artist) {
     return (
