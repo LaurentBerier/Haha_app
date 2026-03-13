@@ -3,7 +3,6 @@ import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 import { ChatInput } from '../../components/chat/ChatInput';
 import { MessageList } from '../../components/chat/MessageList';
-import { ScoreBar } from '../../components/chat/ScoreBar';
 import { StreamingIndicator } from '../../components/chat/StreamingIndicator';
 import { BackButton } from '../../components/common/BackButton';
 import { getModeById } from '../../config/modes';
@@ -76,7 +75,6 @@ export default function ChatScreen() {
         <BackButton testID="chat-back" />
       </View>
       <View style={styles.container}>
-        {isValidConversation ? <ScoreBar /> : null}
         {isValidConversation ? (
           <MessageList
             messages={messages}
