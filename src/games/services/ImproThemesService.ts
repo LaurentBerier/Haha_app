@@ -73,7 +73,125 @@ function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function normalizeThemes(raw: unknown): ImproTheme[] {
+function hasSelfReference(value: string, language: string): boolean {
+  const text = normalizeText(value).toLowerCase();
+  if (!text) {
+    return false;
+  }
+
+  if (language.toLowerCase().startsWith('en')) {
+    return /\b(i|me|my|mine|myself|i'm|i'll|i'd)\b/.test(text);
+  }
+
+  return /\b(je|moi|mon|ma|mes|mienne|mien|moi-meme)\b/.test(text) || /(^|\W)j'/.test(text);
+}
+
+function toExternalPremise(premisse: string, language: string): string {
+  const source = normalizeText(premisse);
+  if (!source) {
+    return language.toLowerCase().startsWith('en')
+      ? 'You are pulled into a ridiculous situation and everyone expects you to handle it.'
+      : 'Tu te retrouves dans une situation absurde pis tout le monde pense que tu vas gerer ca.';
+  }
+
+  if (language.toLowerCase().startsWith('en')) {
+    return source
+      .replace(/\bi'm\b/gi, "you're")
+      .replace(/\bi'll\b/gi, "you'll")
+      .replace(/\bi'd\b/gi, "you'd")
+      .replace(/\bmyself\b/gi, 'yourself')
+      .replace(/\bmine\b/gi, 'yours')
+      .replace(/\bmy\b/gi, 'your')
+      .replace(/\bme\b/gi, 'you')
+      .replace(/\bi\b/gi, 'you');
+  }
+
+  return source
+    .replace(/(^|\W)j'/gi, '$1tu ')
+    .replace(/\bje\b/gi, 'tu')
+    .replace(/\bmoi\b/gi, 'toi')
+    .replace(/\bmon\b/gi, 'ton')
+    .replace(/\bma\b/gi, 'ta')
+    .replace(/\bmes\b/gi, 'tes');
+}
+
+function toSelfPremise(premisse: string, language: string): string {
+  const source = normalizeText(premisse);
+  if (language.toLowerCase().startsWith('en')) {
+    return source ? `I jump in: ${source}` : 'I jump in with you, and we escalate a small mess into full comedy chaos.';
+  }
+  return source
+    ? `Je debarque la-dedans: ${source}`
+    : 'Je debarque avec toi, pis on transforme un petit probleme en gros chaos hilarant.';
+}
+
+function enforceSingleSelfTheme(themes: ImproTheme[], language: string): ImproTheme[] {
+  if (themes.length === 0) {
+    return themes;
+  }
+
+  const next = themes.map((theme) => ({ ...theme }));
+  const selfIndexes = next
+    .map((theme, index) => (hasSelfReference(`${theme.titre} ${theme.premisse}`, language) ? index : -1))
+    .filter((index) => index >= 0);
+
+  if (selfIndexes.length === 0) {
+    const firstTheme = next[0];
+    if (firstTheme) {
+      next[0] = {
+        id: firstTheme.id,
+        type: firstTheme.type,
+        titre: firstTheme.titre,
+        premisse: toSelfPremise(firstTheme.premisse, language)
+      };
+    }
+    return next;
+  }
+
+  const keepIndex = selfIndexes[0] ?? 0;
+  for (const index of selfIndexes) {
+    if (index === keepIndex) {
+      continue;
+    }
+    const current = next[index];
+    if (!current) {
+      continue;
+    }
+    next[index] = {
+      id: current.id,
+      type: current.type,
+      titre: current.titre,
+      premisse: toExternalPremise(current.premisse, language)
+    };
+  }
+
+  const remainingSelf = next
+    .map((theme, index) => (hasSelfReference(`${theme.titre} ${theme.premisse}`, language) ? index : -1))
+    .filter((index) => index >= 0);
+
+  if (remainingSelf.length > 1) {
+    for (let i = 1; i < remainingSelf.length; i += 1) {
+      const idx = remainingSelf[i];
+      if (idx === undefined) {
+        continue;
+      }
+      const current = next[idx];
+      if (!current) {
+        continue;
+      }
+      next[idx] = {
+        id: current.id,
+        type: current.type,
+        titre: current.titre,
+        premisse: toExternalPremise(current.premisse, language)
+      };
+    }
+  }
+
+  return next;
+}
+
+function normalizeThemes(raw: unknown, language: string): ImproTheme[] {
   const source = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const themesRaw = Array.isArray(source.themes) ? source.themes : [];
 
@@ -99,7 +217,7 @@ function normalizeThemes(raw: unknown): ImproTheme[] {
     throw new Error('Theme payload must include exactly 3 themes.');
   }
 
-  return normalized;
+  return enforceSingleSelfTheme(normalized, language);
 }
 
 function normalizeUserProfileForApi(userProfile: UserProfile | null): Record<string, unknown> {
@@ -151,6 +269,6 @@ export class ImproThemesService {
       throw toError(payload, 'Impro themes service unavailable.');
     }
 
-    return normalizeThemes(payload);
+    return normalizeThemes(payload, params.language);
   }
 }

@@ -29,7 +29,8 @@ const DEFAULT_MAX_TOKENS_BY_TIER = {
 };
 const ALLOWED_IMAGE_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const DEFAULT_MODE_PROMPT = `Conversation libre. Reponds comme Cathy dans une discussion informelle,
-avec repartie rapide, sarcasme et punchlines courtes.`;
+avec repartie rapide, sarcasme et punchlines courtes.
+Quand tu parles de toi, utilise je/moi/mon, jamais "Cathy" a la troisieme personne.`;
 const GENERIC_MODE_PROMPT = `Conversation libre. Reponds selon la personnalite de l'artiste selectionne, avec humour concret et sans sortir du personnage.`;
 const MODE_ID_COMPAT = {
   'radar-attitude': 'on-jase',
@@ -42,12 +43,14 @@ const MODE_PROMPTS = {
   'on-jase': `L'utilisateur veut jaser avec toi.
 Reponds avec ta personnalite naturelle: chaleur, provocation, humour, selon le contexte.
 Adapte le ton a ce qu'il dit - pas de cadre impose.
-Si c'est lourd, sois utile. Si c'est drole, embarque. Si c'est plate, anime.`,
+Si c'est lourd, sois utile. Si c'est drole, embarque. Si c'est plate, anime.
+Quand tu parles de toi, utilise je/moi/mon, jamais "Cathy" a la troisieme personne.`,
   grill: `L'utilisateur veut se faire roaster.
 L'utilisateur t'a demande le feu. Il sait ce qui s'en vient.
 Roaste, coache, dis la verite dure. Sois specifique, creative, sans coussin.
 Transforme ce qu'il te dit en angle d'attaque ou de coaching brutal.
-Pas de compliments caches. Pas d'excuse. Il a demande ca.`,
+Pas de compliments caches. Pas d'excuse. Il a demande ca.
+Quand tu parles de toi, utilise je/moi/mon, jamais "Cathy" a la troisieme personne.`,
   'impro-chain': `Tu co-ecris une histoire absurde avec l'utilisateur, dans ton style Cathy Gauthier.
 Regles:
 - Chaque reponse = UNE seule phrase (max 2 si tu ne peux pas te retenir)
@@ -641,14 +644,18 @@ function buildServerSystemPrompt(context, profile, rawMessages) {
         '- Tu ne sors jamais du personnage',
         '- Tu ne dis jamais que tu es une IA',
         '- Tes reponses sont courtes (2-4 phrases max)',
-        '- Tu es baveuse, directe et mordante'
+        '- Tu es baveuse, directe et mordante',
+        '- Quand tu parles de toi, utilise je/moi/mon, jamais "Cathy" a la troisieme personne'
       ]
     : [
         promptLanguage === 'en' ? '- You respond in English.' : '- Tu reponds en francais.',
         '- Tu ne sors jamais du personnage',
         '- Tu ne dis jamais que tu es une IA',
         '- Tes reponses sont courtes (2-4 phrases max)',
-        "- Tu restes factuel, drole et coherent avec le style de l'artiste"
+        "- Tu restes factuel, drole et coherent avec le style de l'artiste",
+        promptLanguage === 'en'
+          ? '- When referring to yourself, use first person (I/me/my), never third-person self-reference.'
+          : '- Quand tu parles de toi, utilise je/moi/mon, jamais la troisieme personne.'
       ];
 
   return `

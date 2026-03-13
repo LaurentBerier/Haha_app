@@ -137,51 +137,58 @@ function buildFallbackThemes(userProfile: UserProfile | null, language: string, 
   const runtimeSalt = Math.floor(Math.random() * 1_000_000_000);
   const seed = hashString(`${Date.now()}|${variationSeed}|${runtimeSalt}`);
   const astroTrait = getAstroTrait(userProfile, language);
-  const includeAstroTheme = ((seed >>> 2) % 4) === 0;
+  const includeAstroTheme = ((seed >>> 2) % 3) === 0;
 
-  const baseFallbackThemes = isEnglish
+  const externalThemes = isEnglish
     ? [
         {
           id: 1,
           type: 'universel',
           titre: 'Granby chaos',
-          premisse: 'At Granby Zoo, your selfie frees a lion - Cathy has to fix it.'
+          premisse:
+            'At Granby Zoo, your selfie pops the lion gate, and you sprint for cover while tourists scream and security chases you through the snack area.'
         },
         {
           id: 2,
-          type: 'perso_forte',
+          type: 'universel',
           titre: 'Metro mission',
-          premisse: 'Your OPUS card dies, and Cathy makes you run STM tonight.'
+          premisse:
+            'Your OPUS card dies at Berri-UQAM in rush hour, so you improvise fake STM announcements and somehow half the platform starts following your instructions.'
         },
         {
           id: 3,
           type: 'wildcard',
           titre: 'Costco meltdown',
-          premisse: 'At Costco Laval, you spark line chaos, and Cathy defends you.'
+          premisse:
+            'At Costco Laval, you cut one checkout line by mistake, then a full cart mutiny breaks out and you are forced to negotiate peace with free sample sausages.'
         },
         {
           id: 5,
           type: 'universel',
           titre: 'Old Quebec stunt',
-          premisse: 'In Old Quebec, Cathy makes you fake a tour guide shift.'
+          premisse:
+            'In Old Quebec, you replace a missing tour guide, invent wild historical facts with full confidence, and tourists applaud so hard they ask for your daily tours.'
         },
         {
           id: 6,
           type: 'wildcard',
           titre: 'Jean-Drapeau fail',
-          premisse: 'At Parc Jean-Drapeau, your plan explodes, and Cathy sends you onstage.'
+          premisse:
+            'At Parc Jean-Drapeau, your perfect picnic setup collapses into festival chaos, and your panic speech accidentally turns into a public performance.'
         },
         {
           id: 7,
           type: 'universel',
           titre: 'SAQ emergency',
-          premisse: 'At SAQ Berri, you pick wrong wine, and Cathy names you sommelier.'
+          premisse:
+            'At SAQ Berri, you choose the worst bottle for a fancy dinner, then bluff tasting notes so boldly that everyone nods like you are a certified sommelier.'
         },
         {
           id: 8,
           type: 'wildcard',
           titre: 'IKEA survival',
-          premisse: 'At IKEA Montreal, you get lost, and Cathy turns it into a show.'
+          premisse:
+            'At IKEA Montreal, you get lost between fake kitchens, emerge with six random lamps, and strangers begin betting whether you can find the exit before closing.'
         }
       ]
     : [
@@ -189,74 +196,130 @@ function buildFallbackThemes(userProfile: UserProfile | null, language: string, 
           id: 1,
           type: 'universel',
           titre: 'Chaos a Granby',
-          premisse: 'Au Zoo de Granby, ton selfie libere un lion, et Cathy gere la crise.'
+          premisse:
+            'Au Zoo de Granby, ton selfie ouvre la mauvaise porte pis le lion sort; tu cours dans l allee des snacks pendant que tout le monde panique autour de toi.'
         },
         {
           id: 2,
-          type: 'perso_forte',
+          type: 'universel',
           titre: 'Mission metro',
-          premisse: 'Ta carte OPUS meurt, Cathy te force a faire rouler le metro ce soir.'
+          premisse:
+            'Ta carte OPUS meurt a Berri-UQAM en pleine heure de pointe; tu improvises des annonces STM pis la moitie du quai commence a te suivre.'
         },
         {
           id: 3,
           type: 'wildcard',
           titre: 'Drame au Costco',
-          premisse: 'Au Costco Laval, tu pars le chaos, et Cathy devient ton avocate.'
+          premisse:
+            'Au Costco Laval, tu coupes une file par erreur pis ca vire en emeute de paniers; tu negocies la paix avec des bouchées gratuites.'
         },
         {
           id: 5,
           type: 'universel',
           titre: 'Vieux-Quebec',
-          premisse: 'Dans le Vieux-Quebec, Cathy te force a guider des touristes toute la journee.'
+          premisse:
+            'Dans le Vieux-Quebec, tu remplaces une guide absente, tu inventes des anecdotes historiques, pis les touristes veulent te reserver tous les jours.'
         },
         {
           id: 6,
           type: 'wildcard',
           titre: 'Parc en panique',
-          premisse: 'Au Parc Jean-Drapeau, ton plan saute, pis Cathy te pitche sur scene.'
+          premisse:
+            'Au Parc Jean-Drapeau, ton pique-nique parfait explose en chaos de festival, pis ton rant de panique devient un numero applaudi.'
         },
         {
           id: 7,
           type: 'universel',
           titre: 'Urgence SAQ',
-          premisse: 'A la SAQ Berri, tu choisis mal, et Cathy te nomme sommelier.'
+          premisse:
+            'A la SAQ Berri, tu choisis le pire vin pour un souper chic, pis tu bluffes des notes de degustation jusqu a ce que tout le monde te croit.'
         },
         {
           id: 8,
           type: 'wildcard',
           titre: 'Deroute IKEA',
-          premisse: 'Au IKEA Montreal, tu te perds, et Cathy transforme ca en spectacle.'
+          premisse:
+            'Au IKEA Montreal, tu te perds entre deux cuisines fake, tu ressors avec six lampes inutiles, pis des inconnus parient sur ton chemin de sortie.'
         }
       ];
 
-  const fallbackThemes = includeAstroTheme
+  const selfThemes = isEnglish
     ? [
-        ...baseFallbackThemes,
-        isEnglish
-          ? {
-              id: 9,
-              type: 'perso_forte',
-              titre: 'Astrology overload',
-              premisse: `Tonight, your astrology side (${astroTrait}) flips, and Cathy sends you live.`
-            }
-          : {
-              id: 9,
-              type: 'perso_forte',
-              titre: 'Virage astrologie',
-              premisse: `Ce soir, ton astrologie (${astroTrait}) vire fort, pis Cathy t envoie en direct.`
-            }
+        {
+          id: 101,
+          type: 'perso_forte',
+          titre: 'My live gamble',
+          premisse:
+            'You get pulled into my live segment at the last second, and I force you to sell a ridiculous idea so confidently that the audience starts cheering for your chaos.'
+        },
+        {
+          id: 102,
+          type: 'perso_forte',
+          titre: 'Backstage rescue',
+          premisse:
+            'You arrive backstage right as my opener collapses, so I drag you on stage and we improvise a fake crisis plan that somehow becomes the funniest part of the night.'
+        },
+        {
+          id: 103,
+          type: 'perso_forte',
+          titre: 'Astro confession',
+          premisse:
+            `You jump into my radio bit, and I use ${astroTrait} to spin a wild prediction that turns your awkward moment into a full crowd obsession.`
+        }
       ]
-    : baseFallbackThemes;
+    : [
+        {
+          id: 101,
+          type: 'perso_forte',
+          titre: 'Mon pari en direct',
+          premisse:
+            'Tu debarques dans mon segment live a la derniere seconde, pis je te force a vendre une idee ridicule avec aplomb jusqu a ce que la foule embarque.'
+        },
+        {
+          id: 102,
+          type: 'perso_forte',
+          titre: 'Sauvetage backstage',
+          premisse:
+            'Tu arrives backstage quand mon ouverture plante, pis je te traine sur scene pour improviser une gestion de crise qui devient le meilleur moment du show.'
+        },
+        {
+          id: 103,
+          type: 'perso_forte',
+          titre: 'Confession astrologie',
+          premisse:
+            `Tu rentres dans mon bit de radio, pis j utilise ${astroTrait} pour lancer une prediction absurde qui te transforme en obsession du public.`
+        }
+      ];
 
-  const selected: ImproTheme[] = [];
-  for (let index = 0; index < 3; index += 1) {
-    selected.push({
-      ...pick(fallbackThemes, seed, index * 5 + 3),
-      id: index + 1
-    });
-  }
+  const astroExternalTheme = isEnglish
+    ? {
+        id: 201,
+        type: 'universel',
+        titre: 'Astrology detour',
+        premisse:
+          `Your astrology side (${astroTrait}) takes over during a normal day, and you turn a tiny inconvenience into a dramatic mission everyone around you must follow.`
+      }
+    : {
+        id: 201,
+        type: 'universel',
+        titre: 'Detour astrologie',
+        premisse:
+          `Ton cote astrologie (${astroTrait}) prend toute la place dans une journee ordinaire, pis tu transformes un mini probleme en mission dramatique pour tout le monde.`
+      };
 
-  return selected;
+  const externalPool = includeAstroTheme ? [...externalThemes, astroExternalTheme] : externalThemes;
+
+  const selectedExternal = mergeUniqueThemes(
+    [pick(externalPool, seed, 3)],
+    [pick(externalPool, seed, 9), pick(externalPool, seed, 15), pick(externalPool, seed, 21)]
+  ).slice(0, 2);
+
+  const selectedSelf = pick(selfThemes, seed, 27);
+  const ordered = [selectedExternal[0], selectedSelf, selectedExternal[1]]
+    .filter((themeOption): themeOption is ImproTheme => Boolean(themeOption))
+    .map((themeOption, index) => ({ ...themeOption, id: index + 1 }));
+
+  return ordered.slice(0, 3);
 }
 
 export default function ImproChainScreen() {
@@ -390,10 +453,11 @@ export default function ImproChainScreen() {
       avoidThemesRef.current = [...toAvoidThemes(nextThemes), ...avoidThemesRef.current].slice(0, 40);
     };
 
-    void fetchThemes().catch(() => {
+    void fetchThemes().catch((error) => {
       if (cancelled) {
         return;
       }
+      console.warn('[impro-chain] API theme generation failed, using local fallback', error);
       const fallbackThemes = buildFallbackThemes(userProfile, language, themeSuggestionNonce);
       const fallbackFingerprint = createThemesFingerprint(fallbackThemes);
       setSuggestedThemes(fallbackThemes);
@@ -751,7 +815,7 @@ const styles = StyleSheet.create({
     fontWeight: '600'
   },
   themeChip: {
-    minHeight: 70,
+    minHeight: 96,
     borderRadius: 12,
     borderWidth: 1.6,
     borderColor: theme.colors.neonBlueSoft,
@@ -781,7 +845,7 @@ const styles = StyleSheet.create({
   themeChipPremise: {
     color: theme.colors.textMuted,
     fontSize: 12,
-    lineHeight: 16
+    lineHeight: 17
   },
   themeChipPremiseActive: {
     color: theme.colors.textSecondary

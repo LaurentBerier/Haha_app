@@ -10,6 +10,28 @@ function parseAllowedOrigins() {
     .filter(Boolean);
 }
 
+function isWildcardLocalhostMatch(origin, allowedOrigin) {
+  if (allowedOrigin !== 'http://localhost:*' && allowedOrigin !== 'https://localhost:*' && allowedOrigin !== 'http://127.0.0.1:*' && allowedOrigin !== 'https://127.0.0.1:*') {
+    return false;
+  }
+
+  try {
+    const originUrl = new URL(origin);
+    const allowedUrl = new URL(allowedOrigin.replace(':*', ':1'));
+    return originUrl.protocol === allowedUrl.protocol && originUrl.hostname === allowedUrl.hostname;
+  } catch {
+    return false;
+  }
+}
+
+function isOriginAllowed(origin, allowedOrigins) {
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  return allowedOrigins.some((allowedOrigin) => isWildcardLocalhostMatch(origin, allowedOrigin));
+}
+
 function setCorsHeaders(req, res, options = {}) {
   const methods = options.methods ?? 'POST, OPTIONS';
   const headers = options.headers ?? 'Content-Type, Authorization';
@@ -70,7 +92,7 @@ function setCorsHeaders(req, res, options = {}) {
     return { ok: false, reason: 'cors_not_configured' };
   }
 
-  if (!allowedOrigins.includes(origin)) {
+  if (!isOriginAllowed(origin, allowedOrigins)) {
     return { ok: false, reason: 'origin_not_allowed' };
   }
 

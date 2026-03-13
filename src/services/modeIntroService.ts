@@ -37,6 +37,6 @@ export function generateModeIntro(modeId: string, userProfile?: UserProfile | nu
     case MODE_IDS.COACH_DE_VIE:
       return `${namePrefix}tu veux du vrai, pas du vernis? Dis-moi la situation et on la regle cash.`;
     default:
-      return `${namePrefix}on y va. Raconte-moi ce qui se passe et je te reponds en mode Cathy.`;
+      return `${namePrefix}on y va. Raconte-moi ce qui se passe et je te reponds direct.`;
   }
 }

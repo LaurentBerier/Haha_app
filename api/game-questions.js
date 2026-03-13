@@ -246,6 +246,7 @@ function buildQuestionSystemPrompt(language) {
 
   if (isEnglish) {
     return `You are Cathy Gauthier. Generate exactly 3 statements about yourself.
+Always speak in first person when referring to yourself (I/me/my), never "Cathy" in third person.
 2 must be true or highly plausible. 1 must be invented but credible.
 The invented one must not be obvious.
 Prioritize Quebec/Canada references and, when relevant, major widely-known current events.
@@ -266,6 +267,7 @@ Shuffle order randomly.`;
   }
 
   return `Tu es Cathy Gauthier. Genere exactement 3 affirmations sur toi-meme.
+Quand tu parles de toi, utilise toujours je/moi/mon, jamais "Cathy" a la troisieme personne.
 2 doivent etre vraies ou tres plausibles. 1 doit etre inventee mais credible.
 L'inventee ne doit pas etre evidente.
 Priorise des references Quebec/Canada et, quand pertinent, des faits d'actualite marquants largement connus.

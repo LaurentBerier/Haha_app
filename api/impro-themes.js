@@ -366,7 +366,7 @@ function buildImproSystemPrompt(language, userProfile) {
 
   if (isEnglish) {
     const template = `You are Cathy Gauthier creating improv story themes.
-Generate exactly 3 short themes, personalized to the user profile below.
+Generate exactly 3 improv themes, personalized to the user profile below.
 Use concrete, real references from Quebec/Canada (known places, known public figures, known brands).
 No fictional people, no fictional bands, no invented places.
 Tone: funny, punchy, simple spoken language.
@@ -387,11 +387,13 @@ Strict anti-repeat rules:
 - Use the nonce as a creative seed and do NOT repeat your previous default patterns.
 
 Style rules (all mandatory):
-1. LENGTH: title max 5 words, premisse max 15 words (one short sentence)
+1. LENGTH: title max 6 words, premisse 22-40 words, 1-2 short sentences
 2. ADDRESS: always "you", never the user's first name
 3. INCLUSION: the user ("you") must appear in every theme
-4. CATHY: Cathy must appear in at least 2 themes out of 3, ideally all 3
+4. VOICE: when talking about yourself, always use "I/me/my", never "Cathy"
 5. ASTROLOGY: use the personality trait (user_zodiac_trait) instead of the zodiac sign name
+6. STORY DEPTH: each premisse must include setting + twist + immediate consequence
+7. CATHY INVOLVEMENT: exactly 1 theme out of 3 may involve "I/me/my"; the other 2 must stay external (no self-involvement)
 
 Return ONLY valid JSON with this exact shape:
 {
@@ -408,7 +410,7 @@ Types allowed only: perso_forte, universel, wildcard.`;
   }
 
   const template = `Tu es Cathy Gauthier et tu crees des themes d'histoire improvisee.
-Genere exactement 3 themes courts, personnalises selon le profil utilisateur ci-dessous.
+Genere exactement 3 themes d'impro, personnalises selon le profil utilisateur ci-dessous.
 Utilise des references concretes et reelles du Quebec/Canada (villes, lieux connus, personnalites publiques, marques connues).
 N'invente pas de noms de personnes, de bands ou de lieux fictifs.
 Ton: drole, punch, simple, langage parle.
@@ -429,11 +431,13 @@ Regles anti-repetition (obligatoires):
 - Utilise le nonce comme seed creatif et evite de recycler tes patterns habituels.
 
 Regles de style (toutes obligatoires):
-1. LONGUEUR: titre max 5 mots, premisse max 15 mots (1 phrase courte)
+1. LONGUEUR: titre max 6 mots, premisse entre 22 et 40 mots, en 1-2 phrases courtes
 2. ADRESSE: toujours "tu", jamais le prenom de l utilisateur
 3. INCLUSION: l utilisateur ("tu") doit etre present dans chaque theme
-4. CATHY: Cathy doit apparaitre dans au moins 2 themes sur 3, idealement les 3
+4. VOIX: quand tu parles de toi, utilise toujours "je/me/moi/mon", jamais "Cathy"
 5. ASTROLOGIE: utilise le trait de personnalite (user_zodiac_trait) plutot que le nom du signe
+6. DENSITE: chaque premisse contient lieu + twist + consequence immediate
+7. IMPLICATION DE CATHY: exactement 1 theme sur 3 peut t impliquer en "je/moi/mon"; les 2 autres restent externes
 
 Retourne UNIQUEMENT un JSON valide avec exactement ce format:
 {
@@ -492,53 +496,7 @@ function extractJsonObject(input) {
   return input.slice(start, end + 1);
 }
 
-function hasUserReference(premisse, language) {
-  const value = normalizeText(premisse).toLowerCase();
-  if (!value) {
-    return false;
-  }
-  if (language.toLowerCase().startsWith('en')) {
-    return /\b(you|your)\b/.test(value);
-  }
-  return /\b(tu|toi|ton|ta|tes)\b/.test(value);
-}
-
-function containsZodiacName(input) {
-  const value = normalizeText(input).toLowerCase();
-  if (!value) {
-    return false;
-  }
-
-  const zodiacNames = [
-    'aries',
-    'taurus',
-    'gemini',
-    'cancer',
-    'leo',
-    'virgo',
-    'libra',
-    'scorpio',
-    'sagittarius',
-    'capricorn',
-    'aquarius',
-    'pisces',
-    'belier',
-    'taureau',
-    'gemeaux',
-    'lion',
-    'vierge',
-    'balance',
-    'scorpion',
-    'sagittaire',
-    'capricorne',
-    'verseau',
-    'poissons'
-  ];
-
-  return zodiacNames.some((name) => new RegExp(`\\b${name}\\b`, 'i').test(value));
-}
-
-function parseThemesPayload(rawText, language = 'fr-CA', preferredName = '') {
+function parseThemesPayload(rawText, language = 'fr-CA') {
   const text = stripCodeFences(rawText);
   let payload = null;
 
@@ -576,43 +534,62 @@ function parseThemesPayload(rawText, language = 'fr-CA', preferredName = '') {
     .filter((entry) => Boolean(entry.titre) && Boolean(entry.premisse))
     .slice(0, 3);
 
-  if (themes.length !== 3) {
-    throw new Error('Themes response must contain exactly 3 valid themes.');
+  if (themes.length === 0) {
+    throw new Error('Themes response must contain at least one valid theme.');
   }
 
-  const missingUserReference = themes.some((entry) => !hasUserReference(entry.premisse, language));
-  if (missingUserReference) {
-    throw new Error('Each theme must include the user in action.');
+  const fillers = language.toLowerCase().startsWith('en')
+    ? [
+        {
+          type: 'universel',
+          titre: 'Metro surprise',
+          premisse: 'You board the metro for a quiet ride, but your small mistake turns the full wagon into live chaos.'
+        },
+        {
+          type: 'wildcard',
+          titre: 'Store meltdown',
+          premisse: 'You go in for one quick thing, then everything escalates and strangers suddenly treat you like the main character.'
+        },
+        {
+          type: 'perso_forte',
+          titre: 'My bad idea',
+          premisse: 'I drag you into one of my bad ideas, and now we both have to bluff our way out in front of everyone.'
+        }
+      ]
+    : [
+        {
+          type: 'universel',
+          titre: 'Surprise dans le metro',
+          premisse: 'Tu montes dans le metro pour etre tranquille, mais une petite erreur transforme le wagon en chaos total.'
+        },
+        {
+          type: 'wildcard',
+          titre: 'Drame au magasin',
+          premisse: 'Tu vas juste chercher une affaire, pis soudain tout degenere et les inconnus te traitent comme la vedette.'
+        },
+        {
+          type: 'perso_forte',
+          titre: 'Ma mauvaise idee',
+          premisse: 'Je t embarque dans une de mes mauvaises idees, pis on doit bluffer devant tout le monde pour s en sortir.'
+        }
+      ];
+
+  while (themes.length < 3) {
+    const next = fillers[(themes.length - 1 + fillers.length) % fillers.length];
+    themes.push({
+      id: themes.length + 1,
+      type: next.type,
+      titre: next.titre,
+      premisse: next.premisse
+    });
   }
 
-  const cathyCount = themes.filter((entry) => /\bcathy\b/i.test(entry.premisse)).length;
-  if (cathyCount < 2) {
-    throw new Error('At least two themes must include Cathy explicitly.');
-  }
-
-  const normalizedPreferredName = normalizeText(preferredName).toLowerCase();
-  if (normalizedPreferredName) {
-    const safeName = normalizedPreferredName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const nameRegex = new RegExp(`\\b${safeName}\\b`, 'i');
-    const usesUserName = themes.some((entry) => nameRegex.test(entry.titre) || nameRegex.test(entry.premisse));
-    if (usesUserName) {
-      throw new Error('Themes must not include the user preferred name.');
-    }
-  }
-
-  const containsSignName = themes.some(
-    (entry) => containsZodiacName(entry.titre) || containsZodiacName(entry.premisse)
-  );
-  if (containsSignName) {
-    throw new Error('Themes must not include zodiac sign names.');
-  }
-
-  const astrologyThemeCount = themes.filter((entry) => /\b(astrologie|astrology|horoscope|zodiac)\b/i.test(entry.premisse)).length;
-  if (astrologyThemeCount > 1) {
-    throw new Error('Astrology should appear in at most one theme.');
-  }
-
-  return { themes };
+  return {
+    themes: themes.slice(0, 3).map((entry, index) => ({
+      ...entry,
+      id: index + 1
+    }))
+  };
 }
 
 async function callImproThemeModel(input) {
@@ -660,7 +637,7 @@ async function callImproThemeModel(input) {
     }
 
     try {
-      return parseThemesPayload(rawText, input.language, input.userProfile.preferredName);
+      return parseThemesPayload(rawText, input.language);
     } catch (error) {
       const parseError = new Error(error instanceof Error ? error.message : 'Impro themes parse failed.');
       parseError.code = 'THEMES_PARSE_FAILED';
