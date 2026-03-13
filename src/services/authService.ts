@@ -16,6 +16,8 @@ export interface UsageSummary {
   messagesUsed: number;
   messagesCap: number | null;
   resetDate: string;
+  softCapReached?: boolean;
+  economyMode?: boolean;
 }
 
 function isNetworkFailure(error: unknown): boolean {
@@ -313,12 +315,27 @@ export async function getUsageSummary(accessToken: string): Promise<UsageSummary
     throw new Error('Invalid usage summary payload.');
   }
 
-  const asRecord = payload as { messagesUsed?: unknown; messagesCap?: unknown; resetDate?: unknown };
-  return {
+  const asRecord = payload as {
+    messagesUsed?: unknown;
+    messagesCap?: unknown;
+    resetDate?: unknown;
+    softCapReached?: unknown;
+    economyMode?: unknown;
+  };
+  const summary: UsageSummary = {
     messagesUsed: toNonNegativeInteger(asRecord.messagesUsed),
     messagesCap: typeof asRecord.messagesCap === 'number' && Number.isFinite(asRecord.messagesCap) ? asRecord.messagesCap : null,
     resetDate: typeof asRecord.resetDate === 'string' ? asRecord.resetDate : ''
   };
+
+  if (typeof asRecord.softCapReached === 'boolean') {
+    summary.softCapReached = asRecord.softCapReached;
+  }
+  if (typeof asRecord.economyMode === 'boolean') {
+    summary.economyMode = asRecord.economyMode;
+  }
+
+  return summary;
 }
 
 export async function refreshSession(): Promise<AuthSession> {

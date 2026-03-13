@@ -250,8 +250,8 @@ Recommended Stripe events:
 
 Implementation note:
 
-- Webhook signature verification now uses Stripe SDK `constructEvent(...)` with strict raw-body validation.
-- If the request body is already JSON-parsed before handler execution (raw bytes lost), verification is rejected.
+- Webhook verification first uses Stripe SDK `constructEvent(...)` with raw-body signature validation.
+- If raw body is unavailable in runtime, webhook falls back to Stripe event lookup by `event.id` using configured Stripe secret keys.
 
 ## 16) Stripe webhook processed but account type did not change
 
@@ -527,7 +527,7 @@ If you still see old mixed data (usually from older cached builds):
    - user B signs in
    - history for user B should not include user A messages
 
-## 28) iOS crash when opening mode categories (`On Jase?`, `Blagues & Gagets`, `Jeux`, `Profil`)
+## 28) iOS crash when opening mode categories (`On Jase?`, `Blagues & Gadgets`, `Jeux`, `Profil`)
 
 Symptom:
 
@@ -562,3 +562,54 @@ npx expo start -c
 ```
 
 3. Open the app and retest category navigation.
+
+## 29) `Themes generes localement` in `Histoire improvisee`
+
+Symptom:
+
+- In `/games/[artistId]/impro-chain`, the lobby displays `Themes generes localement`.
+
+What it means:
+
+- The app failed to fetch personalized themes from `POST /api/impro-themes`.
+- It automatically falls back to the local theme pool so the game remains usable.
+
+Most common causes:
+
+- `ANTHROPIC_API_KEY` missing/invalid in Vercel.
+- `SUPABASE_SERVICE_ROLE_KEY` missing/invalid in Vercel.
+- browser `Origin` blocked by `ALLOWED_ORIGINS`.
+- temporary upstream/API error on Anthropic.
+
+Checks:
+
+1. Confirm app env points to the app API domain:
+   - `EXPO_PUBLIC_API_BASE_URL=https://app.ha-ha.ai/api`
+   - `EXPO_PUBLIC_CLAUDE_PROXY_URL=https://app.ha-ha.ai/api/claude`
+2. In browser DevTools Network, inspect `POST /api/impro-themes` response code/body.
+3. In Vercel logs, verify no `SERVER_MISCONFIGURED` / `UPSTREAM_ERROR` for `api/impro-themes`.
+4. Use `Regenerer les themes` after fixing env values.
+
+## 30) Stripe pre-deploy checklist (test/live)
+
+Use this before testing or shipping subscription changes:
+
+1. App env mode and checkout URLs:
+   - `EXPO_PUBLIC_STRIPE_MODE=live` or `test`
+   - live links: `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_REGULAR`, `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_PREMIUM`
+   - test links: `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_REGULAR_TEST`, `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_PREMIUM_TEST`
+2. Backend Stripe secrets in Vercel:
+   - live: `STRIPE_WEBHOOK_SECRET`, `STRIPE_SECRET_KEY`
+   - test: `STRIPE_WEBHOOK_SECRET_TEST`, `STRIPE_SECRET_KEY_TEST`
+3. Mapping vars are complete:
+   - live: `STRIPE_PAYMENT_LINK_ID_*`, `STRIPE_PRICE_ID_*`
+   - test: `STRIPE_PAYMENT_LINK_ID_*_TEST`, `STRIPE_PRICE_ID_*_TEST`
+4. Webhook destination is exact:
+   - `https://app.ha-ha.ai/api/stripe-webhook`
+5. Enabled Stripe events:
+   - `checkout.session.completed`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+6. Redeploy after env changes:
+   - `npx vercel --prod --yes`
+7. Validate with Stripe event resend and expect `200 OK`.

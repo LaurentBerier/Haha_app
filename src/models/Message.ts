@@ -8,6 +8,8 @@ export interface MessageMetadata {
   imageMediaType?: string;
   errorMessage?: string;
   battleResult?: 'light' | 'solid' | 'destruction';
+  injected?: boolean;
+  showUpgradeCta?: boolean;
 }
 
 export interface Message {

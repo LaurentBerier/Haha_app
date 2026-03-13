@@ -93,18 +93,21 @@ Store-level account isolation:
 - Category configuration: `src/config/modeCategories.ts`
 - Hub screen: `src/app/mode-select/[artistId]/index.tsx`
   - 4 animated `2x2` category buttons
-  - labels: `On Jase?`, `Blagues & Gagets`, `Jeux`, `Profil`
+  - labels: `On Jase?`, `Blagues & Gadgets`, `Jeux`, `Profil`
   - animation safety guard: category cards keep one consistent animation driver per animated node (JS driver) to avoid iOS runtime crashes when opening category subpages
 - Category screen: `src/app/mode-select/[artistId]/[categoryId].tsx`
   - shows only sub-modes for selected category
+  - `On Jase?` currently exposes 2 active chat modes: `On jase!` and `Mets-moi sur le grill`
+  - legacy mode IDs are server-mapped for compatibility (`relax`, `roast`, `coach-brutal`, etc.)
   - `Profil` category shows profile/history shortcuts instead of chat modes
 
 ### Games UX
 
 - Entry point is the history banner (`src/app/history/[artistId].tsx`) -> `/games/[artistId]`
 - Available games in Phase 1:
-  - `Impro Chaîne` (`/games/[artistId]/impro-chain`)
+  - `Histoire improvisée` (`/games/[artistId]/impro-chain`)
   - `Vrai ou Inventé` (`/games/[artistId]/vrai-ou-invente`)
+- Score bar is intentionally rendered in game screens only.
 
 ### Hooks (`src/hooks`)
 
@@ -125,6 +128,10 @@ Store-level account isolation:
 - server-side per-user rate limiting backed by `public.usage_events`
 - optional single-RPC limits path (`public.enforce_claude_limits`) via `CLAUDE_LIMITS_RPC=true`
 - short-lived monthly quota cache + graceful in-memory rate-limit fallback when DB usage store is unavailable
+- soft-cap/economy degradation:
+  - at soft cap (~80%): fallback model (`claude-haiku-4-5-20251001`) + reduced `max_tokens`
+  - in economy mode (cap reached): reduced context window + lower token budget, while still returning responses
+- `X-Quota-Mode` response header (`normal`, `soft-cap`, `economy`)
 - payload validation
 - forwards request to Anthropic API
 - upstream timeout protection with `AbortController`
@@ -175,6 +182,16 @@ Store-level account isolation:
   - `messagesUsed`
   - `messagesCap` (`null` for `admin`)
   - `resetDate` (UTC next month start)
+  - `softCapReached`
+  - `economyMode`
+
+### `POST /api/impro-themes` (`api/impro-themes.js`)
+
+- validates bearer token via Supabase admin API
+- generates personalized improv themes via Anthropic (non-streaming JSON response)
+- theme request payload includes language, profile traits, nonce, and avoid-list
+- client fallback path exists (local theme pool) when API generation fails
+- current implementation intentionally allows theme generation to continue even when monthly chat cap is reached (cost-control caveat)
 
 ### `GET|POST /api/score` (`api/score.js`)
 

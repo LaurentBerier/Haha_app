@@ -30,6 +30,10 @@ Client/public env vars:
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY=<your-supabase-anon-or-publishable-key>`
 - Stripe checkout URL vars (`EXPO_PUBLIC_STRIPE_CHECKOUT_URL_*`) as needed
 
+Mobile note:
+
+- For local/dev device builds and EAS profiles, keep the same API base (`https://app.ha-ha.ai/api`) to avoid web/mobile behavior drift.
+
 Server-only secrets:
 
 - `SUPABASE_SERVICE_ROLE_KEY`

@@ -3,9 +3,9 @@ const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
 const DEFAULT_MONTHLY_CAPS = {
-  free: 15,
-  regular: 45,
-  premium: 110
+  free: 40,
+  regular: 300,
+  premium: 600
   // admin intentionally omitted => unlimited
 };
 
@@ -692,17 +692,11 @@ module.exports = async function handler(req, res) {
 
   const monthlyQuota = await enforceMonthlyQuota(supabaseAdmin, user.id, accountType, requestId);
   if (!monthlyQuota.ok) {
-    if (monthlyQuota.code === 'MONTHLY_QUOTA_EXCEEDED') {
-      console.warn(
-        `[api/impro-themes][${requestId}] Ignoring monthly quota for theme generation (user=${user.id})`
-      );
-    } else {
-      if (monthlyQuota.status === 429) {
-        res.setHeader('Retry-After', String(getRetryAfterUntilNextMonthSeconds()));
-      }
-      sendError(res, monthlyQuota.status, monthlyQuota.message, { code: monthlyQuota.code, requestId });
-      return;
+    if (monthlyQuota.status === 429) {
+      res.setHeader('Retry-After', String(getRetryAfterUntilNextMonthSeconds()));
     }
+    sendError(res, monthlyQuota.status, monthlyQuota.message, { code: monthlyQuota.code, requestId });
+    return;
   }
 
   let payload;

@@ -53,12 +53,22 @@ function isValidMessageMetadata(value: unknown): boolean {
   const voiceUrlValid = value.voiceUrl === undefined || typeof value.voiceUrl === 'string';
   const imageUriValid = value.imageUri === undefined || typeof value.imageUri === 'string';
   const imageMediaTypeValid = value.imageMediaType === undefined || typeof value.imageMediaType === 'string';
+  const injectedValid = value.injected === undefined || typeof value.injected === 'boolean';
+  const showUpgradeCtaValid = value.showUpgradeCta === undefined || typeof value.showUpgradeCta === 'boolean';
   const battleResultValid =
     value.battleResult === undefined ||
     value.battleResult === 'light' ||
     value.battleResult === 'solid' ||
     value.battleResult === 'destruction';
-  return tokensUsedValid && voiceUrlValid && imageUriValid && imageMediaTypeValid && battleResultValid;
+  return (
+    tokensUsedValid &&
+    voiceUrlValid &&
+    imageUriValid &&
+    imageMediaTypeValid &&
+    injectedValid &&
+    showUpgradeCtaValid &&
+    battleResultValid
+  );
 }
 
 function isValidMessage(value: unknown): boolean {

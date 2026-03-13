@@ -498,36 +498,17 @@ describe('api/claude', () => {
       };
     }
 
-    it('returns 429 MONTHLY_QUOTA_EXCEEDED for free user at 15 messages', async () => {
-      jest.doMock('@supabase/supabase-js', () => ({
-        createClient: jest.fn(() =>
-          buildSupabaseClient({
-            user: { id: 'free-user', app_metadata: { account_type: 'free' } },
-            initialUsageCount: 15
-          })
-        )
-      }));
-
-      const handler = require('../claude');
-      const { req, res } = createReqRes({
-        headers: { authorization: 'Bearer free-token' },
-        body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello' }] }
-      });
-
-      await handler(req, res);
-
-      expect(res.statusCode).toBe(429);
-      expect(res.payload.error.code).toBe('MONTHLY_QUOTA_EXCEEDED');
-      expect(global.fetch).not.toHaveBeenCalled();
-    });
-
-    it('returns 200 for free user at 14 messages', async () => {
+    beforeEach(() => {
+      process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = '20000';
       global.fetch = jest.fn().mockResolvedValue(buildSuccessResponse());
+    });
+
+    it('uses economy mode for free user once monthly cap is reached', async () => {
       jest.doMock('@supabase/supabase-js', () => ({
         createClient: jest.fn(() =>
           buildSupabaseClient({
             user: { id: 'free-user', app_metadata: { account_type: 'free' } },
-            initialUsageCount: 14
+            initialUsageCount: 40
           })
         )
       }));
@@ -540,15 +521,43 @@ describe('api/claude', () => {
 
       await handler(req, res);
 
+      const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(res.statusCode).toBe(200);
+      expect(res.headers['X-Quota-Mode']).toBe('economy');
+      expect(upstreamBody.model).toBe('claude-haiku-4-5-20251001');
+      expect(upstreamBody.max_tokens).toBe(100);
     });
 
-    it('returns 429 MONTHLY_QUOTA_EXCEEDED for regular user at 45 messages', async () => {
+    it('keeps normal mode for free user below soft cap', async () => {
+      jest.doMock('@supabase/supabase-js', () => ({
+        createClient: jest.fn(() =>
+          buildSupabaseClient({
+            user: { id: 'free-user', app_metadata: { account_type: 'free' } },
+            initialUsageCount: 30
+          })
+        )
+      }));
+
+      const handler = require('../claude');
+      const { req, res } = createReqRes({
+        headers: { authorization: 'Bearer free-token' },
+        body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello' }] }
+      });
+
+      await handler(req, res);
+
+      const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['X-Quota-Mode']).toBe('normal');
+      expect(upstreamBody.model).toBe('claude-sonnet-4-6');
+    });
+
+    it('uses soft-cap mode for regular user at 80 percent threshold', async () => {
       jest.doMock('@supabase/supabase-js', () => ({
         createClient: jest.fn(() =>
           buildSupabaseClient({
             user: { id: 'regular-user', app_metadata: { account_type: 'regular' } },
-            initialUsageCount: 45
+            initialUsageCount: 239
           })
         )
       }));
@@ -561,16 +570,19 @@ describe('api/claude', () => {
 
       await handler(req, res);
 
-      expect(res.statusCode).toBe(429);
-      expect(res.payload.error.code).toBe('MONTHLY_QUOTA_EXCEEDED');
+      const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['X-Quota-Mode']).toBe('soft-cap');
+      expect(upstreamBody.model).toBe('claude-haiku-4-5-20251001');
+      expect(upstreamBody.max_tokens).toBe(150);
     });
 
-    it('returns 429 MONTHLY_QUOTA_EXCEEDED for premium user at 110 messages', async () => {
+    it('uses economy mode for premium user at monthly cap', async () => {
       jest.doMock('@supabase/supabase-js', () => ({
         createClient: jest.fn(() =>
           buildSupabaseClient({
             user: { id: 'premium-user', app_metadata: { account_type: 'premium' } },
-            initialUsageCount: 110
+            initialUsageCount: 600
           })
         )
       }));
@@ -583,8 +595,11 @@ describe('api/claude', () => {
 
       await handler(req, res);
 
-      expect(res.statusCode).toBe(429);
-      expect(res.payload.error.code).toBe('MONTHLY_QUOTA_EXCEEDED');
+      const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['X-Quota-Mode']).toBe('economy');
+      expect(upstreamBody.model).toBe('claude-haiku-4-5-20251001');
+      expect(upstreamBody.max_tokens).toBe(100);
     });
 
     it('returns 200 for admin user with very high usage count', async () => {
@@ -610,7 +625,7 @@ describe('api/claude', () => {
       expect(res.statusCode).toBe(200);
     });
 
-    it('returns 429 when CLAUDE_MONTHLY_CAP_FREE override is reached', async () => {
+    it('uses economy mode when CLAUDE_MONTHLY_CAP_FREE override is reached', async () => {
       process.env.CLAUDE_MONTHLY_CAP_FREE = '3';
       jest.doMock('@supabase/supabase-js', () => ({
         createClient: jest.fn(() =>
@@ -629,16 +644,18 @@ describe('api/claude', () => {
 
       await handler(req, res);
 
-      expect(res.statusCode).toBe(429);
-      expect(res.payload.error.code).toBe('MONTHLY_QUOTA_EXCEEDED');
+      const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['X-Quota-Mode']).toBe('economy');
+      expect(upstreamBody.model).toBe('claude-haiku-4-5-20251001');
     });
 
-    it("returns 429 for unknown tier fallback to free cap", async () => {
+    it('uses economy mode for unknown tier when free fallback cap is exceeded', async () => {
       jest.doMock('@supabase/supabase-js', () => ({
         createClient: jest.fn(() =>
           buildSupabaseClient({
             user: { id: 'legacy-user', app_metadata: { account_type: 'legacy_plan' } },
-            initialUsageCount: 15
+            initialUsageCount: 40
           })
         )
       }));
@@ -651,8 +668,8 @@ describe('api/claude', () => {
 
       await handler(req, res);
 
-      expect(res.statusCode).toBe(429);
-      expect(res.payload.error.code).toBe('MONTHLY_QUOTA_EXCEEDED');
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['X-Quota-Mode']).toBe('economy');
     });
   });
 
@@ -684,8 +701,12 @@ describe('api/claude', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
-    it('returns 429 when RPC reports monthly quota exceeded', async () => {
+    it('continues request when RPC reports monthly quota exceeded', async () => {
       process.env.CLAUDE_LIMITS_RPC = 'true';
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
+      });
 
       jest.doMock('@supabase/supabase-js', () => ({
         createClient: jest.fn(() =>
@@ -711,9 +732,9 @@ describe('api/claude', () => {
 
       await handler(req, res);
 
-      expect(res.statusCode).toBe(429);
-      expect(res.payload.error.code).toBe('MONTHLY_QUOTA_EXCEEDED');
-      expect(global.fetch).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['X-Quota-Mode']).toBe('normal');
+      expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
     it('falls back to default path when RPC function is missing', async () => {

@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { t } from '../../i18n';
 import type { Message } from '../../models/Message';
 import { theme } from '../../theme';
@@ -12,6 +13,7 @@ interface ChatBubbleProps {
 }
 
 function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMessage }: ChatBubbleProps) {
+  const router = useRouter();
   const enterOpacity = useRef(new Animated.Value(0)).current;
   const enterTranslateY = useRef(new Animated.Value(6)).current;
   const isUser = message.role === 'user';
@@ -83,6 +85,16 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
             <View style={styles.battleBadge} testID={`chat-bubble-battle-${message.id}`}>
               <Text style={styles.battleBadgeLabel}>{battleBadgeLabel}</Text>
             </View>
+          ) : null}
+
+          {message.metadata?.showUpgradeCta ? (
+            <Pressable
+              onPress={() => router.push('/settings/subscription')}
+              style={styles.upgradeButton}
+              testID={`chat-bubble-upgrade-${message.id}`}
+            >
+              <Text style={styles.upgradeLabel}>{t('upgradeCtaLabel')}</Text>
+            </Pressable>
           ) : null}
 
           {message.status === 'error' ? (
@@ -200,6 +212,20 @@ const styles = StyleSheet.create({
   },
   retryLabel: {
     color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  upgradeButton: {
+    marginTop: theme.spacing.xs,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: theme.colors.neonBlue,
+    borderRadius: 8,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 6
+  },
+  upgradeLabel: {
+    color: theme.colors.neonBlue,
     fontSize: 12,
     fontWeight: '700'
   }

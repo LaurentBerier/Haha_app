@@ -45,6 +45,33 @@ interface ImproTheme {
   premisse: string;
 }
 
+function getErrorCode(error: unknown): string {
+  if (!error || typeof error !== 'object') {
+    return '';
+  }
+
+  const source = error as { code?: unknown };
+  return typeof source.code === 'string' ? source.code : '';
+}
+
+function shouldRetryThemeFetch(error: unknown): boolean {
+  const code = getErrorCode(error);
+  if (!code) {
+    return true;
+  }
+
+  if (
+    code === 'MONTHLY_QUOTA_EXCEEDED' ||
+    code === 'RATE_LIMIT_EXCEEDED' ||
+    code === 'UNAUTHORIZED' ||
+    code === 'INVALID_REQUEST'
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 function normalizeThemeSignature(theme: ImproTheme): string {
   return `${normalizeThemeInput(theme.titre).toLowerCase()}|${normalizeThemeInput(theme.premisse).toLowerCase()}`;
 }
@@ -411,6 +438,9 @@ export default function ImproChainScreen() {
             avoidThemes
           });
         } catch (firstError) {
+          if (!shouldRetryThemeFetch(firstError)) {
+            throw firstError;
+          }
           const secondNonce = nonce + 101;
           console.warn('[impro-chain] Theme fetch failed, retrying once', firstError);
           return ImproThemesService.fetchThemes({

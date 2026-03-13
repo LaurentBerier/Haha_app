@@ -3,9 +3,9 @@ const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
 const DEFAULT_MONTHLY_CAPS = {
-  free: 15,
-  regular: 45,
-  premium: 110
+  free: 40,
+  regular: 300,
+  premium: 600
   // admin intentionally omitted => unlimited
 };
 

@@ -3,6 +3,7 @@ const ANTHROPIC_VERSION = '2023-06-01';
 const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
 const DEFAULT_MAX_TOKENS = 300;
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
+const FALLBACK_MODEL = 'claude-haiku-4-5-20251001';
 const ALLOWED_MODELS = new Set([DEFAULT_MODEL]);
 const MAX_MESSAGES = 40;
 const MAX_MESSAGE_CHARS = 10000;
@@ -13,19 +14,28 @@ const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 30;
 const CLAUDE_LIMITS_RPC_NAME = 'enforce_claude_limits';
 const MONTHLY_QUOTA_CACHE_TTL_MS = 5_000;
+const SOFT_CAP_RATIO = 0.8;
+const SOFT_CAP_MAX_TOKENS = 150;
+const ECONOMY_MAX_TOKENS = 100;
 const DEFAULT_ARTIST_ID = 'cathy-gauthier';
 const DEFAULT_MODE_ID = 'default';
 const DEFAULT_MONTHLY_CAPS = {
-  free: 15,
-  regular: 45,
-  premium: 110
+  free: 40,
+  regular: 300,
+  premium: 600
   // admin intentionally omitted => unlimited
 };
 const DEFAULT_MAX_TOKENS_BY_TIER = {
-  free: 200,
+  free: 150,
   regular: 200,
   premium: 300,
   admin: 300
+};
+const DEFAULT_CONTEXT_WINDOW_BY_TIER = {
+  free: 5,
+  regular: 15,
+  premium: 20,
+  admin: 20
 };
 const ALLOWED_IMAGE_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const DEFAULT_MODE_PROMPT = `Conversation libre. Reponds comme Cathy dans une discussion informelle,
@@ -749,11 +759,6 @@ function getMonthStartIso() {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
 }
 
-function getNextMonthStartIso() {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
-}
-
 function getMonthlyCap(accountType) {
   const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
   const key = `CLAUDE_MONTHLY_CAP_${normalizedAccountType.toUpperCase()}`;
@@ -771,9 +776,27 @@ function getMaxTokensForTier(accountType) {
   return DEFAULT_MAX_TOKENS_BY_TIER[normalizedAccountType] ?? DEFAULT_MAX_TOKENS_BY_TIER.free;
 }
 
-function getRetryAfterUntilNextMonthSeconds() {
-  const nextMonthStartMs = Date.parse(getNextMonthStartIso());
-  return Math.max(1, Math.ceil((nextMonthStartMs - Date.now()) / 1000));
+function getContextWindowForTier(accountType) {
+  const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
+  return DEFAULT_CONTEXT_WINDOW_BY_TIER[normalizedAccountType] ?? DEFAULT_CONTEXT_WINDOW_BY_TIER.free;
+}
+
+function getSoftCapThreshold(monthlyCap) {
+  if (typeof monthlyCap !== 'number' || !Number.isFinite(monthlyCap) || monthlyCap <= 0) {
+    return null;
+  }
+
+  return Math.max(1, Math.floor(monthlyCap * SOFT_CAP_RATIO));
+}
+
+function resolveQuotaMode(monthlyQuota) {
+  if (monthlyQuota && monthlyQuota.exceeded) {
+    return 'economy';
+  }
+  if (monthlyQuota && monthlyQuota.softCapReached) {
+    return 'soft-cap';
+  }
+  return 'normal';
 }
 
 function isMissingMonthlyCounterColumnError(error) {
@@ -941,12 +964,31 @@ async function writeProfileMonthlyCounter(supabaseAdmin, userId, monthStartIso, 
 
 async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId) {
   const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
+  const effectiveCap = normalizedAccountType === 'admin' ? null : getMonthlyCap(normalizedAccountType);
+  const softCapThreshold = getSoftCapThreshold(effectiveCap);
+  const monthStartIso = getMonthStartIso();
+
+  const buildResult = (used, source) => {
+    const normalizedUsed = Number.isFinite(used) && used > 0 ? Math.floor(used) : 0;
+    const softCapReached = typeof softCapThreshold === 'number' ? normalizedUsed >= softCapThreshold : false;
+    const exceeded = typeof effectiveCap === 'number' ? normalizedUsed >= effectiveCap : false;
+
+    return {
+      ok: true,
+      source,
+      monthStartIso,
+      used: normalizedUsed,
+      effectiveCap,
+      softCapThreshold,
+      softCapReached,
+      exceeded
+    };
+  };
+
   if (normalizedAccountType === 'admin') {
-    return { ok: true, source: 'admin' };
+    return buildResult(0, 'admin');
   }
 
-  const effectiveCap = getMonthlyCap(normalizedAccountType);
-  const monthStartIso = getMonthStartIso();
   const profileCounter = await readProfileMonthlyCounter(supabaseAdmin, userId, requestId);
   if (!profileCounter.ok) {
     return {
@@ -962,32 +1004,13 @@ async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId
     const monthlyResetMs = Date.parse(profileCounter.monthlyResetAt);
     const isCurrentMonth = Number.isFinite(monthlyResetMs) && monthlyResetMs >= monthStartMs;
     const used = isCurrentMonth ? profileCounter.monthlyMessageCount : 0;
-
-    if (used >= effectiveCap) {
-      return {
-        ok: false,
-        status: 429,
-        code: 'MONTHLY_QUOTA_EXCEEDED',
-        message: `Monthly message quota exceeded. Limit: ${effectiveCap} messages.`
-      };
-    }
-
     setMonthlyQuotaCache(userId, monthStartIso, used);
-    return { ok: true, source: 'profile', monthStartIso, used };
+    return buildResult(used, 'profile');
   }
 
   const cachedUsage = getMonthlyQuotaFromCache(userId, monthStartIso);
   if (cachedUsage !== null) {
-    if (cachedUsage >= effectiveCap) {
-      return {
-        ok: false,
-        status: 429,
-        code: 'MONTHLY_QUOTA_EXCEEDED',
-        message: `Monthly message quota exceeded. Limit: ${effectiveCap} messages.`
-      };
-    }
-
-    return { ok: true, source: 'usage_events', monthStartIso, used: cachedUsage };
+    return buildResult(cachedUsage, 'usage_events');
   }
 
   const { count, error } = await supabaseAdmin
@@ -1007,18 +1030,9 @@ async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId
     };
   }
 
-  if ((count ?? 0) >= effectiveCap) {
-    return {
-      ok: false,
-      status: 429,
-      code: 'MONTHLY_QUOTA_EXCEEDED',
-      message: `Monthly message quota exceeded. Limit: ${effectiveCap} messages.`
-    };
-  }
-
   setMonthlyQuotaCache(userId, monthStartIso, count ?? 0);
 
-  return { ok: true, source: 'usage_events', monthStartIso, used: count ?? 0 };
+  return buildResult(count ?? 0, 'usage_events');
 }
 
 async function readRecentUsageCount(supabaseAdmin, userId, windowStartIso, requestId) {
@@ -1045,7 +1059,7 @@ async function enforceLimitsViaRpc(supabaseAdmin, options) {
 
   const normalizedAccountType =
     typeof options.accountType === 'string' && options.accountType.trim() ? options.accountType.trim() : 'free';
-  const monthlyCap = normalizedAccountType === 'admin' ? null : getMonthlyCap(normalizedAccountType);
+  const monthlyCap = null;
   const nowIso = new Date(options.nowMs).toISOString();
   const windowStartIso = new Date(options.nowMs - options.windowMs).toISOString();
   const monthStartIso = getMonthStartIso();
@@ -1351,6 +1365,25 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  const profileForPromptPromise = fetchUserProfileForPrompt(supabaseAdmin, auth.userId, requestId);
+  const monthlyQuota = await enforceMonthlyQuota(supabaseAdmin, auth.userId, auth.accountType, requestId);
+  if (!monthlyQuota.ok) {
+    sendError(res, monthlyQuota.status, monthlyQuota.message, { code: monthlyQuota.code, requestId });
+    return;
+  }
+
+  const projectedUsage = Number.isFinite(monthlyQuota.used) ? Math.max(0, Math.floor(monthlyQuota.used)) + 1 : 1;
+  const projectedSoftCapReached =
+    typeof monthlyQuota.softCapThreshold === 'number' ? projectedUsage >= monthlyQuota.softCapThreshold : false;
+  const projectedExceeded =
+    typeof monthlyQuota.effectiveCap === 'number' ? projectedUsage >= monthlyQuota.effectiveCap : false;
+  const quotaMode = resolveQuotaMode({
+    ...monthlyQuota,
+    softCapReached: projectedSoftCapReached,
+    exceeded: projectedExceeded
+  });
+  res.setHeader('X-Quota-Mode', quotaMode);
+
   const now = Date.now();
   const windowMs = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_WINDOW_MS, DEFAULT_RATE_LIMIT_WINDOW_MS);
   const maxRequests = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS, DEFAULT_RATE_LIMIT_MAX_REQUESTS);
@@ -1364,40 +1397,42 @@ module.exports = async function handler(req, res) {
   });
 
   if (!rpcLimits.ok) {
+    let shouldRunFallbackRateLimit = false;
     if (!rpcLimits.unsupported) {
-      if (rpcLimits.status === 429 && rpcLimits.code === 'MONTHLY_QUOTA_EXCEEDED') {
-        res.setHeader('Retry-After', String(getRetryAfterUntilNextMonthSeconds()));
+      if (rpcLimits.code === 'MONTHLY_QUOTA_EXCEEDED') {
+        // Monthly quota is handled as graceful degradation, never as a hard block.
+        // We still enforce per-window rate limiting in fallback path.
+        shouldRunFallbackRateLimit = true;
       } else if (rpcLimits.status === 429 && rpcLimits.retryAfterSeconds) {
         res.setHeader('Retry-After', String(rpcLimits.retryAfterSeconds));
+        sendError(res, rpcLimits.status, rpcLimits.message, { code: rpcLimits.code, requestId });
+        return;
+      } else {
+        sendError(res, rpcLimits.status, rpcLimits.message, { code: rpcLimits.code, requestId });
+        return;
       }
-      sendError(res, rpcLimits.status, rpcLimits.message, { code: rpcLimits.code, requestId });
-      return;
+    } else {
+      shouldRunFallbackRateLimit = true;
     }
 
-    const windowStartIso = new Date(now - windowMs).toISOString();
-    const recentUsageCountPromise = readRecentUsageCount(supabaseAdmin, auth.userId, windowStartIso, requestId);
-    const monthlyQuota = await enforceMonthlyQuota(supabaseAdmin, auth.userId, auth.accountType, requestId);
-    if (!monthlyQuota.ok) {
-      if (monthlyQuota.status === 429) {
-        res.setHeader('Retry-After', String(getRetryAfterUntilNextMonthSeconds()));
-      }
-      sendError(res, monthlyQuota.status, monthlyQuota.message, { code: monthlyQuota.code, requestId });
-      return;
-    }
+    if (shouldRunFallbackRateLimit) {
+      const windowStartIso = new Date(now - windowMs).toISOString();
+      const recentUsageCountPromise = readRecentUsageCount(supabaseAdmin, auth.userId, windowStartIso, requestId);
 
-    const recentUsageCount = await recentUsageCountPromise;
-    const rateLimit = await enforceUserRateLimit(supabaseAdmin, auth.userId, requestId, monthlyQuota, {
-      now,
-      windowMs,
-      maxRequests,
-      recentUsageCount
-    });
-    if (!rateLimit.ok) {
-      if (rateLimit.status === 429) {
-        res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
+      const recentUsageCount = await recentUsageCountPromise;
+      const rateLimit = await enforceUserRateLimit(supabaseAdmin, auth.userId, requestId, monthlyQuota, {
+        now,
+        windowMs,
+        maxRequests,
+        recentUsageCount
+      });
+      if (!rateLimit.ok) {
+        if (rateLimit.status === 429) {
+          res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
+        }
+        sendError(res, rateLimit.status, rateLimit.message, { code: rateLimit.code, requestId });
+        return;
       }
-      sendError(res, rateLimit.status, rateLimit.message, { code: rateLimit.code, requestId });
-      return;
     }
   }
 
@@ -1411,7 +1446,7 @@ module.exports = async function handler(req, res) {
   }
 
   const tierMaxTokens = getMaxTokensForTier(auth.accountType);
-  const profileForPrompt = await fetchUserProfileForPrompt(supabaseAdmin, auth.userId, requestId);
+  const profileForPrompt = await profileForPromptPromise;
   const serverSystemPrompt = buildServerSystemPrompt(promptContext, profileForPrompt, req.body?.messages);
 
   let payload;
@@ -1421,6 +1456,18 @@ module.exports = async function handler(req, res) {
     const message = error instanceof Error ? error.message : 'Invalid request payload.';
     sendError(res, 400, message, { code: 'INVALID_REQUEST', requestId });
     return;
+  }
+
+  const contextLimitByTier = getContextWindowForTier(auth.accountType);
+  const contextLimit = projectedExceeded ? Math.min(contextLimitByTier, 5) : contextLimitByTier;
+  payload.messages = payload.messages.slice(-Math.max(1, contextLimit));
+  if (projectedSoftCapReached || projectedExceeded) {
+    payload.model = FALLBACK_MODEL;
+  }
+  if (projectedExceeded) {
+    payload.max_tokens = Math.max(1, Math.min(payload.max_tokens, ECONOMY_MAX_TOKENS));
+  } else if (projectedSoftCapReached) {
+    payload.max_tokens = Math.max(1, Math.min(payload.max_tokens, SOFT_CAP_MAX_TOKENS));
   }
 
   let upstreamResponse;

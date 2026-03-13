@@ -1,6 +1,6 @@
 # Phase 2 Status (Mobile + API)
 
-Last updated: **2026-03-12**
+Last updated: **2026-03-13**
 
 ## Scope
 
@@ -38,7 +38,7 @@ Core targets:
   - universal back button on secondary routes
   - home header keeps logo + hamburger with no redundant center title
   - chat header center title reflects active mode (`emoji + mode label`)
-  - iOS category-menu stability fix: resolved animated-driver conflict that could crash when opening `On Jase?`, `Blagues & Gagets`, `Jeux`, or `Profil`
+  - iOS category-menu stability fix: resolved animated-driver conflict that could crash when opening `On Jase?`, `Blagues & Gadgets`, `Jeux`, or `Profil`
 - settings flows:
   - edit profile
   - preferred display-name editing
@@ -60,6 +60,7 @@ Core targets:
   - server-side artist-aware prompt assembly (Cathy + placeholder artists)
   - prompt language alignment (FR/EN) based on active app language
   - server-side monthly quota enforcement by tier
+  - soft-cap/economy degradation path (Haiku fallback + reduced context/tokens instead of hard chat block)
   - profile-backed monthly counter support (with graceful fallback to `usage_events` count)
   - server-side rate limiting
   - optional single-RPC limits path (`CLAUDE_LIMITS_RPC=true`) to combine quota + rate-limit + usage insert into one DB round-trip
@@ -102,8 +103,9 @@ Core targets:
   - available artist card exposes explicit CTA (`Parler avec Cathy`)
 - games module (phase 1) active via history banner:
   - game hub: `/games/[artistId]`
-  - `Impro Chaîne` (streaming collaborative story)
+  - `Histoire improvisée` (streaming collaborative story)
   - `Vrai ou Inventé` (5-round quiz flow)
+- score bar visibility narrowed to game screens only (removed from standard chat routes)
 - safety/empty-state polish:
   - delete-account flow now requires typed confirmation (`DELETE`) before irreversible action
   - richer chat empty state card (headline + guidance)

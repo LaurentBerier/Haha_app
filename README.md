@@ -17,10 +17,10 @@ Implemented in this repository:
 - Mode selection is now split into:
   - a category hub (`2x2` animated buttons)
   - a dedicated category page showing only its sub-modes/actions
-- iOS mode-category navigation crash fix applied: category card animations now use a consistent JS driver on the same animated node (prevents `Attempting to run JS driven animation...` crash when opening `On Jase?`, `Blagues & Gagets`, `Jeux`, `Profil`).
+- iOS mode-category navigation crash fix applied: category card animations now use a consistent JS driver on the same animated node (prevents `Attempting to run JS driven animation...` crash when opening `On Jase?`, `Blagues & Gadgets`, `Jeux`, `Profil`).
 - Main category labels:
   - `On Jase?`
-  - `Blagues & Gagets`
+  - `Blagues & Gadgets`
   - `Jeux`
   - `Profil`
 - Artist selection now distinguishes available vs upcoming artists with a clear CTA for available artists and "Disponible bientôt" cards for locked artists.
@@ -100,6 +100,9 @@ cp .env.example .env
 - `EXPO_PUBLIC_STRIPE_CHECKOUT_URL` (legacy single Stripe URL, fallback)
 - `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_REGULAR`
 - `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_PREMIUM`
+- `EXPO_PUBLIC_STRIPE_MODE` (`live` or `test`; defaults to `live`)
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_REGULAR_TEST` (optional; used when `EXPO_PUBLIC_STRIPE_MODE=test`)
+- `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_PREMIUM_TEST` (optional; used when `EXPO_PUBLIC_STRIPE_MODE=test`)
 - `EXPO_PUBLIC_PAYPAL_CHECKOUT_URL`
 - `EXPO_PUBLIC_APPLE_PAY_CHECKOUT_URL`
 - `EXPO_PUBLIC_E2E_AUTH_BYPASS` (test-only; used by Detox scripts)
@@ -126,13 +129,17 @@ Notes:
 - `STRIPE_PAYMENT_LINK_ID_PREMIUM` (optional but recommended; maps checkout session to `premium`)
 - `STRIPE_PRICE_ID_REGULAR_MONTHLY` / `STRIPE_PRICE_ID_PREMIUM_MONTHLY` (recommended for subscription update events)
 - `STRIPE_PRICE_ID_REGULAR_ANNUAL` / `STRIPE_PRICE_ID_PREMIUM_ANNUAL` (optional)
+- `STRIPE_WEBHOOK_SECRET_TEST` (recommended when Stripe test mode is enabled)
+- `STRIPE_SECRET_KEY_TEST` (recommended when Stripe test mode is enabled)
+- `STRIPE_PAYMENT_LINK_ID_REGULAR_TEST` / `STRIPE_PAYMENT_LINK_ID_PREMIUM_TEST` (recommended for sandbox payment links)
+- `STRIPE_PRICE_ID_REGULAR_MONTHLY_TEST` / `STRIPE_PRICE_ID_PREMIUM_MONTHLY_TEST` (recommended for sandbox subscription updates)
 - `ALLOWED_ORIGINS` (required for browser callers that send `Origin`; comma-separated allowlist)
 - `CLAUDE_RATE_LIMIT_MAX_REQUESTS` (optional, default `30`, per user)
 - `CLAUDE_RATE_LIMIT_WINDOW_MS` (optional, default `60000`)
 - `ANTHROPIC_FETCH_TIMEOUT_MS` (optional, default `25000`)
-- `CLAUDE_MONTHLY_CAP_FREE` (optional, default `15`)
-- `CLAUDE_MONTHLY_CAP_REGULAR` (optional, default `45`)
-- `CLAUDE_MONTHLY_CAP_PREMIUM` (optional, default `110`)
+- `CLAUDE_MONTHLY_CAP_FREE` (optional, default `40`)
+- `CLAUDE_MONTHLY_CAP_REGULAR` (optional, default `300`)
+- `CLAUDE_MONTHLY_CAP_PREMIUM` (optional, default `600`)
 - `CLAUDE_LIMITS_RPC` (optional, set `true` after SQL migration to use `public.enforce_claude_limits(...)`)
 - `ENABLE_ADMIN_TIER_GRANTS` (optional, default disabled; required to allow `accountTypeId='admin'` through admin endpoint)
 
@@ -247,6 +254,9 @@ Security:
 - Enforces server-side model whitelist (only approved models are accepted)
 - Enforces server-side monthly message quota by tier (`free`, `regular`, `premium`; `admin` unlimited)
 - Enforces server-side per-user rate limit using `public.usage_events`
+- Applies graceful quota degradation:
+  - soft cap (`80%`): switches from Sonnet to Haiku and reduces token budget
+  - economy mode (`100%+`): keeps responding with reduced context/token budget (no hard chat block)
 - Supports optional one-call limits path through Supabase RPC (`CLAUDE_LIMITS_RPC=true`)
 - Includes in-memory limiter fallback when DB usage store is temporarily unavailable
 - Browser-origin requests are fail-closed when `ALLOWED_ORIGINS` is missing or origin is not allowlisted
@@ -284,25 +294,26 @@ Notes:
 - Persists incoming events in `public.payment_events`.
 - Maps product IDs to account types, updates `profiles.account_type_id`, and syncs JWT metadata.
 - Fails closed in every environment when `REVENUECAT_WEBHOOK_SECRET` is missing.
-- `usage-summary` returns `{ messagesUsed, messagesCap, resetDate }` for post-login quota hydration.
+- `usage-summary` returns `{ messagesUsed, messagesCap, resetDate, softCapReached, economyMode }` for post-login quota hydration.
 - `score` returns/stores gamification stats:
   - `GET /api/score` -> current counters (`score`, `roastsGenerated`, `punchlinesCreated`, `destructions`, `photosRoasted`, `memesGenerated`, `battleWins`, `dailyStreak`, `lastActiveDate`)
   - `POST /api/score` -> applies one `action` (`roast_generated`, `punchline_created`, `meme_generated`, `battle_win`, `daily_participation`, `photo_roasted`) and returns updated counters.
 - Stripe webhook verifies `Stripe-Signature`, stores events in `public.payment_events`, maps plan IDs to tiers, and syncs account type claims.
 - Stripe subscription endpoints allow client UI to display next billing cycle and request cancellation at period end.
 - Subscription UI is plan-first (`Gratuit`, `Régulier`, `Premium`) and triggers Stripe checkout URLs directly for paid plans.
-- Chat UI now exposes a compact score bar (`🔥 Score | 🎤 Titre`) linking to `/stats`.
+- Score bar (`🔥 Score | 🎤 Titre`) is intentionally shown only in game screens (not standard chat).
 - Mode browsing flow:
-  - Category hub (`/mode-select/[artistId]`) with `On Jase?`, `Blagues & Gagets`, `Jeux`, `Profil`
+  - Category hub (`/mode-select/[artistId]`) with `On Jase?`, `Blagues & Gadgets`, `Jeux`, `Profil`
   - Category detail (`/mode-select/[artistId]/[categoryId]`) with only relevant modes/actions
 - Games flow:
   - Entry banner from history (`/history/[artistId]` -> `/games/[artistId]`)
-  - Current game screens: `Impro Chaîne` and `Vrai ou Inventé`
+  - Current game screens: `Histoire improvisée` and `Vrai ou Inventé`
 - Mode catalog currently includes:
-  - `On Jase?`: `Radar d'Attitude`, `Roast`, `Relax`, `Coach brutal`, `Je casse tout`
-  - `Blagues & Gagets`: `Générateur de Meme`, `Analyste de Screenshots`, `Victime du Jour`, `Phrase du Jour`, `Numéro de Show`
-  - `Jeux`: `Impro Chaîne`, `Vrai ou Inventé`
+  - `On Jase?`: `On jase!`, `Mets-moi sur le grill`
+  - `Blagues & Gadgets`: `Générateur de Meme`, `Analyste de Screenshots`, `Victime du Jour`, `Phrase du Jour`, `Numéro de Show`
+  - `Jeux`: `Histoire improvisée`, `Vrai ou Inventé`
   - `Profil`: profile edit + recent chat history shortcuts
+- Legacy mode IDs remain server-mapped for conversation compatibility (`relax`, `roast`, `coach-brutal`, etc.).
 
 ## Run
 
@@ -382,6 +393,30 @@ Domain mapping (production):
 `npm run deploy:web` now runs `npm run export:web` then `npx vercel --prod --yes` for the current `haha-app` topology.
 
 Current [`.vercelignore`](/Users/laurentbernier/Documents/HAHA_app/.vercelignore) intentionally ignores only local/dev artifacts while keeping app source and API files deployable.
+
+## Stripe Pre-Deploy Checklist
+
+Use this checklist before shipping subscription changes (test or live):
+
+1. Confirm app env mode and checkout URLs:
+   - `EXPO_PUBLIC_STRIPE_MODE=live` or `test`
+   - `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_REGULAR` / `PREMIUM` (live)
+   - `EXPO_PUBLIC_STRIPE_CHECKOUT_URL_REGULAR_TEST` / `PREMIUM_TEST` (test mode)
+2. Confirm backend Stripe secrets in Vercel:
+   - live: `STRIPE_WEBHOOK_SECRET`, `STRIPE_SECRET_KEY`
+   - test: `STRIPE_WEBHOOK_SECRET_TEST`, `STRIPE_SECRET_KEY_TEST`
+3. Confirm Stripe plan mapping vars:
+   - live: `STRIPE_PAYMENT_LINK_ID_*`, `STRIPE_PRICE_ID_*`
+   - test: `STRIPE_PAYMENT_LINK_ID_*_TEST`, `STRIPE_PRICE_ID_*_TEST`
+4. Confirm Stripe webhook destination URL exactly matches:
+   - `https://app.ha-ha.ai/api/stripe-webhook`
+5. Confirm Stripe sends these events:
+   - `checkout.session.completed`
+   - `customer.subscription.updated`
+   - `customer.subscription.deleted`
+6. Redeploy `haha-app` after every env change:
+   - `npx vercel --prod --yes`
+7. Validate in Stripe with `Send test event` / `Resend` and verify `200 OK`.
 
 ## Repo Layout
 

@@ -7,7 +7,24 @@ const {
   setCorsHeaders
 } = require('./_utils');
 
-const MONTHLY_CAPS = { free: 15, regular: 45, premium: 110 };
+const SOFT_CAP_RATIO = 0.8;
+const MONTHLY_CAPS = { free: 40, regular: 300, premium: 600 };
+
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getMonthlyCap(accountType) {
+  const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
+  const key = `CLAUDE_MONTHLY_CAP_${normalizedAccountType.toUpperCase()}`;
+  const fromEnv = parsePositiveInt(process.env[key], 0);
+  if (fromEnv > 0) {
+    return fromEnv;
+  }
+
+  return MONTHLY_CAPS[normalizedAccountType] ?? MONTHLY_CAPS.free;
+}
 
 function getMonthStartIso() {
   const now = new Date();
@@ -87,11 +104,17 @@ module.exports = async function handler(req, res) {
   }
 
   const isAdmin = accountType === 'admin';
-  const cap = MONTHLY_CAPS[accountType] ?? MONTHLY_CAPS.free;
+  const cap = isAdmin ? null : getMonthlyCap(accountType);
+  const used = count ?? 0;
+  const softCapThreshold = typeof cap === 'number' ? Math.max(1, Math.floor(cap * SOFT_CAP_RATIO)) : null;
+  const softCapReached = typeof softCapThreshold === 'number' ? used >= softCapThreshold : false;
+  const economyMode = typeof cap === 'number' ? used >= cap : false;
 
   res.status(200).json({
-    messagesUsed: count ?? 0,
-    messagesCap: isAdmin ? null : cap,
-    resetDate: getNextMonthStartIso()
+    messagesUsed: used,
+    messagesCap: cap,
+    resetDate: getNextMonthStartIso(),
+    softCapReached,
+    economyMode
   });
 };

@@ -7,6 +7,9 @@ export interface UsageSlice {
   quota: UsageQuota;
   incrementUsage: () => void;
   isQuotaExceeded: () => boolean;
+  isSoftCapReached: () => boolean;
+  markSoftCapMessageShown: () => void;
+  markHardCapMessageShown: () => void;
   resetQuota: () => void;
   hydrateQuota: (messagesUsed: number, accountType: string) => void;
 }
@@ -21,6 +24,8 @@ function normalizeQuotaWindow(quota: UsageQuota): UsageQuota {
     return {
       ...quota,
       messagesUsed: 0,
+      softCapMessageShown: false,
+      hardCapMessageShown: false,
       resetDate: computeNextResetDate(new Date())
     };
   }
@@ -35,8 +40,10 @@ function normalizeQuotaWindow(quota: UsageQuota): UsageQuota {
  */
 export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (set, get) => ({
   quota: {
-    messagesCap: 15,
+    messagesCap: 40,
     messagesUsed: 0,
+    softCapMessageShown: false,
+    hardCapMessageShown: false,
     resetDate: computeNextResetDate(new Date())
   },
   incrementUsage: () =>
@@ -57,17 +64,43 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
     }
     return normalized.messagesUsed >= normalized.messagesCap;
   },
+  isSoftCapReached: () => {
+    const { quota } = get();
+    const normalized = normalizeQuotaWindow(quota);
+    if (normalized.messagesCap === null || normalized.messagesCap <= 0) {
+      return false;
+    }
+
+    const softCapThreshold = Math.max(1, Math.floor(normalized.messagesCap * 0.8));
+    return normalized.messagesUsed >= softCapThreshold;
+  },
+  markSoftCapMessageShown: () =>
+    set((state) => ({
+      quota: {
+        ...normalizeQuotaWindow(state.quota),
+        softCapMessageShown: true
+      }
+    })),
+  markHardCapMessageShown: () =>
+    set((state) => ({
+      quota: {
+        ...normalizeQuotaWindow(state.quota),
+        hardCapMessageShown: true
+      }
+    })),
   resetQuota: () =>
     set((state) => ({
       quota: {
         ...normalizeQuotaWindow(state.quota),
         messagesUsed: 0,
+        softCapMessageShown: false,
+        hardCapMessageShown: false,
         resetDate: computeNextResetDate(new Date())
       }
     })),
   hydrateQuota: (messagesUsed, accountType) => {
     const config = accountTypesById[accountType];
-    const cap = config?.monthlyMessageCap ?? accountTypesById.free?.monthlyMessageCap ?? 15;
+    const cap = config?.monthlyMessageCap ?? accountTypesById.free?.monthlyMessageCap ?? 40;
     const normalizedMessagesUsed =
       Number.isFinite(messagesUsed) && messagesUsed > 0 ? Math.floor(messagesUsed) : 0;
 
@@ -75,7 +108,9 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
       quota: {
         ...normalizeQuotaWindow(state.quota),
         messagesCap: cap,
-        messagesUsed: normalizedMessagesUsed
+        messagesUsed: normalizedMessagesUsed,
+        softCapMessageShown: false,
+        hardCapMessageShown: false
       }
     }));
   }

@@ -3,7 +3,7 @@ import { ARTIST_IDS, MAX_MESSAGE_LENGTH, MODE_IDS } from '../config/constants';
 import { resolveModeIdCompat } from '../config/modeCompat';
 import { USE_MOCK_LLM } from '../config/env';
 import { getAllCathyFewShots, getCathyModeFewShots } from '../data/cathy-gauthier/modeFewShots';
-import { getLanguage, setLanguage } from '../i18n';
+import { getLanguage, setLanguage, t } from '../i18n';
 import type { ChatError } from '../models/ChatError';
 import type { ChatSendPayload } from '../models/ChatSendPayload';
 import type { Message } from '../models/Message';
@@ -225,6 +225,8 @@ export function useChat(conversationId: string) {
   const appendMessageContent = useStore((state) => state.appendMessageContent);
   const getMessages = useStore((state) => state.getMessages);
   const incrementUsage = useStore((state) => state.incrementUsage);
+  const markSoftCapMessageShown = useStore((state) => state.markSoftCapMessageShown);
+  const markHardCapMessageShown = useStore((state) => state.markHardCapMessageShown);
   const updateConversation = useStore((state) => state.updateConversation);
   const userProfile = useStore((state) => state.userProfile);
   const sessionDisplayName = useStore((state) => state.session?.user.displayName ?? null);
@@ -381,6 +383,46 @@ export function useChat(conversationId: string) {
           }
         });
         incrementUsage();
+        const latestQuota = useStore.getState().quota;
+        if (
+          typeof latestQuota.messagesCap === 'number' &&
+          Number.isFinite(latestQuota.messagesCap) &&
+          latestQuota.messagesCap > 0
+        ) {
+          const hardCapReached = latestQuota.messagesUsed >= latestQuota.messagesCap;
+          const softCapThreshold = Math.max(1, Math.floor(latestQuota.messagesCap * 0.8));
+          const softCapReached = latestQuota.messagesUsed >= softCapThreshold;
+
+          if (hardCapReached && !latestQuota.hardCapMessageShown) {
+            markHardCapMessageShown();
+            addMessage(jobConversationId, {
+              id: generateId('msg'),
+              conversationId: jobConversationId,
+              role: 'artist',
+              content: t('cathyHardCapMessage'),
+              status: 'complete',
+              timestamp: new Date().toISOString(),
+              metadata: {
+                injected: true,
+                showUpgradeCta: true
+              }
+            });
+          } else if (softCapReached && !latestQuota.softCapMessageShown) {
+            markSoftCapMessageShown();
+            addMessage(jobConversationId, {
+              id: generateId('msg'),
+              conversationId: jobConversationId,
+              role: 'artist',
+              content: t('cathySoftCapMessage'),
+              status: 'complete',
+              timestamp: new Date().toISOString(),
+              metadata: {
+                injected: true,
+                showUpgradeCta: true
+              }
+            });
+          }
+        }
         if (scoreActions.length > 0) {
           void (async () => {
             for (const action of scoreActions) {
@@ -451,7 +493,15 @@ export function useChat(conversationId: string) {
     } finally {
       runNextLockRef.current = false;
     }
-  }, [appendMessageContent, conversationId, incrementUsage, updateMessage]);
+  }, [
+    addMessage,
+    appendMessageContent,
+    conversationId,
+    incrementUsage,
+    markHardCapMessageShown,
+    markSoftCapMessageShown,
+    updateMessage
+  ]);
 
   const retryMessage = useCallback(
     (artistMessageId: string) => {
@@ -531,14 +581,14 @@ export function useChat(conversationId: string) {
     const modeId = currentConversation.modeId || MODE_IDS.DEFAULT;
     const imageIntent = hasImage ? detectImageIntent(modeId, trimmed.length > 0) : 'default';
     const imageIntentPromptPrefix = getImageIntentPromptPrefix(imageIntent);
-      const latestProfile = useStore.getState().userProfile ?? userProfile;
-      const baseSystemPrompt = buildSystemPromptForArtist(
-        currentConversation.artistId,
-        modeId,
-        latestProfile,
-        languageForTurn,
-        sessionDisplayName
-      );
+    const latestProfile = useStore.getState().userProfile ?? userProfile;
+    const baseSystemPrompt = buildSystemPromptForArtist(
+      currentConversation.artistId,
+      modeId,
+      latestProfile,
+      languageForTurn,
+      sessionDisplayName
+    );
     const systemPrompt = imageIntentPromptPrefix
       ? `${imageIntentPromptPrefix}\n\n${baseSystemPrompt}`
       : baseSystemPrompt;

@@ -6,7 +6,7 @@
 - Original MVP scope (single-artist chat) delivered
 - Current execution tracking moved to `docs/phase2-status.md`
 
-## Current State (2026-03-11)
+## Current State (2026-03-13)
 
 Implemented in this repository:
 
@@ -31,6 +31,7 @@ Implemented in this repository:
 - Global app top bar/hamburger UI is unified across authenticated web/mobile app routes
 - Universal back button is now available across secondary pages (mode select, chat, history, settings subpages)
 - Chat header now displays the active mode name (emoji + label) instead of a generic title
+- On Jase? category simplified to 2 core modes (`On jase!`, `Mets-moi sur le grill`) with legacy mode-id compatibility server-side
 - Artist selection now uses clear availability states:
   - available artist with explicit CTA (`Parler avec Cathy`)
   - upcoming artists with silhouette placeholder + "Disponible bientôt"
