@@ -2,6 +2,7 @@ import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { BackButton } from '../../../components/common/BackButton';
+import { ScoreBar } from '../../../components/chat/ScoreBar';
 import { GameResultPanel } from '../../../components/games/GameResultPanel';
 import { ImproStory } from '../../../components/games/ImproStory';
 import { useImproChain } from '../../../games/hooks/useImproChain';
@@ -534,6 +535,7 @@ export default function ImproChainScreen() {
       <ScrollView contentContainerStyle={styles.content} style={styles.scroll} testID="impro-screen">
         <Text style={styles.title}>{t('gameImproTitle')}</Text>
         <Text style={styles.subtitle}>{artist.name}</Text>
+        <ScoreBar />
 
         {showLobby ? (
           <View style={styles.lobbyCard}>

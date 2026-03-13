@@ -2,6 +2,7 @@ import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useEffect, useMemo } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BackButton } from '../../../components/common/BackButton';
+import { ScoreBar } from '../../../components/chat/ScoreBar';
 import { GameResultPanel } from '../../../components/games/GameResultPanel';
 import { VraiInventeCard } from '../../../components/games/VraiInventeCard';
 import { useVraiOuInvente } from '../../../games/hooks/useVraiOuInvente';
@@ -88,6 +89,7 @@ export default function VraiOuInventeScreen() {
       <ScrollView contentContainerStyle={styles.content} style={styles.scroll} testID="vrai-screen">
         <Text style={styles.title}>{t('gameVraiInventeTitle')}</Text>
         <Text style={styles.subtitle}>{artist.name}</Text>
+        <ScoreBar />
 
         {showStart ? (
           <Pressable
@@ -295,4 +297,3 @@ const styles = StyleSheet.create({
     color: theme.colors.error
   }
 });
-
