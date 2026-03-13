@@ -167,7 +167,7 @@ async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId
     .from('usage_events')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', userId)
-    .in('endpoint', ['claude', 'game-questions', 'game-judge', 'impro-themes'])
+    .in('endpoint', ['claude', 'game-questions', 'game-judge'])
     .gte('created_at', monthStartIso);
 
   if (error) {

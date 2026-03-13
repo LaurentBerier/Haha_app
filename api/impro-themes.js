@@ -105,27 +105,6 @@ async function readProfileMonthlyCounter(supabaseAdmin, userId, requestId) {
   };
 }
 
-async function writeProfileMonthlyCounter(supabaseAdmin, userId, monthStartIso, nextCount, requestId) {
-  const { error } = await supabaseAdmin
-    .from('profiles')
-    .update({
-      monthly_message_count: Math.max(0, nextCount),
-      monthly_reset_at: monthStartIso
-    })
-    .eq('id', userId);
-
-  if (error) {
-    if (isMissingMonthlyCounterColumnError(error)) {
-      return { ok: true, unsupported: true };
-    }
-
-    console.error(`[api/impro-themes][${requestId}] Failed to write profile monthly counter`, error);
-    return { ok: false, error };
-  }
-
-  return { ok: true, unsupported: false };
-}
-
 async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId) {
   const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
   if (normalizedAccountType === 'admin') {
@@ -713,11 +692,17 @@ module.exports = async function handler(req, res) {
 
   const monthlyQuota = await enforceMonthlyQuota(supabaseAdmin, user.id, accountType, requestId);
   if (!monthlyQuota.ok) {
-    if (monthlyQuota.status === 429) {
-      res.setHeader('Retry-After', String(getRetryAfterUntilNextMonthSeconds()));
+    if (monthlyQuota.code === 'MONTHLY_QUOTA_EXCEEDED') {
+      console.warn(
+        `[api/impro-themes][${requestId}] Ignoring monthly quota for theme generation (user=${user.id})`
+      );
+    } else {
+      if (monthlyQuota.status === 429) {
+        res.setHeader('Retry-After', String(getRetryAfterUntilNextMonthSeconds()));
+      }
+      sendError(res, monthlyQuota.status, monthlyQuota.message, { code: monthlyQuota.code, requestId });
+      return;
     }
-    sendError(res, monthlyQuota.status, monthlyQuota.message, { code: monthlyQuota.code, requestId });
-    return;
   }
 
   let payload;
@@ -738,22 +723,6 @@ module.exports = async function handler(req, res) {
     console.error(`[api/impro-themes][${requestId}] Failed to write usage_events`, usageInsert.error);
     sendError(res, 500, 'Usage store unavailable.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
-  }
-
-  if (monthlyQuota.source === 'profile') {
-    const used = typeof monthlyQuota.used === 'number' && Number.isFinite(monthlyQuota.used) ? monthlyQuota.used : 0;
-    const counterUpdate = await writeProfileMonthlyCounter(
-      supabaseAdmin,
-      user.id,
-      monthlyQuota.monthStartIso,
-      used + 1,
-      requestId
-    );
-
-    if (!counterUpdate.ok) {
-      sendError(res, 500, 'Usage store unavailable.', { code: 'SERVER_MISCONFIGURED', requestId });
-      return;
-    }
   }
 
   res.status(200).json(payload);
