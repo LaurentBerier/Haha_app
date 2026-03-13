@@ -35,6 +35,60 @@ function toIsoFromStripeTimestamp(value) {
     : null;
 }
 
+function getStripeSecretKeyCandidates() {
+  const live = (process.env.STRIPE_SECRET_KEY ?? '').trim();
+  const test = (process.env.STRIPE_SECRET_KEY_TEST ?? '').trim();
+  return Array.from(new Set([live, test].filter(Boolean)));
+}
+
+async function cancelStripeSubscription(stripeSecretKey, stripeSubscriptionId) {
+  const body = new URLSearchParams({ cancel_at_period_end: 'true' });
+
+  const response = await fetch(`${STRIPE_API_BASE_URL}/subscriptions/${encodeURIComponent(stripeSubscriptionId)}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${stripeSecretKey}`,
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body
+  });
+
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status >= 500 ? 502 : 400,
+      message: extractStripeErrorMessage(payload)
+    };
+  }
+
+  return { ok: true, payload };
+}
+
+async function cancelStripeSubscriptionWithFallback(stripeSecretKeys, stripeSubscriptionId) {
+  let lastFailure = { ok: false, status: 500, message: 'Stripe API request failed.' };
+
+  for (const stripeSecretKey of stripeSecretKeys) {
+    const result = await cancelStripeSubscription(stripeSecretKey, stripeSubscriptionId);
+    if (result.ok) {
+      return result;
+    }
+
+    lastFailure = result;
+    if (result.status !== 400 && result.status !== 404) {
+      break;
+    }
+  }
+
+  return lastFailure;
+}
+
 async function getAuthenticatedUser(supabaseAdmin, token) {
   const {
     data: { user },
@@ -72,7 +126,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const missingEnv = getMissingEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'STRIPE_SECRET_KEY']);
+  const missingEnv = getMissingEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
   if (missingEnv.length > 0) {
     sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
@@ -116,32 +170,19 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const stripeSecretKey = (process.env.STRIPE_SECRET_KEY ?? '').trim();
-  const body = new URLSearchParams({ cancel_at_period_end: 'true' });
-
-  const response = await fetch(`${STRIPE_API_BASE_URL}/subscriptions/${encodeURIComponent(stripeSubscriptionId)}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${stripeSecretKey}`,
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body
-  });
-
-  let payload;
-  try {
-    payload = await response.json();
-  } catch {
-    payload = null;
-  }
-
-  if (!response.ok) {
-    sendError(res, response.status >= 500 ? 502 : 400, extractStripeErrorMessage(payload), {
-      code: 'SERVER_ERROR',
-      requestId
-    });
+  const stripeSecretKeys = getStripeSecretKeyCandidates();
+  if (stripeSecretKeys.length === 0) {
+    sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
   }
+
+  const cancellation = await cancelStripeSubscriptionWithFallback(stripeSecretKeys, stripeSubscriptionId);
+  if (!cancellation.ok) {
+    sendError(res, cancellation.status, cancellation.message, { code: 'SERVER_ERROR', requestId });
+    return;
+  }
+
+  const payload = cancellation.payload;
 
   const nextBillingDate = toIsoFromStripeTimestamp(payload ? payload.current_period_end : null);
 

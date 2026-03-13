@@ -100,6 +100,32 @@ async function fetchStripeSubscription(stripeSecretKey, stripeSubscriptionId, re
   return { ok: true, subscription: payload };
 }
 
+function getStripeSecretKeyCandidates() {
+  const live = (process.env.STRIPE_SECRET_KEY ?? '').trim();
+  const test = (process.env.STRIPE_SECRET_KEY_TEST ?? '').trim();
+  return Array.from(new Set([live, test].filter(Boolean)));
+}
+
+async function fetchStripeSubscriptionWithFallback(stripeSecretKeys, stripeSubscriptionId, requestId) {
+  let lastFailure = { ok: false, status: 500, message: 'Stripe API request failed.' };
+
+  for (const stripeSecretKey of stripeSecretKeys) {
+    const result = await fetchStripeSubscription(stripeSecretKey, stripeSubscriptionId, requestId);
+    if (result.ok) {
+      return result;
+    }
+
+    lastFailure = result;
+
+    // Continue trying only when the subscription might exist in the other Stripe mode.
+    if (result.status !== 400 && result.status !== 404) {
+      break;
+    }
+  }
+
+  return lastFailure;
+}
+
 module.exports = async function handler(req, res) {
   const requestId = attachRequestId(req, res);
   const corsResult = setCorsHeaders(req, res, { methods: 'GET, OPTIONS' });
@@ -156,9 +182,9 @@ module.exports = async function handler(req, res) {
   }
 
   const stripeLink = linkLookup.link;
-  const stripeSecretKey = (process.env.STRIPE_SECRET_KEY ?? '').trim();
+  const stripeSecretKeys = getStripeSecretKeyCandidates();
 
-  if (!stripeLink || !stripeLink.stripeSubscriptionId || !stripeSecretKey) {
+  if (!stripeLink || !stripeLink.stripeSubscriptionId || stripeSecretKeys.length === 0) {
     res.status(200).json({
       accountType,
       provider: stripeLink ? 'stripe' : null,
@@ -170,7 +196,11 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const stripeSubscription = await fetchStripeSubscription(stripeSecretKey, stripeLink.stripeSubscriptionId, requestId);
+  const stripeSubscription = await fetchStripeSubscriptionWithFallback(
+    stripeSecretKeys,
+    stripeLink.stripeSubscriptionId,
+    requestId
+  );
   if (!stripeSubscription.ok) {
     sendError(res, stripeSubscription.status, stripeSubscription.message, { code: 'SERVER_ERROR', requestId });
     return;

@@ -2,6 +2,7 @@ const Stripe = require('stripe');
 const { attachRequestId, getMissingEnv, getSupabaseAdmin, logAuditEvent, sendError, setCorsHeaders } = require('./_utils');
 
 const STRIPE_SIGNATURE_TOLERANCE_SECONDS = 300;
+const STRIPE_API_BASE_URL = 'https://api.stripe.com/v1';
 const stripeClient = new Stripe('sk_test_placeholder');
 
 function isRecord(value) {
@@ -101,12 +102,29 @@ async function insertPaymentEvent(supabaseAdmin, row) {
   return result;
 }
 
-async function verifyStripeSignature(req, requestId) {
-  const webhookSecret = (process.env.STRIPE_WEBHOOK_SECRET ?? '').trim();
-  const rawBody = await resolveRawBody(req, requestId);
-  const signatureHeader = toHeaderString(req.headers['stripe-signature']);
+function getStripeSecretKeyCandidatesForEvent(livemodeHint) {
+  const live = (process.env.STRIPE_SECRET_KEY ?? '').trim();
+  const test = (process.env.STRIPE_SECRET_KEY_TEST ?? '').trim();
 
-  if (!rawBody || rawBody.length === 0) {
+  if (livemodeHint === true) {
+    return Array.from(new Set([live].filter(Boolean)));
+  }
+
+  if (livemodeHint === false) {
+    return Array.from(new Set([test || live].filter(Boolean)));
+  }
+
+  return Array.from(new Set([live, test].filter(Boolean)));
+}
+
+async function fetchStripeEventFromApi(eventId, requestId, livemodeHint) {
+  const eventIdValue = typeof eventId === 'string' ? eventId.trim() : '';
+  if (!eventIdValue) {
+    return { ok: false, status: 400, code: 'INVALID_REQUEST', message: 'Webhook event is malformed.' };
+  }
+
+  const secretKeys = getStripeSecretKeyCandidatesForEvent(livemodeHint);
+  if (secretKeys.length === 0) {
     return {
       ok: false,
       status: 500,
@@ -115,15 +133,87 @@ async function verifyStripeSignature(req, requestId) {
     };
   }
 
-  if (!webhookSecret || !signatureHeader) {
+  let lastStatus = 500;
+  for (const key of secretKeys) {
+    const response = await fetch(`${STRIPE_API_BASE_URL}/events/${encodeURIComponent(eventIdValue)}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${key}`
+      }
+    });
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+
+    if (response.ok && isRecord(payload)) {
+      return { ok: true, event: payload };
+    }
+
+    lastStatus = response.status;
+    const message = isRecord(payload) && isRecord(payload.error) && typeof payload.error.message === 'string'
+      ? payload.error.message
+      : 'Failed to fetch Stripe event.';
+    console.error(`[api/stripe-webhook][${requestId}] Failed to fetch Stripe event ${eventIdValue} (status=${response.status}): ${message}`);
+
+    if (response.status >= 500) {
+      break;
+    }
+  }
+
+  return {
+    ok: false,
+    status: lastStatus >= 500 ? 502 : 401,
+    code: 'UNAUTHORIZED',
+    message: 'Invalid Stripe signature.'
+  };
+}
+
+async function verifyStripeSignature(req, requestId) {
+  const webhookSecretCandidates = Array.from(
+    new Set([(process.env.STRIPE_WEBHOOK_SECRET ?? '').trim(), (process.env.STRIPE_WEBHOOK_SECRET_TEST ?? '').trim()].filter(Boolean))
+  );
+  const rawBody = await resolveRawBody(req, requestId);
+  const signatureHeader = toHeaderString(req.headers['stripe-signature']);
+
+  if (!rawBody || rawBody.length === 0) {
+    // Some runtimes pre-parse body and consume the stream.
+    // Fallback: fetch the event by ID directly from Stripe API.
+    if (isRecord(req.body)) {
+      const fallback = await fetchStripeEventFromApi(req.body.id, requestId, req.body.livemode);
+      if (fallback.ok) {
+        return { ok: true, event: fallback.event };
+      }
+      return fallback;
+    }
+
+    return {
+      ok: false,
+      status: 500,
+      code: 'SERVER_MISCONFIGURED',
+      message: 'Stripe webhook raw body is unavailable.'
+    };
+  }
+
+  if (webhookSecretCandidates.length === 0 || !signatureHeader) {
     return { ok: false, status: 401, code: 'UNAUTHORIZED', message: 'Invalid Stripe signature.' };
   }
 
-  let event;
-  try {
-    event = stripeClient.webhooks.constructEvent(rawBody, signatureHeader, webhookSecret, STRIPE_SIGNATURE_TOLERANCE_SECONDS);
-  } catch (error) {
-    console.error(`[api/stripe-webhook][${requestId}] Signature verification failed`, error);
+  let event = null;
+  for (const webhookSecret of webhookSecretCandidates) {
+    try {
+      event = stripeClient.webhooks.constructEvent(rawBody, signatureHeader, webhookSecret, STRIPE_SIGNATURE_TOLERANCE_SECONDS);
+      break;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[api/stripe-webhook][${requestId}] Signature verification failed for one configured secret: ${message}`);
+    }
+  }
+
+  if (!event) {
     return { ok: false, status: 401, code: 'UNAUTHORIZED', message: 'Invalid Stripe signature.' };
   }
 
@@ -138,16 +228,22 @@ function getStripeProviderEventId(event) {
   return isRecord(event) && typeof event.id === 'string' && event.id.trim() ? event.id.trim() : '';
 }
 
-function getStripePlanMaps() {
+function getStripePlanMaps(isLiveMode) {
   const linkMap = {};
   const priceMap = {};
 
-  const regularLinkId = (process.env.STRIPE_PAYMENT_LINK_ID_REGULAR ?? '').trim();
-  const premiumLinkId = (process.env.STRIPE_PAYMENT_LINK_ID_PREMIUM ?? '').trim();
-  const regularPriceMonthly = (process.env.STRIPE_PRICE_ID_REGULAR_MONTHLY ?? '').trim();
-  const regularPriceAnnual = (process.env.STRIPE_PRICE_ID_REGULAR_ANNUAL ?? '').trim();
-  const premiumPriceMonthly = (process.env.STRIPE_PRICE_ID_PREMIUM_MONTHLY ?? '').trim();
-  const premiumPriceAnnual = (process.env.STRIPE_PRICE_ID_PREMIUM_ANNUAL ?? '').trim();
+  const resolveEnvValue = (liveKey, testKey) => {
+    const liveValue = (process.env[liveKey] ?? '').trim();
+    const testValue = (process.env[testKey] ?? '').trim();
+    return isLiveMode ? liveValue : testValue || liveValue;
+  };
+
+  const regularLinkId = resolveEnvValue('STRIPE_PAYMENT_LINK_ID_REGULAR', 'STRIPE_PAYMENT_LINK_ID_REGULAR_TEST');
+  const premiumLinkId = resolveEnvValue('STRIPE_PAYMENT_LINK_ID_PREMIUM', 'STRIPE_PAYMENT_LINK_ID_PREMIUM_TEST');
+  const regularPriceMonthly = resolveEnvValue('STRIPE_PRICE_ID_REGULAR_MONTHLY', 'STRIPE_PRICE_ID_REGULAR_MONTHLY_TEST');
+  const regularPriceAnnual = resolveEnvValue('STRIPE_PRICE_ID_REGULAR_ANNUAL', 'STRIPE_PRICE_ID_REGULAR_ANNUAL_TEST');
+  const premiumPriceMonthly = resolveEnvValue('STRIPE_PRICE_ID_PREMIUM_MONTHLY', 'STRIPE_PRICE_ID_PREMIUM_MONTHLY_TEST');
+  const premiumPriceAnnual = resolveEnvValue('STRIPE_PRICE_ID_PREMIUM_ANNUAL', 'STRIPE_PRICE_ID_PREMIUM_ANNUAL_TEST');
 
   if (regularLinkId) {
     linkMap[regularLinkId] = 'regular';
@@ -358,11 +454,19 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const missingEnv = getMissingEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'STRIPE_WEBHOOK_SECRET']);
+  const missingEnv = getMissingEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  const hasWebhookSecret =
+    (typeof process.env.STRIPE_WEBHOOK_SECRET === 'string' && process.env.STRIPE_WEBHOOK_SECRET.trim().length > 0) ||
+    (typeof process.env.STRIPE_WEBHOOK_SECRET_TEST === 'string' && process.env.STRIPE_WEBHOOK_SECRET_TEST.trim().length > 0);
   if (missingEnv.length > 0 || !supabaseAdmin) {
     if (missingEnv.length > 0) {
       console.error(`[api/stripe-webhook][${requestId}] Missing env vars: ${missingEnv.join(', ')}`);
     }
+    sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
+    return;
+  }
+
+  if (!hasWebhookSecret) {
     sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
   }
@@ -386,7 +490,8 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const { linkMap, priceMap } = getStripePlanMaps();
+  const isLiveMode = Boolean(event && event.livemode);
+  const { linkMap, priceMap } = getStripePlanMaps(isLiveMode);
   const stripeEvent = extractStripeEventData(event, linkMap, priceMap);
   if (!stripeEvent) {
     res.status(200).json({ ok: true, ignored: true, type: event.type });

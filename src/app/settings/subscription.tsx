@@ -29,6 +29,8 @@ import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 
 type PlanId = 'free' | 'regular' | 'premium';
+const MAX_CHECKOUT_SYNC_ATTEMPTS = 8;
+const CHECKOUT_SYNC_RETRY_DELAY_MS = 3000;
 
 function getAccountTypeLabel(accountType: string | null | undefined): string {
   if (accountType === 'regular') {
@@ -81,6 +83,7 @@ export default function SubscriptionScreen() {
   const [activeActionKey, setActiveActionKey] = useState<string | null>(null);
   const pendingCheckoutPlanRef = useRef<PlanId | null>(null);
   const checkoutSyncAttemptsRef = useRef(0);
+  const checkoutSyncInFlightRef = useRef(false);
   const checkoutSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toast = useToast();
 
@@ -108,6 +111,7 @@ export default function SubscriptionScreen() {
   const clearPendingCheckoutSync = useCallback(() => {
     pendingCheckoutPlanRef.current = null;
     checkoutSyncAttemptsRef.current = 0;
+    checkoutSyncInFlightRef.current = false;
     if (checkoutSyncTimerRef.current !== null) {
       clearTimeout(checkoutSyncTimerRef.current);
       checkoutSyncTimerRef.current = null;
@@ -127,28 +131,47 @@ export default function SubscriptionScreen() {
       return;
     }
 
-    if (checkoutSyncAttemptsRef.current >= 4) {
+    if (checkoutSyncInFlightRef.current) {
+      return;
+    }
+
+    if (checkoutSyncAttemptsRef.current >= MAX_CHECKOUT_SYNC_ATTEMPTS) {
       clearPendingCheckoutSync();
       toast.info(t('settingsSubscriptionSyncPending'));
       return;
     }
 
     checkoutSyncAttemptsRef.current += 1;
+    checkoutSyncInFlightRef.current = true;
 
     try {
       await syncSubscriptionState();
-      const refreshedSummary = await fetchSubscriptionSummary(session.accessToken);
+      const latestAccessToken = useStore.getState().session?.accessToken ?? session.accessToken;
+      const refreshedSummary = await fetchSubscriptionSummary(latestAccessToken);
       setSummary(refreshedSummary);
 
       const refreshedPlan = toKnownPlanId(refreshedSummary.accountType);
       if (refreshedPlan === pendingPlan || refreshedSummary.accountType === 'admin') {
         clearPendingCheckoutSync();
         toast.success(t('settingsSubscriptionSyncSuccess'));
+        return;
+      }
+
+      if (checkoutSyncAttemptsRef.current < MAX_CHECKOUT_SYNC_ATTEMPTS) {
+        checkoutSyncTimerRef.current = setTimeout(() => {
+          void syncSubscriptionAfterCheckout();
+        }, CHECKOUT_SYNC_RETRY_DELAY_MS);
       }
     } catch {
-      if (checkoutSyncAttemptsRef.current >= 4) {
+      if (checkoutSyncAttemptsRef.current >= MAX_CHECKOUT_SYNC_ATTEMPTS) {
         clearPendingCheckoutSync();
+      } else {
+        checkoutSyncTimerRef.current = setTimeout(() => {
+          void syncSubscriptionAfterCheckout();
+        }, CHECKOUT_SYNC_RETRY_DELAY_MS);
       }
+    } finally {
+      checkoutSyncInFlightRef.current = false;
     }
   }, [clearPendingCheckoutSync, session?.accessToken, toast]);
 
@@ -309,7 +332,7 @@ export default function SubscriptionScreen() {
     }
   };
 
-  const hasStripePlansConfigured = isCheckoutConfigured('stripe', 'regular') && isCheckoutConfigured('stripe', 'premium');
+  const hasAnyStripePlanConfigured = isCheckoutConfigured('stripe', 'regular') || isCheckoutConfigured('stripe', 'premium');
 
   return (
     <View style={styles.root}>
@@ -347,7 +370,7 @@ export default function SubscriptionScreen() {
         <Text style={styles.sectionTitle}>{t('settingsSubscriptionChooseTitle')}</Text>
         <Text style={styles.sectionHint}>{t('settingsSubscriptionChooseHint')}</Text>
 
-        {!hasStripePlansConfigured ? <Text style={styles.configurationWarning}>{t('settingsSubscriptionMissingConfig')}</Text> : null}
+        {!hasAnyStripePlanConfigured ? <Text style={styles.configurationWarning}>{t('settingsSubscriptionMissingConfig')}</Text> : null}
 
         {isLoadingSummary ? (
           <View style={styles.loadingCard}>
