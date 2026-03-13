@@ -42,7 +42,7 @@ function normalizeConversations(input: Record<string, Conversation[]>): Record<s
   Object.entries(input).forEach(([artistId, conversations]) => {
     normalized[artistId] = (conversations ?? []).map((conversation) => ({
       ...conversation,
-      modeId: conversation.modeId ?? MODE_IDS.RADAR_ATTITUDE
+      modeId: conversation.modeId ?? MODE_IDS.ON_JASE
     }));
   });
 

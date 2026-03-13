@@ -13,6 +13,8 @@ export const ARTIST_IDS = {
 
 export const MODE_IDS = {
   DEFAULT: 'default',
+  ON_JASE: 'on-jase',
+  GRILL: 'grill',
   RADAR_ATTITUDE: 'radar-attitude',
   RELAX: 'relax',
   ROAST: 'roast',

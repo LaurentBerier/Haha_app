@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ARTIST_IDS, MAX_MESSAGE_LENGTH, MODE_IDS } from '../config/constants';
+import { resolveModeIdCompat } from '../config/modeCompat';
 import { USE_MOCK_LLM } from '../config/env';
 import { getAllCathyFewShots, getCathyModeFewShots } from '../data/cathy-gauthier/modeFewShots';
 import { getLanguage, setLanguage } from '../i18n';
@@ -188,13 +189,14 @@ function detectBattleResult(content: string): 'light' | 'solid' | 'destruction' 
 }
 
 function resolveScoreActions(modeId: string, imageIntent: ImageIntent, battleResult: 'light' | 'solid' | 'destruction' | null): ScoreAction[] {
+  const canonicalModeId = resolveModeIdCompat(modeId);
   const actions = new Set<ScoreAction>();
 
-  if (modeId === MODE_IDS.ROAST || modeId === MODE_IDS.COACH_BRUTAL) {
+  if (canonicalModeId === MODE_IDS.GRILL) {
     actions.add('roast_generated');
   }
 
-  if (modeId === MODE_IDS.PHRASE_DU_JOUR || modeId === MODE_IDS.RELAX || modeId === MODE_IDS.VICTIME_DU_JOUR) {
+  if (modeId === MODE_IDS.PHRASE_DU_JOUR || canonicalModeId === MODE_IDS.ON_JASE || modeId === MODE_IDS.VICTIME_DU_JOUR) {
     actions.add('punchline_created');
   }
 

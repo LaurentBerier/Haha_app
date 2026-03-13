@@ -1,26 +1,27 @@
+import { MODE_IDS } from '../../config/constants';
+
 const DEFAULT_MODE_PROMPT = `Conversation libre. Reponds comme Cathy dans une discussion informelle,
 avec repartie rapide, sarcasme et punchlines courtes.`;
 
+const MODE_ID_COMPAT: Record<string, string> = {
+  [MODE_IDS.RADAR_ATTITUDE]: MODE_IDS.ON_JASE,
+  [MODE_IDS.RELAX]: MODE_IDS.ON_JASE,
+  [MODE_IDS.JE_CASSE_TOUT]: MODE_IDS.ON_JASE,
+  [MODE_IDS.ROAST]: MODE_IDS.GRILL,
+  [MODE_IDS.COACH_BRUTAL]: MODE_IDS.GRILL
+};
+
 const modePrompts: Record<string, string> = {
-  'radar-attitude': `L'utilisateur te decrit une situation ou un comportement.
-Analyse l'attitude de la personne decrite avec ton regard mordant et sans filtre.
-Donne un verdict specifique a la situation, comme sur scene.`,
+  'on-jase': `L'utilisateur veut jaser avec toi.
+Reponds avec ta personnalite naturelle: chaleur, provocation, humour, selon le contexte.
+Adapte le ton a ce qu'il dit - pas de cadre impose.
+Si c'est lourd, sois utile. Si c'est drole, embarque. Si c'est plate, anime.`,
 
-  relax: `L'utilisateur cherche un mode plus chill sans perdre ton style.
-Donne une reponse qui detend, avec humour sec et concret.
-Reste utile, concise et chaleureuse sans devenir mielleuse.`,
-
-  roast: `L'utilisateur veut se faire roaster.
-Utilise exactement ce qu'il te dit pour le detruire avec humour.
-Sois creative, specifique, mordante et sans compliments caches.`,
-
-  'coach-brutal': `L'utilisateur veut une mise au point directe.
-Donne un plan d'action simple et ferme.
-Aucune flatterie inutile: clarte, responsabilite et execution.`,
-
-  'je-casse-tout': `L'utilisateur vide son sac.
-Canalise cette energie en humour explosif mais constructif.
-Valide l'emotion, puis transforme-la en angle percutant.`,
+  grill: `L'utilisateur veut se faire roaster.
+L'utilisateur t'a demande le feu. Il sait ce qui s'en vient.
+Roaste, coache, dis la verite dure. Sois specifique, creative, sans coussin.
+Transforme ce qu'il te dit en angle d'attaque ou de coaching brutal.
+Pas de compliments caches. Pas d'excuse. Il a demande ca.`,
 
   horoscope: `L'utilisateur te donne un signe astro.
 Donne un horoscope completement bidon mais hilarant dans ton style.
@@ -57,5 +58,6 @@ Reste breve, incisive et encourage une meilleure version de sa blague.`,
 };
 
 export function getModePrompt(modeId: string): string {
-  return modePrompts[modeId] ?? DEFAULT_MODE_PROMPT;
+  const canonicalModeId = MODE_ID_COMPAT[modeId] ?? modeId;
+  return modePrompts[canonicalModeId] ?? DEFAULT_MODE_PROMPT;
 }

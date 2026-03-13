@@ -3,36 +3,50 @@ import type { Mode } from '../models/Mode';
 
 export const modes: Mode[] = [
   {
+    "id": "on-jase",
+    "name": "On jase!",
+    "description": "Mode libre: tu parles, Cathy embarque et ajuste le ton selon ce que tu racontes.",
+    "emoji": "🎤",
+    "kind": "delire"
+  },
+  {
+    "id": "grill",
+    "name": "Mets-moi sur le grill",
+    "description": "Tu demandes le feu: roast, vérité dure et coaching sans coussin émotionnel.",
+    "emoji": "🔥",
+    "kind": "delire"
+  },
+  {
     "id": "radar-attitude",
     "name": "Radar d’Attitude",
-    "description": "Tu racontes une situation, Cathy scanne l'attitude et choisit le ton parfait: analyse cash, conseil utile ou petite claque humoristique.",
+    "description": "Mode désormais intégré à On jase! pour une conversation libre.",
     "emoji": "🔥",
     "kind": "chat"
   },
   {
     "id": "relax",
     "name": "Relax",
-    "description": "Tu veux décompresser sans te faire bercer. Cathy te calme... à sa manière.",
+    "description": "Mode désormais intégré à On jase! pour une conversation libre.",
     "emoji": "😌",
     "kind": "delire"
   },
   {
     "id": "roast",
     "name": "Roast",
-    "description": "Tu demandes le feu, Cathy sort le lance-flammes. Roast direct, créatif et sans coussin émotionnel.",
+    "description": "Mode désormais intégré à Mets-moi sur le grill.",
     "kind": "chat"
   },
   {
     "id": "coach-brutal",
     "name": "Coach brutal",
-    "description": "Version coaching sans sucre ajouté: clarté, pression, et excuses refusées.",
+    "description": "Mode désormais intégré à Mets-moi sur le grill.",
     "emoji": "💪",
     "kind": "delire"
   },
   {
     "id": "je-casse-tout",
     "name": "Je casse tout",
-    "description": "Mode catharsis: tu vides ton sac, Cathy te donne un exutoire verbal digne d'un micro ouvert.",
+    "description": "Mode désormais intégré à On jase! pour une conversation libre.",
     "emoji": "💀",
     "kind": "delire"
   },

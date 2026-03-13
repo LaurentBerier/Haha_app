@@ -9,6 +9,8 @@ interface ModeCardProps {
 }
 
 const MODE_EMOJI_BY_ID: Record<string, string> = {
+  [MODE_IDS.ON_JASE]: '🎤',
+  [MODE_IDS.GRILL]: '🔥',
   [MODE_IDS.RADAR_ATTITUDE]: '🔥',
   [MODE_IDS.RELAX]: '😌',
   [MODE_IDS.ROAST]: '😈',

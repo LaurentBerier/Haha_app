@@ -23,7 +23,7 @@ export const MODE_CATEGORY_META: Record<
 };
 
 export const CATEGORY_MODE_IDS: Record<Exclude<ModeCategoryId, 'profile'>, string[]> = {
-  delire: [MODE_IDS.RADAR_ATTITUDE, MODE_IDS.ROAST, MODE_IDS.RELAX, MODE_IDS.COACH_BRUTAL, MODE_IDS.JE_CASSE_TOUT],
+  delire: [MODE_IDS.ON_JASE, MODE_IDS.GRILL],
   experiences: [
     MODE_IDS.MEME_GENERATOR,
     MODE_IDS.SCREENSHOT_ANALYZER,

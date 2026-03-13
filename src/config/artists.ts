@@ -11,10 +11,8 @@ export const artists: Artist[] = [
     supportedLanguages: ['fr-CA', 'fr-FR', 'en-CA'],
     defaultLanguage: 'fr-CA',
     supportedModeIds: [
-      'relax',
-      'roast',
-      'coach-brutal',
-      'je-casse-tout',
+      'on-jase',
+      'grill',
       'coach-de-vie',
       'phrase-du-jour',
       'message-personnalise',

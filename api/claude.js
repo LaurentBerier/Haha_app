@@ -31,22 +31,23 @@ const ALLOWED_IMAGE_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/web
 const DEFAULT_MODE_PROMPT = `Conversation libre. Reponds comme Cathy dans une discussion informelle,
 avec repartie rapide, sarcasme et punchlines courtes.`;
 const GENERIC_MODE_PROMPT = `Conversation libre. Reponds selon la personnalite de l'artiste selectionne, avec humour concret et sans sortir du personnage.`;
+const MODE_ID_COMPAT = {
+  'radar-attitude': 'on-jase',
+  relax: 'on-jase',
+  'je-casse-tout': 'on-jase',
+  roast: 'grill',
+  'coach-brutal': 'grill'
+};
 const MODE_PROMPTS = {
-  'radar-attitude': `L'utilisateur te decrit une situation ou un comportement.
-Analyse l'attitude de la personne decrite avec ton regard mordant et sans filtre.
-Donne un verdict specifique a la situation, comme sur scene.`,
-  relax: `L'utilisateur veut relacher la pression.
-Reponds avec humour calme, concret et utile.
-Garde un ton direct sans devenir agressive.`,
-  roast: `L'utilisateur veut se faire roaster.
-Utilise exactement ce qu'il te dit pour le detruire avec humour.
-Sois creative, specifique, mordante et sans compliments caches.`,
-  'coach-brutal': `L'utilisateur veut une mise au point franche.
-Donne des actions simples, fermes, sans flatterie.
-Priorise clarte, execution et responsabilite.`,
-  'je-casse-tout': `L'utilisateur vide son sac.
-Canalise l'emotion en humour percutant mais constructif.
-Transforme le chaos en angle utile.`,
+  'on-jase': `L'utilisateur veut jaser avec toi.
+Reponds avec ta personnalite naturelle: chaleur, provocation, humour, selon le contexte.
+Adapte le ton a ce qu'il dit - pas de cadre impose.
+Si c'est lourd, sois utile. Si c'est drole, embarque. Si c'est plate, anime.`,
+  grill: `L'utilisateur veut se faire roaster.
+L'utilisateur t'a demande le feu. Il sait ce qui s'en vient.
+Roaste, coache, dis la verite dure. Sois specifique, creative, sans coussin.
+Transforme ce qu'il te dit en angle d'attaque ou de coaching brutal.
+Pas de compliments caches. Pas d'excuse. Il a demande ca.`,
   'impro-chain': `Tu co-ecris une histoire absurde avec l'utilisateur, dans ton style Cathy Gauthier.
 Regles:
 - Chaque reponse = UNE seule phrase (max 2 si tu ne peux pas te retenir)
@@ -385,6 +386,19 @@ function normalizePromptContext(body) {
   };
 }
 
+function resolveCanonicalModeId(modeId) {
+  if (typeof modeId !== 'string') {
+    return DEFAULT_MODE_ID;
+  }
+
+  const normalized = modeId.trim();
+  if (!normalized) {
+    return DEFAULT_MODE_ID;
+  }
+
+  return MODE_ID_COMPAT[normalized] ?? normalized;
+}
+
 function normalizeProfileForPrompt(row) {
   if (!isRecord(row)) {
     return null;
@@ -575,8 +589,9 @@ Regles :
 function buildServerSystemPrompt(context, profile, rawMessages) {
   const promptLanguage = resolvePromptLanguage(context.language);
   const artistId = typeof context.artistId === 'string' ? context.artistId : DEFAULT_ARTIST_ID;
+  const canonicalModeId = resolveCanonicalModeId(context.modeId);
   const isCathy = artistId === DEFAULT_ARTIST_ID;
-  const modePrompt = isCathy ? MODE_PROMPTS[context.modeId] ?? DEFAULT_MODE_PROMPT : GENERIC_MODE_PROMPT;
+  const modePrompt = isCathy ? MODE_PROMPTS[canonicalModeId] ?? DEFAULT_MODE_PROMPT : GENERIC_MODE_PROMPT;
   const imageIntentPrompt = context.imageIntent ? IMAGE_INTENT_PROMPTS[context.imageIntent] ?? '' : '';
   const userProfileSection = buildUserProfileSection(profile, promptLanguage);
   const memorySection = buildConversationMemorySection(rawMessages, promptLanguage);

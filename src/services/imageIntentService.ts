@@ -1,4 +1,5 @@
 import { MODE_IDS } from '../config/constants';
+import { resolveModeIdCompat } from '../config/modeCompat';
 
 export type ImageIntent = 'photo-roast' | 'meme-generator' | 'screenshot-analyzer' | 'default';
 
@@ -7,7 +8,9 @@ export function detectImageIntent(modeId: string, hasText: boolean): ImageIntent
     return 'default';
   }
 
-  if (modeId === MODE_IDS.ROAST) {
+  const canonicalModeId = resolveModeIdCompat(modeId);
+
+  if (canonicalModeId === MODE_IDS.GRILL) {
     return 'photo-roast';
   }
 

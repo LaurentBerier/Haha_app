@@ -58,7 +58,7 @@ export default function ModeCategoryScreen() {
       return [] as Mode[];
     }
 
-    const supported = [MODE_IDS.RADAR_ATTITUDE, ...artist.supportedModeIds]
+    const supported = [MODE_IDS.ON_JASE, ...artist.supportedModeIds]
       .map((modeId) => getModeById(modeId))
       .filter((mode): mode is Mode => mode !== null);
 
