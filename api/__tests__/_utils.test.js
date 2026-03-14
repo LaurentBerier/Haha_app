@@ -121,6 +121,21 @@ describe('api/_utils', () => {
     expect(result).toEqual({ ok: false, reason: 'origin_required' });
   });
 
+  it('allows same-origin browser request when Origin is missing', () => {
+    const req = {
+      headers: {
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'same-origin',
+        'sec-fetch-dest': 'empty'
+      }
+    };
+    const res = createResponseMock();
+
+    const result = setCorsHeaders(req, res);
+
+    expect(result).toEqual({ ok: true, reason: null });
+  });
+
   it('allows non-browser request with bearer token when Origin is missing', () => {
     const req = {
       headers: {

@@ -122,12 +122,19 @@ function setCorsHeaders(req, res, options = {}) {
   // Non-browser callers may omit Origin. Browsers generally send Fetch Metadata;
   // reject those when Origin is missing to avoid browser CORS bypass patterns.
   if (!origin) {
+    const fetchSite = typeof req.headers['sec-fetch-site'] === 'string'
+      ? req.headers['sec-fetch-site'].trim().toLowerCase()
+      : '';
     const hasFetchMetadata =
       typeof req.headers['sec-fetch-mode'] === 'string' ||
       typeof req.headers['sec-fetch-site'] === 'string' ||
       typeof req.headers['sec-fetch-dest'] === 'string';
 
     if (hasFetchMetadata) {
+      // Same-origin browser requests may omit Origin.
+      if (fetchSite === 'same-origin') {
+        return { ok: true, reason: null };
+      }
       return { ok: false, reason: 'origin_required' };
     }
 
