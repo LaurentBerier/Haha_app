@@ -106,10 +106,20 @@ function buildUserProfileSection(
   }
 
   if (language === 'en') {
-    return `\n## USER PROFILE\nAdapt your humor and references to this profile:\n${lines.join('\n')}`;
+    return `\n## USER PROFILE
+Use this context naturally:
+- If first name is known, use it mostly in early turns or occasional callbacks
+- After the first few replies, prefer direct second-person voice (you/your)
+- Do not repeat the first name every reply
+${lines.join('\n')}`;
   }
 
-  return `\n## PROFIL UTILISATEUR\nAdapte ton humour et tes références à ce profil :\n${lines.join('\n')}`;
+  return `\n## PROFIL UTILISATEUR
+Utilise ce contexte de facon naturelle :
+- Si le prenom est connu, utilise-le surtout au debut ou en relance ponctuelle
+- Apres les premiers echanges, privilegie tu/toi
+- N'abuse pas du prenom dans chaque reponse
+${lines.join('\n')}`;
 }
 
 export function buildSystemPromptForArtist(

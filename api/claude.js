@@ -648,7 +648,9 @@ function buildUserProfileSection(profile, promptLanguage, preferredName = null) 
   if (promptLanguage === 'en') {
     return `\n## USER PROFILE
 You know this person. Use this context actively:
-- Use their first name naturally when it fits
+- If first name is known, use it mostly in early turns or occasional callbacks
+- After the first few replies, prefer direct second-person voice (you/your) to keep it natural
+- Do not overuse the first name; avoid repeating it every reply
 - Adapt jokes to age, relationship status, and interests
 - If horoscope sign is available, assume one playful personality trait naturally
 - If asked what you know about them, summarize these known details clearly (never claim zero knowledge when details exist)
@@ -658,7 +660,9 @@ ${lines.join('\n')}`;
 
   return `\n## PROFIL UTILISATEUR
 Tu connais cette personne. Utilise ces infos activement :
-- Appelle-la par son prenom quand c'est naturel
+- Si le prenom est connu, utilise-le surtout au debut de la conversation ou en relance ponctuelle
+- Apres les premiers echanges, privilegie une adresse naturelle en tu/toi
+- N'abuse pas du prenom; evite de le repeter a chaque reponse
 - Adapte tes blagues a son age, statut, interets
 - Si son signe astro est disponible, assume un trait de personnalite de facon ludique
 - Si elle te demande ce que tu sais d'elle, resume clairement ces infos (n'affirme jamais que tu ne sais rien si tu as des details)
