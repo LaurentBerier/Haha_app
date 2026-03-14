@@ -25,6 +25,7 @@ import {
   type SubscriptionSummary
 } from '../../services/subscriptionService';
 import { impactLight, notifySuccess, notifyWarning } from '../../services/hapticsService';
+import { fetchAccountType } from '../../services/profileService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 
@@ -88,7 +89,7 @@ export default function SubscriptionScreen() {
   const toast = useToast();
 
   const loadSummary = useCallback(async () => {
-    if (!session?.accessToken) {
+    if (!session?.accessToken || !user?.id) {
       setSummary(null);
       return;
     }
@@ -96,13 +97,30 @@ export default function SubscriptionScreen() {
     setIsLoadingSummary(true);
     try {
       const nextSummary = await fetchSubscriptionSummary(session.accessToken);
-      setSummary(nextSummary);
-    } catch {
-      setSummary(null);
+      const accountTypeFromProfile = await fetchAccountType(user.id).catch(() => null);
+      setSummary({
+        ...nextSummary,
+        accountType: accountTypeFromProfile ?? nextSummary.accountType
+      });
+    } catch (error) {
+      const accountTypeFromProfile = await fetchAccountType(user.id).catch(() => null);
+      if (accountTypeFromProfile) {
+        setSummary({
+          accountType: accountTypeFromProfile,
+          provider: null,
+          subscriptionStatus: null,
+          nextBillingDate: null,
+          cancelAtPeriodEnd: false,
+          canCancel: false
+        });
+      } else {
+        setSummary(null);
+      }
+      console.error('[subscription] Failed to load summary', error);
     } finally {
       setIsLoadingSummary(false);
     }
-  }, [session?.accessToken]);
+  }, [session?.accessToken, user?.id]);
 
   useEffect(() => {
     void loadSummary();

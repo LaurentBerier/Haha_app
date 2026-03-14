@@ -1,6 +1,7 @@
 import type { StateCreator } from 'zustand';
 import type { AuthSession, AuthUser } from '../../models/AuthUser';
-import { fetchProfile } from '../../services/profileService';
+import type { AccountTypeId } from '../../config/accountTypes';
+import { fetchAccountType, fetchProfile } from '../../services/profileService';
 import type { StoreState } from '../useStore';
 
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
@@ -12,6 +13,18 @@ export interface AuthSlice {
   setAuthStatus: (status: AuthStatus) => void;
   clearSession: () => void;
   getCurrentUser: () => AuthUser | null;
+}
+
+function toKnownAccountType(value: string | null, fallback: AccountTypeId | null): AccountTypeId | null {
+  if (!value) {
+    return fallback;
+  }
+
+  if (value === 'free' || value === 'regular' || value === 'premium' || value === 'admin') {
+    return value;
+  }
+
+  return fallback;
 }
 
 export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set, get) => ({
@@ -33,13 +46,26 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
     });
 
     try {
-      const profile = await fetchProfile(session.user.id);
+      const [profileResult, accountTypeResult] = await Promise.allSettled([
+        fetchProfile(session.user.id),
+        fetchAccountType(session.user.id)
+      ]);
+      const profile = profileResult.status === 'fulfilled' ? profileResult.value : null;
+      const accountTypeFromProfile = accountTypeResult.status === 'fulfilled' ? accountTypeResult.value : null;
+      const resolvedAccountType = toKnownAccountType(accountTypeFromProfile, session.user.accountType);
+      const mergedSession: AuthSession = {
+        ...session,
+        user: {
+          ...session.user,
+          accountType: resolvedAccountType
+        }
+      };
       const preferredName =
         typeof session.user.displayName === 'string' && session.user.displayName.trim().length > 0
           ? session.user.displayName.trim()
           : null;
       set({
-        session,
+        session: mergedSession,
         authStatus: 'authenticated',
         userProfile: profile ? { ...profile, preferredName } : profile
       });
