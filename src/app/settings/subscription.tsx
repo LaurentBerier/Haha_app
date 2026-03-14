@@ -196,6 +196,7 @@ export default function SubscriptionScreen() {
   useEffect(() => {
     const handleAppStateChange = (nextState: AppStateStatus) => {
       if (nextState === 'active') {
+        void loadSummary();
         void syncSubscriptionAfterCheckout();
       }
     };
@@ -203,11 +204,13 @@ export default function SubscriptionScreen() {
     const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
 
     const handleWindowFocus = () => {
+      void loadSummary();
       void syncSubscriptionAfterCheckout();
     };
 
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void loadSummary();
         void syncSubscriptionAfterCheckout();
       }
     };
@@ -228,7 +231,7 @@ export default function SubscriptionScreen() {
         checkoutSyncTimerRef.current = null;
       }
     };
-  }, [syncSubscriptionAfterCheckout]);
+  }, [loadSummary, syncSubscriptionAfterCheckout]);
 
   const plans: {
     id: PlanId;
