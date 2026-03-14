@@ -66,6 +66,37 @@ describe('api/_utils', () => {
     expect(res.headers['Access-Control-Allow-Headers']).toBe('Content-Type, Authorization');
   });
 
+  it('allows same-origin when x-forwarded-host contains comma-separated values', () => {
+    process.env.ALLOWED_ORIGINS = 'https://another.example.com';
+    const req = {
+      headers: {
+        origin: 'https://app.ha-ha.ai',
+        'x-forwarded-host': 'app.ha-ha.ai, random-edge-host.vercel.app'
+      }
+    };
+    const res = createResponseMock();
+
+    const result = setCorsHeaders(req, res);
+
+    expect(result).toEqual({ ok: true, reason: null });
+    expect(res.headers['Access-Control-Allow-Origin']).toBe('https://app.ha-ha.ai');
+  });
+
+  it('allows wildcard subdomain origins', () => {
+    process.env.ALLOWED_ORIGINS = 'https://*.ha-ha.ai';
+    const req = {
+      headers: {
+        origin: 'https://app.ha-ha.ai'
+      }
+    };
+    const res = createResponseMock();
+
+    const result = setCorsHeaders(req, res);
+
+    expect(result).toEqual({ ok: true, reason: null });
+    expect(res.headers['Access-Control-Allow-Origin']).toBe('https://app.ha-ha.ai');
+  });
+
   it('rejects browser-like request when Origin is missing', () => {
     const req = {
       headers: {

@@ -10,6 +10,33 @@ function parseAllowedOrigins() {
     .filter(Boolean);
 }
 
+function parseHostCandidates(rawValue) {
+  const asString = Array.isArray(rawValue) ? rawValue.join(',') : rawValue;
+  if (typeof asString !== 'string' || !asString.trim()) {
+    return [];
+  }
+
+  return asString
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+    .flatMap((value) => {
+      const next = [value];
+      try {
+        const parsed = new URL(`https://${value}`);
+        if (parsed.host) {
+          next.push(parsed.host.toLowerCase());
+        }
+        if (parsed.hostname) {
+          next.push(parsed.hostname.toLowerCase());
+        }
+      } catch {
+        // Ignore malformed host fragments.
+      }
+      return next;
+    });
+}
+
 function isWildcardLocalhostMatch(origin, allowedOrigin) {
   if (allowedOrigin !== 'http://localhost:*' && allowedOrigin !== 'https://localhost:*' && allowedOrigin !== 'http://127.0.0.1:*' && allowedOrigin !== 'https://127.0.0.1:*') {
     return false;
@@ -24,12 +51,35 @@ function isWildcardLocalhostMatch(origin, allowedOrigin) {
   }
 }
 
+function isWildcardSubdomainMatch(origin, allowedOrigin) {
+  if (typeof allowedOrigin !== 'string' || !allowedOrigin.includes('://*.')) {
+    return false;
+  }
+
+  try {
+    const originUrl = new URL(origin);
+    const allowedUrl = new URL(allowedOrigin.replace('://*.', '://'));
+    if (originUrl.protocol !== allowedUrl.protocol) {
+      return false;
+    }
+
+    const baseDomain = allowedUrl.hostname.toLowerCase();
+    const originHostname = originUrl.hostname.toLowerCase();
+    return originHostname === baseDomain || originHostname.endsWith(`.${baseDomain}`);
+  } catch {
+    return false;
+  }
+}
+
 function isOriginAllowed(origin, allowedOrigins) {
   if (allowedOrigins.includes(origin)) {
     return true;
   }
 
-  return allowedOrigins.some((allowedOrigin) => isWildcardLocalhostMatch(origin, allowedOrigin));
+  return allowedOrigins.some(
+    (allowedOrigin) =>
+      isWildcardLocalhostMatch(origin, allowedOrigin) || isWildcardSubdomainMatch(origin, allowedOrigin)
+  );
 }
 
 function setCorsHeaders(req, res, options = {}) {
@@ -67,18 +117,16 @@ function setCorsHeaders(req, res, options = {}) {
   }
 
   // Always allow same-origin calls (web app and API served from the same host).
-  const forwardedHostRaw = req.headers['x-forwarded-host'];
-  const forwardedHost = Array.isArray(forwardedHostRaw) ? forwardedHostRaw[0] : forwardedHostRaw;
-  const host = typeof forwardedHost === 'string' && forwardedHost.trim()
-    ? forwardedHost.trim()
-    : typeof req.headers.host === 'string' && req.headers.host.trim()
-      ? req.headers.host.trim()
-      : '';
+  const hostCandidates = [
+    ...parseHostCandidates(req.headers['x-forwarded-host']),
+    ...parseHostCandidates(req.headers.host)
+  ];
 
-  if (host) {
+  if (hostCandidates.length > 0) {
     try {
-      const originHost = new URL(origin).host;
-      if (originHost === host) {
+      const originUrl = new URL(origin);
+      const originCandidates = [originUrl.host.toLowerCase(), originUrl.hostname.toLowerCase()];
+      if (originCandidates.some((candidate) => hostCandidates.includes(candidate))) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Vary', 'Origin');
         return { ok: true, reason: null };
