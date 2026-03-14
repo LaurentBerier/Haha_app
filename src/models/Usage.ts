@@ -2,6 +2,9 @@ export interface UsageQuota {
   messagesCap: number | null;
   messagesUsed: number;
   resetDate: string;
-  softCapMessageShown?: boolean;
-  hardCapMessageShown?: boolean;
+  threshold1MessageShown?: boolean;
+  threshold2MessageShown?: boolean;
+  threshold3MessageShown?: boolean;
+  threshold4MessageShown?: boolean;
+  isBlocked?: boolean;
 }

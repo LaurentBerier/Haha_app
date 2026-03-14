@@ -7,8 +7,8 @@ const {
   setCorsHeaders
 } = require('./_utils');
 
-const SOFT_CAP_RATIO = 0.8;
-const MONTHLY_CAPS = { free: 40, regular: 300, premium: 600 };
+const SOFT_CAP_RATIO = 0.75;
+const MONTHLY_CAPS = { free: 50, regular: 500, premium: 1500 };
 
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(value ?? '', 10);

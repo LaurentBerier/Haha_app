@@ -66,6 +66,32 @@ function toErrorMessage(errorPayload: unknown): string {
   return 'API error';
 }
 
+function toErrorCode(errorPayload: unknown): string | null {
+  if (
+    errorPayload &&
+    typeof errorPayload === 'object' &&
+    'error' in errorPayload &&
+    errorPayload.error &&
+    typeof errorPayload.error === 'object' &&
+    'code' in errorPayload.error &&
+    typeof errorPayload.error.code === 'string'
+  ) {
+    return errorPayload.error.code;
+  }
+
+  return null;
+}
+
+function toApiError(errorPayload: unknown, status: number): Error & { code?: string; status?: number } {
+  const error = new Error(toErrorMessage(errorPayload)) as Error & { code?: string; status?: number };
+  const code = toErrorCode(errorPayload);
+  if (code) {
+    error.code = code;
+  }
+  error.status = status;
+  return error;
+}
+
 function estimateTokens(text: string): number {
   const tokens = text.trim().split(/\s+/).filter(Boolean).length;
   return tokens > 0 ? tokens : 1;
@@ -254,7 +280,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
         } catch {
           payload = await response.text();
         }
-        emitError(new Error(toErrorMessage(payload)));
+        emitError(toApiError(payload, response.status));
         return;
       }
 

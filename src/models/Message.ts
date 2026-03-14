@@ -7,9 +7,11 @@ export interface MessageMetadata {
   imageUri?: string;
   imageMediaType?: string;
   errorMessage?: string;
+  errorCode?: string;
   battleResult?: 'light' | 'solid' | 'destruction';
   injected?: boolean;
   showUpgradeCta?: boolean;
+  upgradeFromTier?: string;
 }
 
 export interface Message {

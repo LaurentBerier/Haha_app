@@ -87,17 +87,17 @@ export const fr = {
   settingsSubscriptionChoosePlanCta: 'Choisir ce plan',
   settingsSubscriptionPlanFreePrice: '0 $ / mois',
   settingsSubscriptionPlanFreePunchline: 'Parfait pour tester le style sans sortir la carte.',
-  settingsSubscriptionPlanFreePerk1: '40 messages / mois',
+  settingsSubscriptionPlanFreePerk1: '50 messages / mois',
   settingsSubscriptionPlanFreePerk2: 'Texte seulement',
   settingsSubscriptionPlanFreePerk3: 'Accès de base aux discussions',
   settingsSubscriptionPlanRegularPrice: '8,99 $ / mois',
   settingsSubscriptionPlanRegularPunchline: 'Pour les conversations qui partent en impro.',
-  settingsSubscriptionPlanRegularPerk1: '300 messages / mois',
+  settingsSubscriptionPlanRegularPerk1: '500 messages / mois',
   settingsSubscriptionPlanRegularPerk2: 'Voix ElevenLabs',
   settingsSubscriptionPlanRegularPerk3: 'Réponses plus longues et suivies',
   settingsSubscriptionPlanPremiumPrice: '19,99 $ / mois',
   settingsSubscriptionPlanPremiumPunchline: 'Pour binge-chatter sans regarder le compteur toutes les 2 minutes.',
-  settingsSubscriptionPlanPremiumPerk1: '600 messages / mois',
+  settingsSubscriptionPlanPremiumPerk1: '1500 messages / mois',
   settingsSubscriptionPlanPremiumPerk2: 'Voix ElevenLabs',
   settingsSubscriptionPlanPremiumPerk3: 'Priorité sur les nouveautés',
   settingsSubscriptionMethodsTitle: 'Méthodes de paiement',
@@ -198,11 +198,18 @@ export const fr = {
   chatDefaultArtistName: 'Cathy IA Gauthier',
   chatModeLabel: 'Mode',
   chatModeUnknown: 'Discussion',
-  cathySoftCapMessage:
-    "Ok, j'vais etre franche avec toi: t'approches la limite de messages de ton forfait ce mois-ci. Je passe en mode express: je reste la, mais plus courte et certaines fonctions sont en pause.",
-  cathyHardCapMessage:
-    "Je suis officiellement en mode economique pour le reste du mois. Je te reponds encore - promis - mais j'ai pas toute ma tete. Reveille-moi au complet avec un upgrade.",
+  cathyThreshold1Message:
+    "Petite note entre nous: t'as utilise les 3/4 de tes messages ce mois-ci. Je reponds encore pleine puissance, mais je surveille mon energie. Upgrade si tu veux jamais ralentir.",
+  cathyThreshold2Message:
+    "Ok la, je suis en mode express. Je reponds encore, mais plus courte et avec moins de memoire. Certaines fonctions avancées sont en pause jusqu'au mois prochain.",
+  cathyThreshold3PaidMessage:
+    "Je suis officiellement en mode economique pour le reste du mois. Je reponds encore, promis, mais en version allégée.",
+  cathyThreshold3FreeMessage:
+    "T'as epuise tes messages gratuits pour ce mois. Je m'en vais pas, mais je peux pu repondre. Passe en Regulier pour continuer a jaser.",
+  cathyThreshold4PaidMessage:
+    "La c'est vraiment la fin du mois pour moi. On se retrouve le 1er, ou upgrade pour ne plus attendre.",
   upgradeCtaLabel: "Passer a l'abonnement superieur ->",
+  chatInputBlocked: 'Messages epuises - renouvellement le 1er du mois',
   messageTooLong: 'Message trop long',
   newConversation: 'Nouvelle conversation',
   noMessages: 'Commence la conversation',

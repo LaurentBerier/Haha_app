@@ -87,17 +87,17 @@ export const en = {
   settingsSubscriptionChoosePlanCta: 'Choose this plan',
   settingsSubscriptionPlanFreePrice: '$0 / month',
   settingsSubscriptionPlanFreePunchline: 'Perfect to test the vibe before taking out the card.',
-  settingsSubscriptionPlanFreePerk1: '40 messages / month',
+  settingsSubscriptionPlanFreePerk1: '50 messages / month',
   settingsSubscriptionPlanFreePerk2: 'Text only',
   settingsSubscriptionPlanFreePerk3: 'Basic chat access',
   settingsSubscriptionPlanRegularPrice: '$8.99 / month',
   settingsSubscriptionPlanRegularPunchline: 'For chats that turn into full improv sessions.',
-  settingsSubscriptionPlanRegularPerk1: '300 messages / month',
+  settingsSubscriptionPlanRegularPerk1: '500 messages / month',
   settingsSubscriptionPlanRegularPerk2: 'ElevenLabs voice',
   settingsSubscriptionPlanRegularPerk3: 'Longer, more continuous replies',
   settingsSubscriptionPlanPremiumPrice: '$19.99 / month',
   settingsSubscriptionPlanPremiumPunchline: 'For binge chatting without checking the counter every 2 minutes.',
-  settingsSubscriptionPlanPremiumPerk1: '600 messages / month',
+  settingsSubscriptionPlanPremiumPerk1: '1500 messages / month',
   settingsSubscriptionPlanPremiumPerk2: 'ElevenLabs voice',
   settingsSubscriptionPlanPremiumPerk3: 'Priority access to new features',
   settingsSubscriptionMethodsTitle: 'Payment methods',
@@ -198,11 +198,18 @@ export const en = {
   chatDefaultArtistName: 'Cathy AI Gauthier',
   chatModeLabel: 'Mode',
   chatModeUnknown: 'Chat',
-  cathySoftCapMessage:
-    "Quick heads-up: you're approaching your monthly message limit. I'll stay here in express mode, with shorter answers and some advanced features paused.",
-  cathyHardCapMessage:
-    "I'm officially in economy mode for the rest of the month. I still reply - promise - but I'm not at full power. Upgrade to wake me up fully.",
+  cathyThreshold1Message:
+    "Quick heads-up: you've used about three quarters of your monthly messages. I'm still at full power, just watching my energy.",
+  cathyThreshold2Message:
+    "Alright, express mode is on. I still reply, but shorter with less memory. Some advanced features are paused until next month.",
+  cathyThreshold3PaidMessage:
+    "I'm officially in economy mode for the rest of the month. I still reply, promise, just in a lighter version.",
+  cathyThreshold3FreeMessage:
+    "You've used all your free messages this month. I'm not leaving, but I can't reply anymore. Upgrade to Regular to keep chatting.",
+  cathyThreshold4PaidMessage:
+    "That is truly the end of the month on my side. See you on the 1st, or upgrade so you never have to wait.",
   upgradeCtaLabel: 'Upgrade my plan ->',
+  chatInputBlocked: 'Messages used up - renews on the 1st of next month',
   messageTooLong: 'Message is too long',
   newConversation: 'New conversation',
   noMessages: 'Start the conversation',

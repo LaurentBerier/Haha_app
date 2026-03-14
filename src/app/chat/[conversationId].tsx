@@ -46,7 +46,7 @@ export default function ChatScreen() {
   const currentConversation = useStore(
     useCallback((state) => findConversationById(state.conversations, conversationId), [conversationId])
   );
-  const { messages, sendMessage, retryMessage, hasStreaming, currentArtistName } = useChat(conversationId);
+  const { messages, sendMessage, retryMessage, hasStreaming, currentArtistName, isQuotaBlocked } = useChat(conversationId);
 
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? '');
   const artistDisplayName = formatArtistDisplayName(currentArtistName);
@@ -88,7 +88,10 @@ export default function ChatScreen() {
           </Text>
         )}
         {isValidConversation && hasStreaming ? <StreamingIndicator /> : null}
-        <ChatInput onSend={sendMessage} disabled={!isValidConversation} />
+        <ChatInput onSend={sendMessage} disabled={!isValidConversation || isQuotaBlocked} />
+        {isValidConversation && isQuotaBlocked ? (
+          <Text style={styles.blockedHint}>{t('chatInputBlocked')}</Text>
+        ) : null}
       </View>
     </KeyboardAvoidingView>
   );
@@ -113,5 +116,12 @@ const styles = StyleSheet.create({
     color: theme.colors.error,
     textAlign: 'center',
     marginTop: 30
+  },
+  blockedHint: {
+    color: theme.colors.textSecondary,
+    textAlign: 'center',
+    fontSize: 12,
+    marginTop: theme.spacing.xs,
+    marginBottom: theme.spacing.sm
   }
 });

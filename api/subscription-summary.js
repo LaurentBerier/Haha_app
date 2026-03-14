@@ -16,6 +16,14 @@ function toAccountType(user) {
   return raw.trim() || 'free';
 }
 
+function toProfileAccountType(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
 function toIsoFromStripeTimestamp(value) {
   return typeof value === 'number' && Number.isFinite(value) && value > 0
     ? new Date(value * 1000).toISOString()
@@ -67,6 +75,23 @@ async function fetchStripeLink(supabaseAdmin, userId) {
           stripeSubscriptionId: typeof data.stripe_subscription_id === 'string' ? data.stripe_subscription_id : ''
         }
       : null
+  };
+}
+
+async function fetchProfileAccountType(supabaseAdmin, userId) {
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('account_type_id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    return { ok: false, error };
+  }
+
+  return {
+    ok: true,
+    accountType: toProfileAccountType(data?.account_type_id)
   };
 }
 
@@ -174,7 +199,14 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const accountType = toAccountType(auth.user);
+  let accountType = toAccountType(auth.user);
+  const profileAccountTypeLookup = await fetchProfileAccountType(supabaseAdmin, auth.user.id);
+  if (profileAccountTypeLookup.ok && profileAccountTypeLookup.accountType) {
+    accountType = profileAccountTypeLookup.accountType;
+  } else if (!profileAccountTypeLookup.ok) {
+    console.error(`[api/subscription-summary][${requestId}] Failed to read profile account type`, profileAccountTypeLookup.error);
+  }
+
   const linkLookup = await fetchStripeLink(supabaseAdmin, auth.user.id);
   if (!linkLookup.ok) {
     sendError(res, 500, linkLookup.error.message, { code: 'SERVER_ERROR', requestId });

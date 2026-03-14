@@ -34,6 +34,10 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
         : battleResult === 'light'
           ? '🔥 Léger'
           : null;
+  const isQuotaError =
+    message.metadata?.errorCode === 'QUOTA_EXCEEDED_BLOCKED' ||
+    message.metadata?.errorCode === 'QUOTA_ABSOLUTE_BLOCKED' ||
+    message.metadata?.errorCode === 'MONTHLY_QUOTA_EXCEEDED';
 
   useEffect(() => {
     Animated.parallel([
@@ -102,7 +106,7 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
               <Text style={styles.error} testID={`chat-bubble-error-${message.id}`}>
                 {errorMessage}
               </Text>
-              {onRetryMessage ? (
+              {onRetryMessage && !isQuotaError ? (
                 <Pressable
                   onPress={() => onRetryMessage(message.id)}
                   style={styles.retryButton}

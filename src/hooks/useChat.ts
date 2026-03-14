@@ -35,6 +35,25 @@ interface StreamJob {
 const EMPTY_MESSAGES: Message[] = [];
 const MAX_CLAUDE_HISTORY_MESSAGES = 39;
 const MAX_MEMORY_FACTS = 6;
+const THRESHOLD_1_RATIO = 0.75;
+const THRESHOLD_2_RATIO = 0.9;
+const THRESHOLD_3_RATIO = 1;
+const THRESHOLD_4_RATIO = 1.5;
+
+function normalizeAccountType(accountType: string | null | undefined): string {
+  if (typeof accountType === 'string' && accountType.trim()) {
+    return accountType.trim();
+  }
+  return 'free';
+}
+
+function isQuotaBlockedErrorCode(code: string | null): boolean {
+  return (
+    code === 'QUOTA_EXCEEDED_BLOCKED' ||
+    code === 'QUOTA_ABSOLUTE_BLOCKED' ||
+    code === 'MONTHLY_QUOTA_EXCEEDED'
+  );
+}
 
 function extractMemoryFactsFromText(text: string): string[] {
   const normalized = typeof text === 'string' ? text.replace(/\s+/g, ' ').trim() : '';
@@ -225,11 +244,13 @@ export function useChat(conversationId: string) {
   const appendMessageContent = useStore((state) => state.appendMessageContent);
   const getMessages = useStore((state) => state.getMessages);
   const incrementUsage = useStore((state) => state.incrementUsage);
-  const markSoftCapMessageShown = useStore((state) => state.markSoftCapMessageShown);
-  const markHardCapMessageShown = useStore((state) => state.markHardCapMessageShown);
+  const markThresholdMessageShown = useStore((state) => state.markThresholdMessageShown);
+  const setBlocked = useStore((state) => state.setBlocked);
   const updateConversation = useStore((state) => state.updateConversation);
   const userProfile = useStore((state) => state.userProfile);
   const sessionDisplayName = useStore((state) => state.session?.user.displayName ?? null);
+  const currentAccountType = useStore((state) => state.session?.user.accountType ?? 'free');
+  const isQuotaBlocked = useStore((state) => Boolean(state.quota.isBlocked));
   const artists = useStore((state) => state.artists);
 
   const messages = useStore(
@@ -383,44 +404,56 @@ export function useChat(conversationId: string) {
           }
         });
         incrementUsage();
-        const latestQuota = useStore.getState().quota;
+        const latestState = useStore.getState();
+        const latestQuota = latestState.quota;
+        const normalizedAccountType = normalizeAccountType(
+          latestState.session?.user.accountType ?? currentAccountType
+        );
         if (
           typeof latestQuota.messagesCap === 'number' &&
           Number.isFinite(latestQuota.messagesCap) &&
           latestQuota.messagesCap > 0
         ) {
-          const hardCapReached = latestQuota.messagesUsed >= latestQuota.messagesCap;
-          const softCapThreshold = Math.max(1, Math.floor(latestQuota.messagesCap * 0.8));
-          const softCapReached = latestQuota.messagesUsed >= softCapThreshold;
+          const ratio = latestQuota.messagesUsed / latestQuota.messagesCap;
+          let thresholdToShow: 1 | 2 | 3 | 4 | null = null;
+          let thresholdMessage = '';
 
-          if (hardCapReached && !latestQuota.hardCapMessageShown) {
-            markHardCapMessageShown();
+          if (ratio >= THRESHOLD_4_RATIO && normalizedAccountType !== 'free' && !latestQuota.threshold4MessageShown) {
+            thresholdToShow = 4;
+            thresholdMessage = t('cathyThreshold4PaidMessage');
+          } else if (ratio >= THRESHOLD_3_RATIO && !latestQuota.threshold3MessageShown) {
+            thresholdToShow = 3;
+            thresholdMessage =
+              normalizedAccountType === 'free' ? t('cathyThreshold3FreeMessage') : t('cathyThreshold3PaidMessage');
+          } else if (ratio >= THRESHOLD_2_RATIO && !latestQuota.threshold2MessageShown) {
+            thresholdToShow = 2;
+            thresholdMessage = t('cathyThreshold2Message');
+          } else if (ratio >= THRESHOLD_1_RATIO && !latestQuota.threshold1MessageShown) {
+            thresholdToShow = 1;
+            thresholdMessage = t('cathyThreshold1Message');
+          }
+
+          if (thresholdToShow !== null) {
+            markThresholdMessageShown(thresholdToShow);
             addMessage(jobConversationId, {
               id: generateId('msg'),
               conversationId: jobConversationId,
               role: 'artist',
-              content: t('cathyHardCapMessage'),
+              content: thresholdMessage,
               status: 'complete',
               timestamp: new Date().toISOString(),
               metadata: {
                 injected: true,
-                showUpgradeCta: true
+                showUpgradeCta: true,
+                upgradeFromTier: normalizedAccountType
               }
             });
-          } else if (softCapReached && !latestQuota.softCapMessageShown) {
-            markSoftCapMessageShown();
-            addMessage(jobConversationId, {
-              id: generateId('msg'),
-              conversationId: jobConversationId,
-              role: 'artist',
-              content: t('cathySoftCapMessage'),
-              status: 'complete',
-              timestamp: new Date().toISOString(),
-              metadata: {
-                injected: true,
-                showUpgradeCta: true
-              }
-            });
+          }
+
+          const shouldBlockFree = normalizedAccountType === 'free' && ratio >= THRESHOLD_3_RATIO;
+          const shouldBlockPaidAbsolute = normalizedAccountType !== 'free' && ratio >= THRESHOLD_4_RATIO;
+          if (shouldBlockFree || shouldBlockPaidAbsolute) {
+            setBlocked(true);
           }
         }
         if (scoreActions.length > 0) {
@@ -445,6 +478,31 @@ export function useChat(conversationId: string) {
           resetStreamState();
           return;
         }
+        const errorWithMeta = error as Error & { code?: string; status?: number };
+        const errorCode = typeof errorWithMeta.code === 'string' ? errorWithMeta.code : null;
+        if (isQuotaBlockedErrorCode(errorCode)) {
+          const latestAccountType = normalizeAccountType(
+            useStore.getState().session?.user.accountType ?? currentAccountType
+          );
+          const quotaMessage =
+            latestAccountType === 'free' ? t('cathyThreshold3FreeMessage') : t('cathyThreshold4PaidMessage');
+          markThresholdMessageShown(latestAccountType === 'free' ? 3 : 4);
+          setBlocked(true);
+          failedJobsRef.current.delete(artistMessageId);
+          updateMessage(jobConversationId, artistMessageId, {
+            content: quotaMessage,
+            status: 'complete',
+            metadata: {
+              injected: true,
+              showUpgradeCta: true,
+              upgradeFromTier: latestAccountType,
+              errorCode: errorCode ?? undefined
+            }
+          });
+          resetStreamState();
+          runNext();
+          return;
+        }
         const message = error instanceof Error && typeof error.message === 'string' && error.message.trim()
           ? error.message.trim()
           : 'Erreur pendant la génération';
@@ -454,7 +512,10 @@ export function useChat(conversationId: string) {
         failedJobsRef.current.set(artistMessageId, nextJob);
         updateMessage(jobConversationId, artistMessageId, {
           status: 'error',
-          metadata: { errorMessage: message }
+          metadata: {
+            errorMessage: message,
+            errorCode: errorCode ?? undefined
+          }
         });
         resetStreamState();
         runNext();
@@ -497,9 +558,10 @@ export function useChat(conversationId: string) {
     addMessage,
     appendMessageContent,
     conversationId,
+    currentAccountType,
     incrementUsage,
-    markHardCapMessageShown,
-    markSoftCapMessageShown,
+    markThresholdMessageShown,
+    setBlocked,
     updateMessage
   ]);
 
@@ -529,6 +591,10 @@ export function useChat(conversationId: string) {
   const sendMessage = (payload: ChatSendPayload): ChatError | null => {
     const trimmed = payload.text.trim();
     const hasImage = Boolean(payload.image);
+
+    if (isQuotaBlocked) {
+      return null;
+    }
 
     if ((!trimmed && !hasImage) || !conversationId || !currentConversation || !currentArtist) {
       return null;
@@ -665,6 +731,7 @@ export function useChat(conversationId: string) {
   return {
     messages,
     hasStreaming,
+    isQuotaBlocked,
     currentArtistName: currentArtist?.name ?? null,
     sendMessage,
     retryMessage

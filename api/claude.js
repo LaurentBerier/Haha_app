@@ -14,15 +14,12 @@ const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 30;
 const CLAUDE_LIMITS_RPC_NAME = 'enforce_claude_limits';
 const MONTHLY_QUOTA_CACHE_TTL_MS = 5_000;
-const SOFT_CAP_RATIO = 0.8;
-const SOFT_CAP_MAX_TOKENS = 150;
-const ECONOMY_MAX_TOKENS = 100;
 const DEFAULT_ARTIST_ID = 'cathy-gauthier';
 const DEFAULT_MODE_ID = 'default';
 const DEFAULT_MONTHLY_CAPS = {
-  free: 40,
-  regular: 300,
-  premium: 600
+  free: 50,
+  regular: 500,
+  premium: 1500
   // admin intentionally omitted => unlimited
 };
 const DEFAULT_MAX_TOKENS_BY_TIER = {
@@ -37,6 +34,38 @@ const DEFAULT_CONTEXT_WINDOW_BY_TIER = {
   premium: 20,
   admin: 20
 };
+const QUOTA_THRESHOLDS = {
+  SOFT1: 0.75,
+  SOFT2: 0.9,
+  HARD: 1,
+  ABSOLUTE: 1.5
+};
+const SOFT1_MAX_TOKENS_BY_TIER = {
+  free: 120,
+  regular: 180,
+  premium: 280,
+  admin: 300
+};
+const SOFT2_MAX_TOKENS_BY_TIER = {
+  free: 80,
+  regular: 130,
+  premium: 200,
+  admin: 300
+};
+const SOFT1_CONTEXT_WINDOW_BY_TIER = {
+  free: 5,
+  regular: 12,
+  premium: 20,
+  admin: 20
+};
+const SOFT2_CONTEXT_WINDOW_BY_TIER = {
+  free: 3,
+  regular: 7,
+  premium: 12,
+  admin: 20
+};
+const ECONOMY_CONTEXT_WINDOW = 3;
+const ECONOMY_MAX_TOKENS = 100;
 const ALLOWED_IMAGE_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const DEFAULT_MODE_PROMPT = `Conversation libre. Reponds comme Cathy dans une discussion informelle,
 avec repartie rapide, sarcasme et punchlines courtes.
@@ -759,6 +788,11 @@ function getMonthStartIso() {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
 }
 
+function getNextMonthStartIso() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
+}
+
 function getMonthlyCap(accountType) {
   const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
   const key = `CLAUDE_MONTHLY_CAP_${normalizedAccountType.toUpperCase()}`;
@@ -771,32 +805,116 @@ function getMonthlyCap(accountType) {
   return cap ?? DEFAULT_MONTHLY_CAPS.free;
 }
 
+function normalizeAccountType(accountType) {
+  if (typeof accountType === 'string' && accountType.trim()) {
+    return accountType.trim();
+  }
+  return 'free';
+}
+
+function getTierValueByType(mapByTier, accountType) {
+  const normalized = normalizeAccountType(accountType);
+  return mapByTier[normalized] ?? mapByTier.free;
+}
+
 function getMaxTokensForTier(accountType) {
-  const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
-  return DEFAULT_MAX_TOKENS_BY_TIER[normalizedAccountType] ?? DEFAULT_MAX_TOKENS_BY_TIER.free;
+  return getTierValueByType(DEFAULT_MAX_TOKENS_BY_TIER, accountType);
 }
 
 function getContextWindowForTier(accountType) {
-  const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
-  return DEFAULT_CONTEXT_WINDOW_BY_TIER[normalizedAccountType] ?? DEFAULT_CONTEXT_WINDOW_BY_TIER.free;
+  return getTierValueByType(DEFAULT_CONTEXT_WINDOW_BY_TIER, accountType);
 }
 
-function getSoftCapThreshold(monthlyCap) {
-  if (typeof monthlyCap !== 'number' || !Number.isFinite(monthlyCap) || monthlyCap <= 0) {
-    return null;
+function computeQuotaStatus(messagesUsed, messagesCap, accountType) {
+  const normalizedAccountType = normalizeAccountType(accountType);
+  const isAdmin = normalizedAccountType === 'admin';
+  const used = Number.isFinite(messagesUsed) && messagesUsed > 0 ? Math.floor(messagesUsed) : 0;
+  const cap = typeof messagesCap === 'number' && Number.isFinite(messagesCap) && messagesCap > 0 ? messagesCap : null;
+  const ratio = cap ? used / cap : 0;
+  const baseMaxTokens = getMaxTokensForTier(normalizedAccountType);
+  const baseContextWindow = getContextWindowForTier(normalizedAccountType);
+
+  if (isAdmin || cap === null) {
+    return {
+      ratio,
+      threshold: 'normal',
+      mode: 'normal',
+      model: DEFAULT_MODEL,
+      maxTokens: baseMaxTokens,
+      contextWindow: baseContextWindow,
+      blocked: false
+    };
   }
 
-  return Math.max(1, Math.floor(monthlyCap * SOFT_CAP_RATIO));
-}
+  if (normalizedAccountType === 'free' && ratio > QUOTA_THRESHOLDS.HARD) {
+    return {
+      ratio,
+      threshold: 'exceeded',
+      mode: 'blocked',
+      model: FALLBACK_MODEL,
+      maxTokens: ECONOMY_MAX_TOKENS,
+      contextWindow: ECONOMY_CONTEXT_WINDOW,
+      blocked: true
+    };
+  }
 
-function resolveQuotaMode(monthlyQuota) {
-  if (monthlyQuota && monthlyQuota.exceeded) {
-    return 'economy';
+  if (normalizedAccountType !== 'free' && ratio > QUOTA_THRESHOLDS.ABSOLUTE) {
+    return {
+      ratio,
+      threshold: 'exceeded',
+      mode: 'blocked',
+      model: FALLBACK_MODEL,
+      maxTokens: ECONOMY_MAX_TOKENS,
+      contextWindow: ECONOMY_CONTEXT_WINDOW,
+      blocked: true
+    };
   }
-  if (monthlyQuota && monthlyQuota.softCapReached) {
-    return 'soft-cap';
+
+  if (ratio >= QUOTA_THRESHOLDS.HARD) {
+    return {
+      ratio,
+      threshold: 'exceeded',
+      mode: 'economy',
+      model: FALLBACK_MODEL,
+      maxTokens: ECONOMY_MAX_TOKENS,
+      contextWindow: ECONOMY_CONTEXT_WINDOW,
+      blocked: false
+    };
   }
-  return 'normal';
+
+  if (ratio >= QUOTA_THRESHOLDS.SOFT2) {
+    return {
+      ratio,
+      threshold: 'soft2',
+      mode: 'soft2',
+      model: FALLBACK_MODEL,
+      maxTokens: getTierValueByType(SOFT2_MAX_TOKENS_BY_TIER, normalizedAccountType),
+      contextWindow: getTierValueByType(SOFT2_CONTEXT_WINDOW_BY_TIER, normalizedAccountType),
+      blocked: false
+    };
+  }
+
+  if (ratio >= QUOTA_THRESHOLDS.SOFT1) {
+    return {
+      ratio,
+      threshold: 'soft1',
+      mode: 'soft1',
+      model: DEFAULT_MODEL,
+      maxTokens: getTierValueByType(SOFT1_MAX_TOKENS_BY_TIER, normalizedAccountType),
+      contextWindow: getTierValueByType(SOFT1_CONTEXT_WINDOW_BY_TIER, normalizedAccountType),
+      blocked: false
+    };
+  }
+
+  return {
+    ratio,
+    threshold: 'normal',
+    mode: 'normal',
+    model: DEFAULT_MODEL,
+    maxTokens: baseMaxTokens,
+    contextWindow: baseContextWindow,
+    blocked: false
+  };
 }
 
 function isMissingMonthlyCounterColumnError(error) {
@@ -963,25 +1081,19 @@ async function writeProfileMonthlyCounter(supabaseAdmin, userId, monthStartIso, 
 }
 
 async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId) {
-  const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
+  const normalizedAccountType = normalizeAccountType(accountType);
   const effectiveCap = normalizedAccountType === 'admin' ? null : getMonthlyCap(normalizedAccountType);
-  const softCapThreshold = getSoftCapThreshold(effectiveCap);
   const monthStartIso = getMonthStartIso();
 
   const buildResult = (used, source) => {
     const normalizedUsed = Number.isFinite(used) && used > 0 ? Math.floor(used) : 0;
-    const softCapReached = typeof softCapThreshold === 'number' ? normalizedUsed >= softCapThreshold : false;
-    const exceeded = typeof effectiveCap === 'number' ? normalizedUsed >= effectiveCap : false;
 
     return {
       ok: true,
       source,
       monthStartIso,
       used: normalizedUsed,
-      effectiveCap,
-      softCapThreshold,
-      softCapReached,
-      exceeded
+      effectiveCap
     };
   };
 
@@ -1373,16 +1485,26 @@ module.exports = async function handler(req, res) {
   }
 
   const projectedUsage = Number.isFinite(monthlyQuota.used) ? Math.max(0, Math.floor(monthlyQuota.used)) + 1 : 1;
-  const projectedSoftCapReached =
-    typeof monthlyQuota.softCapThreshold === 'number' ? projectedUsage >= monthlyQuota.softCapThreshold : false;
-  const projectedExceeded =
-    typeof monthlyQuota.effectiveCap === 'number' ? projectedUsage >= monthlyQuota.effectiveCap : false;
-  const quotaMode = resolveQuotaMode({
-    ...monthlyQuota,
-    softCapReached: projectedSoftCapReached,
-    exceeded: projectedExceeded
-  });
-  res.setHeader('X-Quota-Mode', quotaMode);
+  const quotaStatus = computeQuotaStatus(projectedUsage, monthlyQuota.effectiveCap, auth.accountType);
+  res.setHeader('X-Quota-Mode', quotaStatus.mode);
+  res.setHeader('X-Quota-Ratio', quotaStatus.ratio.toFixed(2));
+
+  if (quotaStatus.blocked) {
+    res.setHeader('Retry-After', String(Math.max(1, Math.ceil((Date.parse(getNextMonthStartIso()) - Date.now()) / 1000))));
+    const isFreeBlocked = normalizeAccountType(auth.accountType) === 'free';
+    sendError(
+      res,
+      429,
+      isFreeBlocked
+        ? 'Free plan monthly quota reached. Upgrade to continue chatting this month.'
+        : 'Absolute monthly quota reached. Please wait for the next cycle or upgrade.',
+      {
+        code: isFreeBlocked ? 'QUOTA_EXCEEDED_BLOCKED' : 'QUOTA_ABSOLUTE_BLOCKED',
+        requestId
+      }
+    );
+    return;
+  }
 
   const now = Date.now();
   const windowMs = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_WINDOW_MS, DEFAULT_RATE_LIMIT_WINDOW_MS);
@@ -1446,29 +1568,22 @@ module.exports = async function handler(req, res) {
   }
 
   const tierMaxTokens = getMaxTokensForTier(auth.accountType);
+  const effectiveMaxTokens = Math.max(1, Math.min(tierMaxTokens, quotaStatus.maxTokens));
   const profileForPrompt = await profileForPromptPromise;
   const serverSystemPrompt = buildServerSystemPrompt(promptContext, profileForPrompt, req.body?.messages);
 
   let payload;
   try {
-    payload = parsePayload(req.body, tierMaxTokens, serverSystemPrompt);
+    payload = parsePayload(req.body, effectiveMaxTokens, serverSystemPrompt);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid request payload.';
     sendError(res, 400, message, { code: 'INVALID_REQUEST', requestId });
     return;
   }
 
-  const contextLimitByTier = getContextWindowForTier(auth.accountType);
-  const contextLimit = projectedExceeded ? Math.min(contextLimitByTier, 5) : contextLimitByTier;
-  payload.messages = payload.messages.slice(-Math.max(1, contextLimit));
-  if (projectedSoftCapReached || projectedExceeded) {
-    payload.model = FALLBACK_MODEL;
-  }
-  if (projectedExceeded) {
-    payload.max_tokens = Math.max(1, Math.min(payload.max_tokens, ECONOMY_MAX_TOKENS));
-  } else if (projectedSoftCapReached) {
-    payload.max_tokens = Math.max(1, Math.min(payload.max_tokens, SOFT_CAP_MAX_TOKENS));
-  }
+  payload.messages = payload.messages.slice(-Math.max(1, quotaStatus.contextWindow));
+  payload.model = quotaStatus.model;
+  payload.max_tokens = Math.max(1, Math.min(payload.max_tokens, quotaStatus.maxTokens));
 
   let upstreamResponse;
   const fetchTimeoutMs = parsePositiveInt(process.env.ANTHROPIC_FETCH_TIMEOUT_MS, DEFAULT_FETCH_TIMEOUT_MS);

@@ -22,21 +22,21 @@ export const DEFAULT_ACCOUNT_TYPES: AccountTypeConfig[] = [
     label: 'Free',
     rank: 0,
     permissions: ['chat:basic'],
-    monthlyMessageCap: 40
+    monthlyMessageCap: 50
   },
   {
     id: 'regular',
     label: 'Regular',
     rank: 1,
     permissions: ['chat:basic', 'chat:unlimited'],
-    monthlyMessageCap: 300
+    monthlyMessageCap: 500
   },
   {
     id: 'premium',
     label: 'Premium',
     rank: 2,
     permissions: ['chat:basic', 'chat:unlimited', 'artists:premium'],
-    monthlyMessageCap: 600
+    monthlyMessageCap: 1500
   },
   {
     id: 'admin',
