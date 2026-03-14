@@ -3,6 +3,10 @@ node_modules
 .expo
 dist
 dist-web
+artifacts
+.codex
+coverage
+*.log
 .DS_Store
 .env
 .env.*
