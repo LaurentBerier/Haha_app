@@ -7,6 +7,8 @@ function buildSupabaseClient({
   usageCountError = null,
   usageInsertError = null,
   usageInsertErrors = null,
+  profileSelectError = null,
+  profilePreferredNameColumnMissing = false,
   rpcResult = null,
   rpcError = null
 } = {}) {
@@ -33,12 +35,20 @@ function buildSupabaseClient({
     }
     return Promise.resolve({ error: currentInsertError });
   });
-  const profileMaybeSingle = jest.fn().mockImplementation(() =>
-    Promise.resolve({
+  const profileMaybeSingle = jest.fn().mockImplementation((selectedColumns = '') => {
+    const columns = typeof selectedColumns === 'string' ? selectedColumns : '';
+    if (profilePreferredNameColumnMissing && columns.includes('preferred_name')) {
+      return Promise.resolve({
+        data: null,
+        error: { code: '42703', message: 'column "preferred_name" does not exist' }
+      });
+    }
+
+    return Promise.resolve({
       data: profileRow,
-      error: null
-    })
-  );
+      error: profileSelectError
+    });
+  });
   const profileUpdateEq = jest.fn().mockResolvedValue({ error: null });
   const rpc = jest.fn().mockResolvedValue({
     data: rpcResult,
@@ -63,9 +73,9 @@ function buildSupabaseClient({
 
       if (table === 'profiles') {
         return {
-          select: () => ({
+          select: (selectedColumns) => ({
             eq: () => ({
-              maybeSingle: profileMaybeSingle
+              maybeSingle: () => profileMaybeSingle(selectedColumns)
             })
           }),
           update: (updates) => ({
@@ -297,6 +307,48 @@ describe('api/claude', () => {
     expect(upstreamBody.system).toContain('Tu es Cathy Gauthier');
     expect(upstreamBody.system).toContain('## MODE ACTIF : roast');
     expect(upstreamBody.system).not.toContain('IGNORE THIS UNTRUSTED PROMPT');
+  });
+
+  it('keeps user name context from auth metadata when profiles.preferred_name column is missing', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'user-1', app_metadata: { account_type: 'free' }, user_metadata: { display_name: 'Laurent' } },
+          profile: {
+            age: 34,
+            sex: 'male',
+            relationship_status: 'single',
+            horoscope_sign: 'aries',
+            interests: ['humour']
+          },
+          profilePreferredNameColumnMissing: true
+        })
+      )
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        modeId: 'on-jase',
+        language: 'fr-CA',
+        messages: [{ role: 'user', content: 'Qu est ce que tu sais de moi?' }]
+      }
+    });
+
+    await handler(req, res);
+
+    const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(res.statusCode).toBe(200);
+    expect(upstreamBody.system).toContain('Prenom prefere a utiliser: Laurent');
+    expect(upstreamBody.system).toContain('Signe astro : Belier');
+    expect(upstreamBody.system).toContain("n'affirme jamais que tu ne sais rien");
   });
 
   it('returns 400 for unsupported artist in prompt context', async () => {

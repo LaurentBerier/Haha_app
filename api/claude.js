@@ -268,8 +268,37 @@ const PROFILE_STATUS_LABEL_EN = {
   complicated: "It's complicated",
   prefer_not_to_say: 'Prefer not to say'
 };
+const PROFILE_HOROSCOPE_LABEL_FR = {
+  aries: 'Belier',
+  taurus: 'Taureau',
+  gemini: 'Gemeaux',
+  cancer: 'Cancer',
+  leo: 'Lion',
+  virgo: 'Vierge',
+  libra: 'Balance',
+  scorpio: 'Scorpion',
+  sagittarius: 'Sagittaire',
+  capricorn: 'Capricorne',
+  aquarius: 'Verseau',
+  pisces: 'Poissons'
+};
+const PROFILE_HOROSCOPE_LABEL_EN = {
+  aries: 'Aries',
+  taurus: 'Taurus',
+  gemini: 'Gemini',
+  cancer: 'Cancer',
+  leo: 'Leo',
+  virgo: 'Virgo',
+  libra: 'Libra',
+  scorpio: 'Scorpio',
+  sagittarius: 'Sagittarius',
+  capricorn: 'Capricorn',
+  aquarius: 'Aquarius',
+  pisces: 'Pisces'
+};
 const monthlyQuotaCache = new Map();
 const inMemoryRateLimitCache = new Map();
+let profileSelectSupportsPreferredNameColumn = true;
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -402,6 +431,19 @@ function resolvePromptLanguage(language) {
   return 'fr';
 }
 
+function normalizePreferredName(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  return trimmed.slice(0, 80);
+}
+
 function normalizePromptContext(body) {
   if (!isRecord(body)) {
     return {
@@ -457,57 +499,123 @@ function normalizeProfileForPrompt(row) {
     : [];
 
   return {
-    preferredName:
-      typeof row.preferred_name === 'string' && row.preferred_name.trim() ? row.preferred_name.trim().slice(0, 80) : null,
+    preferredName: normalizePreferredName(row.preferred_name),
     age: typeof row.age === 'number' && Number.isFinite(row.age) ? Math.floor(row.age) : null,
-    sex: typeof row.sex === 'string' ? row.sex : null,
-    relationshipStatus: typeof row.relationship_status === 'string' ? row.relationship_status : null,
-    horoscopeSign: typeof row.horoscope_sign === 'string' ? row.horoscope_sign : null,
+    sex: typeof row.sex === 'string' && row.sex.trim() ? row.sex.trim() : null,
+    relationshipStatus:
+      typeof row.relationship_status === 'string' && row.relationship_status.trim() ? row.relationship_status.trim() : null,
+    horoscopeSign: typeof row.horoscope_sign === 'string' && row.horoscope_sign.trim() ? row.horoscope_sign.trim() : null,
     interests
   };
 }
 
-async function fetchUserProfileForPrompt(supabaseAdmin, userId, requestId) {
-  const { data, error } = await supabaseAdmin
-    .from('profiles')
-    .select('preferred_name, age, sex, relationship_status, horoscope_sign, interests')
-    .eq('id', userId)
-    .maybeSingle();
+function isPreferredNameColumnMissingError(error) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const code = typeof error.code === 'string' ? error.code : '';
+  const message = typeof error.message === 'string' ? error.message : '';
+  const details = typeof error.details === 'string' ? error.details : '';
+  const hint = typeof error.hint === 'string' ? error.hint : '';
+  const normalized = `${message} ${details} ${hint}`.toLowerCase();
+
+  if (code === '42703' && normalized.includes('preferred_name')) {
+    return true;
+  }
+
+  if (code.startsWith('PGRST') && normalized.includes('preferred_name')) {
+    return true;
+  }
+
+  return normalized.includes('preferred_name') && normalized.includes('column');
+}
+
+async function readUserProfileForPrompt(supabaseAdmin, userId, includePreferredName) {
+  const columns = includePreferredName
+    ? 'preferred_name, age, sex, relationship_status, horoscope_sign, interests'
+    : 'age, sex, relationship_status, horoscope_sign, interests';
+
+  return supabaseAdmin.from('profiles').select(columns).eq('id', userId).maybeSingle();
+}
+
+async function fetchUserProfileForPrompt(supabaseAdmin, userId, requestId, fallbackPreferredName = null) {
+  let profileLookup = await readUserProfileForPrompt(supabaseAdmin, userId, profileSelectSupportsPreferredNameColumn);
+
+  if (profileLookup.error && profileSelectSupportsPreferredNameColumn && isPreferredNameColumnMissingError(profileLookup.error)) {
+    profileSelectSupportsPreferredNameColumn = false;
+    profileLookup = await readUserProfileForPrompt(supabaseAdmin, userId, false);
+  }
+
+  const { data, error } = profileLookup;
 
   if (error) {
     console.error(`[api/claude][${requestId}] Failed to fetch profile for prompt`, error);
-    return null;
+    if (!fallbackPreferredName) {
+      return null;
+    }
+
+    return {
+      preferredName: fallbackPreferredName,
+      age: null,
+      sex: null,
+      relationshipStatus: null,
+      horoscopeSign: null,
+      interests: []
+    };
   }
 
-  return normalizeProfileForPrompt(data);
+  const normalizedProfile = normalizeProfileForPrompt(data);
+  if (!normalizedProfile) {
+    if (!fallbackPreferredName) {
+      return null;
+    }
+
+    return {
+      preferredName: fallbackPreferredName,
+      age: null,
+      sex: null,
+      relationshipStatus: null,
+      horoscopeSign: null,
+      interests: []
+    };
+  }
+
+  if (!normalizedProfile.preferredName && fallbackPreferredName) {
+    normalizedProfile.preferredName = fallbackPreferredName;
+  }
+
+  return normalizedProfile;
 }
 
-function buildUserProfileSection(profile, promptLanguage) {
-  if (!profile) {
+function buildUserProfileSection(profile, promptLanguage, preferredName = null) {
+  const resolvedPreferredName = normalizePreferredName(preferredName) ?? normalizePreferredName(profile?.preferredName);
+  if (!profile && !resolvedPreferredName) {
     return '';
   }
 
   const sexLabels = promptLanguage === 'en' ? PROFILE_SEX_LABEL_EN : PROFILE_SEX_LABEL_FR;
   const statusLabels = promptLanguage === 'en' ? PROFILE_STATUS_LABEL_EN : PROFILE_STATUS_LABEL_FR;
+  const horoscopeLabels = promptLanguage === 'en' ? PROFILE_HOROSCOPE_LABEL_EN : PROFILE_HOROSCOPE_LABEL_FR;
   const lines = [];
 
-  if (typeof profile.preferredName === 'string' && profile.preferredName) {
+  if (resolvedPreferredName) {
     lines.push(
       promptLanguage === 'en'
-        ? `- Preferred first name to use: ${profile.preferredName}`
-        : `- Prenom prefere a utiliser: ${profile.preferredName}`
+        ? `- Preferred first name to use: ${resolvedPreferredName}`
+        : `- Prenom prefere a utiliser: ${resolvedPreferredName}`
     );
   }
 
-  if (typeof profile.age === 'number') {
+  if (typeof profile?.age === 'number') {
     lines.push(promptLanguage === 'en' ? `- Approximate age: ${profile.age}` : `- Age approximatif : ${profile.age} ans`);
   }
 
-  if (profile.sex && sexLabels[profile.sex]) {
+  if (profile?.sex && sexLabels[profile.sex]) {
     lines.push(promptLanguage === 'en' ? `- Gender: ${sexLabels[profile.sex]}` : `- Genre : ${sexLabels[profile.sex]}`);
   }
 
-  if (profile.relationshipStatus && statusLabels[profile.relationshipStatus]) {
+  if (profile?.relationshipStatus && statusLabels[profile.relationshipStatus]) {
     lines.push(
       promptLanguage === 'en'
         ? `- Relationship status: ${statusLabels[profile.relationshipStatus]}`
@@ -515,15 +623,17 @@ function buildUserProfileSection(profile, promptLanguage) {
     );
   }
 
-  if (typeof profile.horoscopeSign === 'string' && profile.horoscopeSign) {
+  if (typeof profile?.horoscopeSign === 'string' && profile.horoscopeSign) {
+    const normalizedSign = profile.horoscopeSign.trim().toLowerCase();
+    const localizedSign = horoscopeLabels[normalizedSign] ?? profile.horoscopeSign;
     lines.push(
       promptLanguage === 'en'
-        ? `- Horoscope sign: ${profile.horoscopeSign}`
-        : `- Signe astro : ${profile.horoscopeSign}`
+        ? `- Horoscope sign: ${localizedSign}`
+        : `- Signe astro : ${localizedSign}`
     );
   }
 
-  if (Array.isArray(profile.interests) && profile.interests.length > 0) {
+  if (Array.isArray(profile?.interests) && profile.interests.length > 0) {
     lines.push(
       promptLanguage === 'en'
         ? `- Interests: ${profile.interests.join(', ')}`
@@ -540,7 +650,8 @@ function buildUserProfileSection(profile, promptLanguage) {
 You know this person. Use this context actively:
 - Use their first name naturally when it fits
 - Adapt jokes to age, relationship status, and interests
-- Reference horoscope sign when relevant
+- If horoscope sign is available, assume one playful personality trait naturally
+- If asked what you know about them, summarize these known details clearly (never claim zero knowledge when details exist)
 - Do not explain what they already know
 ${lines.join('\n')}`;
   }
@@ -549,7 +660,8 @@ ${lines.join('\n')}`;
 Tu connais cette personne. Utilise ces infos activement :
 - Appelle-la par son prenom quand c'est naturel
 - Adapte tes blagues a son age, statut, interets
-- Reference son signe astro si pertinent
+- Si son signe astro est disponible, assume un trait de personnalite de facon ludique
+- Si elle te demande ce que tu sais d'elle, resume clairement ces infos (n'affirme jamais que tu ne sais rien si tu as des details)
 - Ne lui enseigne pas ce qu'elle connait deja
 ${lines.join('\n')}`;
 }
@@ -646,14 +758,14 @@ Regles :
 - Si infos contradictoires, privilegie la plus recente.`;
 }
 
-function buildServerSystemPrompt(context, profile, rawMessages) {
+function buildServerSystemPrompt(context, profile, rawMessages, preferredName = null) {
   const promptLanguage = resolvePromptLanguage(context.language);
   const artistId = typeof context.artistId === 'string' ? context.artistId : DEFAULT_ARTIST_ID;
   const canonicalModeId = resolveCanonicalModeId(context.modeId);
   const isCathy = artistId === DEFAULT_ARTIST_ID;
   const modePrompt = isCathy ? MODE_PROMPTS[canonicalModeId] ?? DEFAULT_MODE_PROMPT : GENERIC_MODE_PROMPT;
   const imageIntentPrompt = context.imageIntent ? IMAGE_INTENT_PROMPTS[context.imageIntent] ?? '' : '';
-  const userProfileSection = buildUserProfileSection(profile, promptLanguage);
+  const userProfileSection = buildUserProfileSection(profile, promptLanguage, preferredName);
   const memorySection = buildConversationMemorySection(rawMessages, promptLanguage);
   const b = ARTIST_BLUEPRINTS[artistId] ?? CATHY_BLUEPRINT;
   const cultureAnchorRules = promptLanguage === 'en'
@@ -1545,6 +1657,8 @@ async function validateAuthHeader(supabaseAdmin, req, requestId) {
       userId: user.id,
       role: typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : null,
       accountType: typeof user.app_metadata?.account_type === 'string' ? user.app_metadata.account_type : null,
+      preferredName:
+        normalizePreferredName(user.user_metadata?.display_name) ?? normalizePreferredName(user.user_metadata?.full_name),
       error: null
     };
   } catch (error) {
@@ -1616,7 +1730,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const profileForPromptPromise = fetchUserProfileForPrompt(supabaseAdmin, auth.userId, requestId);
+  const profileForPromptPromise = fetchUserProfileForPrompt(supabaseAdmin, auth.userId, requestId, auth.preferredName ?? null);
   const monthlyQuota = await enforceMonthlyQuota(supabaseAdmin, auth.userId, auth.accountType, requestId);
   if (!monthlyQuota.ok) {
     sendError(res, monthlyQuota.status, monthlyQuota.message, { code: monthlyQuota.code, requestId });
@@ -1709,7 +1823,7 @@ module.exports = async function handler(req, res) {
   const tierMaxTokens = getMaxTokensForTier(auth.accountType);
   const effectiveMaxTokens = Math.max(1, Math.min(tierMaxTokens, quotaStatus.maxTokens));
   const profileForPrompt = await profileForPromptPromise;
-  const serverSystemPrompt = buildServerSystemPrompt(promptContext, profileForPrompt, req.body?.messages);
+  const serverSystemPrompt = buildServerSystemPrompt(promptContext, profileForPrompt, req.body?.messages, auth.preferredName ?? null);
 
   let payload;
   try {
