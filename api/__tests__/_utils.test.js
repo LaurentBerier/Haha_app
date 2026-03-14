@@ -97,6 +97,17 @@ describe('api/_utils', () => {
     expect(res.headers['Access-Control-Allow-Origin']).toBe('https://app.ha-ha.ai');
   });
 
+  it('allows configured origin even when ALLOWED_ORIGINS contains trailing slash and mixed case', () => {
+    process.env.ALLOWED_ORIGINS = 'HTTPS://App.HA-HA.ai/';
+    const req = { headers: { origin: 'https://app.ha-ha.ai' } };
+    const res = createResponseMock();
+
+    const result = setCorsHeaders(req, res);
+
+    expect(result).toEqual({ ok: true, reason: null });
+    expect(res.headers['Access-Control-Allow-Origin']).toBe('https://app.ha-ha.ai');
+  });
+
   it('rejects browser-like request when Origin is missing', () => {
     const req = {
       headers: {

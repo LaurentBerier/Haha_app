@@ -10,6 +10,29 @@ function parseAllowedOrigins() {
     .filter(Boolean);
 }
 
+function normalizeOriginValue(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (trimmed.includes('://*.') || trimmed.endsWith(':*')) {
+    return trimmed.toLowerCase();
+  }
+
+  const withoutTrailingSlash = trimmed.replace(/\/+$/, '');
+  try {
+    const parsed = new URL(withoutTrailingSlash);
+    return `${parsed.protocol}//${parsed.host}`.toLowerCase();
+  } catch {
+    return withoutTrailingSlash.toLowerCase();
+  }
+}
+
 function parseHostCandidates(rawValue) {
   const asString = Array.isArray(rawValue) ? rawValue.join(',') : rawValue;
   if (typeof asString !== 'string' || !asString.trim()) {
@@ -72,13 +95,17 @@ function isWildcardSubdomainMatch(origin, allowedOrigin) {
 }
 
 function isOriginAllowed(origin, allowedOrigins) {
-  if (allowedOrigins.includes(origin)) {
+  const normalizedOrigin = normalizeOriginValue(origin);
+  const normalizedAllowedOrigins = allowedOrigins.map((entry) => normalizeOriginValue(entry)).filter(Boolean);
+
+  if (normalizedAllowedOrigins.includes(normalizedOrigin)) {
     return true;
   }
 
-  return allowedOrigins.some(
+  return normalizedAllowedOrigins.some(
     (allowedOrigin) =>
-      isWildcardLocalhostMatch(origin, allowedOrigin) || isWildcardSubdomainMatch(origin, allowedOrigin)
+      isWildcardLocalhostMatch(normalizedOrigin, allowedOrigin) ||
+      isWildcardSubdomainMatch(normalizedOrigin, allowedOrigin)
   );
 }
 
