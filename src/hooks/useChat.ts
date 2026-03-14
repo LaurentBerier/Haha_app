@@ -642,15 +642,41 @@ export function useChat(conversationId: string) {
             setBlocked(true);
           }
         }
-        if (canGenerateVoice && hasStartedVoiceGeneration && !ignoreTtsUpdates) {
-          void Promise.allSettled(ttsPendingPromises).then(() => {
+        if (canGenerateVoice && !ignoreTtsUpdates) {
+          const fallbackPreviewText = normalizeTtsChunk(getLatestArtistMessage()?.content ?? '');
+          if (!hasStartedVoiceGeneration && fallbackPreviewText) {
+            hasStartedVoiceGeneration = true;
+            mergeArtistMetadata({
+              voiceStatus: 'generating',
+              voiceUrl: undefined,
+              voiceQueue: undefined
+            });
+          }
+
+          void Promise.allSettled(ttsPendingPromises).then(async () => {
             if (!isMountedRef.current || ignoreTtsUpdates) {
               return;
             }
 
-            const orderedVoiceUris = Array.from({ length: ttsChunkCount })
+            let orderedVoiceUris = Array.from({ length: ttsChunkCount })
               .map((_, index) => ttsChunkUrisByIndex.get(index))
               .filter((uri): uri is string => typeof uri === 'string' && uri.trim().length > 0);
+
+            // Fallback for short replies or chunking misses: synthesize full final text once.
+            if (orderedVoiceUris.length === 0) {
+              const fallbackText = normalizeTtsChunk(getLatestArtistMessage()?.content ?? '');
+              const fallbackAccessToken = useStore.getState().session?.accessToken ?? accessToken;
+              if (fallbackText && fallbackAccessToken.trim()) {
+                try {
+                  const fallbackUri = await fetchAndCacheVoice(fallbackText, artistId, language, fallbackAccessToken);
+                  if (fallbackUri) {
+                    orderedVoiceUris = [fallbackUri];
+                  }
+                } catch {
+                  // Silent failure: keep no voice button when fallback also fails.
+                }
+              }
+            }
 
             if (orderedVoiceUris.length === 0) {
               mergeArtistMetadata({
