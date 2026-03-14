@@ -5,7 +5,7 @@ const {
   getSupabaseAdmin,
   sendError,
   setCorsHeaders
-} = require('./_utils');
+} = require('../../api/_utils');
 
 const ELEVENLABS_API_BASE = 'https://api.elevenlabs.io/v1/text-to-speech';
 const DEFAULT_VOICE_ID_GENERIC = 'cgSgspJ2msm6clMCkdW9';

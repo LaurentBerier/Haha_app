@@ -15,14 +15,15 @@
     "api/game-questions.js": {
       "maxDuration": 60
     },
-    "api/tts.js": {
-      "maxDuration": 60
-    },
     "api/stripe-webhook.js": {
       "maxDuration": 60
     }
   },
   "routes": [
+    {
+      "src": "/api/tts",
+      "dest": "/api/claude?__proxy=tts"
+    },
     {
       "src": "/api/(.*)",
       "dest": "/api/$1"

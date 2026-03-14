@@ -26,11 +26,13 @@ export interface UiSlice {
   language: AppLanguage;
   displayMode: DisplayMode;
   reduceMotion: ReduceMotionPreference;
+  voiceAutoPlay: boolean;
   setLoading: (val: boolean) => void;
   setVoiceStatus: (status: VoiceStatus) => void;
   setLanguagePreference: (language: AppLanguage) => void;
   setDisplayMode: (mode: DisplayMode) => void;
   setReduceMotion: (mode: ReduceMotionPreference) => void;
+  setVoiceAutoPlay: (enabled: boolean) => void;
 }
 
 export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set) => ({
@@ -39,6 +41,7 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set) =>
   language: resolveLanguage(APP_DEFAULT_LANGUAGE),
   displayMode: 'dark',
   reduceMotion: 'system',
+  voiceAutoPlay: false,
   setLoading: (val) => set({ isLoading: val }),
   setVoiceStatus: (status) => set({ voiceStatus: status }),
   setLanguagePreference: (language) => {
@@ -46,5 +49,6 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set) =>
     set({ language: resolveLanguage(language) });
   },
   setDisplayMode: () => set({ displayMode: 'dark' }),
-  setReduceMotion: (mode) => set({ reduceMotion: mode })
+  setReduceMotion: (mode) => set({ reduceMotion: mode }),
+  setVoiceAutoPlay: (enabled) => set({ voiceAutoPlay: enabled })
 });

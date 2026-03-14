@@ -13,11 +13,13 @@ import { detectImageIntent, type ImageIntent } from '../services/imageIntentServ
 import { streamMockReply } from '../services/mockLlmService';
 import { buildSystemPromptForArtist, formatConversationHistory } from '../services/personalityEngineService';
 import { addScore } from '../services/scoreManager';
+import { fetchAndCacheVoice } from '../services/ttsService';
 import { useStore } from '../store/useStore';
 import { findConversationById } from '../utils/conversationUtils';
 import { shouldAutoSwitchToEnglish } from '../utils/languageDetection';
 import { generateId } from '../utils/generateId';
 import type { ScoreAction } from '../models/Gamification';
+import { useAudioPlayer } from './useAudioPlayer';
 
 interface StreamJob {
   artistMessageId: string;
@@ -39,10 +41,23 @@ const THRESHOLD_1_RATIO = 0.75;
 const THRESHOLD_2_RATIO = 0.9;
 const THRESHOLD_3_RATIO = 1;
 const THRESHOLD_4_RATIO = 1.5;
+const MIN_TTS_CHUNK_CHARS = 20;
+const MAX_TTS_CHUNK_CHARS = 200;
 
 function normalizeAccountType(accountType: string | null | undefined): string {
   if (typeof accountType === 'string' && accountType.trim()) {
-    return accountType.trim();
+    const normalized = accountType.trim().toLowerCase();
+    if (normalized === 'free' || normalized === 'regular' || normalized === 'premium' || normalized === 'admin') {
+      return normalized;
+    }
+
+    const compact = normalized.replace(/[\s_-]+/g, '');
+    if (compact === 'unlimited') {
+      return 'regular';
+    }
+    if (compact === 'proartist') {
+      return 'premium';
+    }
   }
   return 'free';
 }
@@ -53,6 +68,95 @@ function isQuotaBlockedErrorCode(code: string | null): boolean {
     code === 'QUOTA_ABSOLUTE_BLOCKED' ||
     code === 'MONTHLY_QUOTA_EXCEEDED'
   );
+}
+
+function hasVoiceAccess(accountType: string | null | undefined): boolean {
+  const normalized = normalizeAccountType(accountType);
+  return normalized === 'regular' || normalized === 'premium' || normalized === 'admin';
+}
+
+function isSentenceBoundary(input: string, index: number): boolean {
+  const char = input[index];
+  if (!char) {
+    return false;
+  }
+
+  if (char === '\n') {
+    return true;
+  }
+
+  if (char !== '.' && char !== '!' && char !== '?') {
+    return false;
+  }
+
+  const next = input[index + 1];
+  return next === undefined || /[\s\n]/.test(next);
+}
+
+function normalizeTtsChunk(chunk: string): string {
+  return chunk.replace(/\s+/g, ' ').trim();
+}
+
+function extractReadyTtsChunks(buffer: string, flushRemainder: boolean): { chunks: string[]; remainder: string } {
+  let working = buffer;
+  const chunks: string[] = [];
+
+  while (working.length > 0) {
+    const searchUpperBound = Math.min(working.length, MAX_TTS_CHUNK_CHARS);
+    let boundaryIndex = -1;
+
+    for (let index = MIN_TTS_CHUNK_CHARS - 1; index < searchUpperBound; index += 1) {
+      if (isSentenceBoundary(working, index)) {
+        boundaryIndex = index + 1;
+        break;
+      }
+    }
+
+    if (boundaryIndex === -1 && working.length > MAX_TTS_CHUNK_CHARS) {
+      boundaryIndex = MAX_TTS_CHUNK_CHARS;
+    }
+
+    if (boundaryIndex === -1 && flushRemainder && working.length >= MIN_TTS_CHUNK_CHARS) {
+      boundaryIndex = working.length;
+    }
+
+    if (boundaryIndex === -1) {
+      break;
+    }
+
+    const candidate = normalizeTtsChunk(working.slice(0, boundaryIndex));
+    working = working.slice(boundaryIndex);
+
+    if (!candidate) {
+      continue;
+    }
+
+    if (candidate.length < MIN_TTS_CHUNK_CHARS) {
+      if (chunks.length > 0 && chunks[chunks.length - 1]) {
+        const previous = chunks[chunks.length - 1] as string;
+        chunks[chunks.length - 1] = normalizeTtsChunk(`${previous} ${candidate}`);
+      } else {
+        working = `${candidate} ${working}`.trimStart();
+        break;
+      }
+      continue;
+    }
+
+    chunks.push(candidate);
+  }
+
+  if (flushRemainder) {
+    const normalizedRemainder = normalizeTtsChunk(working);
+    if (normalizedRemainder.length >= MIN_TTS_CHUNK_CHARS) {
+      chunks.push(normalizedRemainder);
+      working = '';
+    }
+  }
+
+  return {
+    chunks,
+    remainder: working
+  };
 }
 
 function extractMemoryFactsFromText(text: string): string[] {
@@ -250,8 +354,10 @@ export function useChat(conversationId: string) {
   const userProfile = useStore((state) => state.userProfile);
   const sessionDisplayName = useStore((state) => state.session?.user.displayName ?? null);
   const currentAccountType = useStore((state) => state.session?.user.accountType ?? 'free');
+  const accessToken = useStore((state) => state.session?.accessToken ?? '');
   const isQuotaBlocked = useStore((state) => Boolean(state.quota.isBlocked));
   const artists = useStore((state) => state.artists);
+  const audioPlayer = useAudioPlayer();
 
   const messages = useStore(
     useCallback((state) => state.messagesByConversation[conversationId]?.messages ?? EMPTY_MESSAGES, [conversationId])
@@ -370,6 +476,79 @@ export function useChat(conversationId: string) {
         bufferedTokensRef.current = '';
       };
 
+      const getLatestArtistMessage = (): Message | null => {
+        const latestMessages = useStore.getState().messagesByConversation[jobConversationId]?.messages ?? [];
+        return latestMessages.find((message) => message.id === artistMessageId) ?? null;
+      };
+
+      const mergeArtistMetadata = (metadataPatch: NonNullable<Message['metadata']>) => {
+        const latestArtistMessage = getLatestArtistMessage();
+        updateMessage(jobConversationId, artistMessageId, {
+          metadata: {
+            ...(latestArtistMessage?.metadata ?? {}),
+            ...metadataPatch
+          }
+        });
+      };
+
+      const latestAccountType = normalizeAccountType(useStore.getState().session?.user.accountType ?? currentAccountType);
+      const canGenerateVoice =
+        artistId === ARTIST_IDS.CATHY_GAUTHIER && hasVoiceAccess(latestAccountType) && Boolean(accessToken.trim());
+      let ttsBuffer = '';
+      let ttsChunkCount = 0;
+      let hasStartedVoiceGeneration = false;
+      let ignoreTtsUpdates = false;
+      const ttsChunkUrisByIndex = new Map<number, string>();
+      const ttsPendingPromises: Array<Promise<void>> = [];
+
+      const queueTtsChunk = (chunk: string) => {
+        if (!canGenerateVoice || ignoreTtsUpdates) {
+          return;
+        }
+
+        const normalizedChunk = normalizeTtsChunk(chunk);
+        if (normalizedChunk.length < MIN_TTS_CHUNK_CHARS) {
+          return;
+        }
+
+        if (!hasStartedVoiceGeneration) {
+          hasStartedVoiceGeneration = true;
+          mergeArtistMetadata({
+            voiceStatus: 'generating',
+            voiceUrl: undefined,
+            voiceQueue: undefined
+          });
+        }
+
+        const chunkIndex = ttsChunkCount;
+        ttsChunkCount += 1;
+        const latestAccessToken = useStore.getState().session?.accessToken ?? accessToken;
+
+        const ttsPromise = fetchAndCacheVoice(normalizedChunk, artistId, language, latestAccessToken)
+          .then((uri) => {
+            if (uri) {
+              ttsChunkUrisByIndex.set(chunkIndex, uri);
+            }
+          })
+          .catch(() => {
+            // Silent failure: no voice button if generation fails.
+          });
+
+        ttsPendingPromises.push(ttsPromise);
+      };
+
+      const flushTtsChunks = (flushRemainder: boolean) => {
+        if (!canGenerateVoice || ignoreTtsUpdates) {
+          return;
+        }
+
+        const { chunks, remainder } = extractReadyTtsChunks(ttsBuffer, flushRemainder);
+        ttsBuffer = remainder;
+        chunks.forEach((chunk) => {
+          queueTtsChunk(chunk);
+        });
+      };
+
       const onToken = (token: string) => {
         if (!isMountedRef.current) {
           return;
@@ -381,6 +560,10 @@ export function useChat(conversationId: string) {
           return;
         }
         bufferedTokensRef.current += token;
+        if (canGenerateVoice) {
+          ttsBuffer += token;
+          flushTtsChunks(false);
+        }
         scheduleFlush();
       };
 
@@ -389,8 +572,8 @@ export function useChat(conversationId: string) {
           resetStreamState();
           return;
         }
-        const latestMessages = useStore.getState().messagesByConversation[jobConversationId]?.messages ?? [];
-        const latestArtistMessage = latestMessages.find((message) => message.id === artistMessageId);
+        flushTtsChunks(true);
+        const latestArtistMessage = getLatestArtistMessage();
         const finalContent = latestArtistMessage?.content ?? '';
         const battleResult = modeId === MODE_IDS.ROAST_BATTLE ? detectBattleResult(finalContent) : null;
         const scoreActions = resolveScoreActions(modeId, imageIntent, battleResult);
@@ -399,6 +582,7 @@ export function useChat(conversationId: string) {
         updateMessage(jobConversationId, artistMessageId, {
           status: 'complete',
           metadata: {
+            ...(latestArtistMessage?.metadata ?? {}),
             tokensUsed,
             battleResult: battleResult ?? undefined
           }
@@ -409,6 +593,7 @@ export function useChat(conversationId: string) {
         const normalizedAccountType = normalizeAccountType(
           latestState.session?.user.accountType ?? currentAccountType
         );
+        let shouldBlockInput = false;
         if (
           typeof latestQuota.messagesCap === 'number' &&
           Number.isFinite(latestQuota.messagesCap) &&
@@ -452,9 +637,41 @@ export function useChat(conversationId: string) {
 
           const shouldBlockFree = normalizedAccountType === 'free' && ratio >= THRESHOLD_3_RATIO;
           const shouldBlockPaidAbsolute = normalizedAccountType !== 'free' && ratio >= THRESHOLD_4_RATIO;
-          if (shouldBlockFree || shouldBlockPaidAbsolute) {
+          shouldBlockInput = shouldBlockFree || shouldBlockPaidAbsolute;
+          if (shouldBlockInput) {
             setBlocked(true);
           }
+        }
+        if (canGenerateVoice && hasStartedVoiceGeneration && !ignoreTtsUpdates) {
+          void Promise.allSettled(ttsPendingPromises).then(() => {
+            if (!isMountedRef.current || ignoreTtsUpdates) {
+              return;
+            }
+
+            const orderedVoiceUris = Array.from({ length: ttsChunkCount })
+              .map((_, index) => ttsChunkUrisByIndex.get(index))
+              .filter((uri): uri is string => typeof uri === 'string' && uri.trim().length > 0);
+
+            if (orderedVoiceUris.length === 0) {
+              mergeArtistMetadata({
+                voiceStatus: undefined,
+                voiceUrl: undefined,
+                voiceQueue: undefined
+              });
+              return;
+            }
+
+            mergeArtistMetadata({
+              voiceUrl: orderedVoiceUris[0],
+              voiceQueue: orderedVoiceUris,
+              voiceStatus: 'ready'
+            });
+
+            const shouldAutoPlay = Boolean(useStore.getState().voiceAutoPlay);
+            if (shouldAutoPlay && !shouldBlockInput) {
+              void audioPlayer.playQueue(orderedVoiceUris);
+            }
+          });
         }
         if (scoreActions.length > 0) {
           void (async () => {
@@ -474,6 +691,7 @@ export function useChat(conversationId: string) {
       };
 
       const failStream = (error: Error) => {
+        ignoreTtsUpdates = true;
         if (!isMountedRef.current || streamingConversationIdRef.current !== jobConversationId) {
           resetStreamState();
           return;
@@ -557,7 +775,9 @@ export function useChat(conversationId: string) {
   }, [
     addMessage,
     appendMessageContent,
+    audioPlayer,
     conversationId,
+    accessToken,
     currentAccountType,
     incrementUsage,
     markThresholdMessageShown,
@@ -734,6 +954,7 @@ export function useChat(conversationId: string) {
     isQuotaBlocked,
     currentArtistName: currentArtist?.name ?? null,
     sendMessage,
-    retryMessage
+    retryMessage,
+    audioPlayer
   };
 }

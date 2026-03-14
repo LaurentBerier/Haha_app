@@ -217,4 +217,37 @@ describe('api/score', () => {
     expect(res.payload.score).toBe(5);
     expect(res.payload.roastsGenerated).toBe(1);
   });
+
+  it('falls back to profile update path when RPC function has ambiguous column references', async () => {
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          profile: {
+            score: 0,
+            roasts_generated: 0,
+            punchlines_created: 0,
+            destructions: 0,
+            photos_roasted: 0,
+            memes_generated: 0,
+            battle_wins: 0,
+            daily_streak: 0,
+            last_active_date: null
+          },
+          rpcError: { code: '42702', message: 'column reference "score" is ambiguous' }
+        })
+      )
+    }));
+    const handler = require('../score');
+    const { req, res } = createReqRes({
+      method: 'POST',
+      headers: { authorization: 'Bearer valid-token' },
+      body: { action: 'punchline_created' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.score).toBe(10);
+    expect(res.payload.punchlinesCreated).toBe(1);
+  });
 });

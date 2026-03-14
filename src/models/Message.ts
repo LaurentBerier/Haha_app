@@ -4,6 +4,8 @@ export type MessageRole = 'user' | 'artist';
 export interface MessageMetadata {
   tokensUsed?: number;
   voiceUrl?: string;
+  voiceQueue?: string[];
+  voiceStatus?: 'generating' | 'ready';
   imageUri?: string;
   imageMediaType?: string;
   errorMessage?: string;

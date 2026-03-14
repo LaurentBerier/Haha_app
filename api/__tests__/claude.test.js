@@ -503,12 +503,12 @@ describe('api/claude', () => {
       global.fetch = jest.fn().mockResolvedValue(buildSuccessResponse());
     });
 
-    it('uses economy mode for free user once monthly cap is reached', async () => {
+    it('blocks free user once monthly cap is reached', async () => {
       jest.doMock('@supabase/supabase-js', () => ({
         createClient: jest.fn(() =>
           buildSupabaseClient({
             user: { id: 'free-user', app_metadata: { account_type: 'free' } },
-            initialUsageCount: 40
+            initialUsageCount: 49
           })
         )
       }));
@@ -521,11 +521,10 @@ describe('api/claude', () => {
 
       await handler(req, res);
 
-      const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
-      expect(res.statusCode).toBe(200);
-      expect(res.headers['X-Quota-Mode']).toBe('economy');
-      expect(upstreamBody.model).toBe('claude-haiku-4-5-20251001');
-      expect(upstreamBody.max_tokens).toBe(100);
+      expect(res.statusCode).toBe(429);
+      expect(res.headers['X-Quota-Mode']).toBe('blocked');
+      expect(res.payload.error.code).toBe('QUOTA_EXCEEDED_BLOCKED');
+      expect(global.fetch).toHaveBeenCalledTimes(0);
     });
 
     it('keeps normal mode for free user below soft cap', async () => {
@@ -552,12 +551,12 @@ describe('api/claude', () => {
       expect(upstreamBody.model).toBe('claude-sonnet-4-6');
     });
 
-    it('uses soft-cap mode for regular user at 80 percent threshold', async () => {
+    it('uses soft1 mode for regular user at 75 percent threshold', async () => {
       jest.doMock('@supabase/supabase-js', () => ({
         createClient: jest.fn(() =>
           buildSupabaseClient({
             user: { id: 'regular-user', app_metadata: { account_type: 'regular' } },
-            initialUsageCount: 239
+            initialUsageCount: 374
           })
         )
       }));
@@ -572,9 +571,9 @@ describe('api/claude', () => {
 
       const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
       expect(res.statusCode).toBe(200);
-      expect(res.headers['X-Quota-Mode']).toBe('soft-cap');
-      expect(upstreamBody.model).toBe('claude-haiku-4-5-20251001');
-      expect(upstreamBody.max_tokens).toBe(150);
+      expect(res.headers['X-Quota-Mode']).toBe('soft1');
+      expect(upstreamBody.model).toBe('claude-sonnet-4-6');
+      expect(upstreamBody.max_tokens).toBe(180);
     });
 
     it('uses economy mode for premium user at monthly cap', async () => {
@@ -582,7 +581,7 @@ describe('api/claude', () => {
         createClient: jest.fn(() =>
           buildSupabaseClient({
             user: { id: 'premium-user', app_metadata: { account_type: 'premium' } },
-            initialUsageCount: 600
+            initialUsageCount: 1499
           })
         )
       }));
@@ -625,7 +624,7 @@ describe('api/claude', () => {
       expect(res.statusCode).toBe(200);
     });
 
-    it('uses economy mode when CLAUDE_MONTHLY_CAP_FREE override is reached', async () => {
+    it('blocks when CLAUDE_MONTHLY_CAP_FREE override is reached', async () => {
       process.env.CLAUDE_MONTHLY_CAP_FREE = '3';
       jest.doMock('@supabase/supabase-js', () => ({
         createClient: jest.fn(() =>
@@ -644,13 +643,13 @@ describe('api/claude', () => {
 
       await handler(req, res);
 
-      const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
-      expect(res.statusCode).toBe(200);
-      expect(res.headers['X-Quota-Mode']).toBe('economy');
-      expect(upstreamBody.model).toBe('claude-haiku-4-5-20251001');
+      expect(res.statusCode).toBe(429);
+      expect(res.headers['X-Quota-Mode']).toBe('blocked');
+      expect(res.payload.error.code).toBe('QUOTA_EXCEEDED_BLOCKED');
+      expect(global.fetch).toHaveBeenCalledTimes(0);
     });
 
-    it('uses economy mode for unknown tier when free fallback cap is exceeded', async () => {
+    it('uses soft1 mode for unknown tier with free fallback cap at 75 percent+', async () => {
       jest.doMock('@supabase/supabase-js', () => ({
         createClient: jest.fn(() =>
           buildSupabaseClient({
@@ -669,7 +668,7 @@ describe('api/claude', () => {
       await handler(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(res.headers['X-Quota-Mode']).toBe('economy');
+      expect(res.headers['X-Quota-Mode']).toBe('soft1');
     });
   });
 

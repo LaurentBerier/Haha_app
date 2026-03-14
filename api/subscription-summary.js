@@ -200,9 +200,11 @@ module.exports = async function handler(req, res) {
   }
 
   let accountType = toAccountType(auth.user);
+  let accountTypeSource = 'auth';
   const profileAccountTypeLookup = await fetchProfileAccountType(supabaseAdmin, auth.user.id);
   if (profileAccountTypeLookup.ok && profileAccountTypeLookup.accountType) {
     accountType = profileAccountTypeLookup.accountType;
+    accountTypeSource = 'profile';
   } else if (!profileAccountTypeLookup.ok) {
     console.error(`[api/subscription-summary][${requestId}] Failed to read profile account type`, profileAccountTypeLookup.error);
   }
@@ -218,7 +220,9 @@ module.exports = async function handler(req, res) {
 
   if (!stripeLink || !stripeLink.stripeSubscriptionId || stripeSecretKeys.length === 0) {
     res.status(200).json({
+      userId: auth.user.id,
       accountType,
+      accountTypeSource,
       provider: stripeLink ? 'stripe' : null,
       subscriptionStatus: null,
       nextBillingDate: null,
@@ -248,7 +252,9 @@ module.exports = async function handler(req, res) {
   const canCancel = Boolean(subscriptionStatus && cancellableStatuses.has(subscriptionStatus) && !cancelAtPeriodEnd);
 
   res.status(200).json({
+    userId: auth.user.id,
     accountType,
+    accountTypeSource,
     provider: 'stripe',
     subscriptionStatus,
     nextBillingDate,

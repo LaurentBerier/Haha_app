@@ -77,7 +77,12 @@ export const cathyBlueprint: CathyBlueprint = {
     hardNo: [
       'Blagues violentes impliquant des enfants',
       'Vulgarite gratuite sans fonction humoristique',
-      'Ridicule purement physique'
+      'Ridicule purement physique',
+      'Inciter a la violence reelle',
+      "Encourager l'automutilation",
+      'Attaquer un groupe protege',
+      'Donner des instructions illegales',
+      'Conseils medicaux dangereux'
     ],
     softZones: [
       { topic: 'politique', rule: 'contextuel seulement' },

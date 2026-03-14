@@ -4,15 +4,17 @@ import type { Message } from '../../models/Message';
 import { t } from '../../i18n';
 import { theme } from '../../theme';
 import { ChatBubble } from './ChatBubble';
+import type { AudioPlayerController } from '../../hooks/useAudioPlayer';
 
 interface MessageListProps {
   messages: Message[];
   userDisplayName: string;
   artistDisplayName: string;
   onRetryMessage?: (messageId: string) => void;
+  audioPlayer?: AudioPlayerController;
 }
 
-function MessageListBase({ messages, userDisplayName, artistDisplayName, onRetryMessage }: MessageListProps) {
+function MessageListBase({ messages, userDisplayName, artistDisplayName, onRetryMessage, audioPlayer }: MessageListProps) {
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottomRef = useRef(true);
   const hasScrolledInitiallyRef = useRef(false);
@@ -61,9 +63,10 @@ function MessageListBase({ messages, userDisplayName, artistDisplayName, onRetry
         userDisplayName={userDisplayName}
         artistDisplayName={artistDisplayName}
         onRetryMessage={onRetryMessage}
+        audioPlayer={audioPlayer}
       />
     ),
-    [artistDisplayName, onRetryMessage, userDisplayName]
+    [artistDisplayName, audioPlayer, onRetryMessage, userDisplayName]
   );
 
   return (

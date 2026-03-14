@@ -51,10 +51,17 @@ function isValidMessageMetadata(value: unknown): boolean {
 
   const tokensUsedValid = value.tokensUsed === undefined || typeof value.tokensUsed === 'number';
   const voiceUrlValid = value.voiceUrl === undefined || typeof value.voiceUrl === 'string';
+  const voiceQueueValid =
+    value.voiceQueue === undefined ||
+    (Array.isArray(value.voiceQueue) && value.voiceQueue.every((entry) => typeof entry === 'string'));
+  const voiceStatusValid = value.voiceStatus === undefined || value.voiceStatus === 'generating' || value.voiceStatus === 'ready';
   const imageUriValid = value.imageUri === undefined || typeof value.imageUri === 'string';
   const imageMediaTypeValid = value.imageMediaType === undefined || typeof value.imageMediaType === 'string';
+  const errorMessageValid = value.errorMessage === undefined || typeof value.errorMessage === 'string';
+  const errorCodeValid = value.errorCode === undefined || typeof value.errorCode === 'string';
   const injectedValid = value.injected === undefined || typeof value.injected === 'boolean';
   const showUpgradeCtaValid = value.showUpgradeCta === undefined || typeof value.showUpgradeCta === 'boolean';
+  const upgradeFromTierValid = value.upgradeFromTier === undefined || typeof value.upgradeFromTier === 'string';
   const battleResultValid =
     value.battleResult === undefined ||
     value.battleResult === 'light' ||
@@ -63,10 +70,15 @@ function isValidMessageMetadata(value: unknown): boolean {
   return (
     tokensUsedValid &&
     voiceUrlValid &&
+    voiceQueueValid &&
+    voiceStatusValid &&
     imageUriValid &&
     imageMediaTypeValid &&
+    errorMessageValid &&
+    errorCodeValid &&
     injectedValid &&
     showUpgradeCtaValid &&
+    upgradeFromTierValid &&
     battleResultValid
   );
 }
@@ -126,12 +138,14 @@ function isValidPreferences(value: unknown): boolean {
   const language = value.language;
   const displayMode = value.displayMode;
   const reduceMotion = value.reduceMotion;
+  const voiceAutoPlay = value.voiceAutoPlay;
   const hasValidLanguage =
     language === undefined || language === 'fr-CA' || language === 'en-CA' || language === 'fr-FR' || language === 'en';
   const hasValidDisplayMode = displayMode === undefined || displayMode === 'dark' || displayMode === 'light' || displayMode === 'system';
   const hasValidReduceMotion =
     reduceMotion === undefined || reduceMotion === 'system' || reduceMotion === 'on' || reduceMotion === 'off';
-  return hasValidLanguage && hasValidDisplayMode && hasValidReduceMotion;
+  const hasValidVoiceAutoPlay = voiceAutoPlay === undefined || typeof voiceAutoPlay === 'boolean';
+  return hasValidLanguage && hasValidDisplayMode && hasValidReduceMotion && hasValidVoiceAutoPlay;
 }
 
 function isValidGamification(value: unknown): boolean {

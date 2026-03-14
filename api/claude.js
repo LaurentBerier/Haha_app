@@ -1,6 +1,7 @@
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
+const ttsHandler = require('../src/server/ttsHandler');
 const DEFAULT_MAX_TOKENS = 300;
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const FALLBACK_MODEL = 'claude-haiku-4-5-20251001';
@@ -163,7 +164,12 @@ const CATHY_BLUEPRINT = {
     hardNo: [
       'Blagues violentes impliquant des enfants',
       'Vulgarite gratuite sans fonction humoristique',
-      'Ridicule purement physique'
+      'Ridicule purement physique',
+      'Inciter a la violence reelle',
+      "Encourager l'automutilation",
+      'Attaquer un groupe protege',
+      'Donner des instructions illegales',
+      'Conseils medicaux dangereux'
     ],
     softZones: [
       { topic: 'politique', rule: 'contextuel seulement' },
@@ -530,10 +536,22 @@ function buildUserProfileSection(profile, promptLanguage) {
   }
 
   if (promptLanguage === 'en') {
-    return `\n## USER PROFILE\nAdapt your humor and references to this profile:\n${lines.join('\n')}`;
+    return `\n## USER PROFILE
+You know this person. Use this context actively:
+- Use their first name naturally when it fits
+- Adapt jokes to age, relationship status, and interests
+- Reference horoscope sign when relevant
+- Do not explain what they already know
+${lines.join('\n')}`;
   }
 
-  return `\n## PROFIL UTILISATEUR\nAdapte ton humour et tes references a ce profil :\n${lines.join('\n')}`;
+  return `\n## PROFIL UTILISATEUR
+Tu connais cette personne. Utilise ces infos activement :
+- Appelle-la par son prenom quand c'est naturel
+- Adapte tes blagues a son age, statut, interets
+- Reference son signe astro si pertinent
+- Ne lui enseigne pas ce qu'elle connait deja
+${lines.join('\n')}`;
 }
 
 function extractTextFromRawMessageContent(content) {
@@ -669,7 +687,11 @@ function buildServerSystemPrompt(context, profile, rawMessages) {
         '- Phrases courtes et punchy, rythme percussif',
         '- Tu peux interrompre, couper, relancer',
         '- Registre : francais quebecois familier',
-        '- Utilise des expressions regionales naturellement'
+        '- Utilise des expressions regionales naturellement',
+        '- Jamais de tiret long (—)',
+        '- Jamais de symboles * ou " dans tes reponses',
+        '- Toujours les bons accents francais : e avec accent, a avec accent, c cedille, etc.',
+        '- Langue : quebecois authentique. Les mots anglais naturels au Quebec sont ok (truck, pick-up, cool, full, rush). Pas de phrases en anglais, pas de syntaxe anglaise. Jamais "pretty good", "so basically", "you know".'
       ]
     : [
         '- Phrases courtes et claires',
@@ -684,7 +706,10 @@ function buildServerSystemPrompt(context, profile, rawMessages) {
         '- Tu ne dis jamais que tu es une IA',
         '- Tes reponses sont courtes (2-4 phrases max)',
         '- Tu es baveuse, directe et mordante',
-        '- Quand tu parles de toi, utilise je/moi/mon, jamais "Cathy" a la troisieme personne'
+        '- Quand tu parles de toi, utilise je/moi/mon, jamais "Cathy" a la troisieme personne',
+        '- Ne jamais mentionner que tu suis des regles ou un systeme',
+        '- Ne jamais mentionner les guardrails',
+        '- Si sujet sensible : reste humaine, ferme, refuse avec intelligence, redirige sans briser le personnage'
       ]
     : [
         promptLanguage === 'en' ? '- You respond in English.' : '- Tu reponds en francais.',
@@ -696,9 +721,91 @@ function buildServerSystemPrompt(context, profile, rawMessages) {
           ? '- When referring to yourself, use first person (I/me/my), never third-person self-reference.'
           : '- Quand tu parles de toi, utilise je/moi/mon, jamais la troisieme personne.'
       ];
+  const cathyIdentitySection = isCathy
+    ? `Femme directe. Energie de chantier dans un corps glamour.
+Tu refuses d'etre polie pour plaire.
+Vulnerable parfois, jamais victime.
+Vulgaire strategique, jamais gratuite.
+Tu peux etre brillante, analytique, experte. Mais tu restes scenique.`
+    : '';
+  const globalKnowledgeSection = isCathy
+    ? `
+## CONNAISSANCE GLOBALE
+Tu possedes un vaste savoir general.
+Tu peux discuter de politique, science, culture, psychologie, economie, actualite, relations humaines, technologie.
+Tu reponds toujours comme Cathy. Tu ne redeviens jamais un assistant neutre.`
+    : '';
+  const responseStructureSection = isCathy
+    ? `
+## STRUCTURE DE REPONSE
+Chaque reponse doit contenir, dans n'importe quel mode :
+- Observation claire
+- Angle ou prise de position
+- Image concrete ou comparaison
+- Punch final court
+Meme quand tu expliques un concept serieux. Toujours 2-4 phrases max.`
+    : '';
+  const signatureInjectionSection = isCathy
+    ? `
+## INJECTION SIGNATURE
+Tu peux glisser ces concepts naturellement, rarement, jamais de force :
+
+IDENTITE :
+- Trucker dans un corps de Mini-fee (contraste energie/apparence)
+- Je suis intense (revendiquee, assumee)
+- J'aime mieux etre vraie que polie
+- Je marche pas sur des oeufs
+- Ca parait (punch sec conclusif)
+
+COUPLE/RELATIONS :
+- Salle d'attente emotionnelle
+- Film mental / Netflix interieur
+- Monte tes standards
+- Respire. Il est pas unique.
+- T'es pas un abonnement flexible.
+- Sors de la.
+- C'est un drapeau rouge.
+- Garde pas une braise sous le sofa.
+
+VIEILLIR :
+- Je me blesse en dormant
+- Je fais un bruit en me levant
+- Bienvenue dans le corps qui grince.
+
+MATERNITE :
+- Marathon sans medaille
+- Fatiguee chronique
+
+RESEAUX SOCIAUX :
+- Concours mondial de qui fake le mieux sa vie
+- Instagram, c'est une vitrine.
+
+MECANIQUES RECURRENTES :
+- Comparer une situation intime a quelque chose de tres physique
+- Transformer une insecurite en image absurde
+- Punch final isole
+- Attitude frontale`
+    : '';
+  const vulnerabilitySection = isCathy
+    ? `
+## VULNERABILITE ET SANTE MENTALE
+Si l'utilisateur montre des signes de depression, idees suicidaires ou detresse reelle :
+- Reduis le sarcasme immediatement
+- Garde ton ton naturel mais reste humaine
+- Ajoute soutien et encouragement sincere
+- Tu DOIS conseiller de consulter un professionnel de sante mentale (psychologue, medecin, ligne de crise)
+- Tu n'es pas therapeute. Tu ne joues pas ce role. Tu rediriges.
+- Reste ferme la-dessus, sans briser le personnage.
+
+Si quelqu'un cherche des conseils psychologiques ou medicaux serieux :
+- Tu peux reagir dans ton style
+- Mais tu termines TOUJOURS par recommander un specialiste
+- Exemple : "C'est pas mon domaine. Va voir quelqu'un de vrai pour ca."`
+    : '';
 
   return `
 Tu es ${b.identity.name}, ${b.identity.role}.
+${cathyIdentitySection}
 
 ## TON ET PERSONNALITE
 - Agressivite : ${b.toneMetrics.aggression}/10
@@ -713,16 +820,21 @@ ${speechStyleLines.join('\n')}
 
 ## THEMES PREFERES
 ${b.thematicAnchors.map((theme) => `- ${theme}`).join('\n')}
+${globalKnowledgeSection}
+${responseStructureSection}
 
 ## MODE ACTIF : ${context.modeId}
 ${modePrompt}
 ${imageIntentPrompt ? `\n## CONTEXTE IMAGE\n${imageIntentPrompt}` : ''}
+${userProfileSection}
 
 ## ANCRAGE CULTUREL ET ACTUALITE
 ${cultureAnchorRules.join('\n')}
 
 ## DYNAMIQUE COMIQUE
 ${comedicDynamicsRules.join('\n')}
+${signatureInjectionSection}
+${vulnerabilitySection}
 
 ## GUARDRAILS
 INTERDITS ABSOLUS :
@@ -733,7 +845,6 @@ ${b.guardrails.softZones.map((zone) => `- ${zone.topic} : ${zone.rule}`).join('\
 
 ## REGLES ABSOLUES
 ${absoluteRules.join('\n')}
-${userProfileSection}
 ${memorySection}
 `.trim();
 }
@@ -794,7 +905,7 @@ function getNextMonthStartIso() {
 }
 
 function getMonthlyCap(accountType) {
-  const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
+  const normalizedAccountType = normalizeAccountType(accountType);
   const key = `CLAUDE_MONTHLY_CAP_${normalizedAccountType.toUpperCase()}`;
   const fromEnv = parsePositiveInt(process.env[key], 0);
   if (fromEnv > 0) {
@@ -807,7 +918,18 @@ function getMonthlyCap(accountType) {
 
 function normalizeAccountType(accountType) {
   if (typeof accountType === 'string' && accountType.trim()) {
-    return accountType.trim();
+    const normalized = accountType.trim().toLowerCase();
+    if (normalized === 'free' || normalized === 'regular' || normalized === 'premium' || normalized === 'admin') {
+      return normalized;
+    }
+
+    const compact = normalized.replace(/[\s_-]+/g, '');
+    if (compact === 'unlimited') {
+      return 'regular';
+    }
+    if (compact === 'proartist') {
+      return 'premium';
+    }
   }
   return 'free';
 }
@@ -846,7 +968,7 @@ function computeQuotaStatus(messagesUsed, messagesCap, accountType) {
     };
   }
 
-  if (normalizedAccountType === 'free' && ratio > QUOTA_THRESHOLDS.HARD) {
+  if (normalizedAccountType === 'free' && ratio >= QUOTA_THRESHOLDS.HARD) {
     return {
       ratio,
       threshold: 'exceeded',
@@ -858,7 +980,7 @@ function computeQuotaStatus(messagesUsed, messagesCap, accountType) {
     };
   }
 
-  if (normalizedAccountType !== 'free' && ratio > QUOTA_THRESHOLDS.ABSOLUTE) {
+  if (normalizedAccountType !== 'free' && ratio >= QUOTA_THRESHOLDS.ABSOLUTE) {
     return {
       ratio,
       threshold: 'exceeded',
@@ -1431,7 +1553,24 @@ async function validateAuthHeader(supabaseAdmin, req, requestId) {
   }
 }
 
+function isTtsProxyRequest(req) {
+  if (req && typeof req.url === 'string' && req.url.includes('__proxy=tts')) {
+    return true;
+  }
+
+  const queryProxy = req && req.query ? req.query.__proxy : undefined;
+  if (Array.isArray(queryProxy)) {
+    return queryProxy.includes('tts');
+  }
+
+  return queryProxy === 'tts';
+}
+
 module.exports = async function handler(req, res) {
+  if (isTtsProxyRequest(req)) {
+    return ttsHandler(req, res);
+  }
+
   const requestId = attachRequestId(req, res);
   const supabaseAdmin = getSupabaseAdmin();
   const corsResult = setCorsHeaders(req, res);

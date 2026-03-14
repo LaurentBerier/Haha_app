@@ -45,8 +45,10 @@ export default function SettingsScreen() {
   const clearSession = useStore((state) => state.clearSession);
   const language = useStore((state) => state.language);
   const reduceMotion = useStore((state) => state.reduceMotion);
+  const voiceAutoPlay = useStore((state) => state.voiceAutoPlay);
   const setLanguagePreference = useStore((state) => state.setLanguagePreference);
   const setReduceMotion = useStore((state) => state.setReduceMotion);
+  const setVoiceAutoPlay = useStore((state) => state.setVoiceAutoPlay);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -65,6 +67,10 @@ export default function SettingsScreen() {
     { value: 'system', label: t('settingsReduceMotionSystem') },
     { value: 'off', label: t('settingsReduceMotionOff') },
     { value: 'on', label: t('settingsReduceMotionOn') }
+  ];
+  const voiceAutoPlayOptions: Array<{ value: boolean; label: string }> = [
+    { value: false, label: t('settingsVoiceAutoPlayOff') },
+    { value: true, label: t('settingsVoiceAutoPlayOn') }
   ];
 
   const doLogout = async () => {
@@ -175,6 +181,26 @@ export default function SettingsScreen() {
                 testID={`settings-reduce-motion-${option.value}`}
               >
                 <Text style={[styles.choiceChipLabel, reduceMotion === option.value ? styles.choiceChipLabelActive : null]}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+        <View style={styles.preferenceCard}>
+          <Text style={styles.preferenceLabel}>{t('settingsVoiceAutoPlay')}</Text>
+          <Text style={styles.preferenceHint}>{t('settingsVoiceAutoPlayHint')}</Text>
+          <View style={styles.choiceRow}>
+            {voiceAutoPlayOptions.map((option) => (
+              <Pressable
+                key={option.label}
+                onPress={() => setVoiceAutoPlay(option.value)}
+                style={[styles.choiceChip, voiceAutoPlay === option.value ? styles.choiceChipActive : null]}
+                testID={`settings-voice-autoplay-${option.value ? 'on' : 'off'}`}
+              >
+                <Text
+                  style={[styles.choiceChipLabel, voiceAutoPlay === option.value ? styles.choiceChipLabelActive : null]}
+                >
                   {option.label}
                 </Text>
               </Pressable>

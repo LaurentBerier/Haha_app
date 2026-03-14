@@ -1,3 +1,5 @@
+import { fetchAndCacheVoice } from './ttsService';
+
 type Listener = { remove: () => void };
 type SpeechRecognitionModule = {
   requestPermissionsAsync: () => Promise<{ granted: boolean }>;
@@ -107,6 +109,15 @@ export function stopListening(): void {
   }
 }
 
-export async function synthesizeVoice(): Promise<string> {
-  throw new Error('Voice synthesis not available yet');
+export async function synthesizeVoice(
+  text: string,
+  artistId: string,
+  language: string,
+  accessToken: string
+): Promise<string> {
+  const uri = await fetchAndCacheVoice(text, artistId, language, accessToken);
+  if (!uri) {
+    throw new Error('TTS unavailable');
+  }
+  return uri;
 }

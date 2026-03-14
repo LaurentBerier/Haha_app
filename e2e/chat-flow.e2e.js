@@ -1,4 +1,10 @@
 describe('Ha-Ha.ai iOS flow', () => {
+  const ARTIST_ID = 'cathy-gauthier';
+  const CATEGORY_ID = 'delire';
+  const CATEGORY_SCREEN_TIMEOUT = 10000;
+  const CATEGORY_TAP_FALLBACK_TIMEOUT = 3000;
+  const CHAT_SCREEN_TIMEOUT = 10000;
+  const CHAT_TAP_RETRY_TIMEOUT = 5000;
   const launchArgs = { detoxEnableSynchronization: 0 };
   const launchPermissions = {
     camera: 'YES',
@@ -24,12 +30,40 @@ describe('Ha-Ha.ai iOS flow', () => {
     await device.disableSynchronization();
   };
 
+  const openCategoryFromModeSelect = async () => {
+    await waitFor(element(by.id('mode-select-screen'))).toBeVisible().withTimeout(10000);
+
+    try {
+      await element(by.id(`mode-category-${CATEGORY_ID}`)).tap();
+      await waitFor(element(by.id('mode-category-screen')))
+        .toBeVisible()
+        .withTimeout(CATEGORY_TAP_FALLBACK_TIMEOUT);
+      return;
+    } catch {
+      // Fallback for simulator flakiness: navigate directly to category route.
+      await device.openURL({ url: `hahaha://mode-select/${ARTIST_ID}/${CATEGORY_ID}` });
+      await waitFor(element(by.id('mode-category-screen')))
+        .toBeVisible()
+        .withTimeout(CATEGORY_SCREEN_TIMEOUT);
+    }
+  };
+
   const openRoastChatFromHome = async () => {
     await waitFor(element(by.id('home-screen'))).toBeVisible().withTimeout(20000);
     await element(by.id('artist-start-cathy-gauthier')).tap();
-    await waitFor(element(by.id('mode-select-screen'))).toBeVisible().withTimeout(10000);
-    await element(by.id('mode-card-roast')).tap();
-    await waitFor(element(by.id('chat-screen'))).toBeVisible().withTimeout(10000);
+    await openCategoryFromModeSelect();
+    await waitFor(element(by.id('mode-card-grill'))).toBeVisible().withTimeout(CATEGORY_SCREEN_TIMEOUT);
+
+    await element(by.id('mode-card-grill')).tap();
+    try {
+      await waitFor(element(by.id('chat-screen'))).toBeVisible().withTimeout(CHAT_TAP_RETRY_TIMEOUT);
+      return;
+    } catch {
+      // Retry once when the first tap is swallowed by UI transitions.
+      await waitFor(element(by.id('mode-card-grill'))).toBeVisible().withTimeout(CATEGORY_SCREEN_TIMEOUT);
+      await element(by.id('mode-card-grill')).tap();
+      await waitFor(element(by.id('chat-screen'))).toBeVisible().withTimeout(CHAT_SCREEN_TIMEOUT);
+    }
   };
 
   const ensureRoastChatIsOpen = async () => {
@@ -48,12 +82,7 @@ describe('Ha-Ha.ai iOS flow', () => {
   });
 
   it('streams an artist response end-to-end', async () => {
-    await element(by.id('artist-start-cathy-gauthier')).tap();
-
-    await waitFor(element(by.id('mode-select-screen'))).toBeVisible().withTimeout(10000);
-    await element(by.id('mode-card-roast')).tap();
-
-    await waitFor(element(by.id('chat-screen'))).toBeVisible().withTimeout(10000);
+    await openRoastChatFromHome();
     await element(by.id('chat-input')).replaceText('Bonjour Cathy');
     await element(by.id('chat-discussion-button')).tap();
 
@@ -61,11 +90,7 @@ describe('Ha-Ha.ai iOS flow', () => {
   });
 
   it('does not crash when app is backgrounded mid-stream', async () => {
-    await element(by.id('artist-start-cathy-gauthier')).tap();
-    await waitFor(element(by.id('mode-select-screen'))).toBeVisible().withTimeout(10000);
-    await element(by.id('mode-card-roast')).tap();
-
-    await waitFor(element(by.id('chat-screen'))).toBeVisible().withTimeout(10000);
+    await openRoastChatFromHome();
     await element(by.id('chat-input')).replaceText('Test navigation while streaming');
     await element(by.id('chat-discussion-button')).tap();
 

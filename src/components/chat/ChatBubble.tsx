@@ -1,18 +1,20 @@
 import { memo, useEffect, useRef } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { t } from '../../i18n';
 import type { Message } from '../../models/Message';
 import { theme } from '../../theme';
+import type { AudioPlayerController } from '../../hooks/useAudioPlayer';
 
 interface ChatBubbleProps {
   message: Message;
   userDisplayName: string;
   artistDisplayName: string;
   onRetryMessage?: (messageId: string) => void;
+  audioPlayer?: AudioPlayerController;
 }
 
-function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMessage }: ChatBubbleProps) {
+function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMessage, audioPlayer }: ChatBubbleProps) {
   const router = useRouter();
   const enterOpacity = useRef(new Animated.Value(0)).current;
   const enterTranslateY = useRef(new Animated.Value(6)).current;
@@ -34,10 +36,36 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
         : battleResult === 'light'
           ? '🔥 Léger'
           : null;
+  const voiceUrl = typeof message.metadata?.voiceUrl === 'string' ? message.metadata.voiceUrl : '';
+  const voiceQueue = Array.isArray(message.metadata?.voiceQueue) ? message.metadata.voiceQueue : [];
+  const voiceStatus = message.metadata?.voiceStatus;
+  const hasVoiceButton = message.role === 'artist' && message.status === 'complete' && !!voiceUrl;
+  const isVoiceGenerating =
+    message.role === 'artist' && message.status === 'complete' && !voiceUrl && voiceStatus === 'generating';
+  const isCurrentVoiceMessage = Boolean(
+    audioPlayer &&
+      audioPlayer.currentUri &&
+      (audioPlayer.currentUri === voiceUrl || (voiceQueue.length > 0 && voiceQueue.includes(audioPlayer.currentUri)))
+  );
+  const isVoicePlaying = Boolean(audioPlayer && audioPlayer.isPlaying && isCurrentVoiceMessage);
   const isQuotaError =
     message.metadata?.errorCode === 'QUOTA_EXCEEDED_BLOCKED' ||
     message.metadata?.errorCode === 'QUOTA_ABSOLUTE_BLOCKED' ||
     message.metadata?.errorCode === 'MONTHLY_QUOTA_EXCEEDED';
+
+  const handleVoicePress = () => {
+    if (!audioPlayer || !hasVoiceButton) {
+      return;
+    }
+
+    if (isVoicePlaying) {
+      void audioPlayer.pause();
+      return;
+    }
+
+    const uris = voiceQueue.length > 0 ? voiceQueue : [voiceUrl];
+    void audioPlayer.playQueue(uris);
+  };
 
   useEffect(() => {
     Animated.parallel([
@@ -98,6 +126,22 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
               testID={`chat-bubble-upgrade-${message.id}`}
             >
               <Text style={styles.upgradeLabel}>{t('upgradeCtaLabel')}</Text>
+            </Pressable>
+          ) : null}
+
+          {isVoiceGenerating ? (
+            <View style={styles.voiceRow} testID={`chat-bubble-voice-loading-${message.id}`}>
+              <ActivityIndicator size="small" color={theme.colors.neonBlue} />
+            </View>
+          ) : null}
+
+          {hasVoiceButton ? (
+            <Pressable
+              onPress={handleVoicePress}
+              style={styles.voiceButton}
+              testID={`chat-bubble-voice-${message.id}`}
+            >
+              <Text style={styles.voiceLabel}>{isVoicePlaying ? '⏸' : '▶'}</Text>
             </Pressable>
           ) : null}
 
@@ -204,6 +248,27 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontSize: 11,
     fontWeight: '700'
+  },
+  voiceRow: {
+    marginTop: theme.spacing.xs,
+    alignSelf: 'flex-start'
+  },
+  voiceButton: {
+    marginTop: theme.spacing.xs,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: theme.colors.neonBlue,
+    borderRadius: 8,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 6,
+    minWidth: 34,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  voiceLabel: {
+    color: theme.colors.neonBlue,
+    fontSize: 12,
+    fontWeight: '800'
   },
   retryButton: {
     marginTop: theme.spacing.xs,

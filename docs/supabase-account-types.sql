@@ -324,134 +324,49 @@ begin
   ) then
     raise exception 'unsupported action';
   end if;
-
-  if v_action = 'daily_participation' then
-    update public.profiles
-    set
-      score = score + case when last_active_date is distinct from v_today then 5 else 0 end,
-      daily_streak = case
-        when last_active_date = v_today then daily_streak
-        when last_active_date = (v_today - interval '1 day')::date then daily_streak + 1
-        else 1
-      end,
-      last_active_date = case
-        when last_active_date = v_today then last_active_date
-        else v_today
-      end
-    where id = p_user_id
-    returning
-      profiles.score,
-      profiles.roasts_generated,
-      profiles.punchlines_created,
-      profiles.destructions,
-      profiles.photos_roasted,
-      profiles.memes_generated,
-      profiles.battle_wins,
-      profiles.daily_streak,
-      profiles.last_active_date
-    into score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date;
-
-    return next;
-    return;
-  end if;
-
-  if v_action = 'roast_generated' then
-    update public.profiles
-    set score = score + 5,
-        roasts_generated = roasts_generated + 1
-    where id = p_user_id
-    returning
-      profiles.score,
-      profiles.roasts_generated,
-      profiles.punchlines_created,
-      profiles.destructions,
-      profiles.photos_roasted,
-      profiles.memes_generated,
-      profiles.battle_wins,
-      profiles.daily_streak,
-      profiles.last_active_date
-    into score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date;
-    return next;
-    return;
-  end if;
-
-  if v_action = 'punchline_created' then
-    update public.profiles
-    set score = score + 10,
-        punchlines_created = punchlines_created + 1
-    where id = p_user_id
-    returning
-      profiles.score,
-      profiles.roasts_generated,
-      profiles.punchlines_created,
-      profiles.destructions,
-      profiles.photos_roasted,
-      profiles.memes_generated,
-      profiles.battle_wins,
-      profiles.daily_streak,
-      profiles.last_active_date
-    into score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date;
-    return next;
-    return;
-  end if;
-
-  if v_action = 'meme_generated' then
-    update public.profiles
-    set score = score + 8,
-        memes_generated = memes_generated + 1
-    where id = p_user_id
-    returning
-      profiles.score,
-      profiles.roasts_generated,
-      profiles.punchlines_created,
-      profiles.destructions,
-      profiles.photos_roasted,
-      profiles.memes_generated,
-      profiles.battle_wins,
-      profiles.daily_streak,
-      profiles.last_active_date
-    into score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date;
-    return next;
-    return;
-  end if;
-
-  if v_action = 'photo_roasted' then
-    update public.profiles
-    set score = score + 5,
-        photos_roasted = photos_roasted + 1
-    where id = p_user_id
-    returning
-      profiles.score,
-      profiles.roasts_generated,
-      profiles.punchlines_created,
-      profiles.destructions,
-      profiles.photos_roasted,
-      profiles.memes_generated,
-      profiles.battle_wins,
-      profiles.daily_streak,
-      profiles.last_active_date
-    into score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date;
-    return next;
-    return;
-  end if;
-
-  -- battle_win
-  update public.profiles
-  set score = score + 25,
-      battle_wins = battle_wins + 1,
-      destructions = destructions + 1
-  where id = p_user_id
+  update public.profiles as p
+  set
+    score = p.score + case
+      when v_action = 'roast_generated' then 5
+      when v_action = 'punchline_created' then 10
+      when v_action = 'meme_generated' then 8
+      when v_action = 'photo_roasted' then 5
+      when v_action = 'battle_win' then 25
+      when v_action = 'daily_participation' and p.last_active_date is distinct from v_today then 5
+      else 0
+    end,
+    roasts_generated = p.roasts_generated + case when v_action = 'roast_generated' then 1 else 0 end,
+    punchlines_created = p.punchlines_created + case when v_action = 'punchline_created' then 1 else 0 end,
+    destructions = p.destructions + case when v_action = 'battle_win' then 1 else 0 end,
+    photos_roasted = p.photos_roasted + case when v_action = 'photo_roasted' then 1 else 0 end,
+    memes_generated = p.memes_generated + case when v_action = 'meme_generated' then 1 else 0 end,
+    battle_wins = p.battle_wins + case when v_action = 'battle_win' then 1 else 0 end,
+    daily_streak = case
+      when v_action <> 'daily_participation' then p.daily_streak
+      when p.last_active_date = v_today then p.daily_streak
+      when p.last_active_date = (v_today - interval '1 day')::date then p.daily_streak + 1
+      else 1
+    end,
+    last_active_date = case
+      when v_action = 'daily_participation' and p.last_active_date is distinct from v_today then v_today
+      else p.last_active_date
+    end
+  where p.id = p_user_id
   returning
-    profiles.score,
-    profiles.roasts_generated,
-    profiles.punchlines_created,
-    profiles.destructions,
-    profiles.photos_roasted,
-    profiles.memes_generated,
-    profiles.battle_wins,
-    profiles.daily_streak,
-    profiles.last_active_date
+    p.score,
+    p.roasts_generated,
+    p.punchlines_created,
+    p.destructions,
+    p.photos_roasted,
+    p.memes_generated,
+    p.battle_wins,
+    p.daily_streak,
+    p.last_active_date
   into score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date;
+
+  if not found then
+    raise exception 'profile not found';
+  end if;
 
   return next;
 end;

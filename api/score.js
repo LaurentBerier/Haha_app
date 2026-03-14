@@ -26,12 +26,15 @@ function getTodayIsoDate() {
 
 function isMissingRpcError(error) {
   const code = error && typeof error.code === 'string' ? error.code : '';
-  if (code === 'PGRST202' || code === '42883') {
+  if (code === 'PGRST202' || code === '42883' || code === '42702') {
     return true;
   }
 
   const message = error && typeof error.message === 'string' ? error.message.toLowerCase() : '';
-  return message.includes('apply_score_action') && (message.includes('not found') || message.includes('could not find'));
+  return (
+    message.includes('apply_score_action') &&
+    (message.includes('not found') || message.includes('could not find') || message.includes('ambiguous'))
+  );
 }
 
 function toStats(row) {

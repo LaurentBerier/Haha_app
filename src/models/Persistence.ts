@@ -6,6 +6,7 @@ export interface PersistedUiPreferences {
   language: 'fr-CA' | 'en-CA';
   displayMode: 'dark' | 'light' | 'system';
   reduceMotion: 'system' | 'on' | 'off';
+  voiceAutoPlay: boolean;
 }
 
 export interface PersistedStoreSnapshot {

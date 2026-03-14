@@ -16,6 +16,10 @@ function createReqRes({ method = 'POST', headers = {}, body = {} } = {}) {
       this.payload = payload;
       return this;
     },
+    send(payload) {
+      this.payload = payload;
+      return this;
+    },
     end(payload) {
       this.ended = true;
       if (payload !== undefined) {

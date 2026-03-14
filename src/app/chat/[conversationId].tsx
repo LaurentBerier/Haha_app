@@ -46,7 +46,7 @@ export default function ChatScreen() {
   const currentConversation = useStore(
     useCallback((state) => findConversationById(state.conversations, conversationId), [conversationId])
   );
-  const { messages, sendMessage, retryMessage, hasStreaming, currentArtistName, isQuotaBlocked } = useChat(conversationId);
+  const { messages, sendMessage, retryMessage, hasStreaming, currentArtistName, isQuotaBlocked, audioPlayer } = useChat(conversationId);
 
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? '');
   const artistDisplayName = formatArtistDisplayName(currentArtistName);
@@ -81,6 +81,7 @@ export default function ChatScreen() {
             userDisplayName={userDisplayName}
             artistDisplayName={artistDisplayName}
             onRetryMessage={retryMessage}
+            audioPlayer={audioPlayer}
           />
         ) : (
           <Text style={styles.error} testID="chat-invalid-conversation">

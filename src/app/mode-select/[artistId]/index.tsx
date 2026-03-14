@@ -83,9 +83,10 @@ function CategoryMenuButton({ artistId, id, index }: CategoryMenuButtonProps) {
           borderColor
         }
       ]}
-      testID={`mode-category-${id}`}
+      testID={`mode-category-container-${id}`}
     >
       <Pressable
+        testID={`mode-category-${id}`}
         style={({ hovered, pressed }) => [
           styles.categoryPressable,
           hovered ? styles.categoryPressableHover : null,

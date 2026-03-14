@@ -116,6 +116,7 @@ export const useStore = create<StoreState>()((...a) => ({
       snapshot.preferences?.reduceMotion === 'on' || snapshot.preferences?.reduceMotion === 'off'
         ? snapshot.preferences.reduceMotion
         : 'system';
+    const nextVoiceAutoPlay = snapshot.preferences?.voiceAutoPlay === true;
 
     setI18nLanguage(nextLanguage);
 
@@ -129,7 +130,8 @@ export const useStore = create<StoreState>()((...a) => ({
       ...(snapshot.gamification ?? {}),
       language: snapshot.preferences?.language ? nextLanguage : current.language,
       displayMode: snapshot.preferences?.displayMode ? nextDisplayMode : 'dark',
-      reduceMotion: snapshot.preferences?.reduceMotion ? nextReduceMotion : current.reduceMotion
+      reduceMotion: snapshot.preferences?.reduceMotion ? nextReduceMotion : current.reduceMotion,
+      voiceAutoPlay: snapshot.preferences ? nextVoiceAutoPlay : current.voiceAutoPlay
     });
   },
   clearAccountScopedState: () =>
@@ -178,7 +180,8 @@ export function selectPersistedSnapshot(state: StoreState): PersistedStoreSnapsh
     preferences: {
       language: state.language,
       displayMode: state.displayMode,
-      reduceMotion: state.reduceMotion
+      reduceMotion: state.reduceMotion,
+      voiceAutoPlay: state.voiceAutoPlay
     }
   };
 }
