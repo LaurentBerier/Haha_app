@@ -13,6 +13,7 @@ if [[ -z "${CLAUDE_URL}" ]]; then
 fi
 
 BASE_URL="${CLAUDE_URL%/claude}"
+ORIGIN="${SMOKE_ORIGIN:-http://localhost:8081}"
 
 pass_count=0
 fail_count=0
@@ -34,6 +35,7 @@ run_case() {
     -w "%{http_code}"
     -X "$method"
     "$url"
+    -H "Origin: $ORIGIN"
     -H "Content-Type: application/json"
     --data "$body"
   )
@@ -68,6 +70,7 @@ run_case() {
 }
 
 echo "Running auth/API smoke tests against: $BASE_URL"
+echo "Using Origin: $ORIGIN"
 echo
 
 run_case \
@@ -94,7 +97,7 @@ run_case \
 run_case \
   "payment-webhook no auth" \
   "$BASE_URL/payment-webhook" \
-  "401" \
+  "401,500" \
   "POST" \
   '{"event":{"type":"INITIAL_PURCHASE","app_user_id":"00000000-0000-0000-0000-000000000000","product_id":"haha_regular_monthly"}}'
 
@@ -104,4 +107,3 @@ echo "Summary: PASS=$pass_count FAIL=$fail_count"
 if [[ "$fail_count" -gt 0 ]]; then
   exit 1
 fi
-

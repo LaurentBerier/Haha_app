@@ -1,6 +1,6 @@
 # Phase 2 Status (Mobile + API)
 
-Last updated: **2026-03-13**
+Last updated: **2026-03-14**
 
 ## Scope
 
@@ -142,8 +142,9 @@ Core targets:
 ## In Progress
 
 - end-to-end production validation of full auth/recovery flow on physical devices
-- PayPal/Apple checkout enablement (URLs and backend linkage)
 - stronger automated integration coverage beyond current E2E happy-path set
+- Phase 3 voice hardening tracked in `docs/phase3-status.md`
+- operational smoke-check coverage for CORS/auth/error contracts on app APIs
 
 ## Planned Next
 
@@ -157,6 +158,7 @@ Core targets:
   - claude proxy 401/200 contract
   - subscription checkout return flow
 - improve operational monitoring around auth and proxy endpoints
+- PayPal/Apple checkout end-to-end remains explicitly out of current execution scope
 
 ## Verification Baseline
 
@@ -164,6 +166,9 @@ Core targets:
 npm run typecheck
 npm run lint
 npm run test:unit
+npm run smoke:auth
+npm run smoke:voice
+npm run qa:phase23
 npm run e2e:build:ios
 npm run e2e:ios
 ```

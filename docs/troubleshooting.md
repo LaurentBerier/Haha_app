@@ -184,7 +184,26 @@ Checklist:
 Then redeploy:
 
 ```bash
+# run from /Users/laurentbernier/Documents/HAHA_app (repo root), never from dist-web
 npm run deploy:web
+```
+
+Validate immediately after deploy:
+
+```bash
+npm run smoke:voice
+```
+
+Optional authenticated smoke:
+
+```bash
+SMOKE_AUTH_TOKEN=<supabase_access_token> npm run smoke:voice
+```
+
+Alternative without manual token copy:
+
+```bash
+SMOKE_AUTH_EMAIL=<email> SMOKE_AUTH_PASSWORD=<password> npm run smoke:voice
 ```
 
 ## 8) SQL error `relation "profiles" does not exist`

@@ -186,6 +186,29 @@ describe('api/claude', () => {
     expect(res.payload.error.code).toBe('SERVER_MISCONFIGURED');
   });
 
+  it('proxies __proxy=tts requests to tts handler', async () => {
+    const mockedTtsHandler = jest.fn(async (_req, res) => {
+      res.status(204).end();
+    });
+    jest.doMock('../../src/server/ttsHandler', () => mockedTtsHandler);
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      method: 'OPTIONS',
+      headers: { origin: 'https://app.example.com' }
+    });
+    req.url = '/api/claude?__proxy=tts';
+    req.query = { __proxy: 'tts' };
+
+    await handler(req, res);
+
+    expect(mockedTtsHandler).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(204);
+  });
+
   it('returns 401 when bearer token is missing', async () => {
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => buildSupabaseClient())

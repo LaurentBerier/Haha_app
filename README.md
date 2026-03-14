@@ -360,12 +360,20 @@ npm run e2e:ios
 npm run typecheck
 npm run lint
 npm run test:unit
+npm run qa:phase23
 ```
 
 API smoke tests:
 
 ```bash
-./scripts/smoke-auth.sh
+npm run smoke:auth
+npm run smoke:voice
+```
+
+Single-command QA (Phase 2/3):
+
+```bash
+npm run qa:phase23
 ```
 
 Optional E2E:
@@ -445,5 +453,8 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/economics.md`
 - `docs/phase1-status.md`
 - `docs/phase2-status.md`
+- `docs/phase3-status.md`
+- `docs/phase3-qa-matrix.md`
+- `docs/voice-ops-runbook.md`
 - `docs/troubleshooting.md`
 - `ha-ha-ai-build-prompt.improved.md`

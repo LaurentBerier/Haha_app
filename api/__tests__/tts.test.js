@@ -255,4 +255,70 @@ describe('api/tts', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(global.fetch.mock.calls[0][0]).toContain('/premium-voice-id');
   });
+
+  it('returns 400 when artist is unsupported', async () => {
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../../src/server/ttsHandler');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: { text: 'bonjour', artistId: 'unknown-artist', language: 'fr-CA' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.payload.error.code).toBe('INVALID_REQUEST');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 when ELEVENLABS_API_KEY is missing', async () => {
+    delete process.env.ELEVENLABS_API_KEY;
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../../src/server/ttsHandler');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: { text: 'bonjour', artistId: 'cathy-gauthier', language: 'fr-CA' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.payload.error.code).toBe('SERVER_MISCONFIGURED');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('maps ElevenLabs 402 response to TTS_QUOTA_EXCEEDED', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 402,
+      text: jest.fn().mockResolvedValue('quota exceeded')
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'regular-user', app_metadata: { account_type: 'regular' } },
+          profileAccountType: 'regular',
+          initialUsageCount: 0
+        })
+      )
+    }));
+
+    const handler = require('../../src/server/ttsHandler');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer regular-token' },
+      body: { text: 'bonjour', artistId: 'cathy-gauthier', language: 'fr-CA' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(429);
+    expect(res.payload.error.code).toBe('TTS_QUOTA_EXCEEDED');
+  });
 });
