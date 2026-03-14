@@ -54,7 +54,7 @@ Core targets:
   - app web + API in this repo/project (`haha-app`) on `https://app.ha-ha.ai`
 - web deployment pipeline stabilized:
   - `npm run export:web` applies module-script compatibility patch
-  - Vercel production deploy uses `npx vercel --prod --yes` on project `haha-app`
+  - Vercel production deploy uses `npx vercel --prod --yes --scope snadeau-breakingwalls-projects` on project `haha-app`
 - `POST /api/claude` protected with bearer token validation
   - server-side model whitelist
   - server-side artist-aware prompt assembly (Cathy + placeholder artists)
@@ -178,7 +178,7 @@ Manual checks:
 6. `POST /api/claude` with invalid bearer returns `401` (and missing-origin/no-bearer requests are blocked with `403` by CORS guard).
 7. Stripe checkout completed event reaches `POST /api/stripe-webhook` with `200`.
 8. Subscription screen displays current plan + next cycle and can request cancellation.
-9. `npx vercel --prod --yes` publishes a working web app (no white-screen bootstrap crash).
+9. `npx vercel --prod --yes --scope snadeau-breakingwalls-projects` publishes a working web app (no white-screen bootstrap crash).
 10. Sign in with user A, create messages, sign out and sign in with user B -> no conversation history leakage from user A.
 
 ## Dependencies and Config

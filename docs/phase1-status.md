@@ -59,7 +59,7 @@ Production now uses two distinct repos/projects with clear ownership:
 
 Deployment for this repo:
 
-- `npx vercel --prod --yes` (project `haha-app`)
+- `npx vercel --prod --yes --scope snadeau-breakingwalls-projects` (project `haha-app`)
 - Vercel build uses `npm run export:web` via `vercel.json`
 
 ## Next Priorities

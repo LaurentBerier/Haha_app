@@ -1,5 +1,25 @@
 # Troubleshooting
 
+## 0) Wrong Vercel project or scope used for this repo
+
+Symptoms:
+
+- Deploy succeeds but app/API behavior does not match expected production.
+- CORS or env behavior looks inconsistent with `https://app.ha-ha.ai`.
+
+Required target for this repository:
+
+- Team/scope: `snadeau-breakingwalls-projects`
+- Project: `haha-app`
+- Never deploy this repo from `lbernier-2067s-projects`.
+
+Fix:
+
+```bash
+npm run vercel:link:app
+npm run deploy:web
+```
+
 ## 1) `supabaseUrl is required`
 
 Cause:
@@ -117,7 +137,7 @@ Check that [`.vercelignore`](/Users/laurentbernier/Documents/HAHA_app/.vercelign
 Redeploy:
 
 ```bash
-npx vercel --prod --yes
+npx vercel --prod --yes --scope snadeau-breakingwalls-projects
 ```
 
 ## 7) `/api/claude` returns 500 instead of 401/403
@@ -142,6 +162,29 @@ curl -i -X POST "https://<alias>.vercel.app/api/claude" \
   -H "content-type: application/json" \
   -H "authorization: Bearer invalid-token" \
   -d '{"messages":[{"role":"user","content":"hi"}]}'
+```
+
+### `/api/tts` blocked by CORS on web (`No 'Access-Control-Allow-Origin' header`)
+
+Checklist:
+
+- `ALLOWED_ORIGINS` in Vercel includes current caller origin (local + production):
+  - `https://app.ha-ha.ai`
+  - `https://www.ha-ha.ai`
+  - `https://ha-ha.ai`
+  - `https://*.ha-ha.ai`
+  - `http://localhost:*`
+  - `http://127.0.0.1:*`
+  - `http://localhost:8081`
+  - `http://localhost:19006`
+- `ELEVENLABS_API_KEY` exists in the `haha-app` Vercel project (server env).
+- Deployment is from the correct app project/scope:
+  - `snadeau-breakingwalls-projects/haha-app`
+
+Then redeploy:
+
+```bash
+npm run deploy:web
 ```
 
 ## 8) SQL error `relation "profiles" does not exist`
@@ -287,7 +330,7 @@ Fix:
 
 ```bash
 cd /Users/laurentbernier/Documents/HAHA_app
-npx vercel --prod --yes
+npx vercel --prod --yes --scope snadeau-breakingwalls-projects
 ```
 
 This rebuilds and patches `dist-web/index.html` with `type="module"` before deployment.
@@ -344,7 +387,7 @@ Fix:
 
 ```bash
 cd /Users/laurentbernier/Documents/HAHA_app
-npx vercel --prod --yes
+npx vercel --prod --yes --scope snadeau-breakingwalls-projects
 ```
 
 ## 21) `POST /api/stripe-webhook` returns 404
@@ -464,7 +507,7 @@ npx expo start -c
 
 ```bash
 cd /Users/laurentbernier/Documents/HAHA_app
-npx vercel --prod --yes
+npx vercel --prod --yes --scope snadeau-breakingwalls-projects
 ```
 
 4. Verify proxy health directly (replace domain):
@@ -611,5 +654,5 @@ Use this before testing or shipping subscription changes:
    - `customer.subscription.updated`
    - `customer.subscription.deleted`
 6. Redeploy after env changes:
-   - `npx vercel --prod --yes`
+   - `npx vercel --prod --yes --scope snadeau-breakingwalls-projects`
 7. Validate with Stripe event resend and expect `200 OK`.

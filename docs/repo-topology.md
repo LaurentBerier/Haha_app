@@ -74,7 +74,17 @@ Manual deploy:
 
 ```bash
 cd /Users/laurentbernier/Documents/HAHA_app
-npx vercel --prod --yes
+npx vercel --prod --yes --scope snadeau-breakingwalls-projects
+```
+
+Critical guardrail:
+
+- This repo must stay linked to `snadeau-breakingwalls-projects/haha-app`.
+- Never deploy this repo from `lbernier-2067s-projects`.
+- If a local machine is linked to the wrong target, run:
+
+```bash
+npm run vercel:link:app
 ```
 
 ### Landing (`ha-ha-ai`)

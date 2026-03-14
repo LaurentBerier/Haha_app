@@ -5,10 +5,13 @@ import {
   Alert,
   Animated,
   Image,
+  NativeSyntheticEvent,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
+  TextInputKeyPressEventData,
   View
 } from 'react-native';
 import { MAX_IMAGE_UPLOAD_BYTES, MAX_MESSAGE_LENGTH } from '../../config/constants';
@@ -290,6 +293,33 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
     Alert.alert(t('discussionComingSoonTitle'), t('discussionComingSoonBody'));
   };
 
+  const handleInputKeyPress = (event: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
+    if (Platform.OS !== 'web') {
+      return;
+    }
+
+    const webEvent = event.nativeEvent as TextInputKeyPressEventData & {
+      isComposing?: boolean;
+      shiftKey?: boolean;
+    };
+
+    if (webEvent.isComposing) {
+      return;
+    }
+
+    if (webEvent.key !== 'Enter' || webEvent.shiftKey) {
+      return;
+    }
+
+    (event as unknown as { preventDefault?: () => void }).preventDefault?.();
+
+    if (!canSend) {
+      return;
+    }
+
+    void handleSend();
+  };
+
   return (
     <View style={styles.wrapper}>
       {imageAttachment ? (
@@ -342,6 +372,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
             multiline
             maxLength={MAX_MESSAGE_LENGTH}
             editable={!disabled}
+            onKeyPress={handleInputKeyPress}
           />
 
           {featureFlags.enableVoice ? (

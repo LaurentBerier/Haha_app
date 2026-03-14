@@ -14,6 +14,7 @@ Implemented in this repository:
 - Universal back button on secondary routes (chat, mode selection, history, settings subpages).
 - Header logo remains a home shortcut to artist selection (`/`) and never replaces back behavior.
 - Chat header title reflects the active mode label (for example `🔥 Radar d’Attitude`) instead of a static "Discussion" title.
+- Web chat input supports keyboard send: `Enter` sends, `Shift+Enter` inserts a new line.
 - Mode selection is now split into:
   - a category hub (`2x2` animated buttons)
   - a dedicated category page showing only its sub-modes/actions
@@ -33,6 +34,7 @@ Implemented in this repository:
 - Account deletion endpoint (`api/delete-account.js`).
 - Usage summary endpoint (`api/usage-summary.js`) for monthly quota hydration.
 - Score endpoint (`api/score.js`) for gamification actions and stats hydration.
+- TTS endpoint (`api/tts.js`) for ElevenLabs voice generation (tier-gated, CORS protected).
 - Payment webhooks:
   - RevenueCat (`api/payment-webhook.js`)
   - Stripe (`api/stripe-webhook.js`)
@@ -55,6 +57,14 @@ Two repositories and two Vercel projects are used in production:
    - Purpose: Expo app (web + mobile) and serverless API (`/api/*`)
    - Vercel project: `haha-app`
    - Domains: `https://app.ha-ha.ai` and project alias (`https://haha-app-delta.vercel.app`)
+
+Mandatory deployment target for this repo:
+
+- Team/scope: `snadeau-breakingwalls-projects`
+- Project: `haha-app`
+- Do not create or deploy this repo in `lbernier-2067s-projects`.
+- If link is wrong, relink with:
+  - `npm run vercel:link:app`
 
 Important:
 
@@ -106,6 +116,8 @@ cp .env.example .env
 - `EXPO_PUBLIC_PAYPAL_CHECKOUT_URL`
 - `EXPO_PUBLIC_APPLE_PAY_CHECKOUT_URL`
 - `EXPO_PUBLIC_E2E_AUTH_BYPASS` (test-only; used by Detox scripts)
+- `EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC` (optional; defaults to ElevenLabs built-in voice ID)
+- `EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY` (optional; when set, premium voice swaps without code changes)
 
 Notes:
 
@@ -134,6 +146,7 @@ Notes:
 - `STRIPE_PAYMENT_LINK_ID_REGULAR_TEST` / `STRIPE_PAYMENT_LINK_ID_PREMIUM_TEST` (recommended for sandbox payment links)
 - `STRIPE_PRICE_ID_REGULAR_MONTHLY_TEST` / `STRIPE_PRICE_ID_PREMIUM_MONTHLY_TEST` (recommended for sandbox subscription updates)
 - `ALLOWED_ORIGINS` (required for browser callers that send `Origin`; comma-separated allowlist)
+- `ELEVENLABS_API_KEY` (required for `api/tts.js`; server-only, never `EXPO_PUBLIC_`)
 - `CLAUDE_RATE_LIMIT_MAX_REQUESTS` (optional, default `30`, per user)
 - `CLAUDE_RATE_LIMIT_WINDOW_MS` (optional, default `60000`)
 - `ANTHROPIC_FETCH_TIMEOUT_MS` (optional, default `25000`)
@@ -365,7 +378,7 @@ npm run e2e:ios
 ## Deploy to Vercel (`haha-app`)
 
 ```bash
-npx vercel --prod --yes
+npx vercel --prod --yes --scope snadeau-breakingwalls-projects
 ```
 
 This repository deploys both:
@@ -390,7 +403,7 @@ Domain mapping (production):
 - Landing: `https://ha-ha.ai` (separate repo/project)
 - App: `https://app.ha-ha.ai` (this repo, `haha-app`)
 
-`npm run deploy:web` now runs `npm run export:web` then `npx vercel --prod --yes` for the current `haha-app` topology.
+`npm run deploy:web` now enforces the Vercel link (`snadeau-breakingwalls-projects/haha-app`), runs `npm run export:web`, then deploys with `--scope snadeau-breakingwalls-projects`.
 
 Current [`.vercelignore`](/Users/laurentbernier/Documents/HAHA_app/.vercelignore) intentionally ignores only local/dev artifacts while keeping app source and API files deployable.
 
@@ -415,7 +428,7 @@ Use this checklist before shipping subscription changes (test or live):
    - `customer.subscription.updated`
    - `customer.subscription.deleted`
 6. Redeploy `haha-app` after every env change:
-   - `npx vercel --prod --yes`
+   - `npx vercel --prod --yes --scope snadeau-breakingwalls-projects`
 7. Validate in Stripe with `Send test event` / `Resend` and verify `200 OK`.
 
 ## Repo Layout
