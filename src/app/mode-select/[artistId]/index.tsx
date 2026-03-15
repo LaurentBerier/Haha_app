@@ -43,7 +43,55 @@ const MAX_GREETING_TYPING_INTERVAL_MS = 80;
 const DEFAULT_GREETING_TYPING_DURATION_MS = 4_200;
 
 interface ArtistModeSource {
+  name?: string;
   supportedModeIds?: string[];
+}
+
+function buildFallbackGreetingText(
+  artist: ArtistModeSource,
+  language: string,
+  availableModes: string[],
+  includeVoiceHint: boolean
+): string {
+  const isEnglish = language.toLowerCase().startsWith('en');
+  const artistName = artist.name?.trim() || 'Cathy';
+  const topModes = availableModes.slice(0, 4);
+  const modeSummary = topModes.join(', ');
+
+  if (isEnglish) {
+    const voiceSentence = includeVoiceHint
+      ? 'Voice conversation is already on, and you can disable it by tapping the small mic at the bottom right of the text bar.'
+      : '';
+    const modesSentence = modeSummary
+      ? `We can jump into ${modeSummary}.`
+      : 'We can jump into chat, roast, games, or profile modes.';
+    return [
+      `Hey, how are you doing today?`,
+      voiceSentence,
+      `I am still pulling your local weather and headline update, but we can start right now with ${artistName}.`,
+      modesSentence,
+      'What do you feel like doing first?'
+    ]
+      .filter(Boolean)
+      .join(' ');
+  }
+
+  const voiceSentence = includeVoiceHint
+    ? 'Le mode discussion vocale est deja actif, et tu peux le desactiver en touchant le petit micro en bas a droite de la barre de texte.'
+    : '';
+  const modesSentence = modeSummary
+    ? `On peut partir avec ${modeSummary}.`
+    : 'On peut partir en discussion, roast, jeux ou profil.';
+
+  return [
+    'Salut, comment tu vas aujourd hui?',
+    voiceSentence,
+    `Je recupere encore ta meteo locale et une manchette du jour, mais on peut commencer tout de suite avec ${artistName}.`,
+    modesSentence,
+    'Tu as envie de faire quoi en premier?'
+  ]
+    .filter(Boolean)
+    .join(' ');
 }
 
 function estimateGreetingSpeechDurationMs(text: string): number {
@@ -335,11 +383,29 @@ export default function ModeSelectHomeScreen() {
   const audioPlayer = useAudioPlayer();
   const playGreetingAudio = audioPlayer.play;
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const greetingPlaybackCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const audioStateRef = useRef<{
+    isPlaying: boolean;
+    isLoading: boolean;
+    currentUri: string | null;
+  }>({
+    isPlaying: false,
+    isLoading: false,
+    currentUri: null
+  });
+  const [pendingGreetingAudioUri, setPendingGreetingAudioUri] = useState<string | null>(null);
 
   const clearTypingInterval = useCallback(() => {
     if (typingIntervalRef.current) {
       clearInterval(typingIntervalRef.current);
       typingIntervalRef.current = null;
+    }
+  }, []);
+
+  const clearGreetingPlaybackCheck = useCallback(() => {
+    if (greetingPlaybackCheckTimeoutRef.current) {
+      clearTimeout(greetingPlaybackCheckTimeoutRef.current);
+      greetingPlaybackCheckTimeoutRef.current = null;
     }
   }, []);
 
@@ -375,6 +441,14 @@ export default function ModeSelectHomeScreen() {
   );
 
   useEffect(() => {
+    audioStateRef.current = {
+      isPlaying: audioPlayer.isPlaying,
+      isLoading: audioPlayer.isLoading,
+      currentUri: audioPlayer.currentUri
+    };
+  }, [audioPlayer.currentUri, audioPlayer.isLoading, audioPlayer.isPlaying]);
+
+  useEffect(() => {
     if (E2E_AUTH_BYPASS) {
       return;
     }
@@ -392,7 +466,7 @@ export default function ModeSelectHomeScreen() {
         return;
       }
 
-      const nextGreeting = await fetchGreetingFromApi(
+      const fetchedGreeting = await fetchGreetingFromApi(
         artist.id,
         language,
         accessToken,
@@ -400,6 +474,8 @@ export default function ModeSelectHomeScreen() {
         availableModes,
         includeVoiceHint
       );
+      const nextGreeting =
+        fetchedGreeting ?? buildFallbackGreetingText(artist, language, availableModes, includeVoiceHint);
       if (isCancelled || !nextGreeting) {
         return;
       }
@@ -423,6 +499,16 @@ export default function ModeSelectHomeScreen() {
 
         startTypingGreeting(nextGreeting, estimateGreetingSpeechDurationMs(nextGreeting));
         void playGreetingAudio(greetingAudioUri);
+        if (Platform.OS === 'web') {
+          clearGreetingPlaybackCheck();
+          greetingPlaybackCheckTimeoutRef.current = setTimeout(() => {
+            const audioState = audioStateRef.current;
+            if (audioState.isPlaying || audioState.isLoading || audioState.currentUri === greetingAudioUri) {
+              return;
+            }
+            setPendingGreetingAudioUri(greetingAudioUri);
+          }, 900);
+        }
       } catch {
         if (!isCancelled) {
           startTypingGreeting(nextGreeting, DEFAULT_GREETING_TYPING_DURATION_MS);
@@ -434,14 +520,46 @@ export default function ModeSelectHomeScreen() {
     return () => {
       isCancelled = true;
       clearTypingInterval();
+      clearGreetingPlaybackCheck();
     };
-  }, [accessToken, artist, clearTypingInterval, greetedArtistIds, language, markArtistGreeted, playGreetingAudio, startTypingGreeting]);
+  }, [
+    accessToken,
+    artist,
+    clearGreetingPlaybackCheck,
+    clearTypingInterval,
+    greetedArtistIds,
+    language,
+    markArtistGreeted,
+    playGreetingAudio,
+    startTypingGreeting
+  ]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !pendingGreetingAudioUri || typeof document === 'undefined') {
+      return;
+    }
+
+    const handleFirstGesture = () => {
+      const uri = pendingGreetingAudioUri;
+      if (!uri) {
+        return;
+      }
+      setPendingGreetingAudioUri(null);
+      void playGreetingAudio(uri);
+    };
+
+    document.addEventListener('pointerdown', handleFirstGesture, { once: true });
+    return () => {
+      document.removeEventListener('pointerdown', handleFirstGesture);
+    };
+  }, [pendingGreetingAudioUri, playGreetingAudio]);
 
   useEffect(() => {
     return () => {
       clearTypingInterval();
+      clearGreetingPlaybackCheck();
     };
-  }, [clearTypingInterval]);
+  }, [clearGreetingPlaybackCheck, clearTypingInterval]);
 
   if (!artist) {
     return (
