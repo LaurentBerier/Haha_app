@@ -127,12 +127,21 @@ export function useVoiceConversation({
 
   const startListeningSession = useCallback((force = false) => {
     if ((!enabledRef.current && !force) || disabledRef.current || !hasPermissionRef.current || listeningRef.current) {
+      if (__DEV__ && typeof console !== 'undefined') {
+        console.warn('[useVoiceConversation] Skipped startListeningSession', {
+          force,
+          enabled: enabledRef.current,
+          disabled: disabledRef.current,
+          hasPermission: hasPermissionRef.current,
+          listening: listeningRef.current
+        });
+      }
       return;
     }
 
     setError(null);
 
-    startListening(
+    const started = startListening(
       languageRef.current,
       (nextTranscript) => {
         const normalizedTranscript = nextTranscript.trim();
@@ -170,8 +179,8 @@ export function useVoiceConversation({
       }
     );
 
-    listeningRef.current = true;
-    setIsListening(true);
+    listeningRef.current = started;
+    setIsListening(started);
   }, [clearSilenceTimer, scheduleSilenceTimeout]);
 
   const ensureListening = useCallback(async (force = false) => {

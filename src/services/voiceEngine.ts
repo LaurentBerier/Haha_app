@@ -98,6 +98,15 @@ function getWebSpeechRecognitionCtor(): WebSpeechRecognitionCtor | null {
   return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null;
 }
 
+function isWebSpeechSecureContext(): boolean {
+  if (Platform.OS !== 'web') {
+    return true;
+  }
+
+  const scope = globalThis as { isSecureContext?: boolean };
+  return Boolean(scope.isSecureContext);
+}
+
 function stopWebListening(): void {
   webShouldRestart = false;
   const recognition = webRecognition;
@@ -132,6 +141,10 @@ function extractWebTranscript(event: WebSpeechRecognitionEvent): string {
 
 export async function requestVoicePermission(): Promise<boolean> {
   if (Platform.OS === 'web') {
+    if (!isWebSpeechSecureContext()) {
+      console.error('[voiceEngine] Web STT unavailable in insecure context (use HTTPS or localhost).');
+      return false;
+    }
     const hasRecognition = Boolean(getWebSpeechRecognitionCtor());
     if (!hasRecognition) {
       console.error('[voiceEngine] Web SpeechRecognition API unavailable in this browser.');
@@ -156,12 +169,19 @@ export function startListening(
   locale: string,
   onResult: (text: string) => void,
   onError: (error: Error) => void
-): void {
+): boolean {
   if (Platform.OS === 'web') {
+    if (!isWebSpeechSecureContext()) {
+      const message = 'Speech recognition requires a secure context (HTTPS or localhost).';
+      console.error('[voiceEngine] Insecure context blocked Web Speech API.', { locale });
+      onError(new Error(message));
+      return false;
+    }
+
     const WebRecognitionCtor = getWebSpeechRecognitionCtor();
     if (!WebRecognitionCtor) {
       onError(new Error('Speech recognition is unavailable on this build.'));
-      return;
+      return false;
     }
 
     stopWebListening();
@@ -211,8 +231,9 @@ export function startListening(
       console.error('[voiceEngine] Web Speech start failed', { locale, error: normalized.message });
       onError(normalized);
       stopWebListening();
+      return false;
     }
-    return;
+    return true;
   }
 
   const module = getSpeechRecognitionModule();
@@ -244,11 +265,13 @@ export function startListening(
         error instanceof Error ? error : new Error(typeof error === 'string' ? error : 'Speech recognition failed');
       onError(normalized);
       clearListeners();
+      return false;
     }
-    return;
+    return true;
   }
 
   onError(new Error('Speech recognition is unavailable on this build.'));
+  return false;
 }
 
 export function stopListening(): void {

@@ -282,6 +282,39 @@ export default function RootLayout() {
   }, [showGlobalChatInput]);
 
   useEffect(() => {
+    if (
+      Platform.OS !== 'web' ||
+      typeof document === 'undefined' ||
+      !showGlobalChatInput ||
+      !conversationModeEnabled ||
+      hasTypedGlobalDraft ||
+      globalInputDisabled ||
+      isGlobalConversationListening
+    ) {
+      return;
+    }
+
+    const activateFromGesture = () => {
+      if (__DEV__) {
+        console.warn('[RootLayout] Activating web STT from first user gesture');
+      }
+      interruptGlobalConversation();
+    };
+
+    document.addEventListener('pointerdown', activateFromGesture, { once: true, capture: true });
+    return () => {
+      document.removeEventListener('pointerdown', activateFromGesture, true);
+    };
+  }, [
+    conversationModeEnabled,
+    globalInputDisabled,
+    hasTypedGlobalDraft,
+    interruptGlobalConversation,
+    isGlobalConversationListening,
+    showGlobalChatInput
+  ]);
+
+  useEffect(() => {
     if (Platform.OS !== 'web' || !webBackgroundUri || typeof document === 'undefined') {
       return;
     }
