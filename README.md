@@ -352,6 +352,9 @@ npm run export:web
 # Optional iOS Detox E2E
 npm run e2e:build:ios
 npm run e2e:ios
+
+# Mobile tooling preflight (iOS/Android prerequisites)
+npm run check:mobile-env
 ```
 
 ## Verify
@@ -455,6 +458,7 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/phase2-status.md`
 - `docs/phase3-status.md`
 - `docs/phase3-qa-matrix.md`
+- `docs/qa-run-2026-03-14.md`
 - `docs/voice-ops-runbook.md`
 - `docs/troubleshooting.md`
 - `ha-ha-ai-build-prompt.improved.md`

@@ -58,13 +58,18 @@ Phase 3 focuses on two tracks:
 - consolidated Phase 2/3 QA runner added:
   - `scripts/qa-phase23.sh`
   - npm alias: `npm run qa:phase23`
+- iOS Detox E2E validated:
+  - `npm run e2e:build:ios` PASS
+  - `npm run e2e:ios` PASS (`3/3`)
+- QA execution report published:
+  - `docs/qa-run-2026-03-14.md`
 
 ## In Progress
 
 - production hardening and observability for voice incidents:
   - CORS drift detection
   - faster triage playbook for auth/env/provider failures
-- broader manual validation matrix across web + iOS + Android for tier combinations
+- Android runtime/tooling enablement in QA environment (`java`, `adb`, `emulator`) to complete device validation
 
 ## Explicitly Out of Scope (Current Execution)
 
