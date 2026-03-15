@@ -462,3 +462,12 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/voice-ops-runbook.md`
 - `docs/troubleshooting.md`
 - `ha-ha-ai-build-prompt.improved.md`
+
+## CI
+
+- GitHub Actions workflow: `.github/workflows/phase23-ci.yml`
+- Runs on `main` and pull requests:
+  - `npm run typecheck`
+  - `npm run lint`
+  - `npm run verify:profile-prompt`
+  - `npm run test:unit`

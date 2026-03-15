@@ -1,6 +1,6 @@
 # Phase 2 Status (Mobile + API)
 
-Last updated: **2026-03-14**
+Last updated: **2026-03-15**
 
 ## Scope
 
@@ -133,18 +133,21 @@ Core targets:
   - added tests for subscription sync/checkout URL shaping and for artist-aware prompt builder
   - added service tests for `authService` and `claudeApiService`
   - API tests for `claude`, `delete-account`, `admin-account-type`, `payment-webhook`, and shared utils
+  - API tests added for `usage-summary`, `subscription-summary`, and `subscription-cancel`
   - store slice tests for `subscriptionSlice` and `usageSlice`
+- CI automation for core Phase 2 checks:
+  - GitHub Actions workflow `.github/workflows/phase23-ci.yml`
+  - runs `typecheck`, `lint`, `verify:profile-prompt`, and `test:unit` on `main` + PRs
 - E2E baseline stabilized on iOS:
   - `npm run e2e:build:ios`
   - `npm run e2e:ios`
   - auth bypass is test-scoped via `EXPO_PUBLIC_E2E_AUTH_BYPASS=true` in package scripts
 
-## In Progress
+## Completion Status
 
-- end-to-end production validation of full auth/recovery flow on physical devices
-- stronger automated integration coverage beyond current E2E happy-path set
-- Phase 3 voice hardening tracked in `docs/phase3-status.md`
-- operational smoke-check coverage for CORS/auth/error contracts on app APIs
+- Phase 2 is complete for the current execution scope (`web + API + iOS`).
+- Android validation is intentionally deferred for now (explicit decision).
+- PayPal/Apple checkout end-to-end remains out of scope for this execution window.
 
 ## Planned Next
 
@@ -158,7 +161,7 @@ Core targets:
   - claude proxy 401/200 contract
   - subscription checkout return flow
 - improve operational monitoring around auth and proxy endpoints
-- PayPal/Apple checkout end-to-end remains explicitly out of current execution scope
+- Android manual QA pass once local runtime/tooling is enabled (`java`, `adb`, `emulator`)
 
 ## Verification Baseline
 

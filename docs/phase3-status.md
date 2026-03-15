@@ -1,6 +1,6 @@
 # Phase 3 Status (Voice + Prompt Intelligence)
 
-Last updated: **2026-03-14**
+Last updated: **2026-03-15**
 
 ## Scope
 
@@ -63,13 +63,18 @@ Phase 3 focuses on two tracks:
   - `npm run e2e:ios` PASS (`3/3`)
 - QA execution report published:
   - `docs/qa-run-2026-03-14.md`
+- Phase 2/3 CI workflow added:
+  - `.github/workflows/phase23-ci.yml`
+  - automates `typecheck`, `lint`, `verify:profile-prompt`, `test:unit`
+- mobile preflight check script added:
+  - `scripts/check-mobile-env.sh`
+  - npm alias: `npm run check:mobile-env`
 
-## In Progress
+## Completion Status
 
-- production hardening and observability for voice incidents:
-  - CORS drift detection
-  - faster triage playbook for auth/env/provider failures
-- Android runtime/tooling enablement in QA environment (`java`, `adb`, `emulator`) to complete device validation
+- Phase 3 is complete for the current execution scope (`web + API + iOS`).
+- Voice production path is validated in production with authenticated paid-tier smoke (`/api/tts -> 200`).
+- Android manual voice QA is intentionally deferred for now.
 
 ## Explicitly Out of Scope (Current Execution)
 

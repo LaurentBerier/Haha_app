@@ -31,6 +31,7 @@ echo "Voice authenticated probe configured: $auth_hint"
 
 run_step "typecheck" npm run typecheck
 run_step "lint" npm run lint
+run_step "profile prompt verification" npm run verify:profile-prompt
 run_step "unit tests" npm run test:unit
 run_step "smoke auth" npm run smoke:auth
 run_step "smoke voice" npm run smoke:voice
