@@ -62,10 +62,9 @@ export function ModeCard({ mode, onPress }: ModeCardProps) {
       accessibilityRole="button"
       accessibilityLabel={mode.name}
       onPress={onPress}
-      style={({ pressed, hovered }) => [
+      style={({ pressed }) => [
         styles.card,
         isHistoryMode && styles.cardHistory,
-        hovered ? styles.hovered : null,
         pressed && styles.pressed
       ]}
     >
