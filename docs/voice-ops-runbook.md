@@ -64,6 +64,11 @@ Quick full QA (Phase 2/3):
 npm run qa:phase23
 ```
 
+CI guardrail:
+
+- GitHub workflow [`.github/workflows/phase23-ci.yml`](/Users/laurentbernier/Documents/HAHA_app/.github/workflows/phase23-ci.yml) runs on `main` and PRs.
+- Actions versions are pinned to Node24-compatible releases (`actions/checkout@v6`, `actions/setup-node@v6`).
+
 ### Anonymous and CORS contract
 
 ```bash

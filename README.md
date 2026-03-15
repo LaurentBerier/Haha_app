@@ -466,16 +466,7 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/phase3-status.md`
 - `docs/phase3-qa-matrix.md`
 - `docs/qa-run-2026-03-14.md`
+- `docs/code-review-2026-03-15.md`
 - `docs/voice-ops-runbook.md`
 - `docs/troubleshooting.md`
 - `ha-ha-ai-build-prompt.improved.md`
-
-## CI
-
-- GitHub Actions CI template is prepared and ready to enable.
-- Planned checks on `main` and pull requests:
-  - `npm run typecheck`
-  - `npm run lint`
-  - `npm run verify:profile-prompt`
-  - `npm run test:unit`
-- Note: enabling the workflow file in the repo requires a GitHub token with `workflow` scope.

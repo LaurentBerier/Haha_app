@@ -76,6 +76,7 @@ Phase 3 focuses on two tracks:
 - Phase 3 is complete for the current execution scope (`web + API + iOS`).
 - Voice production path is validated in production with authenticated paid-tier smoke (`/api/tts -> 200`).
 - Android manual voice QA is intentionally deferred for now.
+- Full code review snapshot published in [`docs/code-review-2026-03-15.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-15.md).
 
 ## Explicitly Out of Scope (Current Execution)
 

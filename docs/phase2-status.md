@@ -149,6 +149,7 @@ Core targets:
 - Phase 2 is complete for the current execution scope (`web + API + iOS`).
 - Android validation is intentionally deferred for now (explicit decision).
 - PayPal/Apple checkout end-to-end remains out of scope for this execution window.
+- Full code review snapshot published in [`docs/code-review-2026-03-15.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-15.md).
 
 ## Planned Next
 
