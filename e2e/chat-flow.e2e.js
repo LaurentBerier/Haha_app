@@ -1,6 +1,10 @@
 describe('Ha-Ha.ai iOS flow', () => {
   const ARTIST_ID = 'cathy-gauthier';
   const CATEGORY_ID = 'delire';
+  const HOME_SCREEN_TIMEOUT = 20000;
+  const BEFORE_EACH_ATTEMPTS = 2;
+  const BEFORE_EACH_ATTEMPT_TIMEOUT = 70000;
+  const BEFORE_EACH_RETRY_DELAY = 1500;
   const CATEGORY_SCREEN_TIMEOUT = 10000;
   const CATEGORY_TAP_FALLBACK_TIMEOUT = 3000;
   const CHAT_SCREEN_TIMEOUT = 10000;
@@ -30,6 +34,34 @@ describe('Ha-Ha.ai iOS flow', () => {
     await device.disableSynchronization();
   };
 
+  const sleep = (ms) =>
+    new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
+
+  const withTimeout = async (operation, timeoutMs, timeoutMessage) => {
+    let timeoutHandle;
+    try {
+      return await Promise.race([
+        operation(),
+        new Promise((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            reject(new Error(timeoutMessage));
+          }, timeoutMs);
+        })
+      ]);
+    } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    }
+  };
+
+  const launchFreshAppToHome = async () => {
+    await launchFreshApp();
+    await waitFor(element(by.id('home-screen'))).toBeVisible().withTimeout(HOME_SCREEN_TIMEOUT);
+  };
+
   const openCategoryFromModeSelect = async () => {
     await waitFor(element(by.id('mode-select-screen'))).toBeVisible().withTimeout(10000);
 
@@ -49,7 +81,7 @@ describe('Ha-Ha.ai iOS flow', () => {
   };
 
   const openRoastChatFromHome = async () => {
-    await waitFor(element(by.id('home-screen'))).toBeVisible().withTimeout(20000);
+    await waitFor(element(by.id('home-screen'))).toBeVisible().withTimeout(HOME_SCREEN_TIMEOUT);
     await element(by.id('artist-start-cathy-gauthier')).tap();
     await openCategoryFromModeSelect();
     await waitFor(element(by.id('mode-card-grill'))).toBeVisible().withTimeout(CATEGORY_SCREEN_TIMEOUT);
@@ -76,9 +108,29 @@ describe('Ha-Ha.ai iOS flow', () => {
   };
 
   beforeEach(async () => {
-    await launchFreshApp();
+    let lastError = null;
+    for (let attempt = 1; attempt <= BEFORE_EACH_ATTEMPTS; attempt += 1) {
+      try {
+        await withTimeout(
+          launchFreshAppToHome,
+          BEFORE_EACH_ATTEMPT_TIMEOUT,
+          `beforeEach launch timed out after ${BEFORE_EACH_ATTEMPT_TIMEOUT}ms`
+        );
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < BEFORE_EACH_ATTEMPTS) {
+          try {
+            await device.terminateApp();
+          } catch {
+            // No-op; app may not be running yet.
+          }
+          await sleep(BEFORE_EACH_RETRY_DELAY);
+        }
+      }
+    }
 
-    await waitFor(element(by.id('home-screen'))).toBeVisible().withTimeout(20000);
+    throw lastError ?? new Error('beforeEach launch failed');
   });
 
   it('streams an artist response end-to-end', async () => {
