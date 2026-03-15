@@ -63,9 +63,9 @@ Phase 3 focuses on two tracks:
   - `npm run e2e:ios` PASS (`3/3`)
 - QA execution report published:
   - `docs/qa-run-2026-03-14.md`
-- Phase 2/3 CI workflow added:
-  - `.github/workflows/phase23-ci.yml`
-  - automates `typecheck`, `lint`, `verify:profile-prompt`, `test:unit`
+- Phase 2/3 CI workflow plan prepared:
+  - workflow file is ready locally but pending push with GitHub `workflow` scope
+  - target automation: `typecheck`, `lint`, `verify:profile-prompt`, `test:unit`
 - mobile preflight check script added:
   - `scripts/check-mobile-env.sh`
   - npm alias: `npm run check:mobile-env`

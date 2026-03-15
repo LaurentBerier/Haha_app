@@ -135,9 +135,9 @@ Core targets:
   - API tests for `claude`, `delete-account`, `admin-account-type`, `payment-webhook`, and shared utils
   - API tests added for `usage-summary`, `subscription-summary`, and `subscription-cancel`
   - store slice tests for `subscriptionSlice` and `usageSlice`
-- CI automation for core Phase 2 checks:
-  - GitHub Actions workflow `.github/workflows/phase23-ci.yml`
-  - runs `typecheck`, `lint`, `verify:profile-prompt`, and `test:unit` on `main` + PRs
+- CI automation plan prepared for core Phase 2 checks:
+  - workflow template ready (pending push with a GitHub token that has `workflow` scope)
+  - target checks: `typecheck`, `lint`, `verify:profile-prompt`, and `test:unit` on `main` + PRs
 - E2E baseline stabilized on iOS:
   - `npm run e2e:build:ios`
   - `npm run e2e:ios`

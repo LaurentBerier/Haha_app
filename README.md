@@ -465,9 +465,10 @@ Use this checklist before shipping subscription changes (test or live):
 
 ## CI
 
-- GitHub Actions workflow: `.github/workflows/phase23-ci.yml`
-- Runs on `main` and pull requests:
+- GitHub Actions CI template is prepared and ready to enable.
+- Planned checks on `main` and pull requests:
   - `npm run typecheck`
   - `npm run lint`
   - `npm run verify:profile-prompt`
   - `npm run test:unit`
+- Note: enabling the workflow file in the repo requires a GitHub token with `workflow` scope.
