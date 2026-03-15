@@ -18,6 +18,8 @@ export const fr = {
   modeProfileEditDescription: 'Ajuste les infos utilisées pour personnaliser la conversation.',
   modeSelectCategoryEmptyTitle: 'Aucun mode actif dans cette catégorie',
   modeSelectCategoryEmptySubtitle: 'Essaie une autre catégorie pour continuer.',
+  modeSelectGreetingSpeaking: 'Cathy parle...',
+  modeSelectGreetingTapToPlay: "Touchez l'écran pour lancer la voix",
   modeSelectEmptyHeadline: 'Aucun mode disponible',
   modeSelectEmptySubtext: "Cet artiste n'a pas encore de modes actifs. Reviens bientôt.",
   historyModeTitle: 'Historique',

@@ -449,6 +449,7 @@ export default function ModeSelectHomeScreen() {
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const greetingPlaybackCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingGestureRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const greetingSpeechHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioStateRef = useRef<{
     isPlaying: boolean;
     isLoading: boolean;
@@ -460,11 +461,18 @@ export default function ModeSelectHomeScreen() {
   });
   const [pendingGreetingAudioUri, setPendingGreetingAudioUri] = useState<string | null>(null);
   const [pendingGreetingSpeechText, setPendingGreetingSpeechText] = useState<string | null>(null);
+  const [isWebSpeechFallbackActive, setIsWebSpeechFallbackActive] = useState(false);
   const greetingBubbles = useMemo(
     () => splitGreetingIntoBubbles(typedGreeting),
     [typedGreeting]
   );
   const greetingOverlayMaxHeight = Math.max(190, Math.floor(viewportHeight * 0.48));
+  const isGreetingVoicePendingGesture = Boolean(pendingGreetingAudioUri || pendingGreetingSpeechText);
+  const isGreetingVoiceActive =
+    greeting !== null && (audioPlayer.isLoading || audioPlayer.isPlaying || isGreetingVoicePendingGesture || isWebSpeechFallbackActive);
+  const greetingVoiceLabel = isGreetingVoicePendingGesture
+    ? t('modeSelectGreetingTapToPlay')
+    : t('modeSelectGreetingSpeaking');
 
   const clearTypingInterval = useCallback(() => {
     if (typingIntervalRef.current) {
@@ -486,6 +494,23 @@ export default function ModeSelectHomeScreen() {
       greetingGestureRetryTimeoutRef.current = null;
     }
   }, []);
+
+  const clearGreetingSpeechHint = useCallback(() => {
+    if (greetingSpeechHintTimeoutRef.current) {
+      clearTimeout(greetingSpeechHintTimeoutRef.current);
+      greetingSpeechHintTimeoutRef.current = null;
+    }
+    setIsWebSpeechFallbackActive(false);
+  }, []);
+
+  const pulseGreetingSpeechHint = useCallback((durationMs: number) => {
+    clearGreetingSpeechHint();
+    setIsWebSpeechFallbackActive(true);
+    greetingSpeechHintTimeoutRef.current = setTimeout(() => {
+      setIsWebSpeechFallbackActive(false);
+      greetingSpeechHintTimeoutRef.current = null;
+    }, Math.max(800, durationMs));
+  }, [clearGreetingSpeechHint]);
 
   const startTypingGreeting = useCallback(
     (text: string, targetDurationMs: number) => {
@@ -540,6 +565,11 @@ export default function ModeSelectHomeScreen() {
       return;
     }
 
+    clearTypingInterval();
+    clearGreetingPlaybackCheck();
+    clearGreetingGestureRetry();
+    clearGreetingSpeechHint();
+
     let isCancelled = false;
     const runGreeting = async () => {
       const includeVoiceHint = useStore.getState().greetedArtistIds.size === 0;
@@ -568,12 +598,15 @@ export default function ModeSelectHomeScreen() {
       markArtistGreeted(artist.id);
       setPendingGreetingAudioUri(null);
       setPendingGreetingSpeechText(null);
+      clearGreetingSpeechHint();
       startTypingGreeting(nextGreeting, estimateGreetingSpeechDurationMs(nextGreeting));
 
       if (!accessToken.trim()) {
         if (Platform.OS === 'web') {
           if (!speakGreetingWithWebFallback(nextGreeting, language)) {
             setPendingGreetingSpeechText(nextGreeting);
+          } else {
+            pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
           }
         }
         return;
@@ -598,6 +631,8 @@ export default function ModeSelectHomeScreen() {
             if (!speakGreetingWithWebFallback(nextGreeting, language)) {
               setPendingGreetingAudioUri(greetingAudioUri);
               setPendingGreetingSpeechText(nextGreeting);
+            } else {
+              pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
             }
           }, 900);
         }
@@ -606,6 +641,8 @@ export default function ModeSelectHomeScreen() {
           if (Platform.OS === 'web') {
             if (!speakGreetingWithWebFallback(nextGreeting, language)) {
               setPendingGreetingSpeechText(nextGreeting);
+            } else {
+              pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
             }
           }
         }
@@ -615,18 +652,17 @@ export default function ModeSelectHomeScreen() {
     void runGreeting();
     return () => {
       isCancelled = true;
-      clearTypingInterval();
-      clearGreetingPlaybackCheck();
-      clearGreetingGestureRetry();
     };
   }, [
     accessToken,
     artist,
     clearGreetingGestureRetry,
     clearGreetingPlaybackCheck,
+    clearGreetingSpeechHint,
     clearTypingInterval,
     language,
     markArtistGreeted,
+    pulseGreetingSpeechHint,
     playGreetingAudio,
     startTypingGreeting
   ]);
@@ -657,7 +693,9 @@ export default function ModeSelectHomeScreen() {
           if (audioState.isPlaying || audioState.isLoading) {
             return;
           }
-          void speakGreetingWithWebFallback(speechText, language);
+          if (speakGreetingWithWebFallback(speechText, language)) {
+            pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(speechText));
+          }
         }, 420);
       }
     };
@@ -667,15 +705,16 @@ export default function ModeSelectHomeScreen() {
       document.removeEventListener('pointerdown', handleFirstGesture);
       clearGreetingGestureRetry();
     };
-  }, [clearGreetingGestureRetry, language, pendingGreetingAudioUri, pendingGreetingSpeechText, playGreetingAudio]);
+  }, [clearGreetingGestureRetry, language, pendingGreetingAudioUri, pendingGreetingSpeechText, playGreetingAudio, pulseGreetingSpeechHint]);
 
   useEffect(() => {
     return () => {
       clearTypingInterval();
       clearGreetingPlaybackCheck();
       clearGreetingGestureRetry();
+      clearGreetingSpeechHint();
     };
-  }, [clearGreetingGestureRetry, clearGreetingPlaybackCheck, clearTypingInterval]);
+  }, [clearGreetingGestureRetry, clearGreetingPlaybackCheck, clearGreetingSpeechHint, clearTypingInterval]);
 
   if (!artist) {
     return (
@@ -705,6 +744,12 @@ export default function ModeSelectHomeScreen() {
       {greeting ? (
         <View pointerEvents="none" style={[styles.greetingOverlay, { maxHeight: greetingOverlayMaxHeight }]}>
           <View style={styles.greetingBubbleStack}>
+            {isGreetingVoiceActive ? (
+              <View style={[styles.greetingVoiceIndicator, isGreetingVoicePendingGesture ? styles.greetingVoiceIndicatorBlocked : null]}>
+                <View style={[styles.greetingVoiceDot, isGreetingVoicePendingGesture ? styles.greetingVoiceDotBlocked : null]} />
+                <Text style={styles.greetingVoiceLabel}>{greetingVoiceLabel}</Text>
+              </View>
+            ) : null}
             {(greetingBubbles.length > 0 ? greetingBubbles : ['...']).map((bubble, index) => (
               <View key={`${index}-${bubble.slice(0, 16)}`} style={styles.greetingBubble}>
                 <Text style={styles.greetingBubbleText}>{bubble}</Text>
@@ -769,6 +814,34 @@ const styles = StyleSheet.create({
     gap: theme.spacing.xs,
     alignItems: 'flex-start',
     justifyContent: 'flex-end'
+  },
+  greetingVoiceIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.colors.neonBlueSoft,
+    backgroundColor: 'rgba(10, 14, 24, 0.82)',
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 5
+  },
+  greetingVoiceIndicatorBlocked: {
+    borderColor: theme.colors.accent
+  },
+  greetingVoiceDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.colors.neonBlue
+  },
+  greetingVoiceDotBlocked: {
+    backgroundColor: theme.colors.accent
+  },
+  greetingVoiceLabel: {
+    color: theme.colors.textPrimary,
+    fontSize: 11,
+    fontWeight: '700'
   },
   greetingBubble: {
     maxWidth: '100%',

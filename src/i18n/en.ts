@@ -18,6 +18,8 @@ export const en = {
   modeProfileEditDescription: 'Adjust the profile data used to personalize the conversation.',
   modeSelectCategoryEmptyTitle: 'No active mode in this category',
   modeSelectCategoryEmptySubtitle: 'Try another category to continue.',
+  modeSelectGreetingSpeaking: 'Cathy is speaking...',
+  modeSelectGreetingTapToPlay: 'Tap the screen to start voice',
   modeSelectEmptyHeadline: 'No mode available yet',
   modeSelectEmptySubtext: 'This artist has no active modes right now. Check back soon.',
   historyModeTitle: 'Chat History',
