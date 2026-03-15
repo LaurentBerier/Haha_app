@@ -480,7 +480,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.textPrimary
   },
   menuOverlay: {
-    position: Platform.OS === 'web' ? 'fixed' : 'absolute',
+    position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
     zIndex: 1
   },
   menuPanel: {
-    position: Platform.OS === 'web' ? 'fixed' : 'absolute',
+    position: 'absolute',
     top: Platform.OS === 'web' ? 76 : Platform.select({ ios: 96, default: 86 }),
     right: theme.spacing.md,
     minWidth: 230,

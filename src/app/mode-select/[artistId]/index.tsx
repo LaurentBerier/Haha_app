@@ -87,9 +87,8 @@ function CategoryMenuButton({ artistId, id, index }: CategoryMenuButtonProps) {
     >
       <Pressable
         testID={`mode-category-${id}`}
-        style={({ hovered, pressed }) => [
+        style={({ pressed }) => [
           styles.categoryPressable,
-          hovered ? styles.categoryPressableHover : null,
           pressed ? styles.categoryPressablePressed : null
         ]}
         onPress={() => router.push(`/mode-select/${artistId}/${id}`)}

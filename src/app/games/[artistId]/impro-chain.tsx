@@ -592,10 +592,9 @@ export default function ImproChainScreen() {
                         setSelectedTheme(themeOption);
                         setCustomTheme('');
                       }}
-                      style={({ hovered, pressed }) => [
+                      style={({ pressed }) => [
                         styles.themeChip,
                         active ? styles.themeChipActive : null,
-                        hovered ? styles.buttonHover : null,
                         pressed ? styles.buttonPressed : null
                       ]}
                       accessibilityRole="button"
@@ -625,9 +624,8 @@ export default function ImproChainScreen() {
                 setThemeSuggestionNonce((previous) => previous + 1);
               }}
               disabled={themesLoading}
-              style={({ hovered, pressed }) => [
+              style={({ pressed }) => [
                 styles.retryButton,
-                hovered ? styles.buttonHover : null,
                 pressed ? styles.buttonPressed : null,
                 themesLoading ? styles.disabledButton : null
               ]}
@@ -661,9 +659,8 @@ export default function ImproChainScreen() {
                 })();
               }}
               disabled={!resolvedTheme}
-              style={({ hovered, pressed }) => [
+              style={({ pressed }) => [
                 styles.startButton,
-                hovered ? styles.buttonHover : null,
                 pressed ? styles.buttonPressed : null,
                 !resolvedTheme ? styles.disabledButton : null
               ]}
@@ -715,9 +712,8 @@ export default function ImproChainScreen() {
                 <Pressable
                   onPress={() => void handleSubmit()}
                   disabled={!draft.trim() || isStreaming}
-                  style={({ hovered, pressed }) => [
+                  style={({ pressed }) => [
                     styles.sendButton,
-                    hovered ? styles.buttonHover : null,
                     pressed ? styles.buttonPressed : null,
                     (!draft.trim() || isStreaming) ? styles.disabledButton : null
                   ]}

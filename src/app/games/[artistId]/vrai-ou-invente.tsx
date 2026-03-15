@@ -94,7 +94,7 @@ export default function VraiOuInventeScreen() {
         {showStart ? (
           <Pressable
             onPress={() => void startGame()}
-            style={({ hovered, pressed }) => [styles.startButton, hovered ? styles.buttonHover : null, pressed ? styles.buttonPressed : null]}
+            style={({ pressed }) => [styles.startButton, pressed ? styles.buttonPressed : null]}
             accessibilityRole="button"
             testID="vrai-start"
           >
@@ -139,7 +139,7 @@ export default function VraiOuInventeScreen() {
 
                 <Pressable
                   onPress={() => void nextQuestion()}
-                  style={({ hovered, pressed }) => [styles.nextButton, hovered ? styles.buttonHover : null, pressed ? styles.buttonPressed : null]}
+                  style={({ pressed }) => [styles.nextButton, pressed ? styles.buttonPressed : null]}
                   accessibilityRole="button"
                   testID="vrai-next"
                 >

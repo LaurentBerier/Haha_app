@@ -139,9 +139,8 @@ export default function ModeCategoryScreen() {
               <Text style={styles.profileActionDescription}>{t('modeProfileEditDescription')}</Text>
               <Pressable
                 onPress={() => router.push('/settings/edit-profile')}
-                style={({ hovered, pressed }) => [
+                style={({ pressed }) => [
                   styles.profileActionButton,
-                  hovered ? styles.profileActionButtonHover : null,
                   pressed ? styles.profileActionButtonPressed : null
                 ]}
                 accessibilityRole="button"
@@ -154,9 +153,8 @@ export default function ModeCategoryScreen() {
               <Text style={styles.profileActionDescription}>{t('historyModeDescription')}</Text>
               <Pressable
                 onPress={() => router.push(`/history/${artist.id}`)}
-                style={({ hovered, pressed }) => [
+                style={({ pressed }) => [
                   styles.profileActionButton,
-                  hovered ? styles.profileActionButtonHover : null,
                   pressed ? styles.profileActionButtonPressed : null
                 ]}
                 accessibilityRole="button"
