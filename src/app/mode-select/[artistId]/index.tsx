@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { AmbientGlow } from '../../../components/common/AmbientGlow';
 import { BackButton } from '../../../components/common/BackButton';
 import { MODE_IDS } from '../../../config/constants';
@@ -45,6 +45,70 @@ const DEFAULT_GREETING_TYPING_DURATION_MS = 4_200;
 interface ArtistModeSource {
   name?: string;
   supportedModeIds?: string[];
+}
+
+function splitGreetingIntoBubbles(text: string): string[] {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const chunks = normalized
+    .split(/(?<=[.!?])\s+/)
+    .map((chunk) => chunk.trim())
+    .filter(Boolean);
+
+  return chunks.length > 0 ? chunks : [normalized];
+}
+
+function speakGreetingWithWebFallback(text: string, language: string): boolean {
+  if (Platform.OS !== 'web') {
+    return false;
+  }
+
+  const normalized = text.trim();
+  if (!normalized) {
+    return false;
+  }
+
+  const speechScope = globalThis as {
+    speechSynthesis?: {
+      cancel: () => void;
+      speak: (utterance: unknown) => void;
+      getVoices?: () => Array<{ lang?: string; name?: string }>;
+    };
+    SpeechSynthesisUtterance?: new (text: string) => {
+      lang: string;
+      rate: number;
+      pitch: number;
+      voice?: unknown;
+    };
+  };
+
+  if (!speechScope.speechSynthesis || typeof speechScope.SpeechSynthesisUtterance !== 'function') {
+    return false;
+  }
+
+  try {
+    const synth = speechScope.speechSynthesis;
+    const utterance = new speechScope.SpeechSynthesisUtterance(normalized);
+    const targetLang = language.toLowerCase().startsWith('en') ? 'en' : 'fr';
+    utterance.lang = targetLang === 'en' ? 'en-CA' : 'fr-CA';
+    utterance.rate = 1;
+    utterance.pitch = 1;
+
+    const voices = synth.getVoices?.() ?? [];
+    const matchingVoice = voices.find((voice) => voice.lang?.toLowerCase().startsWith(targetLang));
+    if (matchingVoice) {
+      utterance.voice = matchingVoice;
+    }
+
+    synth.cancel();
+    synth.speak(utterance);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function buildFallbackGreetingText(
@@ -370,6 +434,7 @@ function CategoryMenuButton({ artistId, id, index }: CategoryMenuButtonProps) {
 export default function ModeSelectHomeScreen() {
   const params = useLocalSearchParams<{ artistId: string }>();
   const artistId = params.artistId ?? '';
+  const { height: viewportHeight } = useWindowDimensions();
   const headerHorizontalInset = useHeaderHorizontalInset();
   const [greeting, setGreeting] = useState<string | null>(null);
   const [typedGreeting, setTypedGreeting] = useState('');
@@ -384,6 +449,7 @@ export default function ModeSelectHomeScreen() {
   const playGreetingAudio = audioPlayer.play;
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const greetingPlaybackCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const greetingGestureRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioStateRef = useRef<{
     isPlaying: boolean;
     isLoading: boolean;
@@ -394,6 +460,12 @@ export default function ModeSelectHomeScreen() {
     currentUri: null
   });
   const [pendingGreetingAudioUri, setPendingGreetingAudioUri] = useState<string | null>(null);
+  const [pendingGreetingSpeechText, setPendingGreetingSpeechText] = useState<string | null>(null);
+  const greetingBubbles = useMemo(
+    () => splitGreetingIntoBubbles(typedGreeting),
+    [typedGreeting]
+  );
+  const greetingOverlayMaxHeight = Math.max(190, Math.floor(viewportHeight * 0.48));
 
   const clearTypingInterval = useCallback(() => {
     if (typingIntervalRef.current) {
@@ -406,6 +478,13 @@ export default function ModeSelectHomeScreen() {
     if (greetingPlaybackCheckTimeoutRef.current) {
       clearTimeout(greetingPlaybackCheckTimeoutRef.current);
       greetingPlaybackCheckTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearGreetingGestureRetry = useCallback(() => {
+    if (greetingGestureRetryTimeoutRef.current) {
+      clearTimeout(greetingGestureRetryTimeoutRef.current);
+      greetingGestureRetryTimeoutRef.current = null;
     }
   }, []);
 
@@ -483,9 +562,16 @@ export default function ModeSelectHomeScreen() {
       setGreeting(nextGreeting);
       setTypedGreeting('');
       markArtistGreeted(artist.id);
+      setPendingGreetingAudioUri(null);
+      setPendingGreetingSpeechText(null);
+      startTypingGreeting(nextGreeting, estimateGreetingSpeechDurationMs(nextGreeting));
 
       if (!accessToken.trim()) {
-        startTypingGreeting(nextGreeting, DEFAULT_GREETING_TYPING_DURATION_MS);
+        if (Platform.OS === 'web') {
+          if (!speakGreetingWithWebFallback(nextGreeting, language)) {
+            setPendingGreetingSpeechText(nextGreeting);
+          }
+        }
         return;
       }
 
@@ -497,7 +583,6 @@ export default function ModeSelectHomeScreen() {
           return;
         }
 
-        startTypingGreeting(nextGreeting, estimateGreetingSpeechDurationMs(nextGreeting));
         void playGreetingAudio(greetingAudioUri);
         if (Platform.OS === 'web') {
           clearGreetingPlaybackCheck();
@@ -506,12 +591,19 @@ export default function ModeSelectHomeScreen() {
             if (audioState.isPlaying || audioState.isLoading || audioState.currentUri === greetingAudioUri) {
               return;
             }
-            setPendingGreetingAudioUri(greetingAudioUri);
+            if (!speakGreetingWithWebFallback(nextGreeting, language)) {
+              setPendingGreetingAudioUri(greetingAudioUri);
+              setPendingGreetingSpeechText(nextGreeting);
+            }
           }, 900);
         }
       } catch {
         if (!isCancelled) {
-          startTypingGreeting(nextGreeting, DEFAULT_GREETING_TYPING_DURATION_MS);
+          if (Platform.OS === 'web') {
+            if (!speakGreetingWithWebFallback(nextGreeting, language)) {
+              setPendingGreetingSpeechText(nextGreeting);
+            }
+          }
         }
       }
     };
@@ -521,10 +613,12 @@ export default function ModeSelectHomeScreen() {
       isCancelled = true;
       clearTypingInterval();
       clearGreetingPlaybackCheck();
+      clearGreetingGestureRetry();
     };
   }, [
     accessToken,
     artist,
+    clearGreetingGestureRetry,
     clearGreetingPlaybackCheck,
     clearTypingInterval,
     greetedArtistIds,
@@ -535,31 +629,50 @@ export default function ModeSelectHomeScreen() {
   ]);
 
   useEffect(() => {
-    if (Platform.OS !== 'web' || !pendingGreetingAudioUri || typeof document === 'undefined') {
+    if (
+      Platform.OS !== 'web' ||
+      (!pendingGreetingAudioUri && !pendingGreetingSpeechText) ||
+      typeof document === 'undefined'
+    ) {
       return;
     }
 
     const handleFirstGesture = () => {
       const uri = pendingGreetingAudioUri;
-      if (!uri) {
-        return;
-      }
+      const speechText = pendingGreetingSpeechText;
       setPendingGreetingAudioUri(null);
-      void playGreetingAudio(uri);
+      setPendingGreetingSpeechText(null);
+
+      if (uri) {
+        void playGreetingAudio(uri);
+      }
+
+      if (speechText) {
+        clearGreetingGestureRetry();
+        greetingGestureRetryTimeoutRef.current = setTimeout(() => {
+          const audioState = audioStateRef.current;
+          if (audioState.isPlaying || audioState.isLoading) {
+            return;
+          }
+          void speakGreetingWithWebFallback(speechText, language);
+        }, 420);
+      }
     };
 
     document.addEventListener('pointerdown', handleFirstGesture, { once: true });
     return () => {
       document.removeEventListener('pointerdown', handleFirstGesture);
+      clearGreetingGestureRetry();
     };
-  }, [pendingGreetingAudioUri, playGreetingAudio]);
+  }, [clearGreetingGestureRetry, language, pendingGreetingAudioUri, pendingGreetingSpeechText, playGreetingAudio]);
 
   useEffect(() => {
     return () => {
       clearTypingInterval();
       clearGreetingPlaybackCheck();
+      clearGreetingGestureRetry();
     };
-  }, [clearGreetingPlaybackCheck, clearTypingInterval]);
+  }, [clearGreetingGestureRetry, clearGreetingPlaybackCheck, clearTypingInterval]);
 
   if (!artist) {
     return (
@@ -580,18 +693,23 @@ export default function ModeSelectHomeScreen() {
           <Text style={styles.subtitle}>{artist.name}</Text>
           <Text style={styles.helperText}>{t('modeSelectCategoryEmptySubtitle')}</Text>
         </View>
-        {greeting ? (
-          <View style={styles.greetingCard}>
-            <Text style={styles.greetingText}>{typedGreeting || '...'}</Text>
-          </View>
-        ) : null}
-
         <View style={styles.categoryGrid}>
           {MODE_CATEGORY_ORDER.map((categoryId, index) => (
             <CategoryMenuButton key={categoryId} artistId={artist.id} id={categoryId} index={index} />
           ))}
         </View>
       </ScrollView>
+      {greeting ? (
+        <View pointerEvents="none" style={[styles.greetingOverlay, { maxHeight: greetingOverlayMaxHeight }]}>
+          <View style={styles.greetingBubbleStack}>
+            {(greetingBubbles.length > 0 ? greetingBubbles : ['...']).map((bubble, index) => (
+              <View key={`${index}-${bubble.slice(0, 16)}`} style={styles.greetingBubble}>
+                <Text style={styles.greetingBubbleText}>{bubble}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -632,19 +750,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16
   },
-  greetingCard: {
-    marginBottom: theme.spacing.md,
+  greetingOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: theme.spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: theme.spacing.md,
+    overflow: 'hidden'
+  },
+  greetingBubbleStack: {
+    width: '100%',
+    maxWidth: 608,
+    gap: theme.spacing.xs,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end'
+  },
+  greetingBubble: {
+    maxWidth: '100%',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
+    borderColor: theme.colors.neonBlueSoft,
+    backgroundColor: 'rgba(11, 16, 29, 0.86)',
     paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm
+    paddingVertical: theme.spacing.xs
   },
-  greetingText: {
+  greetingBubbleText: {
     color: theme.colors.textPrimary,
-    fontSize: 14,
-    lineHeight: 20
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '600'
   },
   categoryGrid: {
     flexDirection: 'row',
