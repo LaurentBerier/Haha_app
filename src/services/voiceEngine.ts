@@ -160,13 +160,13 @@ export async function requestVoicePermission(): Promise<boolean> {
         };
       };
     };
-    const getUserMedia = nav.navigator?.mediaDevices?.getUserMedia;
-    if (!getUserMedia) {
+    const mediaDevices = nav.navigator?.mediaDevices;
+    if (!mediaDevices?.getUserMedia) {
       return true;
     }
 
     try {
-      const stream = await getUserMedia({ audio: true });
+      const stream = await mediaDevices.getUserMedia({ audio: true });
       stream.getTracks().forEach((track) => track.stop());
       return true;
     } catch (error) {
