@@ -442,7 +442,6 @@ export default function ModeSelectHomeScreen() {
   const artists = useStore((state) => state.artists);
   const language = useStore((state) => state.language);
   const accessToken = useStore((state) => state.session?.accessToken ?? '');
-  const greetedArtistIds = useStore((state) => state.greetedArtistIds);
   const markArtistGreeted = useStore((state) => state.markArtistGreeted);
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
   const audioPlayer = useAudioPlayer();
@@ -532,13 +531,18 @@ export default function ModeSelectHomeScreen() {
       return;
     }
 
-    if (!artist || greetedArtistIds.has(artist.id)) {
+    if (!artist) {
+      return;
+    }
+
+    const greetedArtistIds = useStore.getState().greetedArtistIds;
+    if (greetedArtistIds.has(artist.id)) {
       return;
     }
 
     let isCancelled = false;
     const runGreeting = async () => {
-      const includeVoiceHint = greetedArtistIds.size === 0;
+      const includeVoiceHint = useStore.getState().greetedArtistIds.size === 0;
       const availableModes = buildAvailableModesForGreeting(artist);
       const coords = await getOptionalCoords();
       if (isCancelled) {
@@ -621,7 +625,6 @@ export default function ModeSelectHomeScreen() {
     clearGreetingGestureRetry,
     clearGreetingPlaybackCheck,
     clearTypingInterval,
-    greetedArtistIds,
     language,
     markArtistGreeted,
     playGreetingAudio,
