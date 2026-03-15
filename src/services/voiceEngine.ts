@@ -149,7 +149,32 @@ export async function requestVoicePermission(): Promise<boolean> {
     if (!hasRecognition) {
       console.error('[voiceEngine] Web SpeechRecognition API unavailable in this browser.');
     }
-    return hasRecognition;
+    if (!hasRecognition) {
+      return false;
+    }
+
+    const nav = globalThis as {
+      navigator?: {
+        mediaDevices?: {
+          getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream>;
+        };
+      };
+    };
+    const getUserMedia = nav.navigator?.mediaDevices?.getUserMedia;
+    if (!getUserMedia) {
+      return true;
+    }
+
+    try {
+      const stream = await getUserMedia({ audio: true });
+      stream.getTracks().forEach((track) => track.stop());
+      return true;
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message.trim() ? error.message : 'Microphone permission denied or unavailable.';
+      console.error('[voiceEngine] Web microphone permission check failed', { message });
+      return false;
+    }
   }
 
   const module = getSpeechRecognitionModule();
