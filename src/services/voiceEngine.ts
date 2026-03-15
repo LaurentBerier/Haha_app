@@ -132,7 +132,11 @@ function extractWebTranscript(event: WebSpeechRecognitionEvent): string {
 
 export async function requestVoicePermission(): Promise<boolean> {
   if (Platform.OS === 'web') {
-    return Boolean(getWebSpeechRecognitionCtor());
+    const hasRecognition = Boolean(getWebSpeechRecognitionCtor());
+    if (!hasRecognition) {
+      console.error('[voiceEngine] Web SpeechRecognition API unavailable in this browser.');
+    }
+    return hasRecognition;
   }
 
   const module = getSpeechRecognitionModule();
@@ -182,7 +186,9 @@ export function startListening(
       if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture') {
         webShouldRestart = false;
       }
-      onError(new Error(event.message || event.error || 'Speech recognition failed'));
+      const message = event.message || event.error || 'Speech recognition failed';
+      console.error('[voiceEngine] Web Speech error', { code: event.error, message, locale });
+      onError(new Error(message));
     };
 
     recognition.onend = () => {
@@ -202,6 +208,7 @@ export function startListening(
     } catch (error) {
       const normalized =
         error instanceof Error ? error : new Error(typeof error === 'string' ? error : 'Speech recognition failed');
+      console.error('[voiceEngine] Web Speech start failed', { locale, error: normalized.message });
       onError(normalized);
       stopWebListening();
     }

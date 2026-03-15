@@ -125,8 +125,8 @@ export function useVoiceConversation({
     }, SILENCE_TIMEOUT_MS);
   }, [clearSilenceTimer, resetTranscript]);
 
-  const startListeningSession = useCallback(() => {
-    if (!enabledRef.current || disabledRef.current || !hasPermissionRef.current || listeningRef.current) {
+  const startListeningSession = useCallback((force = false) => {
+    if ((!enabledRef.current && !force) || disabledRef.current || !hasPermissionRef.current || listeningRef.current) {
       return;
     }
 
@@ -163,6 +163,9 @@ export function useVoiceConversation({
         setIsListening(false);
         clearSilenceTimer();
         const message = listenError instanceof Error && listenError.message.trim() ? listenError.message : t('voiceError');
+        if (typeof console !== 'undefined') {
+          console.error('[useVoiceConversation] Listening error', { message, language: languageRef.current });
+        }
         setError(message);
       }
     );
@@ -171,9 +174,11 @@ export function useVoiceConversation({
     setIsListening(true);
   }, [clearSilenceTimer, scheduleSilenceTimeout]);
 
-  const ensureListening = useCallback(async () => {
-    if (!enabledRef.current || disabledRef.current) {
-      stopListeningSession();
+  const ensureListening = useCallback(async (force = false) => {
+    if ((!enabledRef.current && !force) || disabledRef.current) {
+      if (!force) {
+        stopListeningSession();
+      }
       return;
     }
 
@@ -186,13 +191,17 @@ export function useVoiceConversation({
       hasPermissionRef.current = granted;
       if (!granted) {
         setError(t('voicePermissionDenied'));
-        stopListeningSession();
+        if (!force) {
+          stopListeningSession();
+        }
         return;
       }
     }
 
-    stopListeningSession();
-    startListeningSession();
+    if (!listeningRef.current) {
+      stopListeningSession();
+    }
+    startListeningSession(force);
   }, [startListeningSession, stopListeningSession]);
 
   useEffect(() => {
@@ -209,18 +218,18 @@ export function useVoiceConversation({
 
   const interruptAndListen = useCallback(() => {
     onStopAudioRef.current();
-    if (!enabledRef.current || disabledRef.current) {
+    if (disabledRef.current) {
       return;
     }
 
     if (hasPermissionRef.current) {
       if (!listeningRef.current) {
-        startListeningSession();
+        startListeningSession(true);
       }
       return;
     }
 
-    void ensureListening();
+    void ensureListening(true);
   }, [ensureListening, startListeningSession]);
 
   useEffect(() => {

@@ -279,10 +279,16 @@ export function ChatInput({ onSend, disabled = false, allowImage = true, convers
     void impactLight();
     if (!isConversationEnabled) {
       conversationMode.onToggle();
+      conversationMode.onInterrupt?.();
       return;
     }
 
     if (isConversationPlaying && conversationMode.onInterrupt) {
+      conversationMode.onInterrupt();
+      return;
+    }
+
+    if (!isConversationListening && conversationMode.onInterrupt) {
       conversationMode.onInterrupt();
       return;
     }
