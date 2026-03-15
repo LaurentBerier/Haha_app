@@ -1,7 +1,16 @@
 import { Stack, router, usePathname, useSegments } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { Image, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import {
+  Image,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type ImageStyle,
+  useWindowDimensions
+} from 'react-native';
 import { BrandMark } from '../components/common/BrandMark';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
@@ -27,12 +36,13 @@ export default function RootLayout() {
   const clearSession = useStore((state) => state.clearSession);
   const { authStatus, isAuthenticated, userProfile } = useAuth();
   const segments = useSegments();
+  const segmentList = segments as readonly string[];
   const pathname = usePathname();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
-  const inAuthGroup = segments[0] === '(auth)';
-  const isAuthCallbackRoute = segments[0] === 'auth' && segments[1] === 'callback';
-  const isOnboardingRoute = segments[1] === 'onboarding';
+  const inAuthGroup = segmentList[0] === '(auth)';
+  const isAuthCallbackRoute = segmentList[0] === 'auth' && segmentList[1] === 'callback';
+  const isOnboardingRoute = segmentList[1] === 'onboarding';
   const needsOnboarding =
     isAuthenticated && userProfile ? !userProfile.onboardingCompleted && !userProfile.onboardingSkipped : false;
   const showAccountMenu = isAuthenticated && !inAuthGroup;
@@ -45,7 +55,7 @@ export default function RootLayout() {
   ];
   const authMenuLabel = isAuthenticated
     ? t('settingsLogout')
-    : segments[1] === 'login'
+    : segmentList[1] === 'login'
       ? t('menuAuthSignUp')
       : t('menuAuthSignIn');
   const webBackgroundUri = (cleanBackground as { uri?: string }).uri;
@@ -104,7 +114,7 @@ export default function RootLayout() {
       return;
     }
 
-    if (segments[1] === 'login') {
+    if (segmentList[1] === 'login') {
       router.replace('/(auth)/signup');
       return;
     }
@@ -205,18 +215,18 @@ export default function RootLayout() {
       <ToastProvider>
         <View style={styles.appShell}>
           {Platform.OS !== 'web' ? (
-            <Image
-              source={backgroundSource}
-              style={[
-                styles.backgroundImageNative,
-                {
-                  width: nativeBackgroundWidth,
-                  height: nativeBackgroundHeight,
-                  left: nativeBackgroundLeft
-                }
-              ]}
-              resizeMode="cover"
-            />
+              <Image
+                source={backgroundSource}
+                style={[
+                  styles.backgroundImageNative as ImageStyle,
+                  {
+                    width: nativeBackgroundWidth,
+                    height: nativeBackgroundHeight,
+                    left: nativeBackgroundLeft
+                  } as ImageStyle
+                ]}
+                resizeMode="cover"
+              />
           ) : null}
           <View style={styles.backgroundOverlay} pointerEvents="none" />
           {!hasHydrated || authStatus === 'loading' ? (
@@ -235,19 +245,24 @@ export default function RootLayout() {
                   headerTintColor: theme.colors.textPrimary,
                   contentStyle: { backgroundColor: theme.colors.background },
                   headerTitleAlign: 'center',
-                  headerTitleStyle: styles.headerTitle,
+                  headerTitleStyle: {
+                    color: theme.colors.textPrimary as string,
+                    fontSize: 15,
+                    fontWeight: '700'
+                  },
                   headerTitle: showAccountMenu
-                    ? () => <Image source={neonTitleMark} style={styles.headerTitleLogo} resizeMode="contain" />
+                    ? () => (
+                        <Image source={neonTitleMark} style={styles.headerTitleLogo as ImageStyle} resizeMode="contain" />
+                      )
                     : undefined,
                   headerShadowVisible: false,
                   headerLeft: () =>
                     showAccountMenu ? (
                       <Pressable
                         onPress={navigateHome}
-                        style={({ hovered, pressed }) => [
+                        style={({ pressed }) => [
                           styles.headerBrandButton,
                           { marginLeft: headerHorizontalInset },
-                          hovered ? styles.headerHovered : null,
                           pressed ? styles.headerPressed : null
                         ]}
                         accessibilityRole="button"
@@ -260,10 +275,9 @@ export default function RootLayout() {
                     showAccountMenu ? (
                       <Pressable
                         onPress={toggleAccountMenu}
-                        style={({ hovered, pressed }) => [
+                        style={({ pressed }) => [
                           styles.headerMenuButton,
                           { marginRight: headerHorizontalInset },
-                          hovered ? styles.headerHovered : null,
                           pressed ? styles.headerPressed : null
                         ]}
                         accessibilityRole="button"
@@ -349,9 +363,8 @@ export default function RootLayout() {
                       <Pressable
                         key={item.route}
                         onPress={() => navigateFromAccountMenu(item.route)}
-                        style={({ hovered, pressed }) => [
+                        style={({ pressed }) => [
                           styles.menuItem,
-                          hovered ? styles.menuItemHovered : null,
                           pressed ? styles.menuItemPressed : null
                         ]}
                         accessibilityRole="button"
@@ -363,9 +376,8 @@ export default function RootLayout() {
                     <View style={styles.menuDivider} />
                     <Pressable
                       onPress={() => void handleAuthMenuAction()}
-                      style={({ hovered, pressed }) => [
+                      style={({ pressed }) => [
                         styles.menuItem,
-                        hovered ? styles.menuItemHovered : null,
                         pressed ? styles.menuItemPressed : null,
                         isAuthenticated ? styles.menuItemDestructive : null
                       ]}
