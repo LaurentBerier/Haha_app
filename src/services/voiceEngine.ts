@@ -131,6 +131,10 @@ function extractWebTranscript(event: WebSpeechRecognitionEvent): string {
 }
 
 export async function requestVoicePermission(): Promise<boolean> {
+  if (Platform.OS === 'web') {
+    return Boolean(getWebSpeechRecognitionCtor());
+  }
+
   const module = getSpeechRecognitionModule();
   if (module) {
     try {
@@ -141,10 +145,6 @@ export async function requestVoicePermission(): Promise<boolean> {
     }
   }
 
-  if (Platform.OS === 'web') {
-    return Boolean(getWebSpeechRecognitionCtor());
-  }
-
   return false;
 }
 
@@ -153,6 +153,61 @@ export function startListening(
   onResult: (text: string) => void,
   onError: (error: Error) => void
 ): void {
+  if (Platform.OS === 'web') {
+    const WebRecognitionCtor = getWebSpeechRecognitionCtor();
+    if (!WebRecognitionCtor) {
+      onError(new Error('Speech recognition is unavailable on this build.'));
+      return;
+    }
+
+    stopWebListening();
+    const recognition = new WebRecognitionCtor();
+    webRecognition = recognition;
+    webShouldRestart = true;
+
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognition.lang = locale;
+
+    recognition.onresult = (event) => {
+      const transcript = extractWebTranscript(event);
+      if (transcript) {
+        onResult(transcript);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      const code = (event.error ?? '').toLowerCase();
+      if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture') {
+        webShouldRestart = false;
+      }
+      onError(new Error(event.message || event.error || 'Speech recognition failed'));
+    };
+
+    recognition.onend = () => {
+      if (!webShouldRestart || webRecognition !== recognition) {
+        return;
+      }
+
+      try {
+        recognition.start();
+      } catch {
+        webShouldRestart = false;
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch (error) {
+      const normalized =
+        error instanceof Error ? error : new Error(typeof error === 'string' ? error : 'Speech recognition failed');
+      onError(normalized);
+      stopWebListening();
+    }
+    return;
+  }
+
   const module = getSpeechRecognitionModule();
   if (module) {
     clearListeners();
@@ -186,61 +241,15 @@ export function startListening(
     return;
   }
 
-  const WebRecognitionCtor = getWebSpeechRecognitionCtor();
-  if (!WebRecognitionCtor) {
-    onError(new Error('Speech recognition is unavailable on this build.'));
-    return;
-  }
-
-  stopWebListening();
-  const recognition = new WebRecognitionCtor();
-  webRecognition = recognition;
-  webShouldRestart = true;
-
-  recognition.continuous = true;
-  recognition.interimResults = true;
-  recognition.maxAlternatives = 1;
-  recognition.lang = locale;
-
-  recognition.onresult = (event) => {
-    const transcript = extractWebTranscript(event);
-    if (transcript) {
-      onResult(transcript);
-    }
-  };
-
-  recognition.onerror = (event) => {
-    const code = (event.error ?? '').toLowerCase();
-    if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture') {
-      webShouldRestart = false;
-    }
-    onError(new Error(event.message || event.error || 'Speech recognition failed'));
-  };
-
-  recognition.onend = () => {
-    if (!webShouldRestart || webRecognition !== recognition) {
-      return;
-    }
-
-    try {
-      recognition.start();
-    } catch {
-      webShouldRestart = false;
-    }
-  };
-
-  try {
-    recognition.start();
-  } catch (error) {
-    const normalized =
-      error instanceof Error ? error : new Error(typeof error === 'string' ? error : 'Speech recognition failed');
-    onError(normalized);
-    stopWebListening();
-  }
+  onError(new Error('Speech recognition is unavailable on this build.'));
 }
 
 export function stopListening(): void {
   stopWebListening();
+  if (Platform.OS === 'web') {
+    return;
+  }
+
   const module = getSpeechRecognitionModule();
   try {
     module?.stop();
