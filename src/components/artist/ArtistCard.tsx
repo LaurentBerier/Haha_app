@@ -26,9 +26,8 @@ export function ArtistCard({ artist, locked, onStart }: ArtistCardProps) {
 
   return (
     <Pressable
-      style={({ pressed, hovered }) => [
+      style={({ pressed }) => [
         styles.card,
-        hovered && !locked ? styles.hovered : null,
         pressed && !locked && styles.pressed,
         locked && styles.locked
       ]}

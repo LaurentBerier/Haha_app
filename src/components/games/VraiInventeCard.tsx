@@ -26,11 +26,10 @@ export function VraiInventeCard({
     <Pressable
       onPress={() => onPress(index)}
       disabled={disabled}
-      style={({ hovered, pressed }) => [
+      style={({ pressed }) => [
         styles.card,
         isSelected ? styles.selectedCard : null,
         revealStyle,
-        hovered && !disabled ? styles.cardHover : null,
         pressed && !disabled ? styles.cardPressed : null,
         disabled && !isRevealed ? styles.cardDisabled : null
       ]}
@@ -91,4 +90,3 @@ const styles = StyleSheet.create({
     flex: 1
   }
 });
-

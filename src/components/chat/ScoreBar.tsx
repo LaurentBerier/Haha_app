@@ -11,7 +11,7 @@ export function ScoreBar() {
   return (
     <Pressable
       onPress={() => router.push('/stats')}
-      style={({ pressed, hovered }) => [styles.container, hovered ? styles.hovered : null, pressed ? styles.pressed : null]}
+      style={({ pressed }) => [styles.container, pressed ? styles.pressed : null]}
       accessibilityRole="button"
       testID="scorebar-open-stats"
     >

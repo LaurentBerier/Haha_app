@@ -13,7 +13,7 @@ export function GameCard({ emoji, title, description, onPress, testID }: GameCar
   return (
     <Pressable
       onPress={onPress}
-      style={({ hovered, pressed }) => [styles.card, hovered ? styles.cardHover : null, pressed ? styles.cardPressed : null]}
+      style={({ pressed }) => [styles.card, pressed ? styles.cardPressed : null]}
       accessibilityRole="button"
       testID={testID}
     >
@@ -72,4 +72,3 @@ const styles = StyleSheet.create({
     fontSize: 24
   }
 });
-

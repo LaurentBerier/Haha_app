@@ -23,9 +23,8 @@ export function SettingsRow({
       testID={testID}
       onPress={onPress}
       disabled={!onPress}
-      style={({ pressed, hovered }) => [
+      style={({ pressed }) => [
         styles.row,
-        hovered && onPress ? styles.hovered : null,
         onPress && pressed ? styles.pressed : null,
         !onPress ? styles.disabled : null
       ]}

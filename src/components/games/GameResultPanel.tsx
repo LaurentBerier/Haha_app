@@ -31,14 +31,14 @@ export function GameResultPanel({
       <View style={styles.actions}>
         <Pressable
           onPress={onReplay}
-          style={({ hovered, pressed }) => [styles.replayButton, hovered ? styles.buttonHover : null, pressed ? styles.buttonPressed : null]}
+          style={({ pressed }) => [styles.replayButton, pressed ? styles.buttonPressed : null]}
           accessibilityRole="button"
         >
           <Text style={styles.replayLabel}>{replayLabel}</Text>
         </Pressable>
         <Pressable
           onPress={onExit}
-          style={({ hovered, pressed }) => [styles.exitButton, hovered ? styles.buttonHover : null, pressed ? styles.buttonPressed : null]}
+          style={({ pressed }) => [styles.exitButton, pressed ? styles.buttonPressed : null]}
           accessibilityRole="button"
         >
           <Text style={styles.exitLabel}>{exitLabel}</Text>
@@ -115,4 +115,3 @@ const styles = StyleSheet.create({
     opacity: 0.95
   }
 });
-

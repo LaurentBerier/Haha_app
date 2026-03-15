@@ -17,9 +17,8 @@ export function Button({ label, onPress, disabled, testID }: ButtonProps) {
       android_ripple={{ color: 'rgba(255,255,255,0.12)', borderless: false }}
       onPress={onPress}
       disabled={disabled}
-      style={({ pressed, hovered }) => [
+      style={({ pressed }) => [
         styles.button,
-        hovered && !disabled ? styles.hovered : null,
         pressed && styles.pressed,
         disabled && styles.disabled
       ]}

@@ -25,9 +25,8 @@ export function BackButton({ testID = 'universal-back', onPress }: BackButtonPro
   return (
     <Pressable
       testID={testID}
-      style={({ hovered, pressed }) => [
+      style={({ pressed }) => [
         styles.backButton,
-        hovered ? styles.backButtonHover : null,
         pressed ? styles.backButtonPressed : null
       ]}
       onPress={handleBack}

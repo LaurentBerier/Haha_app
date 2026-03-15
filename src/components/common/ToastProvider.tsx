@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../theme';
 
 type ToastType = 'success' | 'error' | 'info';
@@ -136,7 +136,7 @@ export function useToast(): ToastContextValue {
 
 const styles = StyleSheet.create({
   overlay: {
-    position: Platform.OS === 'web' ? 'fixed' : 'absolute',
+    position: 'absolute',
     left: 0,
     right: 0,
     bottom: 28,
