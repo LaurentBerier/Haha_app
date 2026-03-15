@@ -46,6 +46,10 @@ function resolveArtistIdFromPath(pathname: string): string | null {
   }
 }
 
+function isModeSelectRoute(pathname: string): boolean {
+  return /^\/mode-select\/[^/]+(?:\/[^/]+)?\/?$/.test(pathname) || /^\/mode_select\/[^/]+(?:\/[^/]+)?\/?$/.test(pathname);
+}
+
 export default function RootLayout() {
   useStorePersistence();
   const hasHydrated = useStore((state) => state.hasHydrated);
@@ -57,6 +61,7 @@ export default function RootLayout() {
   const setActiveConversation = useStore((state) => state.setActiveConversation);
   const queueChatSendPayload = useStore((state) => state.queueChatSendPayload);
   const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
+  const modeSelectGreetingAudioActive = useStore((state) => state.modeSelectGreetingAudioActive);
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
   const clearSession = useStore((state) => state.clearSession);
   const { authStatus, isAuthenticated, userProfile } = useAuth();
@@ -172,21 +177,39 @@ export default function RootLayout() {
         return;
       }
 
+      const isModeSelectContext = isModeSelectRoute(pathname);
       const artistConversations = conversations[targetArtistId] ?? [];
-      let conversationId =
-        activeConversationId && artistConversations.some((conversation) => conversation.id === activeConversationId)
-          ? activeConversationId
-          : null;
+      let conversationId: string | null = null;
 
-      if (!conversationId && artistConversations.length > 0) {
-        const [latestConversation] = artistConversations
-          .slice()
-          .sort((left, right) => {
-            const rightTime = Date.parse(right.updatedAt);
-            const leftTime = Date.parse(left.updatedAt);
-            return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
-          });
-        conversationId = latestConversation?.id ?? null;
+      if (isModeSelectContext) {
+        const activeCandidateId =
+          activeConversationId && artistConversations.some((conversation) => conversation.id === activeConversationId)
+            ? activeConversationId
+            : null;
+
+        if (activeCandidateId) {
+          const page = useStore.getState().messagesByConversation[activeCandidateId];
+          const hasUserTurns = (page?.messages ?? []).some((message) => message.role === 'user');
+          if (!hasUserTurns) {
+            conversationId = activeCandidateId;
+          }
+        }
+      } else {
+        conversationId =
+          activeConversationId && artistConversations.some((conversation) => conversation.id === activeConversationId)
+            ? activeConversationId
+            : null;
+
+        if (!conversationId && artistConversations.length > 0) {
+          const [latestConversation] = artistConversations
+            .slice()
+            .sort((left, right) => {
+              const rightTime = Date.parse(right.updatedAt);
+              const leftTime = Date.parse(left.updatedAt);
+              return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+            });
+          conversationId = latestConversation?.id ?? null;
+        }
       }
 
       if (!conversationId) {
@@ -204,7 +227,6 @@ export default function RootLayout() {
         pathname: '/chat/[conversationId]',
         params: {
           conversationId,
-          queuedText: normalizedText,
           queuedNonce
         }
       });
@@ -214,6 +236,7 @@ export default function RootLayout() {
       conversations,
       createConversation,
       language,
+      pathname,
       queueChatSendPayload,
       setActiveConversation,
       targetArtistId
@@ -226,9 +249,13 @@ export default function RootLayout() {
     error: globalConversationError,
     interruptAndListen: interruptGlobalConversation
   } = useVoiceConversation({
-    enabled: showGlobalChatInput && conversationModeEnabled && !hasTypedGlobalDraft && !globalInputDisabled,
+    enabled:
+      showGlobalChatInput &&
+      conversationModeEnabled &&
+      !hasTypedGlobalDraft &&
+      !globalInputDisabled,
     disabled: globalInputDisabled,
-    isPlaying: false,
+    isPlaying: modeSelectGreetingAudioActive,
     onSend: (text) => {
       sendGlobalMessage({ text });
     },
@@ -280,39 +307,6 @@ export default function RootLayout() {
       setHasTypedGlobalDraft(false);
     }
   }, [showGlobalChatInput]);
-
-  useEffect(() => {
-    if (
-      Platform.OS !== 'web' ||
-      typeof document === 'undefined' ||
-      !showGlobalChatInput ||
-      !conversationModeEnabled ||
-      hasTypedGlobalDraft ||
-      globalInputDisabled ||
-      isGlobalConversationListening
-    ) {
-      return;
-    }
-
-    const activateFromGesture = () => {
-      if (__DEV__) {
-        console.warn('[RootLayout] Activating web STT from first user gesture');
-      }
-      interruptGlobalConversation();
-    };
-
-    document.addEventListener('pointerdown', activateFromGesture, { once: true, capture: true });
-    return () => {
-      document.removeEventListener('pointerdown', activateFromGesture, true);
-    };
-  }, [
-    conversationModeEnabled,
-    globalInputDisabled,
-    hasTypedGlobalDraft,
-    interruptGlobalConversation,
-    isGlobalConversationListening,
-    showGlobalChatInput
-  ]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || !webBackgroundUri || typeof document === 'undefined') {

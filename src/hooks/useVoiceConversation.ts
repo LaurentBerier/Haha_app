@@ -1,9 +1,10 @@
+import { Platform } from 'react-native';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { t } from '../i18n';
 import { requestVoicePermission, startListening, stopListening } from '../services/voiceEngine';
 
-const SILENCE_TIMEOUT_MS = 1500;
-const MIN_BARGE_IN_WORDS = 2;
+const SILENCE_TIMEOUT_MS = 3200;
+const WEB_NOISE_ERRORS = new Set(['no-speech', 'aborted']);
 
 export interface UseVoiceConversationProps {
   enabled: boolean;
@@ -12,6 +13,7 @@ export interface UseVoiceConversationProps {
   onSend: (text: string) => void;
   onStopAudio: () => void;
   language: string;
+  autoStartOnWeb?: boolean;
 }
 
 export interface UseVoiceConversationReturn {
@@ -21,20 +23,14 @@ export interface UseVoiceConversationReturn {
   interruptAndListen: () => void;
 }
 
-function countWords(input: string): number {
-  return input
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean).length;
-}
-
 export function useVoiceConversation({
   enabled,
   disabled,
   isPlaying,
   onSend,
   onStopAudio,
-  language
+  language,
+  autoStartOnWeb = true
 }: UseVoiceConversationProps): UseVoiceConversationReturn {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -52,6 +48,8 @@ export function useVoiceConversation({
   const onSendRef = useRef(onSend);
   const onStopAudioRef = useRef(onStopAudio);
   const languageRef = useRef(language);
+
+  const shouldAutoListen = Platform.OS !== 'web' || autoStartOnWeb;
 
   useEffect(() => {
     enabledRef.current = enabled;
@@ -125,105 +123,163 @@ export function useVoiceConversation({
     }, SILENCE_TIMEOUT_MS);
   }, [clearSilenceTimer, resetTranscript]);
 
-  const startListeningSession = useCallback((force = false) => {
-    if ((!enabledRef.current && !force) || disabledRef.current || !hasPermissionRef.current || listeningRef.current) {
-      if (__DEV__ && typeof console !== 'undefined') {
-        console.warn('[useVoiceConversation] Skipped startListeningSession', {
-          force,
-          enabled: enabledRef.current,
-          disabled: disabledRef.current,
-          hasPermission: hasPermissionRef.current,
-          listening: listeningRef.current
-        });
-      }
-      return;
-    }
-
-    setError(null);
-
-    const started = startListening(
-      languageRef.current,
-      (nextTranscript) => {
-        const normalizedTranscript = nextTranscript.trim();
-        if (!normalizedTranscript) {
-          return;
-        }
-
-        if (isPlayingRef.current) {
-          const wordCount = countWords(normalizedTranscript);
-          if (wordCount < MIN_BARGE_IN_WORDS) {
-            return;
-          }
-          onStopAudioRef.current();
-        }
-
-        transcriptRef.current = normalizedTranscript;
-        if (isMountedRef.current) {
-          setTranscript(normalizedTranscript);
-        }
-        scheduleSilenceTimeout();
-      },
-      (listenError) => {
-        if (!isMountedRef.current) {
-          return;
-        }
-
-        listeningRef.current = false;
-        setIsListening(false);
-        clearSilenceTimer();
-        const message = listenError instanceof Error && listenError.message.trim() ? listenError.message : t('voiceError');
-        if (typeof console !== 'undefined') {
-          console.error('[useVoiceConversation] Listening error', { message, language: languageRef.current });
-        }
-        setError(message);
-      }
-    );
-
-    listeningRef.current = started;
-    setIsListening(started);
-  }, [clearSilenceTimer, scheduleSilenceTimeout]);
-
-  const ensureListening = useCallback(async (force = false) => {
-    if ((!enabledRef.current && !force) || disabledRef.current) {
-      if (!force) {
-        stopListeningSession();
-      }
-      return;
-    }
-
-    if (!hasPermissionRef.current) {
-      const granted = await requestVoicePermission();
-      if (!isMountedRef.current) {
+  const startListeningSession = useCallback(
+    (force = false) => {
+      const allowWebForcedStart = force && Platform.OS === 'web';
+      if (
+        (!enabledRef.current && !force) ||
+        disabledRef.current ||
+        (!hasPermissionRef.current && !allowWebForcedStart) ||
+        listeningRef.current
+      ) {
         return;
       }
 
-      hasPermissionRef.current = granted;
-      if (!granted) {
-        setError(t('voicePermissionDenied'));
+      if (allowWebForcedStart && !hasPermissionRef.current) {
+        hasPermissionRef.current = true;
+      }
+
+      setError(null);
+
+      const started = startListening(
+        languageRef.current,
+        (nextTranscript) => {
+          if (isPlayingRef.current) {
+            // Hard stop while Cathy speaks: ignore all transcript to avoid feedback loops.
+            return;
+          }
+
+          const normalizedTranscript = nextTranscript.trim();
+          if (!normalizedTranscript) {
+            return;
+          }
+
+          transcriptRef.current = normalizedTranscript;
+          if (isMountedRef.current) {
+            setTranscript(normalizedTranscript);
+          }
+          scheduleSilenceTimeout();
+        },
+        (listenError) => {
+          if (!isMountedRef.current) {
+            return;
+          }
+
+          const message = listenError instanceof Error && listenError.message.trim() ? listenError.message.trim() : t('voiceError');
+          if (Platform.OS === 'web' && WEB_NOISE_ERRORS.has(message.toLowerCase())) {
+            return;
+          }
+
+          listeningRef.current = false;
+          setIsListening(false);
+          clearSilenceTimer();
+          setError(message);
+        }
+      );
+
+      listeningRef.current = started;
+      setIsListening(started);
+    },
+    [clearSilenceTimer, scheduleSilenceTimeout]
+  );
+
+  const ensureListening = useCallback(
+    async (force = false) => {
+      if ((!enabledRef.current && !force) || disabledRef.current) {
         if (!force) {
           stopListeningSession();
         }
         return;
       }
-    }
 
-    if (!listeningRef.current) {
+      if (Platform.OS === 'web') {
+        hasPermissionRef.current = true;
+        if (!listeningRef.current) {
+          startListeningSession(force);
+        }
+        return;
+      }
+
+      if (!hasPermissionRef.current) {
+        const granted = await requestVoicePermission();
+        if (!isMountedRef.current) {
+          return;
+        }
+
+        hasPermissionRef.current = granted;
+        if (!granted) {
+          setError(t('voicePermissionDenied'));
+          if (!force) {
+            stopListeningSession();
+          }
+          return;
+        }
+      }
+
+      if (!listeningRef.current) {
+        startListeningSession(force);
+      }
+    },
+    [startListeningSession, stopListeningSession]
+  );
+
+  useEffect(() => {
+    if (!enabled || disabled) {
       stopListeningSession();
-    }
-    startListeningSession(force);
-  }, [startListeningSession, stopListeningSession]);
-
-  useEffect(() => {
-    void ensureListening();
-  }, [ensureListening, enabled, disabled, language]);
-
-  useEffect(() => {
-    if (enabled && !disabled) {
+      resetTranscript();
       return;
     }
 
-    resetTranscript();
-  }, [disabled, enabled, resetTranscript]);
+    if (shouldAutoListen) {
+      void ensureListening();
+    }
+  }, [disabled, enabled, ensureListening, resetTranscript, shouldAutoListen, stopListeningSession, language]);
+
+  useEffect(() => {
+    if (!enabled || disabled) {
+      return;
+    }
+
+    // Temporary echo isolation: pause STT while Cathy TTS is playing.
+    if (isPlaying) {
+      stopListeningSession();
+      return;
+    }
+
+    if (shouldAutoListen) {
+      void ensureListening();
+    }
+  }, [disabled, enabled, ensureListening, isPlaying, shouldAutoListen, stopListeningSession]);
+
+  useEffect(() => {
+    if (
+      Platform.OS !== 'web' ||
+      typeof document === 'undefined' ||
+      !autoStartOnWeb ||
+      !enabled ||
+      disabled ||
+      listeningRef.current
+    ) {
+      return;
+    }
+
+    const startFromFirstGesture = () => {
+      if (!enabledRef.current || disabledRef.current || listeningRef.current) {
+        return;
+      }
+
+      startListeningSession(true);
+
+      if (listeningRef.current) {
+        document.removeEventListener('pointerdown', startFromFirstGesture, true);
+      }
+    };
+
+    document.addEventListener('pointerdown', startFromFirstGesture, true);
+    return () => {
+      document.removeEventListener('pointerdown', startFromFirstGesture, true);
+    };
+  }, [autoStartOnWeb, disabled, enabled, startListeningSession]);
 
   const interruptAndListen = useCallback(() => {
     onStopAudioRef.current();
@@ -231,15 +287,23 @@ export function useVoiceConversation({
       return;
     }
 
+    if (listeningRef.current) {
+      stopListeningSession();
+      return;
+    }
+
+    if (Platform.OS === 'web') {
+      startListeningSession(true);
+      return;
+    }
+
     if (hasPermissionRef.current) {
-      if (!listeningRef.current) {
-        startListeningSession(true);
-      }
+      startListeningSession(true);
       return;
     }
 
     void ensureListening(true);
-  }, [ensureListening, startListeningSession]);
+  }, [ensureListening, startListeningSession, stopListeningSession]);
 
   useEffect(() => {
     isMountedRef.current = true;

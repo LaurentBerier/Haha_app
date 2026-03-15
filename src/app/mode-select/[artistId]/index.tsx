@@ -13,6 +13,7 @@ import { t } from '../../../i18n';
 import { synthesizeVoice } from '../../../services/voiceEngine';
 import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
+import { generateId } from '../../../utils/generateId';
 
 interface GreetingCoordinates {
   lat: number;
@@ -45,6 +46,55 @@ const DEFAULT_GREETING_TYPING_DURATION_MS = 4_200;
 interface ArtistModeSource {
   name?: string;
   supportedModeIds?: string[];
+  supportedLanguages?: string[];
+  defaultLanguage?: string;
+}
+
+function toFirstName(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const withoutEmailHost = trimmed.includes('@') ? trimmed.split('@')[0] ?? '' : trimmed;
+  const firstToken = withoutEmailHost
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .find(Boolean);
+  return firstToken ? firstToken.slice(0, 32) : null;
+}
+
+function resolveGreetingPreferredName(params: {
+  profilePreferredName?: string | null;
+  displayName?: string | null;
+  email?: string | null;
+}): string | null {
+  return (
+    toFirstName(params.profilePreferredName ?? null) ??
+    toFirstName(params.displayName ?? null) ??
+    toFirstName(params.email ?? null)
+  );
+}
+
+function resolveGreetingConversationLanguage(artist: ArtistModeSource, preferredLanguage: string): string {
+  const supportedLanguages = Array.isArray(artist.supportedLanguages) ? artist.supportedLanguages : [];
+  if (supportedLanguages.includes(preferredLanguage)) {
+    return preferredLanguage;
+  }
+
+  const preferredFamily = preferredLanguage.toLowerCase().split('-')[0];
+  if (preferredFamily) {
+    const familyMatch = supportedLanguages.find((candidate) => candidate.toLowerCase().startsWith(preferredFamily));
+    if (familyMatch) {
+      return familyMatch;
+    }
+  }
+
+  return artist.defaultLanguage?.trim() || preferredLanguage;
 }
 
 function splitGreetingIntoBubbles(text: string): string[] {
@@ -114,45 +164,52 @@ function speakGreetingWithWebFallback(text: string, language: string): boolean {
 function buildFallbackGreetingText(
   artist: ArtistModeSource,
   language: string,
-  availableModes: string[],
+  preferredName: string | null,
+  _availableModes: string[],
   includeVoiceHint: boolean
 ): string {
   const isEnglish = language.toLowerCase().startsWith('en');
+  const displayName = preferredName ?? (isEnglish ? 'there' : 'toi');
   const artistName = artist.name?.trim() || 'Cathy';
-  const topModes = availableModes.slice(0, 4);
-  const modeSummary = topModes.join(', ');
+  const variationIndex = Math.floor(Math.random() * 3);
 
   if (isEnglish) {
-    const voiceSentence = includeVoiceHint
-      ? 'Voice conversation is already on, and you can disable it by tapping the small mic at the bottom right of the text bar.'
-      : '';
-    const modesSentence = modeSummary
-      ? `We can jump into ${modeSummary}.`
-      : 'We can jump into chat, roast, games, or profile modes.';
+    const openingVariants = [
+      `Hey ${displayName}, how are you? It's ${artistName}, yes, the loud one.`,
+      `Hi ${displayName}, how's it going? ${artistName} here, no need to pretend you're surprised.`,
+      `Yo ${displayName}, how are you doing? It's ${artistName} on the mic, obviously.`
+    ];
+    const voiceSentenceVariants = includeVoiceHint
+      ? [
+          'Voice mode is already on, and you can turn it off with the little mic at the bottom right if you feel like typing.',
+          'We are already in voice mode; tap the small mic at the bottom right anytime if you prefer writing.',
+          'Conversation voice is active now, and the small mic at the bottom right lets you switch back to text whenever you want.'
+        ]
+      : ['Voice mode is already on.'];
     return [
-      `Hey, how are you doing today?`,
-      voiceSentence,
-      `I am still pulling your local weather and headline update, but we can start right now with ${artistName}.`,
-      modesSentence,
-      'What do you feel like doing first?'
+      openingVariants[variationIndex] ?? openingVariants[0],
+      voiceSentenceVariants[variationIndex] ?? voiceSentenceVariants[0]
     ]
       .filter(Boolean)
       .join(' ');
   }
 
-  const voiceSentence = includeVoiceHint
-    ? 'Le mode discussion vocale est deja actif, et tu peux le desactiver en touchant le petit micro en bas a droite de la barre de texte.'
-    : '';
-  const modesSentence = modeSummary
-    ? `On peut partir avec ${modeSummary}.`
-    : 'On peut partir en discussion, roast, jeux ou profil.';
+  const openingVariants = [
+    `Hey salut ${displayName}, comment tu vas? Moi c'est ${artistName}, j'imagine que tu l'avais déjà deviné.`,
+    `Allô ${displayName}, ça va bien? ${artistName} au micro, grosse surprise, pas pantoute.`,
+    `Salut ${displayName}, comment ça roule? Ici ${artistName}, ta notification la plus bavarde.`
+  ];
+  const voiceSentenceVariants = includeVoiceHint
+    ? [
+        'Le mode discussion vocale est déjà actif, et tu peux le couper avec le petit micro en bas à droite si tu préfères écrire.',
+        "On est déjà en mode vocal; touche le petit micro en bas à droite quand tu veux revenir au clavier.",
+        'La conversation vocale tourne déjà, et le petit micro en bas à droite te laisse repasser en mode texte quand tu veux.'
+      ]
+    : ['Le mode discussion vocale est déjà actif.'];
 
   return [
-    'Salut, comment tu vas aujourd hui?',
-    voiceSentence,
-    `Je recupere encore ta meteo locale et une manchette du jour, mais on peut commencer tout de suite avec ${artistName}.`,
-    modesSentence,
-    'Tu as envie de faire quoi en premier?'
+    openingVariants[variationIndex] ?? openingVariants[0],
+    voiceSentenceVariants[variationIndex] ?? voiceSentenceVariants[0]
   ]
     .filter(Boolean)
     .join(' ');
@@ -291,6 +348,7 @@ async function fetchGreetingFromApi(
   accessToken: string,
   coords: GreetingCoordinates | null,
   availableModes: string[],
+  preferredName: string | null,
   includeVoiceHint: boolean
 ): Promise<string | null> {
   const token = accessToken.trim();
@@ -304,6 +362,9 @@ async function fetchGreetingFromApi(
     availableModes,
     includeVoiceHint
   };
+  if (preferredName) {
+    payload.preferredName = preferredName;
+  }
   if (coords) {
     payload.coords = coords;
   }
@@ -442,8 +503,24 @@ export default function ModeSelectHomeScreen() {
   const artists = useStore((state) => state.artists);
   const language = useStore((state) => state.language);
   const accessToken = useStore((state) => state.session?.accessToken ?? '');
+  const sessionUser = useStore((state) => state.session?.user ?? null);
+  const userProfile = useStore((state) => state.userProfile);
+  const createConversation = useStore((state) => state.createConversation);
+  const setActiveConversation = useStore((state) => state.setActiveConversation);
+  const setModeSelectGreetingAudioActive = useStore((state) => state.setModeSelectGreetingAudioActive);
+  const addMessage = useStore((state) => state.addMessage);
+  const updateConversation = useStore((state) => state.updateConversation);
   const markArtistGreeted = useStore((state) => state.markArtistGreeted);
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
+  const preferredName = useMemo(
+    () =>
+      resolveGreetingPreferredName({
+        profilePreferredName: userProfile?.preferredName ?? null,
+        displayName: sessionUser?.displayName ?? null,
+        email: sessionUser?.email ?? null
+      }),
+    [sessionUser?.displayName, sessionUser?.email, userProfile?.preferredName]
+  );
   const audioPlayer = useAudioPlayer();
   const playGreetingAudio = audioPlayer.play;
   const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -470,6 +547,8 @@ export default function ModeSelectHomeScreen() {
   const isGreetingVoicePendingGesture = Boolean(pendingGreetingAudioUri || pendingGreetingSpeechText);
   const isGreetingVoiceActive =
     greeting !== null && (audioPlayer.isLoading || audioPlayer.isPlaying || isGreetingVoicePendingGesture || isWebSpeechFallbackActive);
+  const isGreetingSpeechOutputActive =
+    greeting !== null && (audioPlayer.isLoading || audioPlayer.isPlaying || isWebSpeechFallbackActive);
   const greetingVoiceLabel = isGreetingVoicePendingGesture
     ? t('modeSelectGreetingTapToPlay')
     : t('modeSelectGreetingSpeaking');
@@ -544,6 +623,13 @@ export default function ModeSelectHomeScreen() {
   );
 
   useEffect(() => {
+    setModeSelectGreetingAudioActive(isGreetingSpeechOutputActive);
+    return () => {
+      setModeSelectGreetingAudioActive(false);
+    };
+  }, [isGreetingSpeechOutputActive, setModeSelectGreetingAudioActive]);
+
+  useEffect(() => {
     audioStateRef.current = {
       isPlaying: audioPlayer.isPlaying,
       isLoading: audioPlayer.isLoading,
@@ -572,7 +658,19 @@ export default function ModeSelectHomeScreen() {
 
     let isCancelled = false;
     const runGreeting = async () => {
-      const includeVoiceHint = useStore.getState().greetedArtistIds.size === 0;
+      const sessionStateBeforeGreeting = useStore.getState();
+      if (sessionStateBeforeGreeting.greetedArtistIds.has(artist.id)) {
+        return;
+      }
+      const includeVoiceHint = sessionStateBeforeGreeting.greetedArtistIds.size === 0;
+      markArtistGreeted(artist.id);
+      const introConversation = createConversation(
+        artist.id,
+        resolveGreetingConversationLanguage(artist, language),
+        MODE_IDS.ON_JASE
+      );
+      setActiveConversation(introConversation.id);
+
       const availableModes = buildAvailableModesForGreeting(artist);
       const coords = await getOptionalCoords();
       if (isCancelled) {
@@ -585,17 +683,35 @@ export default function ModeSelectHomeScreen() {
         accessToken,
         coords,
         availableModes,
+        preferredName,
         includeVoiceHint
       );
       const nextGreeting =
-        fetchedGreeting ?? buildFallbackGreetingText(artist, language, availableModes, includeVoiceHint);
+        fetchedGreeting ?? buildFallbackGreetingText(artist, language, preferredName, availableModes, includeVoiceHint);
       if (isCancelled || !nextGreeting) {
         return;
       }
 
+      const now = new Date().toISOString();
+      addMessage(introConversation.id, {
+        id: generateId('msg'),
+        conversationId: introConversation.id,
+        role: 'artist',
+        content: nextGreeting,
+        status: 'complete',
+        timestamp: now
+      });
+      updateConversation(
+        introConversation.id,
+        {
+          lastMessagePreview: nextGreeting.slice(0, 120),
+          title: nextGreeting.slice(0, 30)
+        },
+        artist.id
+      );
+
       setGreeting(nextGreeting);
       setTypedGreeting('');
-      markArtistGreeted(artist.id);
       setPendingGreetingAudioUri(null);
       setPendingGreetingSpeechText(null);
       clearGreetingSpeechHint();
@@ -655,16 +771,21 @@ export default function ModeSelectHomeScreen() {
     };
   }, [
     accessToken,
+    addMessage,
     artist,
     clearGreetingGestureRetry,
     clearGreetingPlaybackCheck,
     clearGreetingSpeechHint,
     clearTypingInterval,
+    createConversation,
     language,
     markArtistGreeted,
+    preferredName,
     pulseGreetingSpeechHint,
     playGreetingAudio,
-    startTypingGreeting
+    setActiveConversation,
+    startTypingGreeting,
+    updateConversation
   ]);
 
   useEffect(() => {

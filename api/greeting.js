@@ -97,7 +97,8 @@ function parsePayload(body) {
     language: normalizeLanguage(body.language),
     coords: parseCoords(body.coords),
     includeVoiceHint,
-    availableModes
+    availableModes,
+    preferredName: normalizeOptionalString(body.preferredName, 40)
   };
 }
 
@@ -298,33 +299,47 @@ function toHeadlineSummaryText(headline, language) {
 function buildGreetingSystemPrompt(language, includeVoiceHint) {
   const isEnglish = language.toLowerCase().startsWith('en');
   if (isEnglish) {
-    return `You are Cathy Gauthier welcoming the user to mode selection.
-Write exactly 4 to 6 short sentences, in this strict order:
-1) Ask how the user is doing.
+    return `You are Cathy Gauthier, bold and playful, welcoming the user in mode selection.
+Write exactly 2 short sentences in this strict order:
+1) Greet the user by first name when available, ask how they are doing, and add a very short self-joke.
 2) ${
       includeVoiceHint
-        ? 'Mention once that voice conversation mode is active and they can disable it by tapping the small mic at the bottom right of the text bar.'
-        : 'Do not mention microphone controls.'
+        ? 'Explain that voice mode is active and how to disable it with the small mic at the bottom right, using your own fresh wording.'
+        : 'Say voice mode is active.'
     }
-3) Mention at least one real element of the day: local weather and or one local Canadian headline.
-4) Propose relevant modes from the provided available modes list.
-5) End by asking what the user wants to do now.
-Keep a warm, witty Cathy voice. No markdown, no bullets, no asterisks, no em dashes.`;
+Hard rules:
+- Never write "how are you with Cathy" or similar unnatural phrasing.
+- Keep it natural, coherent, and concise.
+- Do not mention weather, news, or mode lists.
+- No markdown, no bullets, no asterisks, no em dashes.
+- Keep proper punctuation and contractions.
+- 18 to 34 words total.`;
   }
 
-  return `Tu es Cathy Gauthier qui accueille l'utilisateur sur l'ecran de selection de mode.
-Ecris exactement 4 a 6 phrases courtes, dans cet ordre strict :
-1) Demande comment la personne va.
+  return `Tu es Cathy Gauthier, baveuse, chaleureuse et drôle, et tu accueilles l'utilisateur dans l'ecran de selection de mode.
+Ecris exactement 2 phrases courtes, dans cet ordre strict :
+1) Salue la personne par son prenom si disponible, demande comment elle va, et ajoute une mini blague de presentation.
 2) ${
     includeVoiceHint
-      ? "Mentionne une seule fois que le mode discussion vocale est actif et qu'on peut le desactiver en touchant le petit micro en bas a droite de la barre de texte."
-      : "Ne mentionne pas les controles du micro."
+      ? "Explique que le mode discussion vocale est actif et comment le desactiver avec le petit micro en bas a droite, avec une formulation fraiche et naturelle."
+      : "Dis que le mode discussion vocale est actif."
   }
-3) Mentionne au moins un element reel du jour : meteo locale et ou une manchette locale canadienne.
-4) Propose des modes pertinents parmi la liste des modes disponibles.
-5) Termine en demandant ce que la personne veut faire maintenant.
-Garde un ton chaleureux et punchy, style Cathy.
-N'utilise pas de markdown, pas d'asterisque, pas de liste, pas de tiret long.`;
+Regles absolues :
+- Interdit de dire "comment tu vas avec Cathy" ou une tournure equivalente.
+- Le texte doit etre logique, naturel et court en francais quebecois.
+- Ne parle pas de meteo, de manchette ni de liste de modes.
+- Pas de markdown, pas d'asterisque, pas de liste, pas de tiret long.
+- Orthographe et ponctuation impeccables (accents et apostrophes obligatoires).
+- 18 a 34 mots au total.`;
+}
+
+function buildGreetingVariationCue(language) {
+  const isEnglish = language.toLowerCase().startsWith('en');
+  const englishCues = ['energetic opener', 'dry self-mockery', 'quick playful callback'];
+  const frenchCues = ['entree energique', 'autoderision rapide', 'taquinerie complice'];
+  const cues = isEnglish ? englishCues : frenchCues;
+  const index = Math.floor(Math.random() * cues.length);
+  return cues[index] ?? cues[0];
 }
 
 function buildGreetingUserPrompt(context) {
@@ -339,6 +354,7 @@ function buildGreetingUserPrompt(context) {
       `Weather: ${context.weatherSummary}`,
       `Headline: ${context.headlineSummary}`,
       `Available modes: ${context.availableModes.join(', ') || 'chat, roast, impro, horoscope, personalized message, image modes'}`,
+      `Variation cue: ${context.variationCue}`,
       `Include voice hint sentence: ${context.includeVoiceHint ? 'yes' : 'no'}`
     ].join('\n');
   }
@@ -352,6 +368,7 @@ function buildGreetingUserPrompt(context) {
     `Meteo: ${context.weatherSummary}`,
     `Manchette: ${context.headlineSummary}`,
     `Modes disponibles: ${context.availableModes.join(', ') || 'discussion, roast, impro, horoscope, message personnalise, modes image'}`,
+    `Variation: ${context.variationCue}`,
     `Inclure phrase micro: ${context.includeVoiceHint ? 'oui' : 'non'}`
   ].join('\n');
 }
@@ -406,8 +423,8 @@ async function generateGreetingText(context) {
       },
       body: JSON.stringify({
         model: DEFAULT_MODEL,
-        max_tokens: 260,
-        temperature: 0.65,
+        max_tokens: 140,
+        temperature: 0.9,
         stream: false,
         system: buildGreetingSystemPrompt(context.language, context.includeVoiceHint),
         messages: [
@@ -436,7 +453,7 @@ async function generateGreetingText(context) {
       throw new Error('Greeting response is empty.');
     }
 
-    return clampToSentenceLimit(rawText, 6);
+    return clampToSentenceLimit(rawText, 2);
   } finally {
     clearTimeout(timeoutHandle);
   }
@@ -516,7 +533,7 @@ module.exports = async function handler(req, res) {
   ]);
 
   const { dateLabel, timeLabel } = formatLocalDateTime(input.language);
-  const preferredName = extractPreferredName(user);
+  const preferredName = input.preferredName || extractPreferredName(user);
   const weatherSummary = toWeatherSummaryText(weather, input.language);
   const headlineSummary = toHeadlineSummaryText(headline, input.language);
 
@@ -532,6 +549,7 @@ module.exports = async function handler(req, res) {
         horoscopeSign: userHoroscope,
         weatherSummary,
         headlineSummary,
+        variationCue: buildGreetingVariationCue(input.language),
         includeVoiceHint: input.includeVoiceHint,
         availableModes: input.availableModes
       }

@@ -21,22 +21,22 @@ export function generateModeIntro(modeId: string, userProfile?: UserProfile | nu
     case MODE_IDS.ON_JASE:
       return `${namePrefix}on jase libre. Balance-moi ce que t'as sur le coeur et je m'ajuste au vibe.`;
     case MODE_IDS.GRILL:
-      return `${namePrefix}mode grill active. Tu m'as demande le feu, je vais pas te flatter.`;
+      return `${namePrefix}mode grill activé. Tu m'as demandé le feu, je vais pas te flatter.`;
     case MODE_IDS.ROAST_BATTLE:
-      return `${namePrefix}bataille de roast commence. Tu lances, je replique, puis je donne le verdict final.`;
+      return `${namePrefix}bataille de roast commence. Tu lances, je réplique, puis je donne le verdict final.`;
     case MODE_IDS.MEME_GENERATOR:
       return `${namePrefix}envoie une image et je te propose des captions qui font rire en une seconde.`;
     case MODE_IDS.SCREENSHOT_ANALYZER:
-      return `${namePrefix}envoie ton screenshot. Je decode le sous-texte et je te donne la meilleure reponse.`;
+      return `${namePrefix}envoie ton screenshot. Je décode le sous-texte et je te donne la meilleure réponse.`;
     case MODE_IDS.VICTIME_DU_JOUR: {
       const topic = getDailyTopic();
       return `${namePrefix}victime du jour: ${topic}. Sers-moi ta meilleure punchline et on la muscle ensemble.`;
     }
     case MODE_IDS.PHRASE_DU_JOUR:
-      return `${namePrefix}pret pour ta phrase du jour? Dis-moi le mood, je te livre une ligne qui marque.`;
+      return `${namePrefix}prêt pour ta phrase du jour? Dis-moi le mood, je te livre une ligne qui marque.`;
     case MODE_IDS.COACH_DE_VIE:
-      return `${namePrefix}tu veux du vrai, pas du vernis? Dis-moi la situation et on la regle cash.`;
+      return `${namePrefix}tu veux du vrai, pas du vernis? Dis-moi la situation et on la règle cash.`;
     default:
-      return `${namePrefix}on y va. Raconte-moi ce qui se passe et je te reponds direct.`;
+      return `${namePrefix}on y va. Raconte-moi ce qui se passe et je te réponds direct.`;
   }
 }

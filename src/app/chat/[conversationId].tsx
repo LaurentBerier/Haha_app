@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { router, useLocalSearchParams, useNavigation } from 'expo-router';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 import { ChatInput } from '../../components/chat/ChatInput';
 import { MessageList } from '../../components/chat/MessageList';
@@ -40,11 +40,9 @@ export default function ChatScreen() {
   const navigation = useNavigation();
   const params = useLocalSearchParams<{
     conversationId?: string | string[];
-    queuedText?: string | string[];
     queuedNonce?: string | string[];
   }>();
   const conversationIdParam = Array.isArray(params.conversationId) ? params.conversationId[0] : params.conversationId;
-  const queuedTextParam = Array.isArray(params.queuedText) ? params.queuedText[0] : params.queuedText;
   const queuedNonceParam = Array.isArray(params.queuedNonce) ? params.queuedNonce[0] : params.queuedNonce;
   const conversationId = conversationIdParam ?? '';
   const isValidConversation = conversationId.length > 0;
@@ -66,7 +64,7 @@ export default function ChatScreen() {
   const { isListening, transcript, error: conversationError, interruptAndListen } = useVoiceConversation({
     enabled: conversationModeEnabled && !hasTypedDraft && !isQuotaBlocked && isValidConversation,
     disabled: !isValidConversation || isQuotaBlocked,
-    isPlaying: audioPlayer.isPlaying,
+    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading,
     onSend: (text) => {
       const normalized = text.trim();
       if (!normalized) {
@@ -101,7 +99,6 @@ export default function ChatScreen() {
   }, [conversationModeEnabled, setVoiceAutoPlay]);
 
   useEffect(() => {
-    const queuedText = queuedTextParam?.trim() ?? '';
     const queuedNonce = queuedNonceParam?.trim() ?? '';
     if (!isValidConversation || !queuedNonce) {
       return;
@@ -114,11 +111,8 @@ export default function ChatScreen() {
     const queuedPayload = consumeChatSendPayload(conversationId, queuedNonce);
     if (queuedPayload) {
       sendMessage(queuedPayload);
-    } else if (queuedText) {
-      sendMessage({ text: queuedText });
     }
-    router.replace(`/chat/${conversationId}`);
-  }, [consumeChatSendPayload, conversationId, isValidConversation, queuedNonceParam, queuedTextParam, sendMessage]);
+  }, [consumeChatSendPayload, conversationId, isValidConversation, queuedNonceParam, sendMessage]);
 
   return (
     <KeyboardAvoidingView

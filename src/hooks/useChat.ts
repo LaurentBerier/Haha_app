@@ -498,6 +498,7 @@ export function useChat(conversationId: string) {
       let ttsChunkCount = 0;
       let hasStartedVoiceGeneration = false;
       let ignoreTtsUpdates = false;
+      let hasDevLocalFallbackAttempt = false;
       const ttsChunkUrisByIndex = new Map<number, string>();
       const ttsPendingPromises: Array<Promise<void>> = [];
 
@@ -724,6 +725,10 @@ export function useChat(conversationId: string) {
         }
         const errorWithMeta = error as Error & { code?: string; status?: number };
         const errorCode = typeof errorWithMeta.code === 'string' ? errorWithMeta.code : null;
+        const statusCode = typeof errorWithMeta.status === 'number' ? errorWithMeta.status : null;
+        const message = error instanceof Error && typeof error.message === 'string' && error.message.trim()
+          ? error.message.trim()
+          : 'Erreur pendant la génération';
         if (isQuotaBlockedErrorCode(errorCode)) {
           const latestAccountType = normalizeAccountType(
             useStore.getState().session?.user.accountType ?? currentAccountType
@@ -747,9 +752,53 @@ export function useChat(conversationId: string) {
           runNext();
           return;
         }
-        const message = error instanceof Error && typeof error.message === 'string' && error.message.trim()
-          ? error.message.trim()
-          : 'Erreur pendant la génération';
+        const shouldUseDevFallback =
+          __DEV__ &&
+          !USE_MOCK_LLM &&
+          !hasDevLocalFallbackAttempt &&
+          !isQuotaBlockedErrorCode(errorCode) &&
+          (statusCode === null ||
+            statusCode >= 500 ||
+            (typeof errorCode === 'string' && errorCode.startsWith('UPSTREAM')) ||
+            /failed to fetch|internal server error|server misconfigured|impossible de joindre/i.test(message));
+
+        if (shouldUseDevFallback) {
+          hasDevLocalFallbackAttempt = true;
+          ignoreTtsUpdates = true;
+          const latestArtistMessage = getLatestArtistMessage();
+          updateMessage(jobConversationId, artistMessageId, {
+            status: 'streaming',
+            metadata: {
+              ...(latestArtistMessage?.metadata ?? {}),
+              errorMessage: undefined,
+              errorCode: undefined
+            }
+          });
+          if (__DEV__) {
+            console.warn('[Chat] Falling back to mock stream after Claude error', {
+              statusCode,
+              errorCode,
+              message
+            });
+          }
+
+          const fallbackCancel = streamMockReply({
+            systemPrompt,
+            userTurn: mockUserTurn,
+            language,
+            modeFewShots,
+            modeId,
+            onToken,
+            onComplete,
+            onError: failStream
+          });
+          cancelRef.current = () => {
+            isCancelledRef.current = true;
+            fallbackCancel();
+          };
+          return;
+        }
+
         if (__DEV__) {
           console.error('[Chat] Generation failed:', message);
         }
