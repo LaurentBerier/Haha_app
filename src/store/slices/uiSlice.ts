@@ -27,12 +27,16 @@ export interface UiSlice {
   displayMode: DisplayMode;
   reduceMotion: ReduceMotionPreference;
   voiceAutoPlay: boolean;
+  conversationModeEnabled: boolean;
+  greetedArtistIds: Set<string>;
   setLoading: (val: boolean) => void;
   setVoiceStatus: (status: VoiceStatus) => void;
   setLanguagePreference: (language: AppLanguage) => void;
   setDisplayMode: (mode: DisplayMode) => void;
   setReduceMotion: (mode: ReduceMotionPreference) => void;
   setVoiceAutoPlay: (enabled: boolean) => void;
+  setConversationModeEnabled: (enabled: boolean) => void;
+  markArtistGreeted: (artistId: string) => void;
 }
 
 export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set) => ({
@@ -42,6 +46,8 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set) =>
   displayMode: 'dark',
   reduceMotion: 'system',
   voiceAutoPlay: false,
+  conversationModeEnabled: true,
+  greetedArtistIds: new Set<string>(),
   setLoading: (val) => set({ isLoading: val }),
   setVoiceStatus: (status) => set({ voiceStatus: status }),
   setLanguagePreference: (language) => {
@@ -50,5 +56,17 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set) =>
   },
   setDisplayMode: () => set({ displayMode: 'dark' }),
   setReduceMotion: (mode) => set({ reduceMotion: mode }),
-  setVoiceAutoPlay: (enabled) => set({ voiceAutoPlay: enabled })
+  setVoiceAutoPlay: (enabled) => set({ voiceAutoPlay: enabled }),
+  setConversationModeEnabled: (enabled) => set({ conversationModeEnabled: enabled }),
+  markArtistGreeted: (artistId) =>
+    set((state) => {
+      const normalizedArtistId = artistId.trim();
+      if (!normalizedArtistId || state.greetedArtistIds.has(normalizedArtistId)) {
+        return {};
+      }
+
+      const next = new Set(state.greetedArtistIds);
+      next.add(normalizedArtistId);
+      return { greetedArtistIds: next };
+    })
 });

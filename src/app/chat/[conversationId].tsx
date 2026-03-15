@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 import { ChatInput } from '../../components/chat/ChatInput';
@@ -8,6 +8,7 @@ import { BackButton } from '../../components/common/BackButton';
 import { getModeById } from '../../config/modes';
 import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import { useChat } from '../../hooks/useChat';
+import { useVoiceConversation } from '../../hooks/useVoiceConversation';
 import { t } from '../../i18n';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
@@ -40,13 +41,35 @@ export default function ChatScreen() {
   const params = useLocalSearchParams<{ conversationId: string }>();
   const conversationId = params.conversationId ?? '';
   const isValidConversation = conversationId.length > 0;
+  const [hasTypedDraft, setHasTypedDraft] = useState(false);
   const headerHorizontalInset = useHeaderHorizontalInset();
 
   const sessionUser = useStore((state) => state.session?.user ?? null);
+  const language = useStore((state) => state.language);
+  const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
+  const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
+  const setVoiceAutoPlay = useStore((state) => state.setVoiceAutoPlay);
   const currentConversation = useStore(
     useCallback((state) => findConversationById(state.conversations, conversationId), [conversationId])
   );
   const { messages, sendMessage, retryMessage, hasStreaming, currentArtistName, isQuotaBlocked, audioPlayer } = useChat(conversationId);
+
+  const { isListening, transcript, error: conversationError, interruptAndListen } = useVoiceConversation({
+    enabled: conversationModeEnabled && !hasTypedDraft && !isQuotaBlocked && isValidConversation,
+    disabled: !isValidConversation || isQuotaBlocked,
+    isPlaying: audioPlayer.isPlaying,
+    onSend: (text) => {
+      const normalized = text.trim();
+      if (!normalized) {
+        return;
+      }
+      sendMessage({ text: normalized });
+    },
+    onStopAudio: () => {
+      void audioPlayer.stop();
+    },
+    language
+  });
 
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? '');
   const artistDisplayName = formatArtistDisplayName(currentArtistName);
@@ -63,6 +86,10 @@ export default function ChatScreen() {
       title: isValidConversation ? chatHeaderTitle : t('chatTitle')
     });
   }, [chatHeaderTitle, isValidConversation, navigation]);
+
+  useEffect(() => {
+    setVoiceAutoPlay(conversationModeEnabled);
+  }, [conversationModeEnabled, setVoiceAutoPlay]);
 
   return (
     <KeyboardAvoidingView
@@ -89,7 +116,22 @@ export default function ChatScreen() {
           </Text>
         )}
         {isValidConversation && hasStreaming ? <StreamingIndicator /> : null}
-        <ChatInput onSend={sendMessage} disabled={!isValidConversation || isQuotaBlocked} />
+        <ChatInput
+          onSend={sendMessage}
+          disabled={!isValidConversation || isQuotaBlocked}
+          conversationMode={{
+            enabled: conversationModeEnabled,
+            isListening,
+            transcript,
+            error: conversationError,
+            isPlaying: audioPlayer.isPlaying,
+            onToggle: () => {
+              setConversationModeEnabled(!conversationModeEnabled);
+            },
+            onInterrupt: interruptAndListen,
+            onTypingStateChange: setHasTypedDraft
+          }}
+        />
         {isValidConversation && isQuotaBlocked ? (
           <Text style={styles.blockedHint}>{t('chatInputBlocked')}</Text>
         ) : null}

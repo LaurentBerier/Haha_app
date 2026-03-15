@@ -2,7 +2,6 @@ import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   Image,
   NativeSyntheticEvent,
@@ -15,19 +14,29 @@ import {
   View
 } from 'react-native';
 import { MAX_IMAGE_UPLOAD_BYTES, MAX_MESSAGE_LENGTH } from '../../config/constants';
-import { featureFlags } from '../../config/featureFlags';
-import { useVoiceInput } from '../../hooks/useVoiceInput';
 import { t } from '../../i18n';
 import type { ChatError } from '../../models/ChatError';
 import type { ChatImageAttachment, ChatSendPayload } from '../../models/ChatSendPayload';
 import type { ClaudeImageMediaType } from '../../services/claudeApiService';
-import { impactLight, impactMedium, notifyWarning } from '../../services/hapticsService';
-import type { VoiceStatus } from '../../store/slices/uiSlice';
+import { impactLight } from '../../services/hapticsService';
 import { theme } from '../../theme';
+import micIconSource from '../../../assets/icons/Mic_Icon.png';
+
+interface ConversationModeProps {
+  enabled: boolean;
+  isListening: boolean;
+  transcript: string;
+  error?: string | null;
+  isPlaying?: boolean;
+  onToggle: () => void;
+  onInterrupt?: () => void;
+  onTypingStateChange?: (hasTypedText: boolean) => void;
+}
 
 interface ChatInputProps {
   onSend: (payload: ChatSendPayload) => ChatError | null;
   disabled?: boolean;
+  conversationMode?: ConversationModeProps;
 }
 
 interface ChatImageAttachmentDraft {
@@ -38,12 +47,11 @@ interface ChatImageAttachmentDraft {
 
 const IMAGE_MEDIA_TYPES = new Set<ClaudeImageMediaType>(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
-function useVoiceAnimations(voiceStatus: VoiceStatus) {
+function useVoiceAnimations(isListening: boolean) {
   const pulse = useRef(new Animated.Value(1)).current;
-  const shake = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (voiceStatus === 'recording') {
+    if (isListening) {
       const loop = Animated.loop(
         Animated.sequence([
           Animated.timing(pulse, { toValue: 1.08, duration: 380, useNativeDriver: true }),
@@ -59,24 +67,9 @@ function useVoiceAnimations(voiceStatus: VoiceStatus) {
 
     pulse.setValue(1);
     return undefined;
-  }, [pulse, voiceStatus]);
+  }, [isListening, pulse]);
 
-  useEffect(() => {
-    if (voiceStatus !== 'error') {
-      shake.setValue(0);
-      return;
-    }
-
-    Animated.sequence([
-      Animated.timing(shake, { toValue: -5, duration: 60, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: 5, duration: 60, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: -3, duration: 50, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: 3, duration: 50, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: 0, duration: 50, useNativeDriver: true })
-    ]).start();
-  }, [shake, voiceStatus]);
-
-  return { pulse, shake };
+  return { pulse };
 }
 
 function normalizeImageMediaType(rawMimeType: string | null | undefined): ClaudeImageMediaType | null {
@@ -124,7 +117,7 @@ async function readImageAsBase64(uri: string): Promise<string> {
   return await blobToBase64(blob);
 }
 
-export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
+export function ChatInput({ onSend, disabled = false, conversationMode }: ChatInputProps) {
   const [value, setValue] = useState('');
   const [imageAttachment, setImageAttachment] = useState<ChatImageAttachmentDraft | null>(null);
   const [isPickingImage, setIsPickingImage] = useState(false);
@@ -132,19 +125,21 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
   const [error, setError] = useState<ChatError | null>(null);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const sendScale = useRef(new Animated.Value(1)).current;
-
-  const { voiceStatus, transcript, voiceError, startRecording, stopRecording } = useVoiceInput();
-  const { pulse, shake } = useVoiceAnimations(voiceStatus);
+  const isConversationEnabled = Boolean(conversationMode?.enabled);
+  const isConversationListening = Boolean(conversationMode?.enabled && conversationMode.isListening);
+  const isConversationPlaying = Boolean(conversationMode?.enabled && conversationMode.isPlaying);
+  const conversationTranscript = conversationMode?.transcript.trim() ?? '';
+  const conversationError = conversationMode?.error ?? null;
+  const { pulse } = useVoiceAnimations(isConversationListening);
 
   const trimmed = value.trim();
   const hasText = trimmed.length > 0;
   const hasImage = Boolean(imageAttachment);
-  const canSend =
-    (hasText || hasImage) &&
-    !disabled &&
-    !isEncodingImage &&
-    voiceStatus !== 'transcribing' &&
-    voiceStatus !== 'recording';
+  const canSend = (hasText || hasImage) && !disabled && !isEncodingImage;
+
+  useEffect(() => {
+    conversationMode?.onTypingStateChange?.(isConversationEnabled && hasText);
+  }, [conversationMode, hasText, isConversationEnabled]);
 
   const clearValidationErrors = () => {
     if (error) {
@@ -200,25 +195,6 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
     setPickerError(null);
     setValue('');
     setImageAttachment(null);
-  };
-
-  const handleVoiceToggle = async () => {
-    if (!featureFlags.enableVoice || disabled || voiceStatus === 'transcribing') {
-      return;
-    }
-
-    if (voiceStatus === 'recording') {
-      void impactLight();
-      const finalTranscript = (await stopRecording()).trim();
-      if (finalTranscript) {
-        clearValidationErrors();
-        setValue(finalTranscript);
-      }
-      return;
-    }
-
-    void impactMedium();
-    await startRecording();
   };
 
   const handlePickImage = async () => {
@@ -279,7 +255,7 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
     }
   };
 
-  const handleDiscussionPress = () => {
+  const handleRightActionPress = () => {
     if (canSend) {
       Animated.sequence([
         Animated.timing(sendScale, { toValue: 0.9, duration: 70, useNativeDriver: true }),
@@ -289,8 +265,22 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
       return;
     }
 
-    void notifyWarning();
-    Alert.alert(t('discussionComingSoonTitle'), t('discussionComingSoonBody'));
+    if (!conversationMode) {
+      return;
+    }
+
+    void impactLight();
+    if (!isConversationEnabled) {
+      conversationMode.onToggle();
+      return;
+    }
+
+    if (isConversationPlaying && conversationMode.onInterrupt) {
+      conversationMode.onInterrupt();
+      return;
+    }
+
+    conversationMode.onToggle();
   };
 
   const handleInputKeyPress = (event: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
@@ -362,11 +352,9 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
               setValue(nextValue);
             }}
             placeholder={
-              voiceStatus === 'recording'
-                ? transcript || t('voiceInputPlaceholder')
-                : voiceStatus === 'transcribing'
-                  ? t('voiceTranscribing')
-                  : t('chatPlaceholder')
+              isConversationListening
+                ? conversationTranscript || t('voiceInputPlaceholder')
+                : t('chatPlaceholder')
             }
             placeholderTextColor={theme.colors.textDisabled}
             multiline
@@ -374,41 +362,34 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
             editable={!disabled}
             onKeyPress={handleInputKeyPress}
           />
-
-          {featureFlags.enableVoice ? (
-            <Animated.View style={{ transform: [{ scale: pulse }, { translateX: shake }] }}>
-              <Pressable
-                testID="chat-mic-button"
-                style={[
-                  styles.micButton,
-                  voiceStatus === 'recording' && styles.micRecording,
-                  (disabled || isEncodingImage || voiceStatus === 'transcribing') && styles.disabledButton
-                ]}
-                onPress={handleVoiceToggle}
-                disabled={disabled || isEncodingImage || voiceStatus === 'transcribing'}
-                accessibilityRole="button"
-                accessibilityLabel={voiceStatus === 'recording' ? t('micButtonStop') : t('micButtonLabel')}
-              >
-                {voiceStatus === 'transcribing' ? (
-                  <ActivityIndicator color={theme.colors.textDisabled} />
-                ) : (
-                  <Text style={styles.micText}>{voiceStatus === 'recording' ? '■' : '🎤'}</Text>
-                )}
-              </Pressable>
-            </Animated.View>
-          ) : null}
         </View>
 
-        <Animated.View style={{ transform: [{ scale: sendScale }] }}>
+        <Animated.View
+          style={{
+            transform: [{ scale: canSend ? sendScale : pulse }]
+          }}
+        >
           <Pressable
             testID="chat-discussion-button"
-            style={[styles.rightAction, (disabled || isEncodingImage) && styles.disabledButton]}
-            onPress={handleDiscussionPress}
+            style={[
+              styles.rightAction,
+              (disabled || isEncodingImage) && styles.disabledButton,
+              !canSend && !isConversationEnabled && styles.conversationOff
+            ]}
+            onPress={handleRightActionPress}
             disabled={disabled || isEncodingImage}
             accessibilityRole="button"
-            accessibilityLabel={canSend ? t('sendButtonA11y') : t('discussionButtonA11y')}
+            accessibilityLabel={canSend ? t('sendButtonA11y') : t('micButtonLabel')}
           >
-            <Text style={styles.rightActionText}>{canSend ? '➤' : '◉'}</Text>
+            {canSend ? (
+              <Text style={styles.rightActionText}>➤</Text>
+            ) : (
+              <Image
+                source={micIconSource}
+                style={[styles.micIcon, !isConversationEnabled && styles.micIconDisabled]}
+                resizeMode="contain"
+              />
+            )}
           </Pressable>
         </Animated.View>
       </View>
@@ -421,9 +402,9 @@ export function ChatInput({ onSend, disabled = false }: ChatInputProps) {
 
       {pickerError && !error ? <Text style={styles.errorText}>{pickerError}</Text> : null}
 
-      {voiceError && !error && !pickerError ? (
+      {conversationError && !error && !pickerError ? (
         <Text style={styles.errorText} testID="chat-input-voice-error">
-          {voiceError}
+          {conversationError}
         </Text>
       ) : null}
     </View>
@@ -520,32 +501,29 @@ const styles = StyleSheet.create({
     fontSize: 16,
     paddingVertical: theme.spacing.sm
   },
-  micButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  micRecording: {
-    backgroundColor: theme.colors.recordingActive
-  },
-  micText: {
-    color: theme.colors.textDisabled,
-    fontSize: 20
-  },
   rightAction: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: theme.colors.surfaceDeep,
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    overflow: 'hidden'
+  },
+  conversationOff: {
+    backgroundColor: theme.colors.surfaceDeep
   },
   rightActionText: {
     color: theme.colors.textPrimary,
     fontSize: 20,
     fontWeight: '700'
+  },
+  micIcon: {
+    width: 36,
+    height: 36
+  },
+  micIconDisabled: {
+    opacity: 0.35
   },
   disabledButton: {
     opacity: 0.45

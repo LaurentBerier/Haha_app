@@ -30,4 +30,17 @@ describe('uiSlice', () => {
     slice.setReduceMotion('off');
     expect(slice.reduceMotion).toBe('off');
   });
+
+  it('toggles conversation mode and tracks greeted artists in-memory', () => {
+    const slice = createSliceHarness((set, get) => createUiSlice(set as never, get as never, undefined as never));
+
+    expect(slice.conversationModeEnabled).toBe(true);
+    expect(slice.greetedArtistIds.has('cathy-gauthier')).toBe(false);
+
+    slice.setConversationModeEnabled(false);
+    expect(slice.conversationModeEnabled).toBe(false);
+
+    slice.markArtistGreeted('cathy-gauthier');
+    expect(slice.greetedArtistIds.has('cathy-gauthier')).toBe(true);
+  });
 });

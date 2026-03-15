@@ -24,6 +24,12 @@
           "photosPermission": "Ha-Ha.ai uses your photos so you can share images in chat.",
           "cameraPermission": "Ha-Ha.ai uses your camera so you can share images in chat."
         }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Ha-Ha.ai uses your location to personalize Cathy's greeting with local weather."
+        }
       ]
     ],
     "experiments": {
@@ -35,7 +41,8 @@
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Ha-Ha.ai uses your microphone to transcribe voice messages.",
         "NSSpeechRecognitionUsageDescription": "Ha-Ha.ai converts your spoken words into text messages.",
-        "NSPhotoLibraryUsageDescription": "Ha-Ha.ai uses your photos so you can share images in chat."
+        "NSPhotoLibraryUsageDescription": "Ha-Ha.ai uses your photos so you can share images in chat.",
+        "NSLocationWhenInUseUsageDescription": "Ha-Ha.ai uses your location to personalize Cathy's greeting with local weather."
       }
     },
     "android": {
@@ -45,7 +52,9 @@
       },
       "permissions": [
         "android.permission.RECORD_AUDIO",
-        "android.permission.READ_MEDIA_IMAGES"
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "package": "com.anonymous.hahaai"
     },
