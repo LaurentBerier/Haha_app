@@ -135,9 +135,10 @@ Core targets:
   - API tests for `claude`, `delete-account`, `admin-account-type`, `payment-webhook`, and shared utils
   - API tests added for `usage-summary`, `subscription-summary`, and `subscription-cancel`
   - store slice tests for `subscriptionSlice` and `usageSlice`
-- CI automation plan prepared for core Phase 2 checks:
-  - workflow template ready (pending push with a GitHub token that has `workflow` scope)
+- CI automation active for core Phase 2 checks:
+  - workflow: [`.github/workflows/phase23-ci.yml`](/Users/laurentbernier/Documents/HAHA_app/.github/workflows/phase23-ci.yml)
   - target checks: `typecheck`, `lint`, `verify:profile-prompt`, and `test:unit` on `main` + PRs
+  - GitHub Actions runtime deprecation handled by upgrading to `actions/checkout@v6` and `actions/setup-node@v6` (Node24-compatible)
 - E2E baseline stabilized on iOS:
   - `npm run e2e:build:ios`
   - `npm run e2e:ios`

@@ -366,6 +366,13 @@ npm run test:unit
 npm run qa:phase23
 ```
 
+CI automation:
+
+- Workflow: [`.github/workflows/phase23-ci.yml`](/Users/laurentbernier/Documents/HAHA_app/.github/workflows/phase23-ci.yml)
+- Trigger: push + pull request on `main`
+- Checks: `typecheck`, `lint`, `verify:profile-prompt`, `test:unit`
+- Actions runtime policy: `actions/checkout@v6` and `actions/setup-node@v6` (Node24-compatible, avoids GitHub Node20 deprecation warning)
+
 API smoke tests:
 
 ```bash

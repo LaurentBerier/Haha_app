@@ -63,9 +63,10 @@ Phase 3 focuses on two tracks:
   - `npm run e2e:ios` PASS (`3/3`)
 - QA execution report published:
   - `docs/qa-run-2026-03-14.md`
-- Phase 2/3 CI workflow plan prepared:
-  - workflow file is ready locally but pending push with GitHub `workflow` scope
-  - target automation: `typecheck`, `lint`, `verify:profile-prompt`, `test:unit`
+- Phase 2/3 CI workflow active:
+  - workflow: [`.github/workflows/phase23-ci.yml`](/Users/laurentbernier/Documents/HAHA_app/.github/workflows/phase23-ci.yml)
+  - automation: `typecheck`, `lint`, `verify:profile-prompt`, `test:unit`
+  - GitHub Node20 deprecation warning addressed with `actions/checkout@v6` and `actions/setup-node@v6` (Node24-compatible)
 - mobile preflight check script added:
   - `scripts/check-mobile-env.sh`
   - npm alias: `npm run check:mobile-env`
