@@ -36,11 +36,21 @@ describe('uiSlice', () => {
 
     expect(slice.conversationModeEnabled).toBe(true);
     expect(slice.greetedArtistIds.has('cathy-gauthier')).toBe(false);
+    expect(slice.queuedChatSendPayload).toBeNull();
 
     slice.setConversationModeEnabled(false);
     expect(slice.conversationModeEnabled).toBe(false);
 
     slice.markArtistGreeted('cathy-gauthier');
     expect(slice.greetedArtistIds.has('cathy-gauthier')).toBe(true);
+
+    slice.queueChatSendPayload({
+      conversationId: 'conv-1',
+      nonce: 'nonce-1',
+      payload: { text: 'allo' }
+    });
+    const queued = slice.consumeChatSendPayload('conv-1', 'nonce-1');
+    expect(queued).toEqual({ text: 'allo' });
+    expect(slice.queuedChatSendPayload).toBeNull();
   });
 });

@@ -15,6 +15,12 @@ interface FetchTtsResponse {
   contentType?: string;
 }
 
+export type VoiceSynthesisPurpose = 'greeting' | 'reply';
+
+export interface FetchVoiceOptions {
+  purpose?: VoiceSynthesisPurpose;
+}
+
 function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
 }
@@ -102,14 +108,23 @@ async function fetchTtsBinary(
   text: string,
   artistId: string,
   language: string,
-  accessToken: string
+  accessToken: string,
+  options?: FetchVoiceOptions
 ): Promise<FetchTtsResponse> {
   const candidates = buildTtsProxyCandidates();
-  const payload = {
+  const payload: {
+    text: string;
+    artistId: string;
+    language: string;
+    purpose?: VoiceSynthesisPurpose;
+  } = {
     text,
     artistId,
     language
   };
+  if (options?.purpose) {
+    payload.purpose = options.purpose;
+  }
   let lastStatus = 0;
 
   for (const endpoint of candidates) {
@@ -152,23 +167,25 @@ async function fetchTtsBinary(
   };
 }
 
-function buildCacheKey(text: string, artistId: string, language: string): string {
-  return hashString(`${artistId}|${language}|${VOICE_CACHE_VERSION}|${text}`);
+function buildCacheKey(text: string, artistId: string, language: string, purpose: VoiceSynthesisPurpose): string {
+  return hashString(`${artistId}|${language}|${purpose}|${VOICE_CACHE_VERSION}|${text}`);
 }
 
 export async function fetchAndCacheVoice(
   text: string,
   artistId: string,
   language: string,
-  accessToken: string
+  accessToken: string,
+  options?: FetchVoiceOptions
 ): Promise<string | null> {
   const normalizedText = normalizeTtsText(text);
   const normalizedArtistId = artistId.trim();
+  const purpose = options?.purpose ?? 'reply';
   if (!normalizedText || !normalizedArtistId || !accessToken.trim()) {
     return null;
   }
 
-  const cacheKey = buildCacheKey(normalizedText, normalizedArtistId, language.trim());
+  const cacheKey = buildCacheKey(normalizedText, normalizedArtistId, language.trim(), purpose);
 
   if (Platform.OS === 'web') {
     const cachedUrl = WEB_TTS_CACHE.get(cacheKey);
@@ -176,7 +193,7 @@ export async function fetchAndCacheVoice(
       return cachedUrl;
     }
 
-    const response = await fetchTtsBinary(normalizedText, normalizedArtistId, language, accessToken);
+    const response = await fetchTtsBinary(normalizedText, normalizedArtistId, language, accessToken, options);
     if (!response.ok || !response.arrayBuffer) {
       return null;
     }
@@ -202,7 +219,7 @@ export async function fetchAndCacheVoice(
     // Continue with fetch.
   }
 
-  const response = await fetchTtsBinary(normalizedText, normalizedArtistId, language, accessToken);
+  const response = await fetchTtsBinary(normalizedText, normalizedArtistId, language, accessToken, options);
   if (!response.ok || !response.arrayBuffer) {
     return null;
   }

@@ -1,9 +1,11 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AmbientGlow } from '../../../components/common/AmbientGlow';
 import { BackButton } from '../../../components/common/BackButton';
+import { MODE_IDS } from '../../../config/constants';
 import { MODE_CATEGORY_META, MODE_CATEGORY_ORDER, type ModeCategoryId } from '../../../config/modeCategories';
+import { getModeById } from '../../../config/modes';
 import { API_BASE_URL, CLAUDE_PROXY_URL, E2E_AUTH_BYPASS } from '../../../config/env';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
 import { useAudioPlayer } from '../../../hooks/useAudioPlayer';
@@ -36,6 +38,49 @@ interface OptionalLocationModule {
 }
 
 let cachedLocationModule: OptionalLocationModule | null | undefined;
+const MIN_GREETING_TYPING_INTERVAL_MS = 18;
+const MAX_GREETING_TYPING_INTERVAL_MS = 80;
+const DEFAULT_GREETING_TYPING_DURATION_MS = 4_200;
+
+interface ArtistModeSource {
+  supportedModeIds?: string[];
+}
+
+function estimateGreetingSpeechDurationMs(text: string): number {
+  const words = text
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+  if (words <= 0) {
+    return DEFAULT_GREETING_TYPING_DURATION_MS;
+  }
+
+  const estimated = Math.round((words / 2.7) * 1000);
+  return Math.max(2_600, Math.min(estimated, 14_000));
+}
+
+function buildAvailableModesForGreeting(artist: ArtistModeSource): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  const modeIds = [MODE_IDS.ON_JASE, ...(artist.supportedModeIds ?? [])];
+
+  modeIds.forEach((modeId) => {
+    const modeName = getModeById(modeId)?.name?.trim();
+    if (!modeName) {
+      return;
+    }
+
+    const key = modeName.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    names.push(modeName);
+  });
+
+  return names.slice(0, 10);
+}
 
 function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
@@ -132,14 +177,21 @@ async function fetchGreetingFromApi(
   artistId: string,
   language: string,
   accessToken: string,
-  coords: GreetingCoordinates | null
+  coords: GreetingCoordinates | null,
+  availableModes: string[],
+  includeVoiceHint: boolean
 ): Promise<string | null> {
   const token = accessToken.trim();
   if (!token) {
     return null;
   }
 
-  const payload: Record<string, unknown> = { artistId, language };
+  const payload: Record<string, unknown> = {
+    artistId,
+    language,
+    availableModes,
+    includeVoiceHint
+  };
   if (coords) {
     payload.coords = coords;
   }
@@ -272,6 +324,7 @@ export default function ModeSelectHomeScreen() {
   const artistId = params.artistId ?? '';
   const headerHorizontalInset = useHeaderHorizontalInset();
   const [greeting, setGreeting] = useState<string | null>(null);
+  const [typedGreeting, setTypedGreeting] = useState('');
 
   const artists = useStore((state) => state.artists);
   const language = useStore((state) => state.language);
@@ -281,8 +334,45 @@ export default function ModeSelectHomeScreen() {
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
   const audioPlayer = useAudioPlayer();
   const playGreetingAudio = audioPlayer.play;
-  const pendingGreetingArtistIdRef = useRef<string | null>(null);
-  const greetingPlaybackStartedRef = useRef(false);
+  const typingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearTypingInterval = useCallback(() => {
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
+  }, []);
+
+  const startTypingGreeting = useCallback(
+    (text: string, targetDurationMs: number) => {
+      clearTypingInterval();
+      const normalized = text.trim();
+      if (!normalized) {
+        setTypedGreeting('');
+        return;
+      }
+
+      setTypedGreeting('');
+      const totalChars = normalized.length;
+      const intervalMs = Math.max(
+        MIN_GREETING_TYPING_INTERVAL_MS,
+        Math.min(MAX_GREETING_TYPING_INTERVAL_MS, Math.round(targetDurationMs / Math.max(totalChars, 1)))
+      );
+      let index = 0;
+
+      typingIntervalRef.current = setInterval(() => {
+        index += 1;
+        if (index >= totalChars) {
+          setTypedGreeting(normalized);
+          clearTypingInterval();
+          return;
+        }
+
+        setTypedGreeting(normalized.slice(0, index));
+      }, intervalMs);
+    },
+    [clearTypingInterval]
+  );
 
   useEffect(() => {
     if (E2E_AUTH_BYPASS) {
@@ -295,35 +385,47 @@ export default function ModeSelectHomeScreen() {
 
     let isCancelled = false;
     const runGreeting = async () => {
+      const includeVoiceHint = greetedArtistIds.size === 0;
+      const availableModes = buildAvailableModesForGreeting(artist);
       const coords = await getOptionalCoords();
       if (isCancelled) {
         return;
       }
 
-      const nextGreeting = await fetchGreetingFromApi(artist.id, language, accessToken, coords);
+      const nextGreeting = await fetchGreetingFromApi(
+        artist.id,
+        language,
+        accessToken,
+        coords,
+        availableModes,
+        includeVoiceHint
+      );
       if (isCancelled || !nextGreeting) {
         return;
       }
 
       setGreeting(nextGreeting);
+      setTypedGreeting('');
+      markArtistGreeted(artist.id);
 
       if (!accessToken.trim()) {
-        markArtistGreeted(artist.id);
+        startTypingGreeting(nextGreeting, DEFAULT_GREETING_TYPING_DURATION_MS);
         return;
       }
 
       try {
-        const greetingAudioUri = await synthesizeVoice(nextGreeting, artist.id, language, accessToken);
+        const greetingAudioUri = await synthesizeVoice(nextGreeting, artist.id, language, accessToken, {
+          purpose: 'greeting'
+        });
         if (isCancelled) {
           return;
         }
 
-        pendingGreetingArtistIdRef.current = artist.id;
-        greetingPlaybackStartedRef.current = false;
-        await playGreetingAudio(greetingAudioUri);
+        startTypingGreeting(nextGreeting, estimateGreetingSpeechDurationMs(nextGreeting));
+        void playGreetingAudio(greetingAudioUri);
       } catch {
         if (!isCancelled) {
-          markArtistGreeted(artist.id);
+          startTypingGreeting(nextGreeting, DEFAULT_GREETING_TYPING_DURATION_MS);
         }
       }
     };
@@ -331,28 +433,15 @@ export default function ModeSelectHomeScreen() {
     void runGreeting();
     return () => {
       isCancelled = true;
+      clearTypingInterval();
     };
-  }, [accessToken, artist, greetedArtistIds, language, markArtistGreeted, playGreetingAudio]);
+  }, [accessToken, artist, clearTypingInterval, greetedArtistIds, language, markArtistGreeted, playGreetingAudio, startTypingGreeting]);
 
   useEffect(() => {
-    const pendingArtistId = pendingGreetingArtistIdRef.current;
-    if (!pendingArtistId) {
-      return;
-    }
-
-    if (audioPlayer.isPlaying) {
-      greetingPlaybackStartedRef.current = true;
-      return;
-    }
-
-    if (!greetingPlaybackStartedRef.current || audioPlayer.isLoading) {
-      return;
-    }
-
-    markArtistGreeted(pendingArtistId);
-    pendingGreetingArtistIdRef.current = null;
-    greetingPlaybackStartedRef.current = false;
-  }, [audioPlayer.isLoading, audioPlayer.isPlaying, markArtistGreeted]);
+    return () => {
+      clearTypingInterval();
+    };
+  }, [clearTypingInterval]);
 
   if (!artist) {
     return (
@@ -375,7 +464,7 @@ export default function ModeSelectHomeScreen() {
         </View>
         {greeting ? (
           <View style={styles.greetingCard}>
-            <Text style={styles.greetingText}>{greeting}</Text>
+            <Text style={styles.greetingText}>{typedGreeting || '...'}</Text>
           </View>
         ) : null}
 

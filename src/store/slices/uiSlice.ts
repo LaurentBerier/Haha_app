@@ -1,12 +1,19 @@
 import type { StateCreator } from 'zustand';
 import { APP_DEFAULT_LANGUAGE } from '../../config/constants';
 import { setLanguage as setI18nLanguage } from '../../i18n';
+import type { ChatSendPayload } from '../../models/ChatSendPayload';
 import type { StoreState } from '../useStore';
 
 export type VoiceStatus = 'idle' | 'recording' | 'transcribing' | 'error';
 export type AppLanguage = 'fr-CA' | 'en-CA';
 export type DisplayMode = 'dark';
 export type ReduceMotionPreference = 'system' | 'on' | 'off';
+
+export interface QueuedChatSendPayload {
+  nonce: string;
+  conversationId: string;
+  payload: ChatSendPayload;
+}
 
 function resolveLanguage(language: string | null | undefined): AppLanguage {
   if (!language) {
@@ -29,6 +36,7 @@ export interface UiSlice {
   voiceAutoPlay: boolean;
   conversationModeEnabled: boolean;
   greetedArtistIds: Set<string>;
+  queuedChatSendPayload: QueuedChatSendPayload | null;
   setLoading: (val: boolean) => void;
   setVoiceStatus: (status: VoiceStatus) => void;
   setLanguagePreference: (language: AppLanguage) => void;
@@ -37,9 +45,11 @@ export interface UiSlice {
   setVoiceAutoPlay: (enabled: boolean) => void;
   setConversationModeEnabled: (enabled: boolean) => void;
   markArtistGreeted: (artistId: string) => void;
+  queueChatSendPayload: (entry: QueuedChatSendPayload) => void;
+  consumeChatSendPayload: (conversationId: string, nonce: string) => ChatSendPayload | null;
 }
 
-export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set) => ({
+export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set, get) => ({
   isLoading: false,
   voiceStatus: 'idle',
   language: resolveLanguage(APP_DEFAULT_LANGUAGE),
@@ -48,6 +58,7 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set) =>
   voiceAutoPlay: false,
   conversationModeEnabled: true,
   greetedArtistIds: new Set<string>(),
+  queuedChatSendPayload: null,
   setLoading: (val) => set({ isLoading: val }),
   setVoiceStatus: (status) => set({ voiceStatus: status }),
   setLanguagePreference: (language) => {
@@ -68,5 +79,19 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set) =>
       const next = new Set(state.greetedArtistIds);
       next.add(normalizedArtistId);
       return { greetedArtistIds: next };
-    })
+    }),
+  queueChatSendPayload: (entry) => set({ queuedChatSendPayload: entry }),
+  consumeChatSendPayload: (conversationId, nonce) => {
+    const current = get().queuedChatSendPayload;
+    if (!current) {
+      return null;
+    }
+
+    if (current.conversationId !== conversationId || current.nonce !== nonce) {
+      return null;
+    }
+
+    set({ queuedChatSendPayload: null });
+    return current.payload;
+  }
 });

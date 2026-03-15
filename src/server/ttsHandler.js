@@ -180,6 +180,8 @@ function parsePayload(body) {
   const text = typeof body.text === 'string' ? body.text.replace(/\s+/g, ' ').trim() : '';
   const artistId = typeof body.artistId === 'string' ? body.artistId.trim() : '';
   const language = typeof body.language === 'string' ? body.language.trim() : 'fr-CA';
+  const purposeRaw = typeof body.purpose === 'string' ? body.purpose.trim().toLowerCase() : '';
+  const purpose = purposeRaw === 'greeting' ? 'greeting' : 'reply';
 
   if (!text) {
     throw new Error('Text is required.');
@@ -197,7 +199,8 @@ function parsePayload(body) {
     text,
     artistId,
     language,
-    providerText: text.slice(0, MAX_PROVIDER_TEXT_CHARS)
+    providerText: text.slice(0, MAX_PROVIDER_TEXT_CHARS),
+    purpose
   };
 }
 
@@ -346,8 +349,9 @@ module.exports = async function handler(req, res) {
     auth.accountType,
     requestId
   );
+  const isGreetingPurpose = payload.purpose === 'greeting';
   const isPaidTier = normalizedAccountType === 'regular' || normalizedAccountType === 'premium' || normalizedAccountType === 'admin';
-  if (!isPaidTier) {
+  if (!isPaidTier && !isGreetingPurpose) {
     sendError(res, 403, 'Voice quota exceeded.', { code: 'TTS_QUOTA_EXCEEDED', requestId });
     return;
   }

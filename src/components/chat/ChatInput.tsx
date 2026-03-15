@@ -36,6 +36,7 @@ interface ConversationModeProps {
 interface ChatInputProps {
   onSend: (payload: ChatSendPayload) => ChatError | null;
   disabled?: boolean;
+  allowImage?: boolean;
   conversationMode?: ConversationModeProps;
 }
 
@@ -117,7 +118,7 @@ async function readImageAsBase64(uri: string): Promise<string> {
   return await blobToBase64(blob);
 }
 
-export function ChatInput({ onSend, disabled = false, conversationMode }: ChatInputProps) {
+export function ChatInput({ onSend, disabled = false, allowImage = true, conversationMode }: ChatInputProps) {
   const [value, setValue] = useState('');
   const [imageAttachment, setImageAttachment] = useState<ChatImageAttachmentDraft | null>(null);
   const [isPickingImage, setIsPickingImage] = useState(false);
@@ -134,12 +135,18 @@ export function ChatInput({ onSend, disabled = false, conversationMode }: ChatIn
 
   const trimmed = value.trim();
   const hasText = trimmed.length > 0;
-  const hasImage = Boolean(imageAttachment);
+  const hasImage = allowImage && Boolean(imageAttachment);
   const canSend = (hasText || hasImage) && !disabled && !isEncodingImage;
 
   useEffect(() => {
     conversationMode?.onTypingStateChange?.(isConversationEnabled && hasText);
   }, [conversationMode, hasText, isConversationEnabled]);
+
+  useEffect(() => {
+    if (!allowImage && imageAttachment) {
+      setImageAttachment(null);
+    }
+  }, [allowImage, imageAttachment]);
 
   const clearValidationErrors = () => {
     if (error) {
@@ -156,7 +163,7 @@ export function ChatInput({ onSend, disabled = false, conversationMode }: ChatIn
     }
 
     let preparedImage: ChatImageAttachment | null = null;
-    if (imageAttachment) {
+    if (allowImage && imageAttachment) {
       setIsEncodingImage(true);
       try {
         const base64 = await readImageAsBase64(imageAttachment.uri);
@@ -198,7 +205,7 @@ export function ChatInput({ onSend, disabled = false, conversationMode }: ChatIn
   };
 
   const handlePickImage = async () => {
-    if (disabled || isPickingImage) {
+    if (!allowImage || disabled || isPickingImage) {
       return;
     }
 
@@ -312,7 +319,7 @@ export function ChatInput({ onSend, disabled = false, conversationMode }: ChatIn
 
   return (
     <View style={styles.wrapper}>
-      {imageAttachment ? (
+      {allowImage && imageAttachment ? (
         <View style={styles.attachmentRow}>
           <Image source={{ uri: imageAttachment.uri }} style={styles.attachmentImage} resizeMode="cover" />
           <Text style={styles.attachmentText}>{t('imageAttached')}</Text>
@@ -328,19 +335,21 @@ export function ChatInput({ onSend, disabled = false, conversationMode }: ChatIn
       ) : null}
 
       <View style={styles.container}>
-        <Pressable
-          style={[styles.leftAction, (disabled || isPickingImage || isEncodingImage) && styles.disabledButton]}
-          disabled={disabled || isPickingImage || isEncodingImage}
-          onPress={handlePickImage}
-          accessibilityRole="button"
-          accessibilityLabel={t('addButtonA11y')}
-        >
-          {isPickingImage || isEncodingImage ? (
-            <ActivityIndicator color={theme.colors.textDisabled} />
-          ) : (
-            <Text style={styles.leftActionText}>+</Text>
-          )}
-        </Pressable>
+        {allowImage ? (
+          <Pressable
+            style={[styles.leftAction, (disabled || isPickingImage || isEncodingImage) && styles.disabledButton]}
+            disabled={disabled || isPickingImage || isEncodingImage}
+            onPress={handlePickImage}
+            accessibilityRole="button"
+            accessibilityLabel={t('addButtonA11y')}
+          >
+            {isPickingImage || isEncodingImage ? (
+              <ActivityIndicator color={theme.colors.textDisabled} />
+            ) : (
+              <Text style={styles.leftActionText}>+</Text>
+            )}
+          </Pressable>
+        ) : null}
 
         <View style={styles.inputShell}>
           <TextInput

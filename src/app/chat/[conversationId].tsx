@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 import { ChatInput } from '../../components/chat/ChatInput';
 import { MessageList } from '../../components/chat/MessageList';
@@ -38,10 +38,18 @@ function formatArtistDisplayName(artistName: string | null): string {
 
 export default function ChatScreen() {
   const navigation = useNavigation();
-  const params = useLocalSearchParams<{ conversationId: string }>();
-  const conversationId = params.conversationId ?? '';
+  const params = useLocalSearchParams<{
+    conversationId?: string | string[];
+    queuedText?: string | string[];
+    queuedNonce?: string | string[];
+  }>();
+  const conversationIdParam = Array.isArray(params.conversationId) ? params.conversationId[0] : params.conversationId;
+  const queuedTextParam = Array.isArray(params.queuedText) ? params.queuedText[0] : params.queuedText;
+  const queuedNonceParam = Array.isArray(params.queuedNonce) ? params.queuedNonce[0] : params.queuedNonce;
+  const conversationId = conversationIdParam ?? '';
   const isValidConversation = conversationId.length > 0;
   const [hasTypedDraft, setHasTypedDraft] = useState(false);
+  const handledQueuedNonceRef = useRef<string | null>(null);
   const headerHorizontalInset = useHeaderHorizontalInset();
 
   const sessionUser = useStore((state) => state.session?.user ?? null);
@@ -49,6 +57,7 @@ export default function ChatScreen() {
   const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
   const setVoiceAutoPlay = useStore((state) => state.setVoiceAutoPlay);
+  const consumeChatSendPayload = useStore((state) => state.consumeChatSendPayload);
   const currentConversation = useStore(
     useCallback((state) => findConversationById(state.conversations, conversationId), [conversationId])
   );
@@ -90,6 +99,26 @@ export default function ChatScreen() {
   useEffect(() => {
     setVoiceAutoPlay(conversationModeEnabled);
   }, [conversationModeEnabled, setVoiceAutoPlay]);
+
+  useEffect(() => {
+    const queuedText = queuedTextParam?.trim() ?? '';
+    const queuedNonce = queuedNonceParam?.trim() ?? '';
+    if (!isValidConversation || !queuedNonce) {
+      return;
+    }
+    if (handledQueuedNonceRef.current === queuedNonce) {
+      return;
+    }
+    handledQueuedNonceRef.current = queuedNonce;
+
+    const queuedPayload = consumeChatSendPayload(conversationId, queuedNonce);
+    if (queuedPayload) {
+      sendMessage(queuedPayload);
+    } else if (queuedText) {
+      sendMessage({ text: queuedText });
+    }
+    router.replace(`/chat/${conversationId}`);
+  }, [consumeChatSendPayload, conversationId, isValidConversation, queuedNonceParam, queuedTextParam, sendMessage]);
 
   return (
     <KeyboardAvoidingView

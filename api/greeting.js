@@ -82,10 +82,22 @@ function parsePayload(body) {
     throw new Error('artistId is required.');
   }
 
+  const includeVoiceHint = body.includeVoiceHint === true;
+  const availableModes = Array.isArray(body.availableModes)
+    ? body.availableModes
+        .filter((entry) => typeof entry === 'string')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .slice(0, 12)
+        .map((entry) => entry.slice(0, 60))
+    : [];
+
   return {
     artistId,
     language: normalizeLanguage(body.language),
-    coords: parseCoords(body.coords)
+    coords: parseCoords(body.coords),
+    includeVoiceHint,
+    availableModes
   };
 }
 
@@ -283,20 +295,35 @@ function toHeadlineSummaryText(headline, language) {
   return language.toLowerCase().startsWith('en') ? 'No headline available' : 'Aucune manchette disponible';
 }
 
-function buildGreetingSystemPrompt(language) {
+function buildGreetingSystemPrompt(language, includeVoiceHint) {
   const isEnglish = language.toLowerCase().startsWith('en');
   if (isEnglish) {
     return `You are Cathy Gauthier welcoming the user to mode selection.
-Write 4 to 6 short sentences.
-Ask how they are doing, mention the current weather and one real headline, then propose the available chat modes.
-Keep a warm, witty Cathy voice. Use proper punctuation and accents when relevant.
-Do not use markdown, asterisks, bullet lists, or em dashes.`;
+Write exactly 4 to 6 short sentences, in this strict order:
+1) Ask how the user is doing.
+2) ${
+      includeVoiceHint
+        ? 'Mention once that voice conversation mode is active and they can disable it by tapping the small mic at the bottom right of the text bar.'
+        : 'Do not mention microphone controls.'
+    }
+3) Mention at least one real element of the day: local weather and or one local Canadian headline.
+4) Propose relevant modes from the provided available modes list.
+5) End by asking what the user wants to do now.
+Keep a warm, witty Cathy voice. No markdown, no bullets, no asterisks, no em dashes.`;
   }
 
   return `Tu es Cathy Gauthier qui accueille l'utilisateur sur l'ecran de selection de mode.
-Ecris 4 a 6 phrases courtes.
-Demande comment il va, mentionne la meteo actuelle et une vraie manchette du jour, puis propose les modes disponibles.
-Garde un ton chaleureux et punchy, style Cathy, avec de bons accents.
+Ecris exactement 4 a 6 phrases courtes, dans cet ordre strict :
+1) Demande comment la personne va.
+2) ${
+    includeVoiceHint
+      ? "Mentionne une seule fois que le mode discussion vocale est actif et qu'on peut le desactiver en touchant le petit micro en bas a droite de la barre de texte."
+      : "Ne mentionne pas les controles du micro."
+  }
+3) Mentionne au moins un element reel du jour : meteo locale et ou une manchette locale canadienne.
+4) Propose des modes pertinents parmi la liste des modes disponibles.
+5) Termine en demandant ce que la personne veut faire maintenant.
+Garde un ton chaleureux et punchy, style Cathy.
 N'utilise pas de markdown, pas d'asterisque, pas de liste, pas de tiret long.`;
 }
 
@@ -311,7 +338,8 @@ function buildGreetingUserPrompt(context) {
       `Horoscope sign: ${context.horoscopeSign ?? 'Unknown'}`,
       `Weather: ${context.weatherSummary}`,
       `Headline: ${context.headlineSummary}`,
-      'Available modes: chat, roast, impro, horoscope, personalized message, image-based modes.'
+      `Available modes: ${context.availableModes.join(', ') || 'chat, roast, impro, horoscope, personalized message, image modes'}`,
+      `Include voice hint sentence: ${context.includeVoiceHint ? 'yes' : 'no'}`
     ].join('\n');
   }
 
@@ -323,7 +351,8 @@ function buildGreetingUserPrompt(context) {
     `Signe astro: ${context.horoscopeSign ?? 'Inconnu'}`,
     `Meteo: ${context.weatherSummary}`,
     `Manchette: ${context.headlineSummary}`,
-    'Modes disponibles: discussion, roast, impro, horoscope, message personnalise, modes image.'
+    `Modes disponibles: ${context.availableModes.join(', ') || 'discussion, roast, impro, horoscope, message personnalise, modes image'}`,
+    `Inclure phrase micro: ${context.includeVoiceHint ? 'oui' : 'non'}`
   ].join('\n');
 }
 
@@ -378,9 +407,9 @@ async function generateGreetingText(context) {
       body: JSON.stringify({
         model: DEFAULT_MODEL,
         max_tokens: 260,
-        temperature: 0.8,
+        temperature: 0.65,
         stream: false,
-        system: buildGreetingSystemPrompt(context.language),
+        system: buildGreetingSystemPrompt(context.language, context.includeVoiceHint),
         messages: [
           {
             role: 'user',
@@ -502,7 +531,9 @@ module.exports = async function handler(req, res) {
         preferredName,
         horoscopeSign: userHoroscope,
         weatherSummary,
-        headlineSummary
+        headlineSummary,
+        includeVoiceHint: input.includeVoiceHint,
+        availableModes: input.availableModes
       }
     );
   } catch (error) {

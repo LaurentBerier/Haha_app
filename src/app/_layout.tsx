@@ -1,5 +1,5 @@
 import { Stack, router, usePathname, useSegments } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
   Image,
@@ -11,13 +11,17 @@ import {
   type ImageStyle,
   useWindowDimensions
 } from 'react-native';
+import { ChatInput } from '../components/chat/ChatInput';
 import { BrandMark } from '../components/common/BrandMark';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ToastProvider } from '../components/common/ToastProvider';
+import { MODE_IDS } from '../config/constants';
 import { useAuth } from '../hooks/useAuth';
+import { useVoiceConversation } from '../hooks/useVoiceConversation';
 import { useStorePersistence } from '../hooks/useStorePersistence';
 import { t } from '../i18n';
+import type { ChatSendPayload } from '../models/ChatSendPayload';
 import { signOut } from '../services/authService';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme';
@@ -29,10 +33,31 @@ type AccountMenuRoute = '/settings' | '/settings/edit-profile' | '/settings/subs
 const WEB_BACKGROUND_MIN_HEIGHT_VH = 100;
 const WEB_BACKGROUND_MAX_HEIGHT_VH = 170;
 
+function resolveArtistIdFromPath(pathname: string): string | null {
+  const match = pathname.match(/^\/(?:mode-select|games|history)\/([^/]+)/);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
 export default function RootLayout() {
   useStorePersistence();
   const hasHydrated = useStore((state) => state.hasHydrated);
   const language = useStore((state) => state.language);
+  const selectedArtistId = useStore((state) => state.selectedArtistId);
+  const conversations = useStore((state) => state.conversations);
+  const activeConversationId = useStore((state) => state.activeConversationId);
+  const createConversation = useStore((state) => state.createConversation);
+  const setActiveConversation = useStore((state) => state.setActiveConversation);
+  const queueChatSendPayload = useStore((state) => state.queueChatSendPayload);
+  const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
+  const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
   const clearSession = useStore((state) => state.clearSession);
   const { authStatus, isAuthenticated, userProfile } = useAuth();
   const segments = useSegments();
@@ -40,12 +65,26 @@ export default function RootLayout() {
   const pathname = usePathname();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [hasTypedGlobalDraft, setHasTypedGlobalDraft] = useState(false);
   const inAuthGroup = segmentList[0] === '(auth)';
   const isAuthCallbackRoute = segmentList[0] === 'auth' && segmentList[1] === 'callback';
   const isOnboardingRoute = segmentList[1] === 'onboarding';
+  const isHomeArtistPickerRoute = pathname === '/';
+  const isChatRoute = pathname.startsWith('/chat/');
   const needsOnboarding =
     isAuthenticated && userProfile ? !userProfile.onboardingCompleted && !userProfile.onboardingSkipped : false;
   const showAccountMenu = isAuthenticated && !inAuthGroup;
+  const showGlobalChatInput =
+    hasHydrated &&
+    authStatus !== 'loading' &&
+    isAuthenticated &&
+    !inAuthGroup &&
+    !isAuthCallbackRoute &&
+    !isHomeArtistPickerRoute &&
+    !isChatRoute;
+  const routeArtistId = resolveArtistIdFromPath(pathname);
+  const targetArtistId = routeArtistId ?? selectedArtistId;
+  const globalInputDisabled = !showGlobalChatInput || !targetArtistId;
 
   const accountMenuItems = [
     { label: t('settingsEditProfile'), route: '/settings/edit-profile' as const },
@@ -122,6 +161,81 @@ export default function RootLayout() {
     router.replace('/(auth)/login');
   };
 
+  const sendGlobalMessage = useCallback(
+    (payload: ChatSendPayload) => {
+      const normalizedText = payload.text.trim();
+      const normalizedPayload: ChatSendPayload = {
+        text: normalizedText,
+        image: payload.image ?? null
+      };
+      if ((!normalizedText && !normalizedPayload.image) || !targetArtistId) {
+        return;
+      }
+
+      const artistConversations = conversations[targetArtistId] ?? [];
+      let conversationId =
+        activeConversationId && artistConversations.some((conversation) => conversation.id === activeConversationId)
+          ? activeConversationId
+          : null;
+
+      if (!conversationId && artistConversations.length > 0) {
+        const [latestConversation] = artistConversations
+          .slice()
+          .sort((left, right) => {
+            const rightTime = Date.parse(right.updatedAt);
+            const leftTime = Date.parse(left.updatedAt);
+            return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+          });
+        conversationId = latestConversation?.id ?? null;
+      }
+
+      if (!conversationId) {
+        conversationId = createConversation(targetArtistId, language, MODE_IDS.ON_JASE).id;
+      }
+
+      setActiveConversation(conversationId);
+      const queuedNonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      queueChatSendPayload({
+        conversationId,
+        nonce: queuedNonce,
+        payload: normalizedPayload
+      });
+      router.push({
+        pathname: '/chat/[conversationId]',
+        params: {
+          conversationId,
+          queuedText: normalizedText,
+          queuedNonce
+        }
+      });
+    },
+    [
+      activeConversationId,
+      conversations,
+      createConversation,
+      language,
+      queueChatSendPayload,
+      setActiveConversation,
+      targetArtistId
+    ]
+  );
+
+  const {
+    isListening: isGlobalConversationListening,
+    transcript: globalConversationTranscript,
+    error: globalConversationError,
+    interruptAndListen: interruptGlobalConversation
+  } = useVoiceConversation({
+    enabled: showGlobalChatInput && conversationModeEnabled && !hasTypedGlobalDraft && !globalInputDisabled,
+    disabled: globalInputDisabled,
+    isPlaying: false,
+    onSend: (text) => {
+      sendGlobalMessage({ text });
+    },
+    onStopAudio: () => {},
+    language
+  });
+
   useEffect(() => {
     if (!hasHydrated || authStatus === 'loading') {
       return;
@@ -160,6 +274,12 @@ export default function RootLayout() {
   useEffect(() => {
     setIsAccountMenuOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (!showGlobalChatInput) {
+      setHasTypedGlobalDraft(false);
+    }
+  }, [showGlobalChatInput]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || !webBackgroundUri || typeof document === 'undefined') {
@@ -354,6 +474,31 @@ export default function RootLayout() {
                 <Stack.Screen name="settings/subscription" options={{ title: t('settingsSubscription') }} />
                 <Stack.Screen name="stats/index" options={{ title: t('settingsStats') }} />
               </Stack>
+              {showGlobalChatInput ? (
+                <View style={styles.globalInputDock}>
+                  <View style={styles.globalInputContent}>
+                    <ChatInput
+                      onSend={(payload) => {
+                        sendGlobalMessage(payload);
+                        return null;
+                      }}
+                      disabled={globalInputDisabled}
+                      conversationMode={{
+                        enabled: conversationModeEnabled,
+                        isListening: isGlobalConversationListening,
+                        transcript: globalConversationTranscript,
+                        error: globalConversationError,
+                        isPlaying: false,
+                        onToggle: () => {
+                          setConversationModeEnabled(!conversationModeEnabled);
+                        },
+                        onInterrupt: interruptGlobalConversation,
+                        onTypingStateChange: setHasTypedGlobalDraft
+                      }}
+                    />
+                  </View>
+                </View>
+              ) : null}
               {isAccountMenuOpen ? (
                 <View style={styles.menuOverlay}>
                   <Pressable style={styles.menuBackdrop} onPress={closeAccountMenu} testID="account-menu-backdrop" />
@@ -422,6 +567,15 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center'
+  },
+  globalInputDock: {
+    width: '100%',
+    paddingBottom: Platform.OS === 'ios' ? theme.spacing.sm : theme.spacing.xs
+  },
+  globalInputContent: {
+    width: '100%',
+    maxWidth: 784,
+    alignSelf: 'center'
   },
   headerMenuButton: {
     borderWidth: 1,

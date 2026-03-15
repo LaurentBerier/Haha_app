@@ -1,5 +1,5 @@
 import { Platform } from 'react-native';
-import { fetchAndCacheVoice } from './ttsService';
+import { fetchAndCacheVoice, type FetchVoiceOptions } from './ttsService';
 
 type Listener = { remove: () => void };
 type SpeechRecognitionModule = {
@@ -253,9 +253,10 @@ export async function synthesizeVoice(
   text: string,
   artistId: string,
   language: string,
-  accessToken: string
+  accessToken: string,
+  options?: FetchVoiceOptions
 ): Promise<string> {
-  const uri = await fetchAndCacheVoice(text, artistId, language, accessToken);
+  const uri = await fetchAndCacheVoice(text, artistId, language, accessToken, options);
   if (!uri) {
     throw new Error('TTS unavailable');
   }
