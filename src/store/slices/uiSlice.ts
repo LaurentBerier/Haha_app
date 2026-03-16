@@ -35,7 +35,6 @@ export interface UiSlice {
   reduceMotion: ReduceMotionPreference;
   voiceAutoPlay: boolean;
   conversationModeEnabled: boolean;
-  modeSelectGreetingAudioActive: boolean;
   greetedArtistIds: Set<string>;
   queuedChatSendPayload: QueuedChatSendPayload | null;
   setLoading: (val: boolean) => void;
@@ -45,7 +44,6 @@ export interface UiSlice {
   setReduceMotion: (mode: ReduceMotionPreference) => void;
   setVoiceAutoPlay: (enabled: boolean) => void;
   setConversationModeEnabled: (enabled: boolean) => void;
-  setModeSelectGreetingAudioActive: (active: boolean) => void;
   markArtistGreeted: (artistId: string) => void;
   queueChatSendPayload: (entry: QueuedChatSendPayload) => void;
   consumeChatSendPayload: (conversationId: string, nonce: string) => ChatSendPayload | null;
@@ -59,7 +57,6 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set, ge
   reduceMotion: 'system',
   voiceAutoPlay: false,
   conversationModeEnabled: true,
-  modeSelectGreetingAudioActive: false,
   greetedArtistIds: new Set<string>(),
   queuedChatSendPayload: null,
   setLoading: (val) => set({ isLoading: val }),
@@ -72,7 +69,6 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set, ge
   setReduceMotion: (mode) => set({ reduceMotion: mode }),
   setVoiceAutoPlay: (enabled) => set({ voiceAutoPlay: enabled }),
   setConversationModeEnabled: (enabled) => set({ conversationModeEnabled: enabled }),
-  setModeSelectGreetingAudioActive: (active) => set({ modeSelectGreetingAudioActive: active }),
   markArtistGreeted: (artistId) =>
     set((state) => {
       const normalizedArtistId = artistId.trim();

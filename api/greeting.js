@@ -304,7 +304,7 @@ Write exactly 2 short sentences in this strict order:
 1) Greet the user by first name when available, ask how they are doing, and add a very short self-joke.
 2) ${
       includeVoiceHint
-        ? 'Explain that voice mode is active and how to disable it with the small mic at the bottom right, using your own fresh wording.'
+        ? 'Explain that voice mode is active and how to disable it with the small mic at the bottom right if they prefer text, using your own fresh wording.'
         : 'Say voice mode is active.'
     }
 Hard rules:
@@ -321,7 +321,7 @@ Ecris exactement 2 phrases courtes, dans cet ordre strict :
 1) Salue la personne par son prenom si disponible, demande comment elle va, et ajoute une mini blague de presentation.
 2) ${
     includeVoiceHint
-      ? "Explique que le mode discussion vocale est actif et comment le desactiver avec le petit micro en bas a droite, avec une formulation fraiche et naturelle."
+      ? "Explique que le mode discussion vocale est actif et comment le desactiver avec le petit micro en bas a droite selon sa preference de communication (texte ou voix), avec une formulation fraiche et naturelle."
       : "Dis que le mode discussion vocale est actif."
   }
 Regles absolues :

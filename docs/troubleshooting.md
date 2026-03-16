@@ -278,6 +278,33 @@ If `REVENUECAT_WEBHOOK_SECRET` is missing, endpoint returns `500` (`SERVER_MISCO
 
 Fix:
 
+## 15) Web console shows `POST /api/greeting 500` on mode-select
+
+Symptoms:
+
+- On `mode-select`, greeting still appears, but browser console shows `POST /api/greeting 500`.
+
+Expected behavior:
+
+- Greeting has a fallback path, so UX should continue even if greeting API fails.
+- On `localhost`/`127.0.0.1`/`::1`, client intentionally skips greeting API and uses fallback greeting text.
+
+Checks:
+
+1. Hard refresh the browser after updating frontend bundle.
+2. Confirm page host is local (`localhost`, `127.0.0.1`, or `::1`) if you want API bypass.
+3. In production, if API keeps returning `500`, verify server env:
+   - `ANTHROPIC_API_KEY`
+   - `OPENWEATHER_API_KEY`
+   - `NEWS_API_KEY`
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+
+Notes:
+
+- Client applies short backoff after greeting API server/network failures to reduce repeated failing requests.
+- Even with API failure, greeting fallback remains functional and conversation flow continues.
+
 - rerun [`docs/supabase-account-types.sql`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-account-types.sql)
 
 Notes:

@@ -101,6 +101,30 @@ Store-level account isolation:
   - legacy mode IDs are server-mapped for compatibility (`relax`, `roast`, `coach-brutal`, etc.)
   - `Profil` category shows profile/history shortcuts instead of chat modes
 
+### Conversation Mode (Phase 4)
+
+- Voice/text conversation mode is globally controlled by `uiSlice.conversationModeEnabled` (default: `true`).
+- `ChatInput` is the single shared composer UI across chat contexts (chat screen + global composer + mode-select composer), including:
+  - image attachment support (`+`)
+  - send arrow when text/image is present
+  - mic state/toggle with voice transcript placeholder
+- Voice loop orchestration lives in `src/hooks/useVoiceConversation.ts`:
+  - auto-starts listening when enabled
+  - pauses STT while TTS is speaking (`isPlaying=true`) to avoid echo loops
+  - resumes listening after playback
+  - auto-sends transcript after silence timeout (`2.8s`)
+- Mode-select (`/mode-select/[artistId]`) now embeds the same conversation stack directly in-screen:
+  - bubbles are anchored above the bottom composer
+  - visible chat stack is clipped to roughly half the viewport height
+  - no route push to `/chat/[conversationId]` when user replies in mode-select
+  - navigation to a new mode/chat happens only when user chooses a mode
+- Greeting behavior:
+  - once per artist per app session (`uiSlice.greetedArtistIds`, memory-only)
+  - greeting message is inserted as an artist message in a fresh `on-jase` conversation
+  - best-effort voice playback via TTS (with web speech fallback)
+  - web localhost bypasses `/api/greeting` and uses local fallback copy to avoid local 500 noise
+  - greeting API failures trigger a short client backoff before retrying
+
 ### Games UX
 
 - Entry point is the history banner (`src/app/history/[artistId].tsx`) -> `/games/[artistId]`

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { t } from '../i18n';
 import { requestVoicePermission, startListening, stopListening } from '../services/voiceEngine';
 
-const SILENCE_TIMEOUT_MS = 3200;
+const SILENCE_TIMEOUT_MS = 2800;
 const WEB_NOISE_ERRORS = new Set(['no-speech', 'aborted']);
 
 export interface UseVoiceConversationProps {

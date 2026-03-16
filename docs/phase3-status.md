@@ -35,8 +35,9 @@ Phase 3 focuses on two tracks:
   - play/pause button when audio is ready
 - Voice engine stub removed:
   - `src/services/voiceEngine.ts` now delegates to `fetchAndCacheVoice(...)`
-- Phase 4 scaffold is present:
-  - `src/hooks/useVoiceConversation.ts` exported and intentionally not implemented
+- Phase 4 conversation foundations are now implemented:
+  - `src/hooks/useVoiceConversation.ts` drives STT silence auto-send + TTS-aware pause/resume
+  - shared `ChatInput`/conversation-mode behavior is used across chat contexts
 - Prompt upgrade for Cathy is integrated in `api/claude.js`:
   - global knowledge section
   - response structure contract

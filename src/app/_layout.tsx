@@ -61,7 +61,6 @@ export default function RootLayout() {
   const setActiveConversation = useStore((state) => state.setActiveConversation);
   const queueChatSendPayload = useStore((state) => state.queueChatSendPayload);
   const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
-  const modeSelectGreetingAudioActive = useStore((state) => state.modeSelectGreetingAudioActive);
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
   const clearSession = useStore((state) => state.clearSession);
   const { authStatus, isAuthenticated, userProfile } = useAuth();
@@ -76,6 +75,7 @@ export default function RootLayout() {
   const isOnboardingRoute = segmentList[1] === 'onboarding';
   const isHomeArtistPickerRoute = pathname === '/';
   const isChatRoute = pathname.startsWith('/chat/');
+  const isModeSelectContextRoute = isModeSelectRoute(pathname);
   const needsOnboarding =
     isAuthenticated && userProfile ? !userProfile.onboardingCompleted && !userProfile.onboardingSkipped : false;
   const showAccountMenu = isAuthenticated && !inAuthGroup;
@@ -86,6 +86,7 @@ export default function RootLayout() {
     !inAuthGroup &&
     !isAuthCallbackRoute &&
     !isHomeArtistPickerRoute &&
+    !isModeSelectContextRoute &&
     !isChatRoute;
   const routeArtistId = resolveArtistIdFromPath(pathname);
   const targetArtistId = routeArtistId ?? selectedArtistId;
@@ -255,7 +256,7 @@ export default function RootLayout() {
       !hasTypedGlobalDraft &&
       !globalInputDisabled,
     disabled: globalInputDisabled,
-    isPlaying: modeSelectGreetingAudioActive,
+    isPlaying: false,
     onSend: (text) => {
       sendGlobalMessage({ text });
     },
