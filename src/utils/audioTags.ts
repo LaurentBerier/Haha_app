@@ -25,7 +25,7 @@ export function splitDisplayChunkFromRaw(rawChunk: string): { displayChunk: stri
   const looksLikePartialAudioTag =
     !trailingChunk.includes(']') &&
     trailingChunk.length <= 48 &&
-    /^\[[A-Za-z\s-]*$/.test(trailingChunk);
+    /^\[[^\]\n]*$/.test(trailingChunk);
 
   if (!looksLikePartialAudioTag) {
     return {

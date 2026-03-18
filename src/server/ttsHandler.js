@@ -28,6 +28,34 @@ function parsePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function readFirstNonEmptyEnv(...keys) {
+  for (const key of keys) {
+    if (!key) {
+      continue;
+    }
+    const value = process.env[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return '';
+}
+
+function parseBooleanEnv(value, fallback) {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on') {
+    return true;
+  }
+  if (normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === 'off') {
+    return false;
+  }
+  return fallback;
+}
+
 function normalizeAccountType(accountType) {
   if (typeof accountType === 'string' && accountType.trim()) {
     const normalized = accountType.trim().toLowerCase();
@@ -69,23 +97,68 @@ function getTtsMonthlyCap(accountType) {
 
 function resolveVoiceIdForTier(accountType) {
   const genericVoiceId =
-    typeof process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC === 'string' &&
-    process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC.trim()
-      ? process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC.trim()
-      : DEFAULT_VOICE_ID_GENERIC;
-
-  const premiumVoiceId =
-    typeof process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY === 'string' && process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY.trim()
-      ? process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY.trim()
-      : genericVoiceId;
+    readFirstNonEmptyEnv('ELEVENLABS_VOICE_ID_GENERIC', 'EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC') ||
+    DEFAULT_VOICE_ID_GENERIC;
+  const cathyVoiceId = readFirstNonEmptyEnv('ELEVENLABS_VOICE_ID_CATHY', 'EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY');
+  const regularVoiceOverride = readFirstNonEmptyEnv('ELEVENLABS_VOICE_ID_REGULAR');
+  const premiumVoiceOverride = readFirstNonEmptyEnv('ELEVENLABS_VOICE_ID_PREMIUM');
+  const useCathyForAllPaid = parseBooleanEnv(process.env.ELEVENLABS_USE_CATHY_FOR_ALL_PAID, true);
+  const regularVoiceId =
+    regularVoiceOverride || (useCathyForAllPaid ? cathyVoiceId || genericVoiceId : genericVoiceId);
+  const premiumVoiceId = premiumVoiceOverride || cathyVoiceId || genericVoiceId;
 
   const normalized = normalizeAccountType(accountType);
-  return normalized === 'premium' || normalized === 'admin' ? premiumVoiceId : genericVoiceId;
+  return normalized === 'premium' || normalized === 'admin' ? premiumVoiceId : regularVoiceId;
+}
+
+function canonicalizeModelId(rawModelId) {
+  if (typeof rawModelId !== 'string') {
+    return null;
+  }
+  const trimmed = rawModelId.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalized = trimmed.toLowerCase();
+  const collapsed = normalized.replace(/[^a-z0-9]/g, '');
+
+  if (
+    normalized === 'eleven_v3' ||
+    normalized === 'eleven-v3' ||
+    normalized === 'v3' ||
+    normalized === '3' ||
+    normalized === '3.0' ||
+    collapsed === 'elevenv3' ||
+    collapsed === 'v3' ||
+    collapsed === '3'
+  ) {
+    return 'eleven_v3';
+  }
+
+  if (
+    normalized === 'eleven_turbo_v2_5' ||
+    normalized === 'eleven_turbo_v2.5' ||
+    normalized === 'eleven-turbo-v2-5' ||
+    normalized === 'v2.5' ||
+    normalized === '2.5' ||
+    normalized === 'v2_5' ||
+    normalized === '2_5' ||
+    collapsed === 'eleventurbov25' ||
+    collapsed === 'v25' ||
+    collapsed === '25'
+  ) {
+    return 'eleven_turbo_v2_5';
+  }
+
+  return null;
 }
 
 function getModelId() {
-  if (typeof process.env.ELEVENLABS_MODEL_ID === 'string' && process.env.ELEVENLABS_MODEL_ID.trim()) {
-    return process.env.ELEVENLABS_MODEL_ID.trim();
+  const fromEnv = readFirstNonEmptyEnv('ELEVENLABS_MODEL_ID');
+  if (fromEnv) {
+    const canonicalModelId = canonicalizeModelId(fromEnv);
+    return canonicalModelId || fromEnv;
   }
 
   return DEFAULT_MODEL_ID;
@@ -98,9 +171,10 @@ function getVoiceSettings() {
   };
 
   return {
-    stability: readNumeric(process.env.ELEVENLABS_STABILITY, 0.5),
-    similarity_boost: readNumeric(process.env.ELEVENLABS_SIMILARITY_BOOST, 0.8),
-    style: readNumeric(process.env.ELEVENLABS_STYLE, 0.35)
+    // Calmer v3 toward a v2.5-like timbre while keeping audio-tag support.
+    stability: readNumeric(process.env.ELEVENLABS_STABILITY, 0.72),
+    similarity_boost: readNumeric(process.env.ELEVENLABS_SIMILARITY_BOOST, 0.92),
+    style: readNumeric(process.env.ELEVENLABS_STYLE, 0.08)
   };
 }
 
@@ -429,10 +503,11 @@ module.exports = async function handler(req, res) {
       providerPayload = '';
     }
 
-    console.error(
-      `[api/tts][${requestId}] ElevenLabs returned ${upstreamResponse.status}`,
-      providerPayload || '(empty body)'
-    );
+    console.error(`[api/tts][${requestId}] ElevenLabs returned ${upstreamResponse.status}`, {
+      providerPayload: providerPayload || '(empty body)',
+      modelId,
+      voiceId
+    });
     sendError(res, 503, 'TTS provider unavailable.', { code: 'TTS_PROVIDER_ERROR', requestId });
     return;
   }

@@ -81,9 +81,9 @@ export default function ChatScreen() {
   const sendWithFillerRef = useRef<(payload: ChatSendPayload) => unknown>(() => null);
 
   const { isListening, transcript, error: conversationError, interruptAndListen } = useVoiceConversation({
-    enabled: conversationModeEnabled && !hasTypedDraft && !isQuotaBlocked && isValidConversation,
+    enabled: conversationModeEnabled && !hasTypedDraft && !isQuotaBlocked && isValidConversation && !hasStreaming,
     disabled: !isValidConversation || isQuotaBlocked,
-    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading,
+    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
     onSend: (text) => {
       const normalized = text.trim();
       if (!normalized) {

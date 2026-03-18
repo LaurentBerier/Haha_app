@@ -68,6 +68,12 @@ describe('api/tts', () => {
     SUPABASE_URL: process.env.SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     ELEVENLABS_API_KEY: process.env.ELEVENLABS_API_KEY,
+    ELEVENLABS_MODEL_ID: process.env.ELEVENLABS_MODEL_ID,
+    ELEVENLABS_VOICE_ID_GENERIC: process.env.ELEVENLABS_VOICE_ID_GENERIC,
+    ELEVENLABS_VOICE_ID_CATHY: process.env.ELEVENLABS_VOICE_ID_CATHY,
+    ELEVENLABS_VOICE_ID_REGULAR: process.env.ELEVENLABS_VOICE_ID_REGULAR,
+    ELEVENLABS_VOICE_ID_PREMIUM: process.env.ELEVENLABS_VOICE_ID_PREMIUM,
+    ELEVENLABS_USE_CATHY_FOR_ALL_PAID: process.env.ELEVENLABS_USE_CATHY_FOR_ALL_PAID,
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
     EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC: process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC,
     EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY: process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY
@@ -80,6 +86,12 @@ describe('api/tts', () => {
     process.env.SUPABASE_URL = 'https://example.supabase.co';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
     process.env.ELEVENLABS_API_KEY = 'eleven-api-key';
+    delete process.env.ELEVENLABS_MODEL_ID;
+    delete process.env.ELEVENLABS_VOICE_ID_GENERIC;
+    delete process.env.ELEVENLABS_VOICE_ID_CATHY;
+    delete process.env.ELEVENLABS_VOICE_ID_REGULAR;
+    delete process.env.ELEVENLABS_VOICE_ID_PREMIUM;
+    delete process.env.ELEVENLABS_USE_CATHY_FOR_ALL_PAID;
     process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC = 'generic-voice-id';
     process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY = 'premium-voice-id';
     delete process.env.ALLOWED_ORIGINS;
@@ -106,6 +118,42 @@ describe('api/tts', () => {
       process.env.ELEVENLABS_API_KEY = originalEnv.ELEVENLABS_API_KEY;
     } else {
       delete process.env.ELEVENLABS_API_KEY;
+    }
+
+    if (typeof originalEnv.ELEVENLABS_MODEL_ID === 'string') {
+      process.env.ELEVENLABS_MODEL_ID = originalEnv.ELEVENLABS_MODEL_ID;
+    } else {
+      delete process.env.ELEVENLABS_MODEL_ID;
+    }
+
+    if (typeof originalEnv.ELEVENLABS_VOICE_ID_GENERIC === 'string') {
+      process.env.ELEVENLABS_VOICE_ID_GENERIC = originalEnv.ELEVENLABS_VOICE_ID_GENERIC;
+    } else {
+      delete process.env.ELEVENLABS_VOICE_ID_GENERIC;
+    }
+
+    if (typeof originalEnv.ELEVENLABS_VOICE_ID_CATHY === 'string') {
+      process.env.ELEVENLABS_VOICE_ID_CATHY = originalEnv.ELEVENLABS_VOICE_ID_CATHY;
+    } else {
+      delete process.env.ELEVENLABS_VOICE_ID_CATHY;
+    }
+
+    if (typeof originalEnv.ELEVENLABS_VOICE_ID_REGULAR === 'string') {
+      process.env.ELEVENLABS_VOICE_ID_REGULAR = originalEnv.ELEVENLABS_VOICE_ID_REGULAR;
+    } else {
+      delete process.env.ELEVENLABS_VOICE_ID_REGULAR;
+    }
+
+    if (typeof originalEnv.ELEVENLABS_VOICE_ID_PREMIUM === 'string') {
+      process.env.ELEVENLABS_VOICE_ID_PREMIUM = originalEnv.ELEVENLABS_VOICE_ID_PREMIUM;
+    } else {
+      delete process.env.ELEVENLABS_VOICE_ID_PREMIUM;
+    }
+
+    if (typeof originalEnv.ELEVENLABS_USE_CATHY_FOR_ALL_PAID === 'string') {
+      process.env.ELEVENLABS_USE_CATHY_FOR_ALL_PAID = originalEnv.ELEVENLABS_USE_CATHY_FOR_ALL_PAID;
+    } else {
+      delete process.env.ELEVENLABS_USE_CATHY_FOR_ALL_PAID;
     }
 
     if (typeof originalEnv.ALLOWED_ORIGINS === 'string') {
@@ -223,6 +271,71 @@ describe('api/tts', () => {
     expect(Buffer.isBuffer(res.payload)).toBe(true);
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(global.fetch.mock.calls[0][0]).toContain('/premium-voice-id');
+  });
+
+  it('maps ELEVENLABS_MODEL_ID alias 2.5 to eleven_turbo_v2_5', async () => {
+    const audioBytes = Uint8Array.from([4, 3, 2, 1]).buffer;
+    process.env.ELEVENLABS_MODEL_ID = '2.5';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: jest.fn().mockResolvedValue(audioBytes)
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'premium-user-model-alias', app_metadata: { account_type: 'premium' } },
+          profileAccountType: 'premium',
+          initialUsageCount: 0
+        })
+      )
+    }));
+
+    const handler = require('../../src/server/ttsHandler');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer premium-token' },
+      body: { text: 'bonjour model alias', artistId: 'cathy-gauthier', language: 'fr-CA' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const payload = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(payload.model_id).toBe('eleven_turbo_v2_5');
+  });
+
+  it('uses Cathy voice for regular tier when Cathy voice is configured', async () => {
+    const audioBytes = Uint8Array.from([6, 6, 6, 6]).buffer;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: jest.fn().mockResolvedValue(audioBytes)
+    });
+    process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY = 'cathy-voice-id';
+    process.env.ELEVENLABS_USE_CATHY_FOR_ALL_PAID = 'true';
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'regular-user-cathy', app_metadata: { account_type: 'regular' } },
+          profileAccountType: 'regular',
+          initialUsageCount: 0
+        })
+      )
+    }));
+
+    const handler = require('../../src/server/ttsHandler');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer regular-token' },
+      body: { text: 'bonjour regular voice', artistId: 'cathy-gauthier', language: 'fr-CA' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch.mock.calls[0][0]).toContain('/cathy-voice-id');
   });
 
   it('accepts legacy paid aliases and maps pro artist to premium voice', async () => {

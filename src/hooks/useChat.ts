@@ -46,7 +46,7 @@ const THRESHOLD_3_RATIO = 1;
 const THRESHOLD_4_RATIO = 1.5;
 const MIN_TTS_CHUNK_CHARS = 20;
 const MAX_TTS_CHUNK_CHARS = 200;
-const VOICE_FIRST_CHUNK_MIN_CHARS = 35;
+const VOICE_FIRST_CHUNK_MIN_CHARS = 60;
 const REACT_TAG_PATTERN = /^\s*\[REACT:([^\]\n]{1,8})\]\s*/i;
 const REACT_TAG_GLOBAL_PATTERN = /\[REACT:[^\]\n]{1,12}\]/gi;
 const ALLOWED_REACTIONS = new Set(['😂', '💀', '😮', '😤', '🙄', '😬', '🤔', '👍']);
@@ -106,6 +106,10 @@ function normalizeTtsChunk(chunk: string): string {
 
 function stripReactionTagMarkers(text: string): string {
   return text.replace(REACT_TAG_GLOBAL_PATTERN, '').replace(/\s+/g, ' ').trim();
+}
+
+function stripReactionTagMarkersForDisplay(text: string): string {
+  return text.replace(REACT_TAG_GLOBAL_PATTERN, '');
 }
 
 function extractReactionTag(text: string): { reaction: string | null; cleaned: string } {
@@ -501,8 +505,9 @@ export function useChat(conversationId: string) {
         const mergedChunk = `${displayPendingTagRef.current}${chunk}`;
         const { displayChunk, pendingChunk } = splitDisplayChunkFromRaw(mergedChunk);
         displayPendingTagRef.current = pendingChunk;
-        if (displayChunk) {
-          appendMessageContent(jobConversationId, artistMessageId, displayChunk);
+        const cleanedDisplayChunk = stripReactionTagMarkersForDisplay(displayChunk);
+        if (cleanedDisplayChunk) {
+          appendMessageContent(jobConversationId, artistMessageId, cleanedDisplayChunk);
         }
       };
       flushBufferedTokensRef.current = flushBufferedTokens;
@@ -682,10 +687,29 @@ export function useChat(conversationId: string) {
             if (uri) {
               ttsChunkUrisByIndex.set(chunkIndex, uri);
               flushReadyPlaybackChunks();
+              return;
+            }
+
+            if (!ignoreTtsUpdates) {
+              ignoreTtsUpdates = true;
+              mergeArtistMetadata({
+                voiceStatus: undefined,
+                voiceUrl: undefined,
+                voiceQueue: undefined,
+                voiceChunkBoundaries: undefined
+              });
             }
           })
           .catch(() => {
-            // Silent failure: no voice button if generation fails.
+            if (!ignoreTtsUpdates) {
+              ignoreTtsUpdates = true;
+              mergeArtistMetadata({
+                voiceStatus: undefined,
+                voiceUrl: undefined,
+                voiceQueue: undefined,
+                voiceChunkBoundaries: undefined
+              });
+            }
           });
 
         ttsPendingPromises.push(ttsPromise);
@@ -739,7 +763,13 @@ export function useChat(conversationId: string) {
         }
         flushTtsChunks(true);
         const latestArtistMessage = getLatestArtistMessage();
-        const finalContent = latestArtistMessage?.content ?? '';
+        const rawFinalContent = latestArtistMessage?.content ?? '';
+        const finalContent = stripReactionTagMarkersForDisplay(rawFinalContent);
+        if (finalContent !== rawFinalContent) {
+          updateMessage(jobConversationId, artistMessageId, {
+            content: finalContent
+          });
+        }
         const battleResult = modeId === MODE_IDS.ROAST_BATTLE ? detectBattleResult(finalContent) : null;
         const scoreActionSet = new Set<ScoreAction>(resolveScoreActions(modeId, imageIntent, battleResult));
         const { reaction: cathyReaction } = extractReactionTag(rawTtsResponseRef.current);

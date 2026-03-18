@@ -27,11 +27,19 @@ Do not deploy this repo in `lbernier-2067s-projects`.
 Recommended optional tuning:
 
 - `ELEVENLABS_MODEL_ID`
+- `ELEVENLABS_VOICE_ID_GENERIC`
+- `ELEVENLABS_VOICE_ID_CATHY`
+- `ELEVENLABS_USE_CATHY_FOR_ALL_PAID`
 - `ELEVENLABS_FETCH_TIMEOUT_MS`
 - `TTS_RATE_LIMIT_WINDOW_MS`
 - `TTS_RATE_LIMIT_MAX_REQUESTS`
 - `TTS_MONTHLY_CAP_REGULAR`
 - `TTS_MONTHLY_CAP_PREMIUM`
+
+Model switch aliases supported by the API:
+
+- v3: `eleven_v3`, `v3`, `3`
+- v2.5 turbo: `eleven_turbo_v2_5`, `v2.5`, `2.5`
 
 ## 3) CORS Allowlist Baseline
 

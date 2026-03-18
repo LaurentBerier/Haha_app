@@ -812,9 +812,9 @@ export default function ModeSelectHomeScreen() {
     [accessToken, artist?.id, audioPlayer, conversationModeEnabled, language, sendMessage, sessionUser?.accountType]
   );
   const { isListening, transcript, error: conversationError, interruptAndListen } = useVoiceConversation({
-    enabled: isValidConversation && conversationModeEnabled && !hasTypedDraft && !isQuotaBlocked,
+    enabled: isValidConversation && conversationModeEnabled && !hasTypedDraft && !isQuotaBlocked && !hasStreaming,
     disabled: !isValidConversation || isQuotaBlocked,
-    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading,
+    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
     onSend: (text) => {
       const normalized = text.trim();
       if (!normalized) {

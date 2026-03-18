@@ -20,6 +20,7 @@ interface ChatBubbleProps {
 }
 
 const VOICE_HYDRATION_ATTEMPTS = new Set<string>();
+const REACT_TAG_GLOBAL_PATTERN = /\[REACT:[^\]\n]{1,12}\]/gi;
 
 function normalizeAccountType(accountType: string | null | undefined): string {
   if (typeof accountType === 'string' && accountType.trim()) {
@@ -59,7 +60,8 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
     typeof message.metadata?.errorMessage === 'string' && message.metadata.errorMessage.trim()
       ? message.metadata.errorMessage.trim()
       : t('errorStreaming');
-  const hasText = message.content.trim().length > 0;
+  const safeMessageContent = message.content.replace(REACT_TAG_GLOBAL_PATTERN, '');
+  const hasText = safeMessageContent.trim().length > 0;
   const shouldShowPlaceholder = !hasText && !imageUri;
   const senderName = isUser ? userDisplayName : artistDisplayName;
   const battleResult = message.metadata?.battleResult;
@@ -125,10 +127,10 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
   );
   const activeChunkIndex = audioPlayer?.currentIndex ?? -1;
   const currentBoundary = isSyncActive
-    ? voiceChunkBoundaries[activeChunkIndex] ?? message.content.length
-    : message.content.length;
-  const clampedBoundary = Math.max(0, Math.min(currentBoundary, message.content.length));
-  const visibleContent = isSyncActive ? message.content.slice(0, clampedBoundary) : message.content;
+    ? voiceChunkBoundaries[activeChunkIndex] ?? safeMessageContent.length
+    : safeMessageContent.length;
+  const clampedBoundary = Math.max(0, Math.min(currentBoundary, safeMessageContent.length));
+  const visibleContent = isSyncActive ? safeMessageContent.slice(0, clampedBoundary) : safeMessageContent;
   const displayedText = hasText ? visibleContent : '...';
   const showVoiceControl = isVoiceGenerating || hasVoiceButton;
   const isQuotaError =
@@ -209,7 +211,7 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
     mergeMetadata({ voiceStatus: 'generating' });
 
     void fetchAndCacheVoice(
-      message.content,
+      safeMessageContent,
       conversation.artistId,
       conversation.language || 'fr-CA',
       accessToken
@@ -235,7 +237,7 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
     return () => {
       cancelled = true;
     };
-  }, [accessToken, conversation, mergeMetadata, message.content, message.id, shouldHydrateMissingVoice]);
+  }, [accessToken, conversation, mergeMetadata, message.id, safeMessageContent, shouldHydrateMissingVoice]);
 
   return (
     <Animated.View

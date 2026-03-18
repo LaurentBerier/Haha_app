@@ -152,7 +152,8 @@ export function useVoiceConversation({
     silenceTimerRef.current = setTimeout(() => {
       silenceTimerRef.current = null;
       const toSend = transcriptRef.current.trim();
-      if (!toSend || !enabledRef.current || disabledRef.current) {
+      if (!toSend || !enabledRef.current || disabledRef.current || isPlayingRef.current) {
+        resetTranscript();
         return;
       }
 
@@ -176,6 +177,7 @@ export function useVoiceConversation({
       if (
         (!enabledRef.current && !force) ||
         disabledRef.current ||
+        (isPlayingRef.current && !force) ||
         (!hasPermissionRef.current && !allowWebForcedStart) ||
         listeningRef.current
       ) {
@@ -256,7 +258,7 @@ export function useVoiceConversation({
 
   const ensureListening = useCallback(
     async (force = false) => {
-      if ((!enabledRef.current && !force) || disabledRef.current) {
+      if ((!enabledRef.current && !force) || disabledRef.current || (isPlayingRef.current && !force)) {
         if (!force) {
           stopListeningSession();
         }
@@ -314,13 +316,14 @@ export function useVoiceConversation({
     // Temporary echo isolation: pause STT while Cathy TTS is playing.
     if (isPlaying) {
       stopListeningSession();
+      resetTranscript();
       return;
     }
 
     if (shouldAutoListen) {
       void ensureListening();
     }
-  }, [disabled, enabled, ensureListening, isPlaying, shouldAutoListen, stopListeningSession]);
+  }, [disabled, enabled, ensureListening, isPlaying, resetTranscript, shouldAutoListen, stopListeningSession]);
 
   useEffect(() => {
     if (
