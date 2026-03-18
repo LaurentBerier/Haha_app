@@ -44,7 +44,10 @@ export default function StatsScreen() {
     photosRoasted,
     memesGenerated,
     battleWins,
-    dailyStreak
+    dailyStreak,
+    jokesLanded,
+    cathySurprised,
+    cathyTriggered
   } = useStore((state) => ({
     score: state.score,
     roastsGenerated: state.roastsGenerated,
@@ -53,7 +56,10 @@ export default function StatsScreen() {
     photosRoasted: state.photosRoasted,
     memesGenerated: state.memesGenerated,
     battleWins: state.battleWins,
-    dailyStreak: state.dailyStreak
+    dailyStreak: state.dailyStreak,
+    jokesLanded: state.jokesLanded,
+    cathySurprised: state.cathySurprised,
+    cathyTriggered: state.cathyTriggered
   }));
 
   const title = getUserTitle(score);
@@ -80,6 +86,9 @@ export default function StatsScreen() {
         <Text style={styles.row}>{`😂 ${t('statsMemesGenerated')} ${memesGenerated}`}</Text>
         <Text style={styles.row}>{`⚔️ ${t('statsBattleWins')} ${battleWins}`}</Text>
         <Text style={styles.row}>{`📅 ${t('statsDailyStreak')} ${dailyStreak}`}</Text>
+        <Text style={styles.row}>{`😂 Jokes que Cathy a trouvés funny ${jokesLanded}`}</Text>
+        <Text style={styles.row}>{`😮 Fois que t'as surpris Cathy ${cathySurprised}`}</Text>
+        <Text style={styles.row}>{`😤 Fois que t'as pogné ses nerfs ${cathyTriggered}`}</Text>
       </View>
 
       <View style={styles.card}>

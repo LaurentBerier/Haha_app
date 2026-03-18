@@ -331,6 +331,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGN_ENTITLEMENTS = HaHaai/HaHaai.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3HD78HV58W;
@@ -352,7 +353,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.anonymous.ha-ha-ai";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.laurentbernier.hahaai.dev";
 				PRODUCT_NAME = HaHaai;
 				SWIFT_OBJC_BRIDGING_HEADER = "HaHaai/HaHaai-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -368,6 +369,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGN_ENTITLEMENTS = HaHaai/HaHaai.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 3HD78HV58W;
@@ -384,7 +386,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.anonymous.ha-ha-ai";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.laurentbernier.hahaai.dev";
 				PRODUCT_NAME = HaHaai;
 				SWIFT_OBJC_BRIDGING_HEADER = "HaHaai/HaHaai-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;

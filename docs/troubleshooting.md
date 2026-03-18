@@ -295,8 +295,6 @@ Checks:
 2. Confirm page host is local (`localhost`, `127.0.0.1`, or `::1`) if you want API bypass.
 3. In production, if API keeps returning `500`, verify server env:
    - `ANTHROPIC_API_KEY`
-   - `OPENWEATHER_API_KEY`
-   - `NEWS_API_KEY`
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
 
@@ -304,6 +302,8 @@ Notes:
 
 - Client applies short backoff after greeting API server/network failures to reduce repeated failing requests.
 - Even with API failure, greeting fallback remains functional and conversation flow continues.
+- Weather lookup now uses Open-Meteo (`/v1/forecast`), so no weather API key is required.
+- News lookup now uses RSS feeds (Radio-Canada, La Presse, TVA Nouvelles), so no news API key is required.
 
 - rerun [`docs/supabase-account-types.sql`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-account-types.sql)
 
@@ -471,6 +471,35 @@ If issue persists:
 1. Clean/rebuild app binary.
 2. Ensure dependency is installed (`expo-speech-recognition`) and native project is regenerated.
 3. Relaunch Metro with cache clear (`npx expo start -c`).
+4. Reinstall pods if native project changed:
+
+```bash
+cd /Users/laurentbernier/Documents/HAHA_app/ios
+pod install
+```
+
+Notes:
+
+- `voiceEngine` now guards missing native bindings and logs a warning instead of hard-crashing in many mismatch scenarios.
+- A full dev-build reinstall is still required whenever native module linkage is stale.
+
+## 22b) iOS warning: `Audio route changed and failed to restart the audio engine`
+
+Symptom:
+
+- During voice conversation, microphone stops after route changes (speaker/Bluetooth/system interruptions).
+- Console or UI may show route-restart error messages.
+
+Status:
+
+- `useVoiceConversation` now includes transient iOS route-recovery retries.
+- Many route-change interruptions self-recover without manual toggle.
+
+Manual recovery (if still stuck):
+
+1. Toggle conversation mic off then on in the composer.
+2. Ensure iOS microphone permission is still granted for the app.
+3. If persistent, relaunch app and retry on built-in route (no Bluetooth) to isolate hardware-route issues.
 
 ## 23) Detox E2E hangs with "The app is busy" (native timer loop)
 

@@ -175,6 +175,11 @@ export function selectPersistedSnapshot(state: StoreState): PersistedStoreSnapsh
       memesGenerated: state.memesGenerated,
       battleWins: state.battleWins,
       dailyStreak: state.dailyStreak,
+      jokesLanded: state.jokesLanded,
+      cathySurprised: state.cathySurprised,
+      cathyTriggered: state.cathyTriggered,
+      cathyIntrigued: state.cathyIntrigued,
+      cathyApproved: state.cathyApproved,
       lastActiveDate: state.lastActiveDate
     },
     preferences: {

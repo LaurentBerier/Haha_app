@@ -9,7 +9,7 @@ const {
 
 const ELEVENLABS_API_BASE = 'https://api.elevenlabs.io/v1/text-to-speech';
 const DEFAULT_VOICE_ID_GENERIC = 'cgSgspJ2msm6clMCkdW9';
-const DEFAULT_MODEL_ID = 'eleven_turbo_v2_5';
+const DEFAULT_MODEL_ID = 'eleven_v3';
 const DEFAULT_TTS_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_TTS_RATE_LIMIT_MAX_REQUESTS = 20;
 const MAX_INPUT_TEXT_CHARS = 5_000;

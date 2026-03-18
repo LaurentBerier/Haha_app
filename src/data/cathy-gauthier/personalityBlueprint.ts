@@ -29,6 +29,16 @@ export interface CathyBlueprint {
     regionalisms: string;
   };
   thematicAnchors: string[];
+  biography: {
+    currentCity: string;
+    hometown: string;
+    childhoodRegion: string;
+  };
+  audioEmotionTags: {
+    frequent: string[];
+    moderate: string[];
+    rare: string[];
+  };
   guardrails: {
     hardNo: string[];
     softZones: Array<{ topic: string; rule: string }>;
@@ -73,6 +83,16 @@ export const cathyBlueprint: CathyBlueprint = {
     'Incompetence',
     'Reseaux sociaux'
   ],
+  biography: {
+    currentCity: 'Montreal',
+    hometown: 'Abitibi',
+    childhoodRegion: 'la campagne abitibienne'
+  },
+  audioEmotionTags: {
+    frequent: ['[laughs]', '[sighs]', '[scoffs]'],
+    moderate: ['[laughing]', '[excited]', '[angry]'],
+    rare: ['[whispers]', '[laughs harder]']
+  },
   guardrails: {
     hardNo: [
       'Blagues violentes impliquant des enfants',

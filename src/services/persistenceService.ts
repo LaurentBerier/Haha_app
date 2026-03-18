@@ -54,7 +54,12 @@ function isValidMessageMetadata(value: unknown): boolean {
   const voiceQueueValid =
     value.voiceQueue === undefined ||
     (Array.isArray(value.voiceQueue) && value.voiceQueue.every((entry) => typeof entry === 'string'));
+  const voiceChunkBoundariesValid =
+    value.voiceChunkBoundaries === undefined ||
+    (Array.isArray(value.voiceChunkBoundaries) &&
+      value.voiceChunkBoundaries.every((entry) => typeof entry === 'number' && Number.isFinite(entry) && entry >= 0));
   const voiceStatusValid = value.voiceStatus === undefined || value.voiceStatus === 'generating' || value.voiceStatus === 'ready';
+  const cathyReactionValid = value.cathyReaction === undefined || typeof value.cathyReaction === 'string';
   const imageUriValid = value.imageUri === undefined || typeof value.imageUri === 'string';
   const imageMediaTypeValid = value.imageMediaType === undefined || typeof value.imageMediaType === 'string';
   const errorMessageValid = value.errorMessage === undefined || typeof value.errorMessage === 'string';
@@ -71,7 +76,9 @@ function isValidMessageMetadata(value: unknown): boolean {
     tokensUsedValid &&
     voiceUrlValid &&
     voiceQueueValid &&
+    voiceChunkBoundariesValid &&
     voiceStatusValid &&
+    cathyReactionValid &&
     imageUriValid &&
     imageMediaTypeValid &&
     errorMessageValid &&
@@ -164,7 +171,12 @@ function isValidGamification(value: unknown): boolean {
     'photosRoasted',
     'memesGenerated',
     'battleWins',
-    'dailyStreak'
+    'dailyStreak',
+    'jokesLanded',
+    'cathySurprised',
+    'cathyTriggered',
+    'cathyIntrigued',
+    'cathyApproved'
   ] as const;
 
   const hasValidNumbers = numericKeys.every((key) => {

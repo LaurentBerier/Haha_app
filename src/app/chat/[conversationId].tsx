@@ -10,6 +10,8 @@ import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import { useChat } from '../../hooks/useChat';
 import { useVoiceConversation } from '../../hooks/useVoiceConversation';
 import { t } from '../../i18n';
+import type { ChatSendPayload } from '../../models/ChatSendPayload';
+import { getRandomFillerUri, prewarmVoiceFillers } from '../../services/voiceFillerService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 import { findConversationById } from '../../utils/conversationUtils';
@@ -36,6 +38,21 @@ function formatArtistDisplayName(artistName: string | null): string {
   return artistName;
 }
 
+function hasVoiceAccess(accountType: string | null | undefined): boolean {
+  if (typeof accountType !== 'string') {
+    return false;
+  }
+
+  const normalized = accountType.trim().toLowerCase().replace(/[\s_-]+/g, '');
+  return (
+    normalized === 'regular' ||
+    normalized === 'premium' ||
+    normalized === 'admin' ||
+    normalized === 'unlimited' ||
+    normalized === 'proartist'
+  );
+}
+
 export default function ChatScreen() {
   const navigation = useNavigation();
   const params = useLocalSearchParams<{
@@ -51,6 +68,7 @@ export default function ChatScreen() {
   const headerHorizontalInset = useHeaderHorizontalInset();
 
   const sessionUser = useStore((state) => state.session?.user ?? null);
+  const accessToken = useStore((state) => state.session?.accessToken ?? '');
   const language = useStore((state) => state.language);
   const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
@@ -60,6 +78,7 @@ export default function ChatScreen() {
     useCallback((state) => findConversationById(state.conversations, conversationId), [conversationId])
   );
   const { messages, sendMessage, retryMessage, hasStreaming, currentArtistName, isQuotaBlocked, audioPlayer } = useChat(conversationId);
+  const sendWithFillerRef = useRef<(payload: ChatSendPayload) => unknown>(() => null);
 
   const { isListening, transcript, error: conversationError, interruptAndListen } = useVoiceConversation({
     enabled: conversationModeEnabled && !hasTypedDraft && !isQuotaBlocked && isValidConversation,
@@ -70,7 +89,7 @@ export default function ChatScreen() {
       if (!normalized) {
         return;
       }
-      sendMessage({ text: normalized });
+      sendWithFillerRef.current({ text: normalized });
     },
     onStopAudio: () => {
       void audioPlayer.stop();
@@ -87,6 +106,43 @@ export default function ChatScreen() {
   const activeModeLabel = activeMode?.name ?? t('chatModeUnknown');
   const activeModeEmoji = activeMode?.emoji ?? '💬';
   const chatHeaderTitle = `${activeModeEmoji} ${activeModeLabel}`;
+  const shouldUseVoiceFiller = Boolean(
+    conversationModeEnabled &&
+      currentConversation?.artistId &&
+      accessToken.trim() &&
+      hasVoiceAccess(sessionUser?.accountType ?? null)
+  );
+
+  const sendWithFiller = useCallback(
+    (payload: ChatSendPayload) => {
+      if (
+        shouldUseVoiceFiller &&
+        !audioPlayer.isPlaying &&
+        !audioPlayer.isLoading &&
+        currentConversation?.artistId
+      ) {
+        void getRandomFillerUri(currentConversation.artistId, language, accessToken)
+          .then((uri) => {
+            if (!uri) {
+              return;
+            }
+            if (!audioPlayer.isPlaying && !audioPlayer.isLoading) {
+              void audioPlayer.play(uri);
+            }
+          })
+          .catch(() => {
+            // Non-blocking latency helper.
+          });
+      }
+
+      return sendMessage(payload);
+    },
+    [accessToken, audioPlayer, currentConversation?.artistId, language, sendMessage, shouldUseVoiceFiller]
+  );
+
+  useEffect(() => {
+    sendWithFillerRef.current = sendWithFiller;
+  }, [sendWithFiller]);
 
   useEffect(() => {
     navigation.setOptions({
@@ -97,6 +153,13 @@ export default function ChatScreen() {
   useEffect(() => {
     setVoiceAutoPlay(conversationModeEnabled);
   }, [conversationModeEnabled, setVoiceAutoPlay]);
+
+  useEffect(() => {
+    if (!shouldUseVoiceFiller || !currentConversation?.artistId) {
+      return;
+    }
+    prewarmVoiceFillers(currentConversation.artistId, language, accessToken);
+  }, [accessToken, currentConversation?.artistId, language, shouldUseVoiceFiller]);
 
   useEffect(() => {
     const queuedNonce = queuedNonceParam?.trim() ?? '';
@@ -110,9 +173,9 @@ export default function ChatScreen() {
 
     const queuedPayload = consumeChatSendPayload(conversationId, queuedNonce);
     if (queuedPayload) {
-      sendMessage(queuedPayload);
+      sendWithFiller(queuedPayload);
     }
-  }, [consumeChatSendPayload, conversationId, isValidConversation, queuedNonceParam, sendMessage]);
+  }, [consumeChatSendPayload, conversationId, isValidConversation, queuedNonceParam, sendWithFiller]);
 
   return (
     <KeyboardAvoidingView
@@ -140,7 +203,7 @@ export default function ChatScreen() {
         )}
         {isValidConversation && hasStreaming ? <StreamingIndicator /> : null}
         <ChatInput
-          onSend={sendMessage}
+          onSend={sendWithFiller}
           disabled={!isValidConversation || isQuotaBlocked}
           conversationMode={{
             enabled: conversationModeEnabled,

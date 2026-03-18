@@ -3,8 +3,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { t } from '../i18n';
 import { requestVoicePermission, startListening, stopListening } from '../services/voiceEngine';
 
-const SILENCE_TIMEOUT_MS = 2800;
+const parsedSilenceTimeout = Number.parseInt(process.env.EXPO_PUBLIC_SILENCE_TIMEOUT_MS ?? '', 10);
+const SILENCE_TIMEOUT_MS =
+  Number.isFinite(parsedSilenceTimeout) && parsedSilenceTimeout >= 1200 ? parsedSilenceTimeout : 1800;
 const WEB_NOISE_ERRORS = new Set(['no-speech', 'aborted']);
+const IOS_TRANSIENT_ROUTE_ERROR_PATTERNS = [
+  'audio route changed',
+  'failed to restart the audio engine',
+  'failed to restart audio engine',
+  'route changed'
+];
+const IOS_ROUTE_RECOVERY_DELAY_MS = 320;
+const IOS_ROUTE_RECOVERY_WINDOW_MS = 10_000;
+const IOS_ROUTE_RECOVERY_MAX_ATTEMPTS = 4;
 
 export interface UseVoiceConversationProps {
   enabled: boolean;
@@ -41,6 +52,9 @@ export function useVoiceConversation({
   const listeningRef = useRef(false);
   const transcriptRef = useRef('');
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const iosRecoveryWindowStartedAtRef = useRef(0);
+  const iosRecoveryAttemptCountRef = useRef(0);
 
   const enabledRef = useRef(enabled);
   const disabledRef = useRef(disabled);
@@ -82,6 +96,13 @@ export function useVoiceConversation({
     }
   }, []);
 
+  const clearRecoveryTimer = useCallback(() => {
+    if (recoveryTimerRef.current) {
+      clearTimeout(recoveryTimerRef.current);
+      recoveryTimerRef.current = null;
+    }
+  }, []);
+
   const resetTranscript = useCallback(() => {
     transcriptRef.current = '';
     if (isMountedRef.current) {
@@ -91,6 +112,7 @@ export function useVoiceConversation({
 
   const stopListeningSession = useCallback(() => {
     clearSilenceTimer();
+    clearRecoveryTimer();
     if (listeningRef.current) {
       stopListening();
       listeningRef.current = false;
@@ -98,7 +120,32 @@ export function useVoiceConversation({
     if (isMountedRef.current) {
       setIsListening(false);
     }
-  }, [clearSilenceTimer]);
+  }, [clearRecoveryTimer, clearSilenceTimer]);
+
+  const isTransientIosRouteError = useCallback((rawMessage: string): boolean => {
+    if (Platform.OS !== 'ios') {
+      return false;
+    }
+
+    const normalized = rawMessage.toLowerCase();
+    return IOS_TRANSIENT_ROUTE_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
+  }, []);
+
+  const canRecoverFromIosRouteError = useCallback((): boolean => {
+    const now = Date.now();
+    const windowStartedAt = iosRecoveryWindowStartedAtRef.current;
+    if (!windowStartedAt || now - windowStartedAt > IOS_ROUTE_RECOVERY_WINDOW_MS) {
+      iosRecoveryWindowStartedAtRef.current = now;
+      iosRecoveryAttemptCountRef.current = 0;
+    }
+
+    if (iosRecoveryAttemptCountRef.current >= IOS_ROUTE_RECOVERY_MAX_ATTEMPTS) {
+      return false;
+    }
+
+    iosRecoveryAttemptCountRef.current += 1;
+    return true;
+  }, []);
 
   const scheduleSilenceTimeout = useCallback(() => {
     clearSilenceTimer();
@@ -170,9 +217,33 @@ export function useVoiceConversation({
             return;
           }
 
+          if (isTransientIosRouteError(message) && canRecoverFromIosRouteError()) {
+            clearSilenceTimer();
+            clearRecoveryTimer();
+            listeningRef.current = false;
+            setIsListening(false);
+            setError(null);
+
+            try {
+              stopListening();
+            } catch {
+              // Best effort reset before restarting speech recognition.
+            }
+
+            recoveryTimerRef.current = setTimeout(() => {
+              recoveryTimerRef.current = null;
+              if (!isMountedRef.current || !enabledRef.current || disabledRef.current || isPlayingRef.current) {
+                return;
+              }
+              startListeningSession(true);
+            }, IOS_ROUTE_RECOVERY_DELAY_MS);
+            return;
+          }
+
           listeningRef.current = false;
           setIsListening(false);
           clearSilenceTimer();
+          clearRecoveryTimer();
           setError(message);
         }
       );
@@ -180,7 +251,7 @@ export function useVoiceConversation({
       listeningRef.current = started;
       setIsListening(started);
     },
-    [clearSilenceTimer, scheduleSilenceTimeout]
+    [canRecoverFromIosRouteError, clearRecoveryTimer, clearSilenceTimer, isTransientIosRouteError, scheduleSilenceTimeout]
   );
 
   const ensureListening = useCallback(
@@ -310,9 +381,10 @@ export function useVoiceConversation({
     return () => {
       isMountedRef.current = false;
       stopListeningSession();
+      clearRecoveryTimer();
       resetTranscript();
     };
-  }, [resetTranscript, stopListeningSession]);
+  }, [clearRecoveryTimer, resetTranscript, stopListeningSession]);
 
   return {
     isListening,

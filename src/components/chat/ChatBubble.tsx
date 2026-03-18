@@ -1,10 +1,15 @@
-import { memo, useEffect, useRef } from 'react';
-import { ActivityIndicator, Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { memo, useCallback, useEffect, useRef } from 'react';
+import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { ARTIST_IDS } from '../../config/constants';
 import { t } from '../../i18n';
 import type { Message } from '../../models/Message';
+import { fetchAndCacheVoice } from '../../services/ttsService';
+import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
+import { findConversationById } from '../../utils/conversationUtils';
 import type { AudioPlayerController } from '../../hooks/useAudioPlayer';
+import { WaveformButton } from './WaveformButton';
 
 interface ChatBubbleProps {
   message: Message;
@@ -14,8 +19,38 @@ interface ChatBubbleProps {
   audioPlayer?: AudioPlayerController;
 }
 
+const VOICE_HYDRATION_ATTEMPTS = new Set<string>();
+
+function normalizeAccountType(accountType: string | null | undefined): string {
+  if (typeof accountType === 'string' && accountType.trim()) {
+    const normalized = accountType.trim().toLowerCase();
+    if (normalized === 'free' || normalized === 'regular' || normalized === 'premium' || normalized === 'admin') {
+      return normalized;
+    }
+
+    const compact = normalized.replace(/[\s_-]+/g, '');
+    if (compact === 'unlimited') {
+      return 'regular';
+    }
+    if (compact === 'proartist') {
+      return 'premium';
+    }
+  }
+
+  return 'free';
+}
+
+function hasVoiceAccess(accountType: string | null | undefined): boolean {
+  const normalized = normalizeAccountType(accountType);
+  return normalized === 'regular' || normalized === 'premium' || normalized === 'admin';
+}
+
 function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMessage, audioPlayer }: ChatBubbleProps) {
   const router = useRouter();
+  const updateMessage = useStore((state) => state.updateMessage);
+  const accessToken = useStore((state) => state.session?.accessToken ?? '');
+  const accountType = useStore((state) => state.session?.user.accountType ?? null);
+  const conversation = useStore((state) => findConversationById(state.conversations, message.conversationId));
   const enterOpacity = useRef(new Animated.Value(0)).current;
   const enterTranslateY = useRef(new Animated.Value(6)).current;
   const isUser = message.role === 'user';
@@ -38,6 +73,9 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
           : null;
   const voiceUrl = typeof message.metadata?.voiceUrl === 'string' ? message.metadata.voiceUrl : '';
   const voiceQueue = Array.isArray(message.metadata?.voiceQueue) ? message.metadata.voiceQueue : [];
+  const voiceChunkBoundaries = Array.isArray(message.metadata?.voiceChunkBoundaries)
+    ? message.metadata.voiceChunkBoundaries
+    : [];
   const voiceStatus = message.metadata?.voiceStatus;
   const hasVoiceButton = message.role === 'artist' && message.status === 'complete' && !!voiceUrl;
   const isVoiceGenerating =
@@ -48,10 +86,82 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
       (audioPlayer.currentUri === voiceUrl || (voiceQueue.length > 0 && voiceQueue.includes(audioPlayer.currentUri)))
   );
   const isVoicePlaying = Boolean(audioPlayer && audioPlayer.isPlaying && isCurrentVoiceMessage);
+  const hasSeenInitialSyncedPlaybackRef = useRef(false);
+  const hasCompletedInitialSyncedPlaybackRef = useRef(false);
+
+  useEffect(() => {
+    if (!audioPlayer || voiceChunkBoundaries.length === 0 || !voiceUrl) {
+      return;
+    }
+
+    if (isCurrentVoiceMessage && isVoicePlaying) {
+      hasSeenInitialSyncedPlaybackRef.current = true;
+      return;
+    }
+
+    if (
+      hasSeenInitialSyncedPlaybackRef.current &&
+      !audioPlayer.isPlaying &&
+      !audioPlayer.isLoading &&
+      audioPlayer.currentUri === null
+    ) {
+      hasCompletedInitialSyncedPlaybackRef.current = true;
+    }
+  }, [
+    audioPlayer,
+    isCurrentVoiceMessage,
+    isVoicePlaying,
+    voiceChunkBoundaries.length,
+    voiceUrl
+  ]);
+
+  const isSyncActive = Boolean(
+    audioPlayer &&
+      isCurrentVoiceMessage &&
+      isVoicePlaying &&
+      Array.isArray(voiceChunkBoundaries) &&
+      voiceChunkBoundaries.length > 0 &&
+      !hasCompletedInitialSyncedPlaybackRef.current
+  );
+  const activeChunkIndex = audioPlayer?.currentIndex ?? -1;
+  const currentBoundary = isSyncActive
+    ? voiceChunkBoundaries[activeChunkIndex] ?? message.content.length
+    : message.content.length;
+  const clampedBoundary = Math.max(0, Math.min(currentBoundary, message.content.length));
+  const visibleContent = isSyncActive ? message.content.slice(0, clampedBoundary) : message.content;
+  const displayedText = hasText ? visibleContent : '...';
+  const showVoiceControl = isVoiceGenerating || hasVoiceButton;
   const isQuotaError =
     message.metadata?.errorCode === 'QUOTA_EXCEEDED_BLOCKED' ||
     message.metadata?.errorCode === 'QUOTA_ABSOLUTE_BLOCKED' ||
     message.metadata?.errorCode === 'MONTHLY_QUOTA_EXCEEDED';
+  const shouldHydrateMissingVoice =
+    message.role === 'artist' &&
+    message.status === 'complete' &&
+    hasText &&
+    !voiceUrl &&
+    voiceStatus !== 'generating' &&
+    conversation?.artistId === ARTIST_IDS.CATHY_GAUTHIER &&
+    hasVoiceAccess(accountType) &&
+    accessToken.trim().length > 0;
+
+  const mergeMetadata = useCallback(
+    (patch: NonNullable<Message['metadata']>) => {
+      const latestMessage =
+        useStore
+          .getState()
+          .messagesByConversation[message.conversationId]
+          ?.messages.find((candidate) => candidate.id === message.id) ?? null;
+      const latestMetadata = latestMessage?.metadata ?? {};
+      updateMessage(message.conversationId, message.id, {
+        metadata: {
+          ...latestMetadata,
+          ...patch
+        }
+      });
+    },
+    [message.conversationId, message.id, updateMessage]
+  );
 
   const handleVoicePress = () => {
     if (!audioPlayer || !hasVoiceButton) {
@@ -84,6 +194,49 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
     ]).start();
   }, [enterOpacity, enterTranslateY]);
 
+  useEffect(() => {
+    if (!shouldHydrateMissingVoice || !conversation) {
+      return;
+    }
+
+    const attemptKey = `${message.id}:${conversation.artistId}:${conversation.language}`;
+    if (VOICE_HYDRATION_ATTEMPTS.has(attemptKey)) {
+      return;
+    }
+
+    VOICE_HYDRATION_ATTEMPTS.add(attemptKey);
+    let cancelled = false;
+    mergeMetadata({ voiceStatus: 'generating' });
+
+    void fetchAndCacheVoice(
+      message.content,
+      conversation.artistId,
+      conversation.language || 'fr-CA',
+      accessToken
+    ).then((uri) => {
+      if (cancelled) {
+        return;
+      }
+
+      if (uri) {
+        mergeMetadata({
+          voiceUrl: uri,
+          voiceQueue: [uri],
+          voiceStatus: 'ready'
+        });
+        return;
+      }
+
+      mergeMetadata({
+        voiceStatus: undefined
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, conversation, mergeMetadata, message.content, message.id, shouldHydrateMissingVoice]);
+
   return (
     <Animated.View
       style={[
@@ -109,7 +262,7 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
 
           {hasText || shouldShowPlaceholder ? (
             <Text style={styles.content} testID={`chat-bubble-content-${message.id}`}>
-              {hasText ? message.content : '...'}
+              {displayedText}
             </Text>
           ) : null}
 
@@ -129,20 +282,16 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
             </Pressable>
           ) : null}
 
-          {isVoiceGenerating ? (
-            <View style={styles.voiceRow} testID={`chat-bubble-voice-loading-${message.id}`}>
-              <ActivityIndicator size="small" color={theme.colors.neonBlue} />
+          {showVoiceControl ? (
+            <View style={styles.voiceRow}>
+              <WaveformButton
+                isPlaying={isVoicePlaying}
+                isLoading={isVoiceGenerating}
+                onPress={handleVoicePress}
+                disabled={!hasVoiceButton}
+                testID={isVoiceGenerating ? `chat-bubble-voice-loading-${message.id}` : `chat-bubble-voice-${message.id}`}
+              />
             </View>
-          ) : null}
-
-          {hasVoiceButton ? (
-            <Pressable
-              onPress={handleVoicePress}
-              style={styles.voiceButton}
-              testID={`chat-bubble-voice-${message.id}`}
-            >
-              <Text style={styles.voiceLabel}>{isVoicePlaying ? '⏸' : '▶'}</Text>
-            </Pressable>
           ) : null}
 
           {message.status === 'error' ? (
@@ -160,6 +309,12 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
                 </Pressable>
               ) : null}
             </>
+          ) : null}
+
+          {isUser && typeof message.metadata?.cathyReaction === 'string' && message.metadata.cathyReaction.trim() ? (
+            <View style={styles.reactionBadge} testID={`chat-bubble-reaction-${message.id}`}>
+              <Text style={styles.reactionEmoji}>{message.metadata.cathyReaction}</Text>
+            </View>
           ) : null}
         </View>
       </View>
@@ -253,23 +408,6 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.xs,
     alignSelf: 'flex-start'
   },
-  voiceButton: {
-    marginTop: theme.spacing.xs,
-    alignSelf: 'flex-start',
-    borderWidth: 1,
-    borderColor: theme.colors.neonBlue,
-    borderRadius: 8,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 6,
-    minWidth: 34,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  voiceLabel: {
-    color: theme.colors.neonBlue,
-    fontSize: 12,
-    fontWeight: '800'
-  },
   retryButton: {
     marginTop: theme.spacing.xs,
     alignSelf: 'flex-start',
@@ -283,6 +421,22 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontSize: 12,
     fontWeight: '700'
+  },
+  reactionBadge: {
+    position: 'absolute',
+    right: -10,
+    bottom: -10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceRaised,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  reactionEmoji: {
+    fontSize: 14
   },
   upgradeButton: {
     marginTop: theme.spacing.xs,

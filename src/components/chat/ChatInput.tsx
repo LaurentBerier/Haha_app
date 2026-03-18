@@ -38,6 +38,7 @@ interface ChatInputProps {
   disabled?: boolean;
   allowImage?: boolean;
   conversationMode?: ConversationModeProps;
+  onInputFocusChange?: (isFocused: boolean) => void;
 }
 
 interface ChatImageAttachmentDraft {
@@ -118,7 +119,13 @@ async function readImageAsBase64(uri: string): Promise<string> {
   return await blobToBase64(blob);
 }
 
-export function ChatInput({ onSend, disabled = false, allowImage = true, conversationMode }: ChatInputProps) {
+export function ChatInput({
+  onSend,
+  disabled = false,
+  allowImage = true,
+  conversationMode,
+  onInputFocusChange
+}: ChatInputProps) {
   const [value, setValue] = useState('');
   const [imageAttachment, setImageAttachment] = useState<ChatImageAttachmentDraft | null>(null);
   const [isPickingImage, setIsPickingImage] = useState(false);
@@ -362,6 +369,8 @@ export function ChatInput({ onSend, disabled = false, allowImage = true, convers
             testID="chat-input"
             style={styles.input}
             value={value}
+            onFocus={() => onInputFocusChange?.(true)}
+            onBlur={() => onInputFocusChange?.(false)}
             onChangeText={(nextValue) => {
               clearValidationErrors();
               setValue(nextValue);

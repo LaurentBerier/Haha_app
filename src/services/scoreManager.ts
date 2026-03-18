@@ -49,6 +49,11 @@ function toStats(payload: unknown): GamificationStats {
     memesGenerated: toNonNegativeInt(record.memesGenerated),
     battleWins: toNonNegativeInt(record.battleWins),
     dailyStreak: toNonNegativeInt(record.dailyStreak),
+    jokesLanded: toNonNegativeInt(record.jokesLanded),
+    cathySurprised: toNonNegativeInt(record.cathySurprised),
+    cathyTriggered: toNonNegativeInt(record.cathyTriggered),
+    cathyIntrigued: toNonNegativeInt(record.cathyIntrigued),
+    cathyApproved: toNonNegativeInt(record.cathyApproved),
     lastActiveDate: typeof record.lastActiveDate === 'string' ? record.lastActiveDate : null
   };
 }

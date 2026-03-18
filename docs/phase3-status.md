@@ -1,6 +1,6 @@
 # Phase 3 Status (Voice + Prompt Intelligence)
 
-Last updated: **2026-03-15**
+Last updated: **2026-03-17**
 
 ## Scope
 
@@ -35,9 +35,8 @@ Phase 3 focuses on two tracks:
   - play/pause button when audio is ready
 - Voice engine stub removed:
   - `src/services/voiceEngine.ts` now delegates to `fetchAndCacheVoice(...)`
-- Phase 4 conversation foundations are now implemented:
-  - `src/hooks/useVoiceConversation.ts` drives STT silence auto-send + TTS-aware pause/resume
-  - shared `ChatInput`/conversation-mode behavior is used across chat contexts
+- Phase 4 conversation implementation is now tracked in dedicated status doc:
+  - [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
 - Prompt upgrade for Cathy is integrated in `api/claude.js`:
   - global knowledge section
   - response structure contract
@@ -75,6 +74,7 @@ Phase 3 focuses on two tracks:
 ## Completion Status
 
 - Phase 3 is complete for the current execution scope (`web + API + iOS`).
+- Phase 4 status and QA are tracked separately in [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md).
 - Voice production path is validated in production with authenticated paid-tier smoke (`/api/tts -> 200`).
 - Android manual voice QA is intentionally deferred for now.
 - Full code review snapshot published in [`docs/code-review-2026-03-15.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-15.md).

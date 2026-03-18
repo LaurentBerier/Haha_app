@@ -5,7 +5,9 @@ export interface MessageMetadata {
   tokensUsed?: number;
   voiceUrl?: string;
   voiceQueue?: string[];
+  voiceChunkBoundaries?: number[];
   voiceStatus?: 'generating' | 'ready';
+  cathyReaction?: string;
   imageUri?: string;
   imageMediaType?: string;
   errorMessage?: string;

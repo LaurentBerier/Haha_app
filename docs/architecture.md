@@ -113,17 +113,34 @@ Store-level account isolation:
   - pauses STT while TTS is speaking (`isPlaying=true`) to avoid echo loops
   - resumes listening after playback
   - auto-sends transcript after silence timeout (`2.8s`)
+  - retries iOS transient route-change failures (audio route changed / engine restart errors)
 - Mode-select (`/mode-select/[artistId]`) now embeds the same conversation stack directly in-screen:
   - bubbles are anchored above the bottom composer
   - visible chat stack is clipped to roughly half the viewport height
   - no route push to `/chat/[conversationId]` when user replies in mode-select
   - navigation to a new mode/chat happens only when user chooses a mode
+  - after several user turns, Cathy injects a one-time in-character mode-discovery nudge with optional voice playback
 - Greeting behavior:
   - once per artist per app session (`uiSlice.greetedArtistIds`, memory-only)
   - greeting message is inserted as an artist message in a fresh `on-jase` conversation
   - best-effort voice playback via TTS (with web speech fallback)
   - web localhost bypasses `/api/greeting` and uses local fallback copy to avoid local 500 noise
   - greeting API failures trigger a short client backoff before retrying
+- Greeting backend (`api/greeting.js`) data sources:
+  - weather via Open-Meteo `/v1/forecast` (current + same-day forecast, no API key)
+  - local-news signal via RSS feeds (Radio-Canada, La Presse, TVA Nouvelles)
+  - in-memory cache (weather 10 min, news 30 min) and stale-fallback behavior
+
+### Voice Rendering and Sync
+
+- Paid-tier TTS uses ElevenLabs v3 by default (`src/server/ttsHandler.js`), with env override still supported (`ELEVENLABS_MODEL_ID`).
+- Audio-expression tags are injected in Cathy prompts and kept in TTS provider text.
+- Display text strips audio tags through `src/utils/audioTags.ts`.
+- Streaming TTS in `src/hooks/useChat.ts`:
+  - queues chunk playback as soon as first URI is ready
+  - appends subsequent chunks in-order without waiting for all chunks
+  - stores `voiceChunkBoundaries` for text/voice synchronization
+- `ChatBubble` progressively reveals text for the currently speaking chunk and exposes replay via animated waveform control.
 
 ### Games UX
 

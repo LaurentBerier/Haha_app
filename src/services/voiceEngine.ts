@@ -1,4 +1,4 @@
-import { Platform } from 'react-native';
+import { NativeModules, Platform } from 'react-native';
 import { fetchAndCacheVoice, type FetchVoiceOptions } from './ttsService';
 
 type Listener = { remove: () => void };
@@ -63,9 +63,45 @@ let listeners: Listener[] = [];
 let cachedModule: SpeechRecognitionModule | null | undefined;
 let webRecognition: WebSpeechRecognition | null = null;
 let webShouldRestart = false;
+let hasLoggedMissingNativeSpeechModule = false;
+
+function hasSpeechRecognitionNativeBinding(): boolean {
+  if (Platform.OS === 'web') {
+    return false;
+  }
+
+  const rnNativeModules = NativeModules as Record<string, unknown> | undefined;
+  if (rnNativeModules?.ExpoSpeechRecognition) {
+    return true;
+  }
+
+  const scope = globalThis as {
+    ExpoModules?: Record<string, unknown>;
+    expo?: { modules?: Record<string, unknown> };
+  };
+
+  if (scope.ExpoModules?.ExpoSpeechRecognition) {
+    return true;
+  }
+
+  if (scope.expo?.modules?.ExpoSpeechRecognition) {
+    return true;
+  }
+
+  return false;
+}
 
 function getSpeechRecognitionModule(): SpeechRecognitionModule | null {
   if (cachedModule !== undefined) {
+    return cachedModule;
+  }
+
+  if (!hasSpeechRecognitionNativeBinding()) {
+    cachedModule = null;
+    if (!hasLoggedMissingNativeSpeechModule) {
+      hasLoggedMissingNativeSpeechModule = true;
+      console.warn('[voiceEngine] ExpoSpeechRecognition native module is missing in this build.');
+    }
     return cachedModule;
   }
 
@@ -73,8 +109,14 @@ function getSpeechRecognitionModule(): SpeechRecognitionModule | null {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const loaded = require('expo-speech-recognition') as { ExpoSpeechRecognitionModule?: SpeechRecognitionModule };
     cachedModule = loaded?.ExpoSpeechRecognitionModule ?? null;
-  } catch {
+  } catch (error) {
     cachedModule = null;
+    if (!hasLoggedMissingNativeSpeechModule) {
+      hasLoggedMissingNativeSpeechModule = true;
+      const reason =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : 'unknown error';
+      console.warn('[voiceEngine] Unable to load expo-speech-recognition module:', reason);
+    }
   }
 
   return cachedModule;

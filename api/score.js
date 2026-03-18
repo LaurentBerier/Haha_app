@@ -13,8 +13,25 @@ const SCORE_ACTIONS = {
   meme_generated: { points: 8, field: 'memes_generated' },
   battle_win: { points: 25, field: 'battle_wins' },
   daily_participation: { points: 5, field: 'daily_streak' },
-  photo_roasted: { points: 5, field: 'photos_roasted' }
+  photo_roasted: { points: 5, field: 'photos_roasted' },
+  joke_landed: { points: 15, field: 'jokes_landed' },
+  cathy_surprised: { points: 10, field: 'cathy_surprised' },
+  cathy_triggered: { points: 5, field: 'cathy_triggered' },
+  cathy_intrigued: { points: 3, field: 'cathy_intrigued' },
+  cathy_approved: { points: 2, field: 'cathy_approved' }
 };
+
+const REACTION_ACTIONS = new Set([
+  'joke_landed',
+  'cathy_surprised',
+  'cathy_triggered',
+  'cathy_intrigued',
+  'cathy_approved'
+]);
+const BASE_PROFILE_COLUMNS =
+  'score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date';
+const REACTION_PROFILE_COLUMNS = ', jokes_landed, cathy_surprised, cathy_triggered, cathy_intrigued, cathy_approved';
+let profileSelectSupportsReactionColumns = true;
 
 function toNonNegativeInt(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
@@ -48,18 +65,40 @@ function toStats(row) {
     memesGenerated: toNonNegativeInt(source.memes_generated),
     battleWins: toNonNegativeInt(source.battle_wins),
     dailyStreak: toNonNegativeInt(source.daily_streak),
+    jokesLanded: toNonNegativeInt(source.jokes_landed),
+    cathySurprised: toNonNegativeInt(source.cathy_surprised),
+    cathyTriggered: toNonNegativeInt(source.cathy_triggered),
+    cathyIntrigued: toNonNegativeInt(source.cathy_intrigued),
+    cathyApproved: toNonNegativeInt(source.cathy_approved),
     lastActiveDate: typeof source.last_active_date === 'string' ? source.last_active_date : null
   };
 }
 
+function getProfileColumns() {
+  return profileSelectSupportsReactionColumns ? `${BASE_PROFILE_COLUMNS}${REACTION_PROFILE_COLUMNS}` : BASE_PROFILE_COLUMNS;
+}
+
+function isMissingReactionColumnError(error) {
+  const code = error && typeof error.code === 'string' ? error.code : '';
+  const message = error && typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return code === '42703' && (
+    message.includes('jokes_landed') ||
+    message.includes('cathy_surprised') ||
+    message.includes('cathy_triggered') ||
+    message.includes('cathy_intrigued') ||
+    message.includes('cathy_approved')
+  );
+}
+
 async function fetchStats(supabaseAdmin, userId) {
-  const { data, error } = await supabaseAdmin
-    .from('profiles')
-    .select(
-      'score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date'
-    )
-    .eq('id', userId)
-    .maybeSingle();
+  let query = supabaseAdmin.from('profiles').select(getProfileColumns()).eq('id', userId).maybeSingle();
+  let { data, error } = await query;
+
+  if (error && profileSelectSupportsReactionColumns && isMissingReactionColumnError(error)) {
+    profileSelectSupportsReactionColumns = false;
+    query = supabaseAdmin.from('profiles').select(getProfileColumns()).eq('id', userId).maybeSingle();
+    ({ data, error } = await query);
+  }
 
   if (error) {
     return { ok: false, error };
@@ -80,6 +119,11 @@ function computeFallbackPatch(currentRow, action) {
     memes_generated: toNonNegativeInt(currentRow.memes_generated),
     battle_wins: toNonNegativeInt(currentRow.battle_wins),
     daily_streak: toNonNegativeInt(currentRow.daily_streak),
+    jokes_landed: toNonNegativeInt(currentRow.jokes_landed),
+    cathy_surprised: toNonNegativeInt(currentRow.cathy_surprised),
+    cathy_triggered: toNonNegativeInt(currentRow.cathy_triggered),
+    cathy_intrigued: toNonNegativeInt(currentRow.cathy_intrigued),
+    cathy_approved: toNonNegativeInt(currentRow.cathy_approved),
     last_active_date: typeof currentRow.last_active_date === 'string' ? currentRow.last_active_date : null
   };
 
@@ -111,19 +155,27 @@ function computeFallbackPatch(currentRow, action) {
 }
 
 async function applyScoreActionFallback(supabaseAdmin, userId, action) {
-  const { data: currentRow, error: readError } = await supabaseAdmin
-    .from('profiles')
-    .select(
-      'score, roasts_generated, punchlines_created, destructions, photos_roasted, memes_generated, battle_wins, daily_streak, last_active_date'
-    )
-    .eq('id', userId)
-    .maybeSingle();
+  let profileQuery = supabaseAdmin.from('profiles').select(getProfileColumns()).eq('id', userId).maybeSingle();
+  let { data: currentRow, error: readError } = await profileQuery;
+
+  if (readError && profileSelectSupportsReactionColumns && isMissingReactionColumnError(readError)) {
+    profileSelectSupportsReactionColumns = false;
+    profileQuery = supabaseAdmin.from('profiles').select(getProfileColumns()).eq('id', userId).maybeSingle();
+    ({ data: currentRow, error: readError } = await profileQuery);
+  }
 
   if (readError || !currentRow) {
     return { ok: false, error: readError ?? new Error('Profile not found') };
   }
 
   const patch = computeFallbackPatch(currentRow, action);
+  if (!profileSelectSupportsReactionColumns) {
+    delete patch.jokes_landed;
+    delete patch.cathy_surprised;
+    delete patch.cathy_triggered;
+    delete patch.cathy_intrigued;
+    delete patch.cathy_approved;
+  }
   const { error: writeError } = await supabaseAdmin.from('profiles').update(patch).eq('id', userId);
   if (writeError) {
     return { ok: false, error: writeError };
@@ -133,6 +185,10 @@ async function applyScoreActionFallback(supabaseAdmin, userId, action) {
 }
 
 async function applyScoreAction(supabaseAdmin, userId, action) {
+  if (REACTION_ACTIONS.has(action)) {
+    return applyScoreActionFallback(supabaseAdmin, userId, action);
+  }
+
   const { data, error } = await supabaseAdmin.rpc('apply_score_action', {
     p_user_id: userId,
     p_action: action

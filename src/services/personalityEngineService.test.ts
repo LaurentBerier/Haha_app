@@ -8,6 +8,8 @@ describe('personalityEngineService', () => {
     expect(prompt).toContain('Tu es Cathy Gauthier');
     expect(prompt).toContain('## MODE ACTIF : roast');
     expect(prompt).toContain("L'utilisateur veut se faire roaster");
+    expect(prompt).toContain('## MARQUEURS AUDIO');
+    expect(prompt).toContain('[laughs]');
   });
 
   it('builds fallback prompt for unknown artist profiles without Cathy mode coupling', () => {
@@ -17,6 +19,7 @@ describe('personalityEngineService', () => {
     expect(prompt).toContain('## MODE ACTIF : roast');
     expect(prompt).toContain("Conversation libre. Reponds selon la personnalite de l'artiste selectionne");
     expect(prompt).not.toContain("L'utilisateur veut se faire roaster");
+    expect(prompt).not.toContain('## MARQUEURS AUDIO');
   });
 
   it('keeps backward compatibility for buildSystemPrompt()', () => {
@@ -29,6 +32,7 @@ describe('personalityEngineService', () => {
     const prompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'default', null, 'en-CA');
 
     expect(prompt).toContain('You are Cathy Gauthier');
+    expect(prompt).toContain('## AUDIO EXPRESSION TAGS');
     expect(prompt).toContain('## ABSOLUTE RULES');
     expect(prompt).not.toContain('Tu reponds toujours en francais quebecois');
   });

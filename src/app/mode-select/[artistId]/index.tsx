@@ -29,10 +29,13 @@ import { useVoiceConversation } from '../../../hooks/useVoiceConversation';
 import { t } from '../../../i18n';
 import type { Message } from '../../../models/Message';
 import { synthesizeVoice } from '../../../services/voiceEngine';
+import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voiceFillerService';
 import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
 import { generateId } from '../../../utils/generateId';
+import { stripAudioTags } from '../../../utils/audioTags';
 import { findConversationById } from '../../../utils/conversationUtils';
+import type { ChatSendPayload } from '../../../models/ChatSendPayload';
 
 interface GreetingCoordinates {
   lat: number;
@@ -60,6 +63,9 @@ interface OptionalLocationModule {
 let cachedLocationModule: OptionalLocationModule | null | undefined;
 const DEFAULT_GREETING_TYPING_DURATION_MS = 4_200;
 const GREETING_API_BACKOFF_MS = 5 * 60_000;
+const GREETING_API_REQUEST_TIMEOUT_MS = 12_000;
+const GREETING_API_MAX_ATTEMPTS = 2;
+const GREETING_API_RETRY_DELAY_MS = 850;
 let greetingApiBackoffUntilTs = 0;
 
 interface ArtistModeSource {
@@ -138,6 +144,21 @@ function formatArtistDisplayName(artistName: string | null): string {
   return artistName;
 }
 
+function hasVoiceAccess(accountType: string | null | undefined): boolean {
+  if (typeof accountType !== 'string') {
+    return false;
+  }
+
+  const normalized = accountType.trim().toLowerCase().replace(/[\s_-]+/g, '');
+  return (
+    normalized === 'regular' ||
+    normalized === 'premium' ||
+    normalized === 'admin' ||
+    normalized === 'unlimited' ||
+    normalized === 'proartist'
+  );
+}
+
 function speakGreetingWithWebFallback(text: string, language: string): boolean {
   if (Platform.OS !== 'web') {
     return false;
@@ -198,45 +219,66 @@ function buildFallbackGreetingText(
   const isEnglish = language.toLowerCase().startsWith('en');
   const displayName = preferredName ?? (isEnglish ? 'there' : 'toi');
   const artistName = artist.name?.trim() || 'Cathy';
-  const variationIndex = Math.floor(Math.random() * 3);
+  const isCathyArtist = artistName.toLowerCase().includes('cathy');
+  const variationIndex = Math.floor(Math.random() * 5);
 
   if (isEnglish) {
     const openingVariants = [
-      `Hey ${displayName}, how are you? It's ${artistName}, yes, the loud one.`,
-      `Hi ${displayName}, how's it going? ${artistName} here, no need to pretend you're surprised.`,
-      `Yo ${displayName}, how are you doing? It's ${artistName} on the mic, obviously.`
+      `Hey ${displayName}, how are you? It's ${artistName} on the mic, yes, huge surprise, I know.`,
+      `Hi ${displayName}, how's it going? ${artistName} here, same energy, slightly less sleep.`,
+      `Yo ${displayName}, how are you doing? It's ${artistName}, still loud, still helpful.`
     ];
     const voiceSentenceVariants = includeVoiceHint
       ? [
-          'Voice mode is already on, and you can turn it off with the little mic at the bottom right if you prefer to text.',
-          'We are already in voice mode; tap the small mic at the bottom right anytime depending on your communication preference.',
-          'Conversation voice is active now, and the small mic at the bottom right lets you switch back to text whenever that feels better for you.'
+          "The mic at the bottom is how you talk to me — tap it if you'd rather text, totally up to you.",
+          "That little mic at the bottom? That's how we interact. Tap it off if you prefer typing.",
+          "Use the mic at the bottom to speak with me directly — or tap it to switch to text, your call."
         ]
-      : ['Voice mode is already on.'];
+      : ['The mic at the bottom is how you talk to me.'];
+    const onboardingVariants = [
+      "No pressure: start with one short line, and I'll guide the rest.",
+      "We'll keep it simple, just tell me your vibe and we'll roll from there.",
+      "Start wherever you want, I'll adapt fast and keep this fun."
+    ];
     return [
-      openingVariants[variationIndex] ?? openingVariants[0],
-      voiceSentenceVariants[variationIndex] ?? voiceSentenceVariants[0]
+      openingVariants[variationIndex % openingVariants.length] ?? openingVariants[0],
+      voiceSentenceVariants[variationIndex % voiceSentenceVariants.length] ?? voiceSentenceVariants[0],
+      onboardingVariants[variationIndex % onboardingVariants.length] ?? onboardingVariants[0]
     ]
       .filter(Boolean)
       .join(' ');
   }
 
-  const openingVariants = [
-    `Hey salut ${displayName}, comment tu vas? Moi c'est ${artistName}, j'imagine que tu l'avais déjà deviné.`,
-    `Allô ${displayName}, ça va bien? ${artistName} au micro, grosse surprise, pas pantoute.`,
-    `Salut ${displayName}, comment ça roule? Ici ${artistName}, ta notification la plus bavarde.`
-  ];
+  const openingVariants = isCathyArtist
+    ? [
+        `Hey ${displayName}, ça va? J'suis le clone de Cathy: même mordant, un rire de plus, pis juste assez de bugs pour être attachante.`,
+        `Allô ${displayName}, tu vas bien? J'suis le clone de Cathy: copié-collé de la répartie, version un peu trop énergique.`,
+        `Yo ${displayName}, comment ça roule? J'suis le clone de Cathy: même sarcasme, même tempo, zéro bouton pause.`,
+        `Hé ${displayName}, prêt(e) ou pas? J'suis le clone de Cathy, edition turbo: j'arrive vite, j'parle franc, pis j'ris fort.`,
+        `Bon ${displayName}, on s'le dit? J'suis le clone de Cathy: même queue de comète, juste un p'tit glitch dans l'attitude.`
+      ]
+    : [
+        `Hey ${displayName}, ça va? J'suis ${artistName} au micro, pis j'arrive avec du jus.`,
+        `Allô ${displayName}, tu vas bien? Moi c'est ${artistName}, pis oui, j'suis déjà crinquée.`,
+        `Yo ${displayName}, comment ça roule? C'est ${artistName}, pis on part ça smooth.`
+      ];
   const voiceSentenceVariants = includeVoiceHint
     ? [
-        'Le mode discussion vocale est déjà actif, et tu peux le couper avec le petit micro en bas à droite selon ta préférence de communication.',
-        "On est déjà en mode vocal; touche le petit micro en bas à droite si tu préfères écrire.",
-        'La conversation vocale tourne déjà, et le petit micro en bas à droite te laisse repasser en mode texte quand ça te convient mieux.'
+        "Le micro en bas, c'est là que tu me parles — clique dessus si t'aimes mieux texter, c'est toé qui décides.",
+        "T'as un micro en bas pour jaser avec moi direct; si tu préfères écrire, t'as juste à peser dessus pour l'éteindre.",
+        "Le p'tit micro en bas, c'est pour me parler pour vrai — pis si t'aimes mieux les textos, clique dessus, c'est réglé."
       ]
-    : ['Le mode discussion vocale est déjà actif.'];
+    : ["Le micro en bas permet de me parler direct."];
+  const onboardingVariants = [
+    "Aucune pression: lance juste une phrase, pis j't'accompagne pour le reste.",
+    "On garde ça simple: dis-moi ton mood, pis j'te guide sans te brusquer.",
+    "Commence où t'veux, j'm'ajuste vite pis on va avoir du fun."
+  ];
 
   return [
-    openingVariants[variationIndex] ?? openingVariants[0],
-    voiceSentenceVariants[variationIndex] ?? voiceSentenceVariants[0]
+    openingVariants[variationIndex % openingVariants.length] ?? openingVariants[0],
+    voiceSentenceVariants[variationIndex % voiceSentenceVariants.length] ?? voiceSentenceVariants[0],
+    onboardingVariants[variationIndex % onboardingVariants.length] ?? onboardingVariants[0]
   ]
     .filter(Boolean)
     .join(' ');
@@ -274,6 +316,33 @@ function buildAvailableModesForGreeting(artist: ArtistModeSource): string[] {
   });
 
   return names.slice(0, 10);
+}
+
+function buildModeNudgeText(language: string, modeNames: string[]): string {
+  const isEnglish = language.toLowerCase().startsWith('en');
+  const shuffled = [...modeNames].sort(() => Math.random() - 0.5);
+  const fallbackM1 = isEnglish ? 'Roast mode' : 'Le roast';
+  const fallbackM2 = isEnglish ? 'Improv mode' : "L'impro";
+  const m1 = shuffled[0] ?? fallbackM1;
+  const m2 = shuffled[1] ?? fallbackM2;
+
+  if (isEnglish) {
+    const variants: [string, string, string] = [
+      `[sighs] Hey, we've been chatting for a bit — if you feel like mixing it up, ${m1} or ${m2} might be your thing. Check the top of the chat, you'll see all the modes. Pick what sounds fun, or we can just keep going here too, no pressure.`,
+      `[laughs] Okay we've been at this a while. Not complaining, but just so you know — there's ${m1}, ${m2} and more up there at the top. Take a look if you're curious. Or stay here, I don't mind either way.`,
+      `Look, we can keep talking all day, but you should know ${m1} and ${m2} are just sitting there waiting. Scroll up, check the modes — pick one or don't, your call.`
+    ];
+
+    return variants[Math.floor(Math.random() * variants.length)] ?? variants[0];
+  }
+
+  const variants: [string, string, string] = [
+    `[sighs] Hey, ça fait quand même un moment qu'on jase — si t'as envie d'essayer de quoi, ${m1} ou ${m2} ça t'tenterait p'être. Regarde en haut du chat, t'as les différents modes là. Choisis c'qui t'intéresse, ou on continue juste à parler ici aussi, c'est correct.`,
+    `[laughs] Bon, on se parle depuis un boutte. Je me plains pas, mais y'a ${m1}, ${m2} pis d'autres modes là-haut. Regarde ça si t'es curieux. Ou reste ici, ça me dérange pas pantoute.`,
+    `Écoute, on peut jaser toute la journée, mais faut que tu saches que ${m1} pis ${m2} t'attendent là-haut. Scroll un peu, check les modes — choisis-en un ou pas, c'est toé qui décides.`
+  ];
+
+  return variants[Math.floor(Math.random() * variants.length)] ?? variants[0];
 }
 
 function normalizeUrl(value: string): string {
@@ -339,6 +408,12 @@ function buildGreetingEndpointCandidates(): string[] {
     addCandidate(claudeProxy.replace(/\/claude$/, '/greeting'));
   }
   return candidates;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 async function getOptionalCoords(): Promise<GreetingCoordinates | null> {
@@ -421,33 +496,45 @@ async function fetchGreetingFromApi(
 
   const candidates = buildGreetingEndpointCandidates();
   let shouldBackoff = false;
-  for (const endpoint of candidates) {
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      });
+  for (let attempt = 0; attempt < GREETING_API_MAX_ATTEMPTS; attempt += 1) {
+    for (const endpoint of candidates) {
+      const controller = new AbortController();
+      const timeoutHandle = setTimeout(() => controller.abort(), GREETING_API_REQUEST_TIMEOUT_MS);
 
-      if (!response.ok) {
-        if (response.status >= 500) {
-          shouldBackoff = true;
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal
+        });
+
+        if (!response.ok) {
+          if (response.status >= 500) {
+            shouldBackoff = true;
+          }
+          continue;
         }
-        continue;
-      }
 
-      const data = (await response.json()) as GreetingEndpointResponse;
-      const greeting = typeof data.greeting === 'string' ? data.greeting.trim() : '';
-      if (greeting) {
-        clearGreetingApiBackoff();
-        return greeting;
+        const data = (await response.json()) as GreetingEndpointResponse;
+        const greeting = typeof data.greeting === 'string' ? data.greeting.trim() : '';
+        if (greeting) {
+          clearGreetingApiBackoff();
+          return greeting;
+        }
+      } catch {
+        shouldBackoff = true;
+        // Try next endpoint candidate.
+      } finally {
+        clearTimeout(timeoutHandle);
       }
-    } catch {
-      shouldBackoff = true;
-      // Try next endpoint candidate.
+    }
+
+    if (attempt < GREETING_API_MAX_ATTEMPTS - 1) {
+      await delay(GREETING_API_RETRY_DELAY_MS);
     }
   }
 
@@ -462,11 +549,37 @@ interface CategoryMenuButtonProps {
   artistId: string;
   id: ModeCategoryId;
   index: number;
+  compactProgress: Animated.Value;
+  isCompact: boolean;
 }
 
-function CategoryMenuButton({ artistId, id, index }: CategoryMenuButtonProps) {
+function CategoryMenuButton({ artistId, id, index, compactProgress, isCompact }: CategoryMenuButtonProps) {
   const scale = useRef(new Animated.Value(1)).current;
   const glow = useRef(new Animated.Value(0)).current;
+  const cardHeight = compactProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [118, 56]
+  });
+  const cardRadius = compactProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [16, 9]
+  });
+  const borderWidth = compactProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1.7, 1.05]
+  });
+  const labelFontSize = compactProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [16, 9.5]
+  });
+  const labelLineHeight = compactProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [20, 10.5]
+  });
+  const emojiScale = compactProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 0.52]
+  });
 
   useEffect(() => {
     const breathing = Animated.loop(
@@ -525,11 +638,15 @@ function CategoryMenuButton({ artistId, id, index }: CategoryMenuButtonProps) {
     <Animated.View
       style={[
         styles.categoryCard,
+        isCompact ? styles.categoryCardCompact : styles.categoryCardExpanded,
         {
+          height: cardHeight,
           transform: [{ scale }],
           backgroundColor,
           shadowOpacity,
-          borderColor
+          borderColor,
+          borderRadius: cardRadius,
+          borderWidth
         }
       ]}
       testID={`mode-category-container-${id}`}
@@ -545,8 +662,15 @@ function CategoryMenuButton({ artistId, id, index }: CategoryMenuButtonProps) {
         onPressOut={handlePressOut}
         accessibilityRole="button"
       >
-        <Text style={styles.categoryEmoji}>{MODE_CATEGORY_META[id].emoji}</Text>
-        <Text style={styles.categoryLabel}>{t(MODE_CATEGORY_META[id].labelKey)}</Text>
+        <Animated.View style={{ transform: [{ scale: emojiScale }] }}>
+          <Text style={styles.categoryEmoji}>{MODE_CATEGORY_META[id].emoji}</Text>
+        </Animated.View>
+        <Animated.Text
+          style={[styles.categoryLabel, { fontSize: labelFontSize, lineHeight: labelLineHeight }]}
+          numberOfLines={isCompact ? 2 : 1}
+        >
+          {t(MODE_CATEGORY_META[id].labelKey)}
+        </Animated.Text>
       </Pressable>
     </Animated.View>
   );
@@ -559,6 +683,9 @@ export default function ModeSelectHomeScreen() {
   const headerHorizontalInset = useHeaderHorizontalInset();
   const [greeting, setGreeting] = useState<string | null>(null);
   const [hasTypedDraft, setHasTypedDraft] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [categoryGridBottomY, setCategoryGridBottomY] = useState<number | null>(null);
+  const [isModeGridLockedCompact, setIsModeGridLockedCompact] = useState(false);
 
   const artists = useStore((state) => state.artists);
   const language = useStore((state) => state.language);
@@ -568,10 +695,12 @@ export default function ModeSelectHomeScreen() {
   const activeConversationId = useStore((state) => state.activeConversationId);
   const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
+  const voiceAutoPlay = useStore((state) => state.voiceAutoPlay);
   const setVoiceAutoPlay = useStore((state) => state.setVoiceAutoPlay);
   const createConversation = useStore((state) => state.createConversation);
   const setActiveConversation = useStore((state) => state.setActiveConversation);
   const addMessage = useStore((state) => state.addMessage);
+  const updateMessage = useStore((state) => state.updateMessage);
   const updateConversation = useStore((state) => state.updateConversation);
   const markArtistGreeted = useStore((state) => state.markArtistGreeted);
   const hasArtistBeenGreetedThisSession = useStore(
@@ -627,14 +756,17 @@ export default function ModeSelectHomeScreen() {
   const [pendingGreetingAudioUri, setPendingGreetingAudioUri] = useState<string | null>(null);
   const [pendingGreetingSpeechText, setPendingGreetingSpeechText] = useState<string | null>(null);
   const [isWebSpeechFallbackActive, setIsWebSpeechFallbackActive] = useState(false);
+  const modeGridCompactProgress = useRef(new Animated.Value(0)).current;
+  const rootLayoutRef = useRef<View>(null);
+  const categoryGridRef = useRef<View>(null);
   const messageListRef = useRef<FlatList<Message>>(null);
   const isNearBottomRef = useRef(true);
   const hasScrolledInitiallyRef = useRef(false);
   const greetingPlaybackCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingGestureRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingSpeechHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const modeNudgeShownRef = useRef(false);
   const modeSelectInputOffset = Platform.select({ ios: 108, default: 96 }) ?? 96;
-  const chatWindowMaxHeight = Math.max(180, Math.floor(viewportHeight * 0.5));
   const {
     messages,
     sendMessage,
@@ -646,6 +778,39 @@ export default function ModeSelectHomeScreen() {
   } = useChat(modeSelectConversationId);
   const playGreetingAudio = audioPlayer.play;
   const isValidConversation = modeSelectConversationId.length > 0;
+  const sendFromModeSelect = useCallback(
+    (payload: ChatSendPayload) => {
+      const hasText = payload.text.trim().length > 0;
+      const hasImage = Boolean(payload.image);
+      if (hasText || hasImage) {
+        setIsModeGridLockedCompact(true);
+      }
+      const shouldUseVoiceFiller = Boolean(
+        conversationModeEnabled &&
+          artist?.id &&
+          accessToken.trim() &&
+          hasVoiceAccess(sessionUser?.accountType ?? null)
+      );
+
+      if (shouldUseVoiceFiller && !audioPlayer.isPlaying && !audioPlayer.isLoading && artist?.id) {
+        void getRandomFillerUri(artist.id, language, accessToken)
+          .then((uri) => {
+            if (!uri) {
+              return;
+            }
+            if (!audioPlayer.isPlaying && !audioPlayer.isLoading) {
+              void audioPlayer.play(uri);
+            }
+          })
+          .catch(() => {
+            // Non-blocking latency helper.
+          });
+      }
+
+      return sendMessage(payload);
+    },
+    [accessToken, artist?.id, audioPlayer, conversationModeEnabled, language, sendMessage, sessionUser?.accountType]
+  );
   const { isListening, transcript, error: conversationError, interruptAndListen } = useVoiceConversation({
     enabled: isValidConversation && conversationModeEnabled && !hasTypedDraft && !isQuotaBlocked,
     disabled: !isValidConversation || isQuotaBlocked,
@@ -655,7 +820,7 @@ export default function ModeSelectHomeScreen() {
       if (!normalized) {
         return;
       }
-      sendMessage({ text: normalized });
+      sendFromModeSelect({ text: normalized });
     },
     onStopAudio: () => {
       void audioPlayer.stop();
@@ -673,6 +838,10 @@ export default function ModeSelectHomeScreen() {
     currentUri: null
   });
   const isGreetingVoicePendingGesture = Boolean(pendingGreetingAudioUri || pendingGreetingSpeechText);
+  const hasUserSpokenInModeSelect = messages.some((message) => message.role === 'user');
+  const shouldCompactModeGrid =
+    isValidConversation &&
+    (isModeGridLockedCompact || hasStreaming || ((Platform.OS === 'ios' || Platform.OS === 'android') && isInputFocused));
   const isGreetingVoiceActive =
     greeting !== null &&
     (audioPlayer.isLoading || audioPlayer.isPlaying || isGreetingVoicePendingGesture || isWebSpeechFallbackActive);
@@ -683,6 +852,40 @@ export default function ModeSelectHomeScreen() {
     : isGreetingVoicePendingGesture
       ? "Touchez l'écran pour activer la voix de Cathy."
       : 'Cathy parle...';
+  const fallbackOverlayTop = Math.floor(viewportHeight * (Platform.OS === 'ios' ? 0.58 : 0.54));
+  const measuredOverlayTop =
+    typeof categoryGridBottomY === 'number' ? Math.ceil(categoryGridBottomY + theme.spacing.sm) : fallbackOverlayTop;
+  const minOverlayTop = Math.floor(viewportHeight * 0.46);
+  const maxOverlayTop = Math.floor(viewportHeight * 0.75);
+  const conversationOverlayTop = Math.min(Math.max(measuredOverlayTop, minOverlayTop), maxOverlayTop);
+  const chatWindowMaxHeight = Math.max(
+    160,
+    Math.floor(viewportHeight - modeSelectInputOffset - conversationOverlayTop - theme.spacing.xs)
+  );
+
+  const measureCategoryGridBottom = useCallback(() => {
+    const rootNode = rootLayoutRef.current;
+    const gridNode = categoryGridRef.current;
+    if (!rootNode || !gridNode) {
+      return;
+    }
+
+    rootNode.measureInWindow((_rootX, rootY) => {
+      gridNode.measureInWindow((_gridX, gridY, _gridWidth, gridHeight) => {
+        if (!Number.isFinite(gridHeight) || gridHeight <= 0) {
+          return;
+        }
+
+        const relativeBottom = Math.max(0, gridY - rootY + gridHeight);
+        setCategoryGridBottomY((previous) => {
+          if (typeof previous === 'number' && Math.abs(previous - relativeBottom) < 1) {
+            return previous;
+          }
+          return relativeBottom;
+        });
+      });
+    });
+  }, []);
 
   const scrollToLatest = useCallback((animated: boolean) => {
     requestAnimationFrame(() => {
@@ -767,6 +970,19 @@ export default function ModeSelectHomeScreen() {
   }, [conversationModeEnabled, setVoiceAutoPlay]);
 
   useEffect(() => {
+    if (
+      !conversationModeEnabled ||
+      !artist?.id ||
+      !accessToken.trim() ||
+      !hasVoiceAccess(sessionUser?.accountType ?? null)
+    ) {
+      return;
+    }
+
+    prewarmVoiceFillers(artist.id, language, accessToken);
+  }, [accessToken, artist?.id, conversationModeEnabled, language, sessionUser?.accountType]);
+
+  useEffect(() => {
     if (!modeSelectConversationId || activeConversationId === modeSelectConversationId) {
       return;
     }
@@ -779,6 +995,116 @@ export default function ModeSelectHomeScreen() {
     }
     scrollToLatest(true);
   }, [messages, scrollToLatest]);
+
+  useEffect(() => {
+    setIsModeGridLockedCompact(hasUserSpokenInModeSelect);
+  }, [hasUserSpokenInModeSelect]);
+
+  useEffect(() => {
+    setIsInputFocused(false);
+    modeNudgeShownRef.current = false;
+  }, [artistId]);
+
+  useEffect(() => {
+    if (modeNudgeShownRef.current || !modeSelectConversationId || hasStreaming || !artist) {
+      return;
+    }
+
+    const userMessages = messages.filter((message) => message.role === 'user' && message.status === 'complete');
+    if (userMessages.length < 4) {
+      return;
+    }
+
+    modeNudgeShownRef.current = true;
+
+    const modeNames = buildAvailableModesForGreeting(artist).filter((name) => {
+      const normalized = name.trim().toLowerCase();
+      return normalized !== 'on jase' && normalized !== 'chat';
+    });
+
+    const rawNudgeText = buildModeNudgeText(language, modeNames);
+    const nudgeText = stripAudioTags(rawNudgeText, { trim: true });
+    if (!nudgeText) {
+      return;
+    }
+
+    const nudgeMessageId = generateId('msg');
+    addMessage(modeSelectConversationId, {
+      id: nudgeMessageId,
+      conversationId: modeSelectConversationId,
+      role: 'artist',
+      content: nudgeText,
+      status: 'complete',
+      timestamp: new Date().toISOString(),
+      metadata: {
+        injected: true
+      }
+    });
+
+    if (!accessToken.trim() || !rawNudgeText.trim()) {
+      return;
+    }
+
+    updateMessage(modeSelectConversationId, nudgeMessageId, {
+      metadata: {
+        injected: true,
+        voiceStatus: 'generating'
+      }
+    });
+
+    void synthesizeVoice(rawNudgeText, artist.id, language, accessToken, { purpose: 'reply' })
+      .then((nudgeVoiceUri) => {
+        if (!nudgeVoiceUri) {
+          updateMessage(modeSelectConversationId, nudgeMessageId, {
+            metadata: {
+              injected: true,
+              voiceStatus: undefined
+            }
+          });
+          return;
+        }
+
+        updateMessage(modeSelectConversationId, nudgeMessageId, {
+          metadata: {
+            injected: true,
+            voiceUrl: nudgeVoiceUri,
+            voiceQueue: [nudgeVoiceUri],
+            voiceStatus: 'ready'
+          }
+        });
+
+        const latestAudioState = audioStateRef.current;
+        if (voiceAutoPlay && !latestAudioState.isPlaying && !latestAudioState.isLoading) {
+          void audioPlayer.play(nudgeVoiceUri);
+        }
+      })
+      .catch(() => {
+        updateMessage(modeSelectConversationId, nudgeMessageId, {
+          metadata: {
+            injected: true,
+            voiceStatus: undefined
+          }
+        });
+      });
+  }, [accessToken, addMessage, artist, audioPlayer, hasStreaming, language, messages, modeSelectConversationId, updateMessage, voiceAutoPlay]);
+
+  useEffect(() => {
+    Animated.timing(modeGridCompactProgress, {
+      toValue: shouldCompactModeGrid ? 1 : 0,
+      duration: 240,
+      useNativeDriver: false
+    }).start();
+  }, [modeGridCompactProgress, shouldCompactModeGrid]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      measureCategoryGridBottom();
+    }, 280);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [measureCategoryGridBottom, shouldCompactModeGrid, viewportHeight, messages.length]);
 
   useEffect(() => {
     if (!artist || !artistId || modeSelectConversationId) {
@@ -854,8 +1180,9 @@ export default function ModeSelectHomeScreen() {
       }
 
       const now = new Date().toISOString();
+      const greetingMessageId = generateId('msg');
       addMessage(introConversation.id, {
-        id: generateId('msg'),
+        id: greetingMessageId,
         conversationId: introConversation.id,
         role: 'artist',
         content: nextGreeting,
@@ -888,6 +1215,11 @@ export default function ModeSelectHomeScreen() {
       }
 
       try {
+        updateMessage(introConversation.id, greetingMessageId, {
+          metadata: {
+            voiceStatus: 'generating'
+          }
+        });
         const greetingAudioUri = await synthesizeVoice(nextGreeting, artist.id, language, accessToken, {
           purpose: 'greeting'
         });
@@ -895,6 +1227,13 @@ export default function ModeSelectHomeScreen() {
           return;
         }
 
+        updateMessage(introConversation.id, greetingMessageId, {
+          metadata: {
+            voiceUrl: greetingAudioUri,
+            voiceQueue: [greetingAudioUri],
+            voiceStatus: 'ready'
+          }
+        });
         void playGreetingAudio(greetingAudioUri);
         if (Platform.OS === 'web') {
           clearGreetingPlaybackCheck();
@@ -913,6 +1252,11 @@ export default function ModeSelectHomeScreen() {
         }
       } catch {
         if (!isCancelled) {
+          updateMessage(introConversation.id, greetingMessageId, {
+            metadata: {
+              voiceStatus: undefined
+            }
+          });
           if (Platform.OS === 'web') {
             if (!speakGreetingWithWebFallback(nextGreeting, language)) {
               setPendingGreetingSpeechText(nextGreeting);
@@ -942,6 +1286,7 @@ export default function ModeSelectHomeScreen() {
     pulseGreetingSpeechHint,
     playGreetingAudio,
     setActiveConversation,
+    updateMessage,
     updateConversation
   ]);
 
@@ -1007,7 +1352,7 @@ export default function ModeSelectHomeScreen() {
       style={styles.screen}
       keyboardVerticalOffset={88}
     >
-      <View style={styles.screen}>
+      <View style={styles.screen} ref={rootLayoutRef} onLayout={measureCategoryGridBottom}>
         <AmbientGlow variant="mode" />
         <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
           <BackButton testID="mode-select-back" />
@@ -1026,9 +1371,20 @@ export default function ModeSelectHomeScreen() {
             <Text style={styles.subtitle}>{artist.name}</Text>
             <Text style={styles.helperText}>{t('modeSelectCategoryEmptySubtitle')}</Text>
           </View>
-          <View style={styles.categoryGrid}>
+          <View
+            style={[styles.categoryGrid, shouldCompactModeGrid ? styles.categoryGridCompact : null]}
+            ref={categoryGridRef}
+            onLayout={measureCategoryGridBottom}
+          >
             {MODE_CATEGORY_ORDER.map((categoryId, index) => (
-              <CategoryMenuButton key={categoryId} artistId={artist.id} id={categoryId} index={index} />
+              <CategoryMenuButton
+                key={categoryId}
+                artistId={artist.id}
+                id={categoryId}
+                index={index}
+                compactProgress={modeGridCompactProgress}
+                isCompact={shouldCompactModeGrid}
+              />
             ))}
           </View>
         </ScrollView>
@@ -1036,7 +1392,7 @@ export default function ModeSelectHomeScreen() {
         {isValidConversation ? (
           <View
             pointerEvents="box-none"
-            style={[styles.conversationOverlay, { bottom: modeSelectInputOffset }]}
+            style={[styles.conversationOverlay, { bottom: modeSelectInputOffset, top: conversationOverlayTop }]}
           >
             <View style={[styles.conversationWindow, { maxHeight: chatWindowMaxHeight }]}>
               {isGreetingVoiceActive ? (
@@ -1076,8 +1432,8 @@ export default function ModeSelectHomeScreen() {
 
         <View style={styles.modeSelectInputDock}>
           <View style={styles.modeSelectInputContent}>
-            <ChatInput
-              onSend={sendMessage}
+                <ChatInput
+              onSend={sendFromModeSelect}
               disabled={!isValidConversation || isQuotaBlocked}
               conversationMode={{
                 enabled: conversationModeEnabled,
@@ -1091,6 +1447,7 @@ export default function ModeSelectHomeScreen() {
                 onInterrupt: interruptAndListen,
                 onTypingStateChange: setHasTypedDraft
               }}
+              onInputFocusChange={setIsInputFocused}
             />
           </View>
           {isValidConversation && isQuotaBlocked ? (
@@ -1216,9 +1573,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     rowGap: theme.spacing.sm
   },
+  categoryGridCompact: {
+    flexWrap: 'nowrap',
+    rowGap: 0
+  },
   categoryCard: {
-    width: '48.5%',
-    minHeight: 118,
     borderWidth: 1.7,
     borderRadius: 16,
     shadowColor: theme.colors.neonBlue,
@@ -1226,9 +1585,14 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     elevation: 4
   },
+  categoryCardExpanded: {
+    width: '48.5%'
+  },
+  categoryCardCompact: {
+    width: '24%'
+  },
   categoryPressable: {
     flex: 1,
-    minHeight: 118,
     alignItems: 'center',
     justifyContent: 'center',
     gap: theme.spacing.xs,

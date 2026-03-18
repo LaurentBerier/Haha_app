@@ -25,7 +25,13 @@ Implemented in this repository:
   - `Jeux`
   - `Profil`
 - Artist selection now distinguishes available vs upcoming artists with a clear CTA for available artists and "Disponible bientôt" cards for locked artists.
-- Paid-tier voice strategy currently targets ElevenLabs.
+- Paid-tier voice strategy is on ElevenLabs v3 with emotional audio tags support and display-safe tag stripping.
+- Conversation naturelle (Phase 4) is integrated across chat and mode-select:
+  - default-on conversation mode with shared composer UX
+  - STT silence auto-send and TTS-aware listening control
+  - inline mode-select conversation stack (no forced route switch)
+  - first-session greeting with weather/news signal context
+  - chunk-synced text/voice playback with animated waveform replay control
 - Subscription screen includes current plan, next billing cycle, and cancel-at-period-end for Stripe subscriptions.
 - User profile model and profile personalization injection in system prompts.
 - Gamification layer (score, titles, streak, mode-driven scoring) persisted in Zustand and synced with Supabase.
@@ -43,6 +49,15 @@ Implemented in this repository:
 - Unit test baseline (Jest) for API security contracts and core store slices.
 - App web + API are deployed together from this repo to the Vercel project `haha-app` (custom domain: `app.ha-ha.ai`).
 - Marketing/landing is maintained in a separate repo and deployed to a separate Vercel project (`ha-ha-ai`, domain `ha-ha.ai`).
+
+## Status Tracking
+
+- [`docs/phase1-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase1-status.md)
+- [`docs/phase2-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase2-status.md)
+- [`docs/phase3-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase3-status.md)
+- [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
+- Latest QA run: [`docs/qa-run-2026-03-17.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-17.md)
+- Latest code-review snapshot: [`docs/code-review-2026-03-17.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-17.md)
 
 ## Repos and Vercel Projects
 

@@ -18,11 +18,13 @@ import { useStore } from '../store/useStore';
 import { findConversationById } from '../utils/conversationUtils';
 import { shouldAutoSwitchToEnglish } from '../utils/languageDetection';
 import { generateId } from '../utils/generateId';
+import { splitDisplayChunkFromRaw, stripAudioTags } from '../utils/audioTags';
 import type { ScoreAction } from '../models/Gamification';
 import { useAudioPlayer } from './useAudioPlayer';
 
 interface StreamJob {
   artistMessageId: string;
+  userMessageId: string;
   artistId: string;
   mockUserTurn: string;
   claudeUserMessage: ClaudeMessage;
@@ -36,6 +38,7 @@ interface StreamJob {
 
 const EMPTY_MESSAGES: Message[] = [];
 const MAX_CLAUDE_HISTORY_MESSAGES = 39;
+const VOICE_MAX_CLAUDE_HISTORY_MESSAGES = 8;
 const MAX_MEMORY_FACTS = 6;
 const THRESHOLD_1_RATIO = 0.75;
 const THRESHOLD_2_RATIO = 0.9;
@@ -43,6 +46,10 @@ const THRESHOLD_3_RATIO = 1;
 const THRESHOLD_4_RATIO = 1.5;
 const MIN_TTS_CHUNK_CHARS = 20;
 const MAX_TTS_CHUNK_CHARS = 200;
+const VOICE_FIRST_CHUNK_MIN_CHARS = 35;
+const REACT_TAG_PATTERN = /^\s*\[REACT:([^\]\n]{1,8})\]\s*/i;
+const REACT_TAG_GLOBAL_PATTERN = /\[REACT:[^\]\n]{1,12}\]/gi;
+const ALLOWED_REACTIONS = new Set(['😂', '💀', '😮', '😤', '🙄', '😬', '🤔', '👍']);
 
 function normalizeAccountType(accountType: string | null | undefined): string {
   if (typeof accountType === 'string' && accountType.trim()) {
@@ -95,6 +102,48 @@ function isSentenceBoundary(input: string, index: number): boolean {
 
 function normalizeTtsChunk(chunk: string): string {
   return chunk.replace(/\s+/g, ' ').trim();
+}
+
+function stripReactionTagMarkers(text: string): string {
+  return text.replace(REACT_TAG_GLOBAL_PATTERN, '').replace(/\s+/g, ' ').trim();
+}
+
+function extractReactionTag(text: string): { reaction: string | null; cleaned: string } {
+  const source = typeof text === 'string' ? text : '';
+  const match = source.match(REACT_TAG_PATTERN);
+  if (!match) {
+    return {
+      reaction: null,
+      cleaned: source
+    };
+  }
+
+  const reactionCandidate = typeof match[1] === 'string' ? match[1].trim() : '';
+  const reaction = ALLOWED_REACTIONS.has(reactionCandidate) ? reactionCandidate : null;
+
+  return {
+    reaction,
+    cleaned: source.slice(match[0].length).trimStart()
+  };
+}
+
+function reactionToScoreAction(reaction: string): ScoreAction | null {
+  if (reaction === '😂' || reaction === '💀') {
+    return 'joke_landed';
+  }
+  if (reaction === '😮') {
+    return 'cathy_surprised';
+  }
+  if (reaction === '😤') {
+    return 'cathy_triggered';
+  }
+  if (reaction === '🤔') {
+    return 'cathy_intrigued';
+  }
+  if (reaction === '👍') {
+    return 'cathy_approved';
+  }
+  return null;
 }
 
 function extractReadyTtsChunks(buffer: string, flushRemainder: boolean): { chunks: string[]; remainder: string } {
@@ -350,6 +399,8 @@ export function useChat(conversationId: string) {
   const incrementUsage = useStore((state) => state.incrementUsage);
   const markThresholdMessageShown = useStore((state) => state.markThresholdMessageShown);
   const setBlocked = useStore((state) => state.setBlocked);
+  const popProfileChangeHints = useStore((state) => state.popProfileChangeHints);
+  const applyLocalScoreAction = useStore((state) => state.applyScoreAction);
   const updateConversation = useStore((state) => state.updateConversation);
   const userProfile = useStore((state) => state.userProfile);
   const sessionDisplayName = useStore((state) => state.session?.user.displayName ?? null);
@@ -393,6 +444,8 @@ export function useChat(conversationId: string) {
   const bufferedTokensRef = useRef('');
   const flushBufferedTokensRef = useRef<null | (() => void)>(null);
   const flushFrameRef = useRef<number | null>(null);
+  const displayPendingTagRef = useRef('');
+  const rawTtsResponseRef = useRef('');
 
   const runNext = useCallback(() => {
     if (!conversationId || runNextLockRef.current || !isMountedRef.current) {
@@ -413,6 +466,7 @@ export function useChat(conversationId: string) {
 
       const {
         artistMessageId,
+        userMessageId,
         artistId,
         mockUserTurn,
         claudeUserMessage,
@@ -424,11 +478,18 @@ export function useChat(conversationId: string) {
         imageIntent
       } = nextJob;
       const jobConversationId = conversationId;
+      const conversationModeEnabledForJob = useStore.getState().conversationModeEnabled;
+      const voiceModeAddendum = conversationModeEnabledForJob
+        ? '\n\n## VOICE MODE\nKeep this answer to 1-2 sentences maximum. You are live. No lists, no long explanations.'
+        : '';
+      const effectiveSystemPrompt = `${systemPrompt}${voiceModeAddendum}`;
       isStreamingRef.current = true;
       activeMessageIdRef.current = artistMessageId;
       streamingConversationIdRef.current = jobConversationId;
       isCancelledRef.current = false;
       bufferedTokensRef.current = '';
+      displayPendingTagRef.current = '';
+      rawTtsResponseRef.current = '';
 
       const flushBufferedTokens = () => {
         if (!bufferedTokensRef.current) {
@@ -437,7 +498,12 @@ export function useChat(conversationId: string) {
 
         const chunk = bufferedTokensRef.current;
         bufferedTokensRef.current = '';
-        appendMessageContent(jobConversationId, artistMessageId, chunk);
+        const mergedChunk = `${displayPendingTagRef.current}${chunk}`;
+        const { displayChunk, pendingChunk } = splitDisplayChunkFromRaw(mergedChunk);
+        displayPendingTagRef.current = pendingChunk;
+        if (displayChunk) {
+          appendMessageContent(jobConversationId, artistMessageId, displayChunk);
+        }
       };
       flushBufferedTokensRef.current = flushBufferedTokens;
 
@@ -474,6 +540,8 @@ export function useChat(conversationId: string) {
         cancelRef.current = null;
         flushBufferedTokensRef.current = null;
         bufferedTokensRef.current = '';
+        displayPendingTagRef.current = '';
+        rawTtsResponseRef.current = '';
       };
 
       const getLatestArtistMessage = (): Message | null => {
@@ -500,14 +568,85 @@ export function useChat(conversationId: string) {
       let ignoreTtsUpdates = false;
       let hasDevLocalFallbackAttempt = false;
       const ttsChunkUrisByIndex = new Map<number, string>();
+      const ttsChunkDisplayBoundariesByIndex = new Map<number, number>();
       const ttsPendingPromises: Array<Promise<void>> = [];
+      let displayTextAccumulator = 0;
+      let nextPlayableChunkIndex = 0;
+      let hasQueuedAutoplayChunk = false;
+      let firstChunkFired = false;
+
+      const buildVoicePlaybackData = () => {
+        const orderedVoiceUris: string[] = [];
+        const orderedBoundaries: number[] = [];
+        let lastBoundary = 0;
+
+        for (let index = 0; index < ttsChunkCount; index += 1) {
+          const uri = ttsChunkUrisByIndex.get(index);
+          if (!uri) {
+            continue;
+          }
+
+          const boundaryCandidate = ttsChunkDisplayBoundariesByIndex.get(index);
+          if (typeof boundaryCandidate === 'number' && Number.isFinite(boundaryCandidate) && boundaryCandidate >= lastBoundary) {
+            lastBoundary = boundaryCandidate;
+          }
+
+          orderedVoiceUris.push(uri);
+          orderedBoundaries.push(lastBoundary);
+        }
+
+        return {
+          orderedVoiceUris,
+          orderedBoundaries
+        };
+      };
+
+      const flushReadyPlaybackChunks = () => {
+        if (!canGenerateVoice || ignoreTtsUpdates) {
+          return;
+        }
+
+        const shouldAutoPlay = Boolean(useStore.getState().voiceAutoPlay) && !useStore.getState().quota.isBlocked;
+        let didAdvance = false;
+
+        while (ttsChunkUrisByIndex.has(nextPlayableChunkIndex)) {
+          const uri = ttsChunkUrisByIndex.get(nextPlayableChunkIndex);
+          if (uri && shouldAutoPlay) {
+            if (nextPlayableChunkIndex === 0 && !hasQueuedAutoplayChunk) {
+              // First real chunk interrupts any filler currently playing.
+              void audioPlayer.playQueue([uri]);
+              hasQueuedAutoplayChunk = true;
+            } else if (hasQueuedAutoplayChunk) {
+              audioPlayer.appendToQueue(uri);
+            }
+          }
+          nextPlayableChunkIndex += 1;
+          didAdvance = true;
+        }
+
+        if (!didAdvance) {
+          return;
+        }
+
+        const { orderedVoiceUris, orderedBoundaries } = buildVoicePlaybackData();
+        if (orderedVoiceUris.length === 0) {
+          return;
+        }
+
+        mergeArtistMetadata({
+          voiceUrl: orderedVoiceUris[0],
+          voiceQueue: orderedVoiceUris,
+          voiceChunkBoundaries: orderedBoundaries,
+          voiceStatus: 'ready'
+        });
+      };
 
       const queueTtsChunk = (chunk: string) => {
         if (!canGenerateVoice || ignoreTtsUpdates) {
           return;
         }
 
-        const normalizedChunk = normalizeTtsChunk(chunk);
+        const normalizedChunk = normalizeTtsChunk(stripReactionTagMarkers(chunk));
         if (normalizedChunk.length < MIN_TTS_CHUNK_CHARS) {
           return;
         }
@@ -517,18 +656,32 @@ export function useChat(conversationId: string) {
           mergeArtistMetadata({
             voiceStatus: 'generating',
             voiceUrl: undefined,
-            voiceQueue: undefined
+            voiceQueue: undefined,
+            voiceChunkBoundaries: undefined
           });
         }
 
         const chunkIndex = ttsChunkCount;
         ttsChunkCount += 1;
+        if (chunkIndex === 0) {
+          firstChunkFired = true;
+        }
+        const displayChunk = stripAudioTags(normalizedChunk, { trim: true });
+        if (displayChunk) {
+          const hasPreviousDisplay = displayTextAccumulator > 0;
+          displayTextAccumulator += displayChunk.length;
+          if (hasPreviousDisplay) {
+            displayTextAccumulator += 1;
+          }
+        }
+        ttsChunkDisplayBoundariesByIndex.set(chunkIndex, Math.max(displayTextAccumulator, 0));
         const latestAccessToken = useStore.getState().session?.accessToken ?? accessToken;
 
         const ttsPromise = fetchAndCacheVoice(normalizedChunk, artistId, language, latestAccessToken)
           .then((uri) => {
             if (uri) {
               ttsChunkUrisByIndex.set(chunkIndex, uri);
+              flushReadyPlaybackChunks();
             }
           })
           .catch(() => {
@@ -561,8 +714,19 @@ export function useChat(conversationId: string) {
           return;
         }
         bufferedTokensRef.current += token;
+        rawTtsResponseRef.current += token;
         if (canGenerateVoice) {
           ttsBuffer += token;
+          if (conversationModeEnabledForJob && !firstChunkFired) {
+            const lastOpenBracketIndex = ttsBuffer.lastIndexOf('[');
+            const lastCloseBracketIndex = ttsBuffer.lastIndexOf(']');
+            const hasUnclosedBracketTag = lastOpenBracketIndex > lastCloseBracketIndex;
+            const firstChunkCandidate = normalizeTtsChunk(stripReactionTagMarkers(ttsBuffer));
+            if (!hasUnclosedBracketTag && firstChunkCandidate.length >= VOICE_FIRST_CHUNK_MIN_CHARS) {
+              queueTtsChunk(ttsBuffer);
+              ttsBuffer = '';
+            }
+          }
           flushTtsChunks(false);
         }
         scheduleFlush();
@@ -577,7 +741,22 @@ export function useChat(conversationId: string) {
         const latestArtistMessage = getLatestArtistMessage();
         const finalContent = latestArtistMessage?.content ?? '';
         const battleResult = modeId === MODE_IDS.ROAST_BATTLE ? detectBattleResult(finalContent) : null;
-        const scoreActions = resolveScoreActions(modeId, imageIntent, battleResult);
+        const scoreActionSet = new Set<ScoreAction>(resolveScoreActions(modeId, imageIntent, battleResult));
+        const { reaction: cathyReaction } = extractReactionTag(rawTtsResponseRef.current);
+        if (cathyReaction) {
+          const latestMessages = useStore.getState().messagesByConversation[jobConversationId]?.messages ?? [];
+          const userMessage = latestMessages.find((message) => message.id === userMessageId) ?? null;
+          updateMessage(jobConversationId, userMessageId, {
+            metadata: {
+              ...(userMessage?.metadata ?? {}),
+              cathyReaction
+            }
+          });
+          const reactionScoreAction = reactionToScoreAction(cathyReaction);
+          if (reactionScoreAction) {
+            scoreActionSet.add(reactionScoreAction);
+          }
+        }
 
         failedJobsRef.current.delete(artistMessageId);
         updateMessage(jobConversationId, artistMessageId, {
@@ -644,13 +823,14 @@ export function useChat(conversationId: string) {
           }
         }
         if (canGenerateVoice && !ignoreTtsUpdates) {
-          const fallbackPreviewText = normalizeTtsChunk(getLatestArtistMessage()?.content ?? '');
+          const fallbackPreviewText = normalizeTtsChunk(stripReactionTagMarkers(rawTtsResponseRef.current));
           if (!hasStartedVoiceGeneration && fallbackPreviewText) {
             hasStartedVoiceGeneration = true;
             mergeArtistMetadata({
               voiceStatus: 'generating',
               voiceUrl: undefined,
-              voiceQueue: undefined
+              voiceQueue: undefined,
+              voiceChunkBoundaries: undefined
             });
           }
 
@@ -659,19 +839,18 @@ export function useChat(conversationId: string) {
               return;
             }
 
-            let orderedVoiceUris = Array.from({ length: ttsChunkCount })
-              .map((_, index) => ttsChunkUrisByIndex.get(index))
-              .filter((uri): uri is string => typeof uri === 'string' && uri.trim().length > 0);
+            let { orderedVoiceUris, orderedBoundaries } = buildVoicePlaybackData();
 
             // Fallback for short replies or chunking misses: synthesize full final text once.
             if (orderedVoiceUris.length === 0) {
-              const fallbackText = normalizeTtsChunk(getLatestArtistMessage()?.content ?? '');
+              const fallbackText = normalizeTtsChunk(stripReactionTagMarkers(rawTtsResponseRef.current));
               const fallbackAccessToken = useStore.getState().session?.accessToken ?? accessToken;
               if (fallbackText && fallbackAccessToken.trim()) {
                 try {
                   const fallbackUri = await fetchAndCacheVoice(fallbackText, artistId, language, fallbackAccessToken);
                   if (fallbackUri) {
                     orderedVoiceUris = [fallbackUri];
+                    orderedBoundaries = [fallbackText.length];
                   }
                 } catch {
                   // Silent failure: keep no voice button when fallback also fails.
@@ -683,7 +862,8 @@ export function useChat(conversationId: string) {
               mergeArtistMetadata({
                 voiceStatus: undefined,
                 voiceUrl: undefined,
-                voiceQueue: undefined
+                voiceQueue: undefined,
+                voiceChunkBoundaries: undefined
               });
               return;
             }
@@ -691,21 +871,23 @@ export function useChat(conversationId: string) {
             mergeArtistMetadata({
               voiceUrl: orderedVoiceUris[0],
               voiceQueue: orderedVoiceUris,
+              voiceChunkBoundaries: orderedBoundaries,
               voiceStatus: 'ready'
             });
 
             const shouldAutoPlay = Boolean(useStore.getState().voiceAutoPlay);
-            if (shouldAutoPlay && !shouldBlockInput) {
+            if (shouldAutoPlay && !shouldBlockInput && !hasQueuedAutoplayChunk) {
               void audioPlayer.playQueue(orderedVoiceUris);
             }
           });
         }
-        if (scoreActions.length > 0) {
+        if (scoreActionSet.size > 0) {
           void (async () => {
-            for (const action of scoreActions) {
+            for (const action of scoreActionSet) {
               try {
                 await addScore(action);
               } catch (error) {
+                applyLocalScoreAction(action);
                 if (__DEV__) {
                   console.warn('[useChat] score action failed', action, error);
                 }
@@ -783,7 +965,7 @@ export function useChat(conversationId: string) {
           }
 
           const fallbackCancel = streamMockReply({
-            systemPrompt,
+            systemPrompt: effectiveSystemPrompt,
             userTurn: mockUserTurn,
             language,
             modeFewShots,
@@ -816,7 +998,7 @@ export function useChat(conversationId: string) {
 
       const startMockStream = () =>
         streamMockReply({
-          systemPrompt,
+          systemPrompt: effectiveSystemPrompt,
           userTurn: mockUserTurn,
           language,
           modeFewShots,
@@ -849,6 +1031,7 @@ export function useChat(conversationId: string) {
     }
   }, [
     addMessage,
+    applyLocalScoreAction,
     appendMessageContent,
     audioPlayer,
     conversationId,
@@ -943,6 +1126,7 @@ export function useChat(conversationId: string) {
     const imageIntent = hasImage ? detectImageIntent(modeId, trimmed.length > 0) : 'default';
     const imageIntentPromptPrefix = getImageIntentPromptPrefix(imageIntent);
     const latestProfile = useStore.getState().userProfile ?? userProfile;
+    const isVoiceModeTurn = Boolean(useStore.getState().conversationModeEnabled);
     const baseSystemPrompt = buildSystemPromptForArtist(
       currentConversation.artistId,
       modeId,
@@ -950,16 +1134,51 @@ export function useChat(conversationId: string) {
       languageForTurn,
       sessionDisplayName
     );
+    const voiceModeAddendum = isVoiceModeTurn
+      ? languageForTurn.toLowerCase().startsWith('en')
+        ? '\n\n## VOICE MODE\nKeep this answer to 1-2 sentences maximum. You are live. No lists, no long explanations.'
+        : '\n\n## MODE VOCAL\nGarde cette reponse a 1-2 phrases max. C\'est en direct. Pas de listes, pas de longues explications.'
+      : '';
     const systemPrompt = imageIntentPromptPrefix
       ? `${imageIntentPromptPrefix}\n\n${baseSystemPrompt}`
-      : baseSystemPrompt;
+      : baseSystemPrompt + voiceModeAddendum;
     const latestState = useStore.getState();
     const memoryFacts = collectArtistMemoryFacts(latestState, currentConversation.artistId, conversationId);
     const memoryMessage = buildMemoryPrimerMessage(memoryFacts, languageForTurn);
-    const historyForRequest = memoryMessage ? [...historyBeforeSend, memoryMessage] : historyBeforeSend;
+    const pendingProfileHints = popProfileChangeHints();
+    const profileHintHistory: ClaudeMessage[] =
+      pendingProfileHints.length > 0
+        ? [
+            {
+              role: 'user',
+              content: pendingProfileHints.join(' ')
+            },
+            {
+              role: 'assistant',
+              content: languageForTurn.toLowerCase().startsWith('en') ? 'Understood.' : 'Compris.'
+            }
+          ]
+        : [];
+    const historyForRequest = [
+      ...historyBeforeSend,
+      ...(memoryMessage ? [memoryMessage] : []),
+      ...profileHintHistory,
+      ...(isVoiceModeTurn
+        ? [
+            {
+              role: 'assistant' as const,
+              content: languageForTurn.toLowerCase().startsWith('en')
+                ? 'VOICE MODE: Keep your next answer to 1-2 short sentences. No lists.'
+                : 'MODE VOCAL: Garde ta prochaine reponse a 1-2 phrases courtes. Pas de liste.'
+            }
+          ]
+        : [])
+    ];
+    const historyLimit = isVoiceModeTurn ? VOICE_MAX_CLAUDE_HISTORY_MESSAGES : MAX_CLAUDE_HISTORY_MESSAGES;
 
     queueRef.current.push({
       artistMessageId,
+      userMessageId: userMessage.id,
       artistId: currentConversation.artistId,
       mockUserTurn: createMockUserTurn(trimmed, hasImage),
       claudeUserMessage: {
@@ -967,7 +1186,7 @@ export function useChat(conversationId: string) {
         content: createClaudeUserContent(trimmed, payload)
       },
       systemPrompt,
-      history: historyForRequest.slice(-MAX_CLAUDE_HISTORY_MESSAGES),
+      history: historyForRequest.slice(-historyLimit),
       language: languageForTurn,
       modeFewShots,
       modeId,

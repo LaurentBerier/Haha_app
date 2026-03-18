@@ -18,6 +18,7 @@ export interface AudioPlayerController {
   totalChunks: number;
   play: (uri: string) => Promise<void>;
   playQueue: (uris: string[]) => Promise<void>;
+  appendToQueue: (uri: string) => void;
   pause: () => Promise<void>;
   stop: () => Promise<void>;
 }
@@ -261,6 +262,26 @@ export function useAudioPlayer(): AudioPlayerController {
     await playQueue([uri]);
   }, [playQueue]);
 
+  const appendToQueue = useCallback(
+    (uri: string) => {
+      const trimmed = uri.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      if (queueRef.current.length > 0) {
+        queueRef.current.push(trimmed);
+        if (isMountedRef.current) {
+          setTotalChunks(queueRef.current.length);
+        }
+        return;
+      }
+
+      void playQueue([trimmed]);
+    },
+    [playQueue]
+  );
+
   const pause = useCallback(async () => {
     if (Platform.OS === 'web') {
       webAudioRef.current?.pause();
@@ -306,6 +327,7 @@ export function useAudioPlayer(): AudioPlayerController {
     totalChunks,
     play,
     playQueue,
+    appendToQueue,
     pause,
     stop
   };

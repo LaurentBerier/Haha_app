@@ -1,10 +1,41 @@
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
-const OPEN_WEATHER_API_URL = 'https://api.openweathermap.org/data/2.5/weather';
-const NEWS_API_URL = 'https://newsapi.org/v2/top-headlines';
-const IP_API_URL = 'http://ip-api.com/json';
+const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
+const IP_API_URL = 'https://ipapi.co';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
+const DEFAULT_WEATHER_TIMEOUT_MS = 4_500;
+const DEFAULT_NEWS_TIMEOUT_MS = 4_500;
+const DEFAULT_IP_GEO_TIMEOUT_MS = 4_500;
+const WEATHER_CACHE_TTL_MS = 10 * 60_000;
+const MAX_WEATHER_CACHE_ENTRIES = 200;
+const NEWS_CACHE_TTL_MS = 30 * 60_000;
+const MAX_RSS_ITEMS_PER_FEED = 14;
+const MAX_NEWS_SIGNALS_PER_REGION = 3;
+
+const RSS_FEEDS = [
+  {
+    id: 'radio-canada',
+    name: 'Radio-Canada',
+    url: 'https://ici.radio-canada.ca/rss/4159'
+  },
+  {
+    id: 'lapresse',
+    name: 'La Presse',
+    url: 'https://www.lapresse.ca/actualites/rss.xml'
+  },
+  {
+    id: 'tva-nouvelles',
+    name: 'TVA Nouvelles',
+    url: 'https://www.tvanouvelles.ca/rss.xml'
+  }
+];
+
+const weatherCache = new Map();
+let newsSignalsCache = {
+  value: null,
+  expiresAt: 0
+};
 
 const {
   attachRequestId,
@@ -24,6 +55,35 @@ function parsePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+async function fetchJsonWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const payload = await response.json().catch(() => ({}));
+    return { response, payload };
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
+async function fetchTextWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1'
+      }
+    });
+    const payload = await response.text();
+    return { response, payload };
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
 function normalizeLanguage(value) {
   if (typeof value !== 'string') {
     return 'fr-CA';
@@ -31,14 +91,6 @@ function normalizeLanguage(value) {
 
   const normalized = value.trim().toLowerCase();
   return normalized.startsWith('en') ? 'en-CA' : 'fr-CA';
-}
-
-function toNewsLanguage(language) {
-  return language.toLowerCase().startsWith('en') ? 'en' : 'fr';
-}
-
-function toWeatherLanguage(language) {
-  return language.toLowerCase().startsWith('en') ? 'en' : 'fr';
 }
 
 function normalizeOptionalString(value, maxLength = 120) {
@@ -52,6 +104,110 @@ function normalizeOptionalString(value, maxLength = 120) {
   }
 
   return trimmed.slice(0, maxLength);
+}
+
+function toCacheCoordinate(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+
+  return Math.round(value * 1000) / 1000;
+}
+
+function toWeatherCacheKey(coords) {
+  const lat = toCacheCoordinate(coords?.lat);
+  const lon = toCacheCoordinate(coords?.lon);
+  if (lat === null || lon === null) {
+    return null;
+  }
+
+  return `${lat.toFixed(3)}:${lon.toFixed(3)}`;
+}
+
+function getWeatherCacheEntry(cacheKey, nowTs) {
+  if (!cacheKey) {
+    return { fresh: null, stale: null };
+  }
+
+  const entry = weatherCache.get(cacheKey) ?? null;
+  if (!entry) {
+    return { fresh: null, stale: null };
+  }
+
+  if (entry.expiresAt > nowTs) {
+    return { fresh: entry.value, stale: entry.value };
+  }
+
+  return { fresh: null, stale: entry.value };
+}
+
+function compactWeatherCache(nowTs) {
+  for (const [key, entry] of weatherCache.entries()) {
+    if (!entry || entry.expiresAt <= nowTs - WEATHER_CACHE_TTL_MS) {
+      weatherCache.delete(key);
+    }
+  }
+
+  if (weatherCache.size <= MAX_WEATHER_CACHE_ENTRIES) {
+    return;
+  }
+
+  const keys = Array.from(weatherCache.keys());
+  const overflow = weatherCache.size - MAX_WEATHER_CACHE_ENTRIES;
+  for (let index = 0; index < overflow; index += 1) {
+    const key = keys[index];
+    if (typeof key === 'string') {
+      weatherCache.delete(key);
+    }
+  }
+}
+
+function setWeatherCacheEntry(cacheKey, value, nowTs) {
+  if (!cacheKey || !value) {
+    return;
+  }
+
+  weatherCache.set(cacheKey, {
+    value,
+    expiresAt: nowTs + WEATHER_CACHE_TTL_MS
+  });
+  compactWeatherCache(nowTs);
+}
+
+function describeOpenMeteoWeatherCode(code, language) {
+  const isEnglish = language.toLowerCase().startsWith('en');
+  const labels = {
+    0: isEnglish ? 'clear sky' : 'ciel dégagé',
+    1: isEnglish ? 'mostly clear' : 'plutôt dégagé',
+    2: isEnglish ? 'partly cloudy' : 'partiellement nuageux',
+    3: isEnglish ? 'overcast' : 'couvert',
+    45: isEnglish ? 'foggy' : 'brouillard',
+    48: isEnglish ? 'freezing fog' : 'brouillard givrant',
+    51: isEnglish ? 'light drizzle' : 'bruine légère',
+    53: isEnglish ? 'drizzle' : 'bruine',
+    55: isEnglish ? 'heavy drizzle' : 'bruine forte',
+    56: isEnglish ? 'light freezing drizzle' : 'bruine verglaçante légère',
+    57: isEnglish ? 'freezing drizzle' : 'bruine verglaçante',
+    61: isEnglish ? 'light rain' : 'pluie légère',
+    63: isEnglish ? 'rain' : 'pluie',
+    65: isEnglish ? 'heavy rain' : 'forte pluie',
+    66: isEnglish ? 'light freezing rain' : 'pluie verglaçante légère',
+    67: isEnglish ? 'freezing rain' : 'pluie verglaçante',
+    71: isEnglish ? 'light snow' : 'neige légère',
+    73: isEnglish ? 'snow' : 'neige',
+    75: isEnglish ? 'heavy snow' : 'forte neige',
+    77: isEnglish ? 'snow grains' : 'grains de neige',
+    80: isEnglish ? 'light rain showers' : 'averses légères',
+    81: isEnglish ? 'rain showers' : 'averses',
+    82: isEnglish ? 'heavy rain showers' : 'fortes averses',
+    85: isEnglish ? 'light snow showers' : 'averses de neige légères',
+    86: isEnglish ? 'snow showers' : 'averses de neige',
+    95: isEnglish ? 'thunderstorm' : 'orage',
+    96: isEnglish ? 'thunderstorm with light hail' : 'orage avec faible grêle',
+    99: isEnglish ? 'thunderstorm with hail' : 'orage avec grêle'
+  };
+
+  return labels[code] ?? (isEnglish ? 'weather variable' : 'météo variable');
 }
 
 function parseCoords(rawCoords) {
@@ -113,20 +269,19 @@ function getClientIp(req) {
 
 async function resolveCoordsFromIp(req, requestId) {
   const clientIp = getClientIp(req);
-  const fields = 'status,message,lat,lon,city,countryCode';
+  const geoTimeoutMs = parsePositiveInt(process.env.GREETING_IP_TIMEOUT_MS, DEFAULT_IP_GEO_TIMEOUT_MS);
   const endpoint = clientIp
-    ? `${IP_API_URL}/${encodeURIComponent(clientIp)}?fields=${fields}`
-    : `${IP_API_URL}?fields=${fields}`;
+    ? `${IP_API_URL}/${encodeURIComponent(clientIp)}/json/`
+    : `${IP_API_URL}/json/`;
 
   try {
-    const response = await fetch(endpoint);
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.status !== 'success') {
+    const { response, payload } = await fetchJsonWithTimeout(endpoint, geoTimeoutMs);
+    if (!response.ok) {
       return null;
     }
 
-    const lat = typeof payload.lat === 'number' && Number.isFinite(payload.lat) ? payload.lat : null;
-    const lon = typeof payload.lon === 'number' && Number.isFinite(payload.lon) ? payload.lon : null;
+    const lat = typeof payload.latitude === 'number' && Number.isFinite(payload.latitude) ? payload.latitude : null;
+    const lon = typeof payload.longitude === 'number' && Number.isFinite(payload.longitude) ? payload.longitude : null;
     if (lat === null || lon === null) {
       return null;
     }
@@ -135,7 +290,7 @@ async function resolveCoordsFromIp(req, requestId) {
       lat,
       lon,
       city: normalizeOptionalString(payload.city, 80),
-      countryCode: normalizeOptionalString(payload.countryCode, 4)
+      countryCode: normalizeOptionalString(payload.country_code, 4)
     };
   } catch (error) {
     console.error(`[api/greeting][${requestId}] IP geolocation failed`, error);
@@ -156,74 +311,366 @@ async function fetchWeatherSummary(coords, language, requestId) {
     return null;
   }
 
-  const weatherApiKey = (process.env.OPENWEATHER_API_KEY ?? '').trim();
-  const endpoint = new URL(OPEN_WEATHER_API_URL);
-  endpoint.searchParams.set('lat', String(coords.lat));
-  endpoint.searchParams.set('lon', String(coords.lon));
-  endpoint.searchParams.set('units', 'metric');
-  endpoint.searchParams.set('lang', toWeatherLanguage(language));
-  endpoint.searchParams.set('appid', weatherApiKey);
+  const nowTs = Date.now();
+  const cacheKey = toWeatherCacheKey(coords);
+  const { fresh, stale } = getWeatherCacheEntry(cacheKey, nowTs);
+  if (fresh) {
+    return fresh;
+  }
+
+  const weatherTimeoutMs = parsePositiveInt(process.env.GREETING_WEATHER_TIMEOUT_MS, DEFAULT_WEATHER_TIMEOUT_MS);
+  const endpoint = new URL(OPEN_METEO_FORECAST_URL);
+  endpoint.searchParams.set('latitude', String(coords.lat));
+  endpoint.searchParams.set('longitude', String(coords.lon));
+  endpoint.searchParams.set('timezone', 'auto');
+  endpoint.searchParams.set('forecast_days', '1');
+  endpoint.searchParams.set('current', 'temperature_2m,weather_code');
+  endpoint.searchParams.set('daily', 'temperature_2m_max,temperature_2m_min,weather_code');
 
   try {
-    const response = await fetch(endpoint.toString());
-    const payload = await response.json().catch(() => ({}));
+    const { response, payload } = await fetchJsonWithTimeout(endpoint.toString(), weatherTimeoutMs);
     if (!response.ok) {
-      return null;
+      return stale;
     }
 
-    const temperatureRaw =
-      isRecord(payload.main) && typeof payload.main.temp === 'number' && Number.isFinite(payload.main.temp)
-        ? payload.main.temp
+    const currentTemperatureRaw =
+      isRecord(payload.current) && typeof payload.current.temperature_2m === 'number' && Number.isFinite(payload.current.temperature_2m)
+        ? payload.current.temperature_2m
         : null;
-    const temperatureCelsius = temperatureRaw === null ? null : Math.round(temperatureRaw);
-    const descriptionRaw =
-      Array.isArray(payload.weather) && isRecord(payload.weather[0]) && typeof payload.weather[0].description === 'string'
-        ? payload.weather[0].description
+    const currentCodeRaw =
+      isRecord(payload.current) && typeof payload.current.weather_code === 'number' && Number.isFinite(payload.current.weather_code)
+        ? payload.current.weather_code
         : null;
-    const city = normalizeOptionalString(payload.name, 80) ?? coords.city ?? null;
+    const maxArray =
+      isRecord(payload.daily) && Array.isArray(payload.daily.temperature_2m_max) ? payload.daily.temperature_2m_max : null;
+    const minArray =
+      isRecord(payload.daily) && Array.isArray(payload.daily.temperature_2m_min) ? payload.daily.temperature_2m_min : null;
+    const codeArray = isRecord(payload.daily) && Array.isArray(payload.daily.weather_code) ? payload.daily.weather_code : null;
+    const dailyMaxRaw = typeof maxArray?.[0] === 'number' && Number.isFinite(maxArray[0]) ? maxArray[0] : null;
+    const dailyMinRaw = typeof minArray?.[0] === 'number' && Number.isFinite(minArray[0]) ? minArray[0] : null;
+    const dailyCodeRaw = typeof codeArray?.[0] === 'number' && Number.isFinite(codeArray[0]) ? codeArray[0] : null;
+
+    const temperatureCelsius = currentTemperatureRaw === null ? null : Math.round(currentTemperatureRaw);
+    const maxTemperatureCelsius = dailyMaxRaw === null ? null : Math.round(dailyMaxRaw);
+    const minTemperatureCelsius = dailyMinRaw === null ? null : Math.round(dailyMinRaw);
+    const weatherCode = currentCodeRaw ?? dailyCodeRaw;
+    const description = weatherCode === null ? null : describeOpenMeteoWeatherCode(weatherCode, language);
+    const city = coords.city ?? null;
     const countryCode = coords.countryCode ?? null;
 
-    if (temperatureCelsius === null && !descriptionRaw && !city) {
-      return null;
+    if (temperatureCelsius === null && maxTemperatureCelsius === null && minTemperatureCelsius === null && !description && !city) {
+      return stale;
     }
 
-    return {
+    const weather = {
       temperatureCelsius,
-      description: normalizeOptionalString(descriptionRaw, 80),
+      maxTemperatureCelsius,
+      minTemperatureCelsius,
+      description: normalizeOptionalString(description, 80),
       city,
       countryCode
     };
+
+    setWeatherCacheEntry(cacheKey, weather, nowTs);
+    return weather;
   } catch (error) {
     console.error(`[api/greeting][${requestId}] Weather lookup failed`, error);
-    return null;
+    return stale;
   }
 }
 
-async function fetchTopHeadline(language, requestId) {
-  const newsApiKey = (process.env.NEWS_API_KEY ?? '').trim();
-  const endpoint = new URL(NEWS_API_URL);
-  endpoint.searchParams.set('country', 'ca');
-  endpoint.searchParams.set('language', toNewsLanguage(language));
-  endpoint.searchParams.set('pageSize', '1');
-  endpoint.searchParams.set('apiKey', newsApiKey);
+function decodeXmlEntities(value) {
+  if (typeof value !== 'string' || !value) {
+    return '';
+  }
 
-  try {
-    const response = await fetch(endpoint.toString());
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || !Array.isArray(payload.articles)) {
-      return null;
-    }
+  return value
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => {
+      const codePoint = Number.parseInt(hex, 16);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : '';
+    })
+    .replace(/&#(\d+);/g, (_match, num) => {
+      const codePoint = Number.parseInt(num, 10);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : '';
+    });
+}
 
-    const article = payload.articles[0];
-    if (!isRecord(article)) {
-      return null;
-    }
+function stripHtmlTags(value) {
+  if (typeof value !== 'string' || !value) {
+    return '';
+  }
+  return value.replace(/<[^>]+>/g, ' ');
+}
 
-    return normalizeOptionalString(article.title, 180);
-  } catch (error) {
-    console.error(`[api/greeting][${requestId}] News lookup failed`, error);
+function normalizeHeadlineText(value, maxLength = 200) {
+  const decoded = decodeXmlEntities(value);
+  const stripped = stripHtmlTags(decoded);
+  const compact = stripped.replace(/\s+/g, ' ').trim();
+  if (!compact) {
     return null;
   }
+
+  return compact.slice(0, maxLength);
+}
+
+function extractXmlTagValue(xmlBlock, tagName) {
+  if (typeof xmlBlock !== 'string' || !xmlBlock) {
+    return null;
+  }
+
+  const pattern = new RegExp(`<${tagName}(?:\\s+[^>]*)?>([\\s\\S]*?)<\\/${tagName}>`, 'i');
+  const match = xmlBlock.match(pattern);
+  if (!match || typeof match[1] !== 'string') {
+    return null;
+  }
+
+  return match[1];
+}
+
+function parseNewsTimestamp(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return 0;
+  }
+
+  const parsed = Date.parse(value.trim());
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+const QUEBEC_NEWS_KEYWORDS = [
+  'québec',
+  'quebec',
+  'montréal',
+  'montreal',
+  'laval',
+  'gatineau',
+  'saguenay',
+  'trois-rivières',
+  'estrie',
+  'bas-saint-laurent',
+  'capitale-nationale'
+];
+
+const CANADA_NEWS_KEYWORDS = [
+  'canada',
+  'ottawa',
+  'trudeau',
+  'fédéral',
+  'federal',
+  'toronto',
+  'vancouver',
+  'alberta',
+  'ontario',
+  'manitoba',
+  'saskatchewan',
+  'colombie-britannique',
+  'nouvelle-écosse',
+  'newfoundland'
+];
+
+const INTERNATIONAL_NEWS_KEYWORDS = [
+  'international',
+  'monde',
+  'world',
+  'états-unis',
+  'etats-unis',
+  'usa',
+  'washington',
+  'europe',
+  'asie',
+  'afrique',
+  'ukraine',
+  'russie',
+  'russia',
+  'chine',
+  'china',
+  'gaza',
+  'israël',
+  'israel',
+  'onu',
+  'otan',
+  'nato'
+];
+
+function hasKeyword(text, keywords) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function classifyNewsRegion(headline) {
+  const normalized = headline.toLowerCase();
+  if (hasKeyword(normalized, INTERNATIONAL_NEWS_KEYWORDS)) {
+    return 'international';
+  }
+  if (hasKeyword(normalized, QUEBEC_NEWS_KEYWORDS)) {
+    return 'quebec';
+  }
+  if (hasKeyword(normalized, CANADA_NEWS_KEYWORDS)) {
+    return 'canada';
+  }
+  return 'canada';
+}
+
+function parseRssFeedItems(xml, source) {
+  if (typeof xml !== 'string' || !xml.trim()) {
+    return [];
+  }
+
+  const items = [];
+  const itemRegex = /<item\b[\s\S]*?<\/item>/gi;
+  let match = itemRegex.exec(xml);
+
+  while (match && items.length < MAX_RSS_ITEMS_PER_FEED) {
+    const block = match[0];
+    const titleRaw = extractXmlTagValue(block, 'title');
+    const linkRaw = extractXmlTagValue(block, 'link');
+    const pubDateRaw = extractXmlTagValue(block, 'pubDate');
+    const headline = normalizeHeadlineText(titleRaw, 200);
+    const link = normalizeHeadlineText(linkRaw, 300);
+    if (headline) {
+      const publishedAtMs = parseNewsTimestamp(pubDateRaw ?? '');
+      items.push({
+        headline,
+        source: source.name,
+        sourceId: source.id,
+        url: link,
+        publishedAt: publishedAtMs > 0 ? new Date(publishedAtMs).toISOString() : null,
+        publishedAtMs,
+        region: classifyNewsRegion(headline)
+      });
+    }
+
+    match = itemRegex.exec(xml);
+  }
+
+  return items;
+}
+
+function normalizeHeadlineKey(headline) {
+  return headline
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildNewsSignals(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return null;
+  }
+
+  const sorted = items
+    .slice()
+    .sort((left, right) => (right.publishedAtMs || 0) - (left.publishedAtMs || 0));
+
+  const seen = new Set();
+  const buckets = {
+    quebec: [],
+    canada: [],
+    international: []
+  };
+
+  for (const item of sorted) {
+    if (!item || typeof item.headline !== 'string' || !item.headline) {
+      continue;
+    }
+
+    const dedupeKey = normalizeHeadlineKey(item.headline);
+    if (!dedupeKey || seen.has(dedupeKey)) {
+      continue;
+    }
+    seen.add(dedupeKey);
+
+    const region = item.region === 'international' || item.region === 'quebec' ? item.region : 'canada';
+    const target = buckets[region];
+    if (target.length >= MAX_NEWS_SIGNALS_PER_REGION) {
+      continue;
+    }
+
+    target.push({
+      headline: item.headline,
+      source: item.source,
+      url: item.url ?? null,
+      publishedAt: item.publishedAt ?? null
+    });
+  }
+
+  const primary =
+    buckets.quebec[0] ??
+    buckets.canada[0] ??
+    buckets.international[0] ??
+    null;
+
+  if (!primary) {
+    return null;
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    primary,
+    buckets
+  };
+}
+
+function getNewsSignalsFromCache(nowTs) {
+  const cacheValue = newsSignalsCache?.value ?? null;
+  if (!cacheValue) {
+    return { fresh: null, stale: null };
+  }
+
+  if (typeof newsSignalsCache.expiresAt === 'number' && newsSignalsCache.expiresAt > nowTs) {
+    return { fresh: cacheValue, stale: cacheValue };
+  }
+
+  return { fresh: null, stale: cacheValue };
+}
+
+function setNewsSignalsCache(value, nowTs) {
+  if (!value) {
+    return;
+  }
+
+  newsSignalsCache = {
+    value,
+    expiresAt: nowTs + NEWS_CACHE_TTL_MS
+  };
+}
+
+async function fetchNewsSignals(requestId) {
+  const nowTs = Date.now();
+  const { fresh, stale } = getNewsSignalsFromCache(nowTs);
+  if (fresh) {
+    return fresh;
+  }
+
+  const rssTimeoutMs = parsePositiveInt(process.env.GREETING_NEWS_TIMEOUT_MS, DEFAULT_NEWS_TIMEOUT_MS);
+  const feedResults = await Promise.all(
+    RSS_FEEDS.map(async (feed) => {
+      try {
+        const { response, payload } = await fetchTextWithTimeout(feed.url, rssTimeoutMs);
+        if (!response.ok) {
+          return [];
+        }
+        return parseRssFeedItems(payload, feed);
+      } catch (error) {
+        console.error(`[api/greeting][${requestId}] RSS fetch failed for ${feed.id}`, error);
+        return [];
+      }
+    })
+  );
+
+  const allItems = feedResults.flat();
+  const signals = buildNewsSignals(allItems);
+  if (!signals) {
+    return stale;
+  }
+
+  setNewsSignalsCache(signals, nowTs);
+  return signals;
 }
 
 async function fetchUserHoroscope(supabaseAdmin, userId, requestId) {
@@ -282,61 +729,106 @@ function toWeatherSummaryText(weather, language) {
   }
 
   const temperatureText = typeof weather.temperatureCelsius === 'number' ? `${weather.temperatureCelsius}°C` : null;
+  const rangeText =
+    typeof weather.minTemperatureCelsius === 'number' && typeof weather.maxTemperatureCelsius === 'number'
+      ? isEnglish
+        ? `today ${weather.minTemperatureCelsius} to ${weather.maxTemperatureCelsius}°C`
+        : `aujourd'hui ${weather.minTemperatureCelsius} a ${weather.maxTemperatureCelsius}°C`
+      : null;
   const descriptionText = normalizeOptionalString(weather.description, 80);
   const cityText = [weather.city, weather.countryCode].filter(Boolean).join(', ');
-  const parts = [temperatureText, descriptionText, cityText].filter(Boolean);
+  const parts = [temperatureText, rangeText, descriptionText, cityText].filter(Boolean);
 
   return parts.length > 0 ? parts.join(' - ') : isEnglish ? 'Weather unavailable' : 'Meteo indisponible';
 }
 
-function toHeadlineSummaryText(headline, language) {
-  if (headline) {
-    return headline;
+function toHeadlineSummaryText(newsSignals, language) {
+  const isEnglish = language.toLowerCase().startsWith('en');
+  const fallback = isEnglish ? 'No headline available' : 'Aucune manchette disponible';
+
+  if (!isRecord(newsSignals)) {
+    return fallback;
   }
-  return language.toLowerCase().startsWith('en') ? 'No headline available' : 'Aucune manchette disponible';
+
+  const buckets = isRecord(newsSignals.buckets) ? newsSignals.buckets : {};
+  const quebecTop = Array.isArray(buckets.quebec) ? buckets.quebec[0] : null;
+  const canadaTop = Array.isArray(buckets.canada) ? buckets.canada[0] : null;
+  const internationalTop = Array.isArray(buckets.international) ? buckets.international[0] : null;
+
+  const parts = [];
+  if (isRecord(quebecTop) && typeof quebecTop.headline === 'string') {
+    parts.push(`${isEnglish ? 'Quebec' : 'Québec'}: ${quebecTop.headline}`);
+  }
+  if (isRecord(canadaTop) && typeof canadaTop.headline === 'string') {
+    parts.push(`${isEnglish ? 'Canada' : 'Canada'}: ${canadaTop.headline}`);
+  }
+  if (isRecord(internationalTop) && typeof internationalTop.headline === 'string') {
+    parts.push(`${isEnglish ? 'International' : 'International'}: ${internationalTop.headline}`);
+  }
+
+  if (parts.length > 0) {
+    return normalizeOptionalString(parts.join(' | '), 420) ?? fallback;
+  }
+
+  const primary = isRecord(newsSignals.primary) && typeof newsSignals.primary.headline === 'string'
+    ? normalizeOptionalString(newsSignals.primary.headline, 220)
+    : null;
+  return primary ?? fallback;
 }
 
 function buildGreetingSystemPrompt(language, includeVoiceHint) {
   const isEnglish = language.toLowerCase().startsWith('en');
   if (isEnglish) {
-    return `You are Cathy Gauthier, bold and playful, welcoming the user in mode selection.
-Write exactly 2 short sentences in this strict order:
-1) Greet the user by first name when available, ask how they are doing, and add a very short self-joke.
-2) ${
+    return `You are Cathy Gauthier, intense, playful, sarcastic, welcoming the user in mode selection.
+Write exactly 3 short sentences in this strict order:
+1) Greet the user by first name when available, ask how they are doing, and add a short playful joke about being Cathy's clone (funny but kind).
+2) Mention one local signal from context (weather OR top headline). Keep it brief and natural. If local data is unavailable, use a short transition sentence without inventing facts. Add a warm onboarding cue (you'll guide them, no pressure).
+3) ${
       includeVoiceHint
-        ? 'Explain that voice mode is active and how to disable it with the small mic at the bottom right if they prefer text, using your own fresh wording.'
-        : 'Say voice mode is active.'
+        ? "Explain that the mic at the bottom is how they talk to you - that's how the interaction works. Add that if they prefer to text, they can just tap the mic to turn it off. Say it your way, natural, not like a tutorial. End with an easy first prompt to start the exchange."
+        : "Mention that the mic at the bottom is how they talk to you. End with an easy first prompt."
     }
 Hard rules:
 - Never write "how are you with Cathy" or similar unnatural phrasing.
+- Tone must feel welcoming and confidence-building for onboarding.
+- Humor should be witty and light, never mean in this greeting.
+- Keep spoken-style contractions and lively oral rhythm.
+- Include one brief emotional cue naturally (laugh, excitement, or sarcasm), without overdoing it.
 - Keep it natural, coherent, and concise.
-- Do not mention weather, news, or mode lists.
+- The 3 sentences must flow as one smooth mini welcome arc.
+- Mention only one local signal max (weather OR headline), no mode list.
 - No markdown, no bullets, no asterisks, no em dashes.
 - Keep proper punctuation and contractions.
-- 18 to 34 words total.`;
+- 30 to 60 words total.`;
   }
 
-  return `Tu es Cathy Gauthier, baveuse, chaleureuse et drôle, et tu accueilles l'utilisateur dans l'ecran de selection de mode.
-Ecris exactement 2 phrases courtes, dans cet ordre strict :
-1) Salue la personne par son prenom si disponible, demande comment elle va, et ajoute une mini blague de presentation.
-2) ${
+  return `Tu es Cathy Gauthier, intense, excitée, sarcastique et drôle, et tu accueilles l'utilisateur dans l'ecran de selection de mode.
+Ecris exactement 3 phrases courtes, dans cet ordre strict :
+1) Salue la personne par son prenom si disponible, demande comment elle va, et ajoute une mini blague sur le fait que tu es le clone de Cathy (drôle, vive, mais bienveillante).
+2) Mentionne une seule info locale du contexte (meteo OU manchette). Si l'info locale est indisponible, fais une courte phrase de transition sans inventer. Ajoute une phrase d'accompagnement onboarding (tu guides, aucune pression).
+3) ${
     includeVoiceHint
-      ? "Explique que le mode discussion vocale est actif et comment le desactiver avec le petit micro en bas a droite selon sa preference de communication (texte ou voix), avec une formulation fraiche et naturelle."
-      : "Dis que le mode discussion vocale est actif."
+      ? "Explique que le micro en bas c'est pour te parler directement - c'est comme ca qu'on interagit. Ajoute que si l'utilisateur prefere texter, y'a juste a cliquer dessus pour le couper. Dis-le a ta facon, naturel et vivant, pas comme un manuel. Termine avec une petite invitation facile pour lancer l'echange."
+      : "Mentionne que le micro en bas permet de te parler. Termine avec une petite invitation facile."
   }
 Regles absolues :
 - Interdit de dire "comment tu vas avec Cathy" ou une tournure equivalente.
-- Le texte doit etre logique, naturel et court en francais quebecois.
-- Ne parle pas de meteo, de manchette ni de liste de modes.
+- Ton d'accueil onboarding: chaleureux, complice, rassurant, energique.
+- Humour d'entree: taquin, jamais agressif dans ce message d'accueil.
+- Le texte doit etre logique, naturel et court en francais quebecois parle.
+- Utilise des contractions orales quebecoises fortes (ex: j'suis, t'es, t'as, y'a, j'peux, j'vais, t'tente, t'veux, t'peux, s'pas, c'est-tu, han). Elision obligatoire : "te" -> "t'" devant consonne (t'tente, t'vois, t'penses), "tu" -> "t'" dans les questions (t'as-tu, t'veux-tu). Pas de "te" isole apres verbe quand l'elision est naturelle.
+- Ajoute un micro-signal d'emotion (rire, excitation ou sarcasme) de facon naturelle, idealement avec un petit rire oral.
+- Les 3 phrases doivent s'enchainer de facon fluide comme un mini accueil.
+- Mentionne une seule info locale max (meteo OU manchette), jamais de liste de modes.
 - Pas de markdown, pas d'asterisque, pas de liste, pas de tiret long.
 - Orthographe et ponctuation impeccables (accents et apostrophes obligatoires).
-- 18 a 34 mots au total.`;
+- 30 a 60 mots au total.`;
 }
 
 function buildGreetingVariationCue(language) {
   const isEnglish = language.toLowerCase().startsWith('en');
-  const englishCues = ['energetic opener', 'dry self-mockery', 'quick playful callback'];
-  const frenchCues = ['entree energique', 'autoderision rapide', 'taquinerie complice'];
+  const englishCues = ['explosive opener', 'sarcastic wink', 'playful laugh beat'];
+  const frenchCues = ['entree explosive', 'sarcasme complice', 'petit rire nerveux'];
   const cues = isEnglish ? englishCues : frenchCues;
   const index = Math.floor(Math.random() * cues.length);
   return cues[index] ?? cues[0];
@@ -453,7 +945,7 @@ async function generateGreetingText(context) {
       throw new Error('Greeting response is empty.');
     }
 
-    return clampToSentenceLimit(rawText, 2);
+    return clampToSentenceLimit(rawText, 3);
   } finally {
     clearTimeout(timeoutHandle);
   }
@@ -481,13 +973,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const missingEnv = getMissingEnv([
-    'SUPABASE_URL',
-    'SUPABASE_SERVICE_ROLE_KEY',
-    'ANTHROPIC_API_KEY',
-    'OPENWEATHER_API_KEY',
-    'NEWS_API_KEY'
-  ]);
+  const missingEnv = getMissingEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'ANTHROPIC_API_KEY']);
   if (missingEnv.length > 0) {
     sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
@@ -527,15 +1013,15 @@ module.exports = async function handler(req, res) {
     resolveCoords(input.coords, req, requestId),
     fetchUserHoroscope(supabaseAdmin, user.id, requestId)
   ]);
-  const [weather, headline] = await Promise.all([
+  const [weather, newsSignals] = await Promise.all([
     fetchWeatherSummary(coords, input.language, requestId),
-    fetchTopHeadline(input.language, requestId)
+    fetchNewsSignals(requestId)
   ]);
 
   const { dateLabel, timeLabel } = formatLocalDateTime(input.language);
   const preferredName = input.preferredName || extractPreferredName(user);
   const weatherSummary = toWeatherSummaryText(weather, input.language);
-  const headlineSummary = toHeadlineSummaryText(headline, input.language);
+  const headlineSummary = toHeadlineSummaryText(newsSignals, input.language);
 
   let greeting;
   try {

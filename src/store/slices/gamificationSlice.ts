@@ -24,6 +24,11 @@ function normalizeStats(stats: Partial<GamificationStats> | null | undefined): G
     memesGenerated: toInt(stats.memesGenerated),
     battleWins: toInt(stats.battleWins),
     dailyStreak: toInt(stats.dailyStreak),
+    jokesLanded: toInt(stats.jokesLanded),
+    cathySurprised: toInt(stats.cathySurprised),
+    cathyTriggered: toInt(stats.cathyTriggered),
+    cathyIntrigued: toInt(stats.cathyIntrigued),
+    cathyApproved: toInt(stats.cathyApproved),
     lastActiveDate: typeof stats.lastActiveDate === 'string' ? stats.lastActiveDate : null
   };
 }

@@ -4,7 +4,12 @@ export const SCORE_ACTIONS = {
   meme_generated: { field: 'memesGenerated', points: 8 },
   battle_win: { field: 'battleWins', points: 25 },
   daily_participation: { field: 'dailyStreak', points: 5 },
-  photo_roasted: { field: 'photosRoasted', points: 5 }
+  photo_roasted: { field: 'photosRoasted', points: 5 },
+  joke_landed: { field: 'jokesLanded', points: 15 },
+  cathy_surprised: { field: 'cathySurprised', points: 10 },
+  cathy_triggered: { field: 'cathyTriggered', points: 5 },
+  cathy_intrigued: { field: 'cathyIntrigued', points: 3 },
+  cathy_approved: { field: 'cathyApproved', points: 2 }
 } as const;
 
 export type ScoreAction = keyof typeof SCORE_ACTIONS;
@@ -18,6 +23,11 @@ export interface GamificationStats {
   memesGenerated: number;
   battleWins: number;
   dailyStreak: number;
+  jokesLanded: number;
+  cathySurprised: number;
+  cathyTriggered: number;
+  cathyIntrigued: number;
+  cathyApproved: number;
   lastActiveDate: string | null;
 }
 
@@ -30,6 +40,11 @@ export const EMPTY_GAMIFICATION_STATS: GamificationStats = {
   memesGenerated: 0,
   battleWins: 0,
   dailyStreak: 0,
+  jokesLanded: 0,
+  cathySurprised: 0,
+  cathyTriggered: 0,
+  cathyIntrigued: 0,
+  cathyApproved: 0,
   lastActiveDate: null
 };
 

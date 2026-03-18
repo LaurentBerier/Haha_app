@@ -28,7 +28,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>hahaha</string>
-          <string>com.anonymous.ha-ha-ai</string>
+          <string>com.laurentbernier.hahaai.dev</string>
         </array>
       </dict>
     </array>
@@ -49,6 +49,8 @@
     <string>Ha-Ha.ai uses your camera so you can share images in chat.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Ha-Ha.ai uses your microphone to transcribe voice messages.</string>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Ha-Ha.ai uses your location to personalize Cathy's greeting with local weather.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Ha-Ha.ai uses your photos so you can share images in chat.</string>
     <key>NSSpeechRecognitionUsageDescription</key>

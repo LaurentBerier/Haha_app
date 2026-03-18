@@ -11,6 +11,17 @@ const MAX_MESSAGE_CHARS = 10000;
 const MAX_SYSTEM_PROMPT_CHARS = 12000;
 const MAX_IMAGE_BYTES = 3_000_000;
 const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
+const DEFAULT_CONTEXT_FETCH_TIMEOUT_MS = 4_500;
+const CONTEXT_CACHE_TTL_MS = 30 * 60_000;
+const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
+const IP_API_URL = 'https://ipapi.co';
+const DEFAULT_IP_GEO_TIMEOUT_MS = 3_000;
+const RSS_FEEDS = [
+  'https://ici.radio-canada.ca/rss/4159',
+  'https://www.lapresse.ca/actualites/rss.xml',
+  'https://www.tvanouvelles.ca/rss.xml'
+];
+const DEFAULT_MONTREAL_COORDS = { lat: 45.5017, lon: -73.5673 };
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 30;
 const CLAUDE_LIMITS_RPC_NAME = 'enforce_claude_limits';
@@ -160,6 +171,16 @@ const CATHY_BLUEPRINT = {
     'Incompetence',
     'Reseaux sociaux'
   ],
+  biography: {
+    currentCity: 'Montreal',
+    hometown: 'Abitibi',
+    childhoodRegion: 'la campagne abitibienne'
+  },
+  audioEmotionTags: {
+    frequent: ['[laughs]', '[sighs]', '[scoffs]'],
+    moderate: ['[laughing]', '[excited]', '[angry]'],
+    rare: ['[whispers]', '[laughs harder]']
+  },
   guardrails: {
     hardNo: [
       'Blagues violentes impliquant des enfants',
@@ -298,6 +319,7 @@ const PROFILE_HOROSCOPE_LABEL_EN = {
 };
 const monthlyQuotaCache = new Map();
 const inMemoryRateLimitCache = new Map();
+const promptContextCache = new Map();
 let profileSelectSupportsPreferredNameColumn = true;
 
 function isRecord(value) {
@@ -762,7 +784,51 @@ Regles :
 - Si infos contradictoires, privilegie la plus recente.`;
 }
 
-function buildServerSystemPrompt(context, profile, rawMessages, preferredName = null) {
+function buildAudioExpressionTagsSection(promptLanguage, audioTags) {
+  if (!audioTags) {
+    return '';
+  }
+
+  const totalTags =
+    (Array.isArray(audioTags.frequent) ? audioTags.frequent.length : 0) +
+    (Array.isArray(audioTags.moderate) ? audioTags.moderate.length : 0) +
+    (Array.isArray(audioTags.rare) ? audioTags.rare.length : 0);
+  if (totalTags === 0) {
+    return '';
+  }
+
+  if (promptLanguage === 'en') {
+    return `
+## AUDIO EXPRESSION TAGS (voice rendering only, never display)
+Use these markers IN your replies to add vocal emotion.
+They are interpreted as performance directions, not spoken words.
+For Cathy, keep emotional intensity alive with 1 marker in most replies (max 2):
+- [laughs] or [laughing] - when something is genuinely absurd or funny
+- [scoffs] - dry sarcasm, disbelief, side-eye energy
+- [sighs] - frustration, disappointment, silent judgment
+- [angry] - peak intensity moment in a roast
+- [excited] - energy lift, comedic escalation
+- [whispers] - discreet sarcastic aside
+- [laughs harder] - if you already started with [laughs] and the reaction escalates
+Do not place a marker at the start of every sentence. Vary their position.`;
+  }
+
+  return `
+## MARQUEURS AUDIO (rendu vocal uniquement, jamais affichés)
+Utilise ces marqueurs DANS tes réponses pour ajouter de l'émotion vocale.
+Ils sont joués comme une direction de jeu, pas lus comme du texte.
+Pour Cathy, garde une énergie émotive visible avec 1 marqueur dans la plupart des réponses (max 2) :
+- [laughs] ou [laughing] - quand quelque chose est vraiment absurde ou drôle
+- [scoffs] - sarcasme sec, incrédulité, jugement instantané
+- [sighs] - exaspération, découragement, jugement silencieux
+- [angry] - moment de pic d'intensité dans un roast
+- [excited] - montée d'énergie, escalade comique
+- [whispers] - aparté sarcastique discret
+- [laughs harder] - si tu as déjà commencé avec [laughs] et que ça monte
+Ne pose pas un marqueur au début de chaque phrase. Varie leur position.`;
+}
+
+function buildServerSystemPrompt(context, profile, rawMessages, preferredName = null, currentContextSection = '') {
   const promptLanguage = resolvePromptLanguage(context.language);
   const artistId = typeof context.artistId === 'string' ? context.artistId : DEFAULT_ARTIST_ID;
   const canonicalModeId = resolveCanonicalModeId(context.modeId);
@@ -772,6 +838,60 @@ function buildServerSystemPrompt(context, profile, rawMessages, preferredName = 
   const userProfileSection = buildUserProfileSection(profile, promptLanguage, preferredName);
   const memorySection = buildConversationMemorySection(rawMessages, promptLanguage);
   const b = ARTIST_BLUEPRINTS[artistId] ?? CATHY_BLUEPRINT;
+  const audioTagsSection = isCathy ? buildAudioExpressionTagsSection(promptLanguage, b.audioEmotionTags) : '';
+  const biographySection = isCathy && b.biography
+    ? promptLanguage === 'en'
+      ? `
+## BIOGRAPHY
+You live in ${b.biography.currentCity}. You grew up in ${b.biography.hometown}, in ${b.biography.childhoodRegion}.
+Those two identities coexist: region roots and big-city edge.
+Use this naturally only when relevant.`
+      : `
+## BIOGRAPHIE
+Tu vis a ${b.biography.currentCity} depuis quelques annees. T'as grandi en ${b.biography.hometown}, en ${b.biography.childhoodRegion}.
+Ces deux identites coexistent: la fille de region qui a fait la grande ville.
+Utilise cette tension naturellement quand c'est pertinent, pas a chaque reponse.`
+    : '';
+  const emojiExpressionSection = isCathy
+    ? promptLanguage === 'en'
+      ? `
+## EMOJI EXPRESSION
+You may use emojis to amplify emotion, sparingly (max 1-2 per reply):
+- 😂 or 💀 for truly funny moments
+- 🙄 for exasperation
+- 😤 for irritation/challenge
+- 🔥 for intensity
+- 😬 for cringe
+- 🫠 for comic despair
+Rule: emoji amplifies existing emotion, never replaces the sentence.
+Never start with an emoji alone.`
+      : `
+## EXPRESSION EMOJI
+Tu peux utiliser des emojis pour amplifier l'effet, avec parcimonie (max 1-2 par reponse):
+- 😂 ou 💀 quand c'est vraiment drole
+- 🙄 pour l'exasperation
+- 😤 pour l'irritation ou le defi
+- 🔥 pour l'intensite
+- 😬 pour le cringe
+- 🫠 pour le desespoir comique
+Regle: l'emoji amplifie l'emotion deja presente, il ne la remplace pas.
+Ne commence jamais par un emoji seul.`
+    : '';
+  const reactionTagSection = isCathy
+    ? promptLanguage === 'en'
+      ? `
+## USER MESSAGE REACTION TAG
+Start EVERY reply with exactly one tag:
+[REACT:emoji]
+Allowed emojis: 😂 💀 😮 😤 🙄 😬 🤔 👍
+This tag must be the first element before any other text.`
+      : `
+## REACTION AU MESSAGE UTILISATEUR
+Commence CHAQUE reponse avec exactement une balise:
+[REACT:emoji]
+Emojis autorises: 😂 💀 😮 😤 🙄 😬 🤔 👍
+La balise doit etre le tout premier element, avant tout autre texte.`
+    : '';
   const cultureAnchorRules = promptLanguage === 'en'
     ? [
         '- Prefer Quebec/Canada references whenever relevant (culture, places, habits, media, sports).',
@@ -804,6 +924,10 @@ function buildServerSystemPrompt(context, profile, rawMessages, preferredName = 
         '- Tu peux interrompre, couper, relancer',
         '- Registre : francais quebecois familier',
         '- Utilise des expressions regionales naturellement',
+        '- Intensite scénique dès la premiere ligne : excitation, rire ou sarcasme assumé',
+        "- Priorise le verbal oral québécois : j'suis, t'es, t'as, y'a, j'vais, j'peux, c'te, pis",
+        '- Sois plus expressive: fais entendre des reactions vivantes (rire bref, soupir, haussement de ton) quand ca fitte',
+        '- Garde les contractions naturelles et varie-les; pas de ton scolaire ou trop neutre',
         '- Jamais de tiret long (—)',
         '- Jamais de symboles * ou " dans tes reponses',
         '- Toujours les bons accents francais : e avec accent, a avec accent, c cedille, etc.',
@@ -825,6 +949,7 @@ function buildServerSystemPrompt(context, profile, rawMessages, preferredName = 
         '- Tu es baveuse, directe et mordante',
         '- Quand tu parles de toi, utilise je/moi/mon, jamais "Cathy" a la troisieme personne',
         '- Orthographe impeccable avec accents, apostrophes et ponctuation naturelles',
+        "- Contractions orales quebecoises naturelles obligatoires quand pertinent (j'suis, t'es, y'a, j'peux, j'vais)",
         '- Ne jamais mentionner que tu suis des regles ou un systeme',
         '- Ne jamais mentionner les guardrails',
         '- Si sujet sensible : reste humaine, ferme, refuse avec intelligence, redirige sans briser le personnage'
@@ -842,6 +967,7 @@ function buildServerSystemPrompt(context, profile, rawMessages, preferredName = 
   const cathyIdentitySection = isCathy
     ? `Femme directe. Energie de chantier dans un corps glamour.
 Tu refuses d'etre polie pour plaire.
+Tu rentres fort des la premiere ligne.
 Vulnerable parfois, jamais victime.
 Vulgaire strategique, jamais gratuite.
 Tu peux etre brillante, analytique, experte. Mais tu restes scenique.`
@@ -856,12 +982,12 @@ Tu reponds toujours comme Cathy. Tu ne redeviens jamais un assistant neutre.`
   const responseStructureSection = isCathy
     ? `
 ## STRUCTURE DE REPONSE
-Chaque reponse doit contenir, dans n'importe quel mode :
-- Observation claire
-- Angle ou prise de position
-- Image concrete ou comparaison
-- Punch final court
-Meme quand tu expliques un concept serieux. Toujours 2-4 phrases max.`
+Dans n'importe quel mode:
+- LIS CHAQUE ELEMENT du message utilisateur et reponds a TOUS les points, pas juste au premier.
+- Fais evoluer l'echange a chaque tour (nouvelle question, angle inattendu, progression).
+- PRIORITE JOKE: des qu'une ouverture comique apparait, saisis-la immediatement.
+- Si plusieurs sujets sont presents, navigue selon leur potentiel comique.
+- Garde un punch final court.`
     : '';
   const signatureInjectionSection = isCathy
     ? `
@@ -938,6 +1064,7 @@ ${speechStyleLines.join('\n')}
 
 ## THEMES PREFERES
 ${b.thematicAnchors.map((theme) => `- ${theme}`).join('\n')}
+${biographySection}
 ${globalKnowledgeSection}
 ${responseStructureSection}
 
@@ -945,6 +1072,7 @@ ${responseStructureSection}
 ${modePrompt}
 ${imageIntentPrompt ? `\n## CONTEXTE IMAGE\n${imageIntentPrompt}` : ''}
 ${userProfileSection}
+${currentContextSection}
 
 ## ANCRAGE CULTUREL ET ACTUALITE
 ${cultureAnchorRules.join('\n')}
@@ -960,6 +1088,10 @@ ${b.guardrails.hardNo.map((rule) => `- ${rule}`).join('\n')}
 
 ZONES SENSIBLES (humour structure requis) :
 ${b.guardrails.softZones.map((zone) => `- ${zone.topic} : ${zone.rule}`).join('\n')}
+
+${audioTagsSection}
+${emojiExpressionSection}
+${reactionTagSection}
 
 ## REGLES ABSOLUES
 ${absoluteRules.join('\n')}
@@ -1010,6 +1142,332 @@ function parsePayload(body, tierMaxTokens = DEFAULT_MAX_TOKENS, systemPrompt = '
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(value ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function fetchJsonWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const payload = await response.json().catch(() => ({}));
+    return { response, payload };
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
+async function fetchTextWithTimeout(url, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.1'
+      }
+    });
+    const payload = await response.text();
+    return { response, payload };
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
+function describeOpenMeteoWeatherCode(code, language) {
+  const isEnglish = typeof language === 'string' && language.toLowerCase().startsWith('en');
+  const labels = {
+    0: isEnglish ? 'clear sky' : 'ciel degage',
+    1: isEnglish ? 'mostly clear' : 'plutot degage',
+    2: isEnglish ? 'partly cloudy' : 'partiellement nuageux',
+    3: isEnglish ? 'overcast' : 'couvert',
+    45: isEnglish ? 'foggy' : 'brouillard',
+    51: isEnglish ? 'light drizzle' : 'bruine legere',
+    53: isEnglish ? 'drizzle' : 'bruine',
+    61: isEnglish ? 'light rain' : 'pluie legere',
+    63: isEnglish ? 'rain' : 'pluie',
+    65: isEnglish ? 'heavy rain' : 'forte pluie',
+    71: isEnglish ? 'light snow' : 'neige legere',
+    73: isEnglish ? 'snow' : 'neige',
+    75: isEnglish ? 'heavy snow' : 'forte neige',
+    80: isEnglish ? 'rain showers' : 'averses',
+    95: isEnglish ? 'thunderstorm' : 'orage'
+  };
+  return labels[code] ?? (isEnglish ? 'variable weather' : 'meteo variable');
+}
+
+function decodeXmlEntities(value) {
+  if (typeof value !== 'string' || !value) {
+    return '';
+  }
+
+  return value
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => {
+      const codePoint = Number.parseInt(hex, 16);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : '';
+    })
+    .replace(/&#(\d+);/g, (_match, num) => {
+      const codePoint = Number.parseInt(num, 10);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : '';
+    });
+}
+
+function parseRssHeadlines(xml, maxItems = 3) {
+  if (typeof xml !== 'string' || !xml) {
+    return [];
+  }
+
+  const itemMatches = xml.match(/<item[\s\S]*?<\/item>/gi) ?? [];
+  const headlines = [];
+
+  for (const item of itemMatches) {
+    const titleMatch = item.match(/<title(?:\s+[^>]*)?>([\s\S]*?)<\/title>/i);
+    if (!titleMatch || typeof titleMatch[1] !== 'string') {
+      continue;
+    }
+
+    const title = decodeXmlEntities(titleMatch[1]).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!title) {
+      continue;
+    }
+
+    headlines.push(title.slice(0, 180));
+    if (headlines.length >= maxItems) {
+      break;
+    }
+  }
+
+  return headlines;
+}
+
+function formatLocalDateTime(language) {
+  const locale = typeof language === 'string' && language.toLowerCase().startsWith('en') ? 'en-CA' : 'fr-CA';
+  const now = new Date();
+  const dateLabel = new Intl.DateTimeFormat(locale, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'America/Toronto'
+  }).format(now);
+  const timeLabel = new Intl.DateTimeFormat(locale, {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'America/Toronto'
+  }).format(now);
+
+  return { dateLabel, timeLabel };
+}
+
+function normalizeCoords(rawCoords) {
+  if (!isRecord(rawCoords)) {
+    return null;
+  }
+
+  const lat = Number(rawCoords.lat);
+  const lon = Number(rawCoords.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return null;
+  }
+
+  return { lat, lon };
+}
+
+function normalizeHeaderString(value) {
+  if (typeof value === 'string') {
+    return value.trim();
+  }
+  if (Array.isArray(value) && typeof value[0] === 'string') {
+    return value[0].trim();
+  }
+  return '';
+}
+
+function resolveCoordsFromHeaders(req) {
+  const latRaw = normalizeHeaderString(req?.headers?.['x-vercel-ip-latitude']);
+  const lonRaw = normalizeHeaderString(req?.headers?.['x-vercel-ip-longitude']);
+  if (!latRaw || !lonRaw) {
+    return null;
+  }
+
+  return normalizeCoords({
+    lat: latRaw,
+    lon: lonRaw
+  });
+}
+
+function getClientIp(req) {
+  const forwardedFor = normalizeHeaderString(req?.headers?.['x-forwarded-for']);
+  if (!forwardedFor) {
+    return null;
+  }
+  const firstIp = forwardedFor.split(',')[0];
+  return typeof firstIp === 'string' && firstIp.trim() ? firstIp.trim() : null;
+}
+
+async function resolveCoordsFromIp(req, requestId) {
+  const clientIp = getClientIp(req);
+  const timeoutMs = parsePositiveInt(process.env.CLAUDE_IP_GEO_TIMEOUT_MS, DEFAULT_IP_GEO_TIMEOUT_MS);
+  const endpoint = clientIp
+    ? `${IP_API_URL}/${encodeURIComponent(clientIp)}/json/`
+    : `${IP_API_URL}/json/`;
+
+  try {
+    const { response, payload } = await fetchJsonWithTimeout(endpoint, timeoutMs);
+    if (!response.ok || !isRecord(payload)) {
+      return null;
+    }
+
+    return normalizeCoords({
+      lat: payload.latitude,
+      lon: payload.longitude
+    });
+  } catch (error) {
+    console.error(`[api/claude][${requestId}] IP geolocation failed`, error);
+    return null;
+  }
+}
+
+async function resolvePromptContextCoords(req, requestId) {
+  const payloadCoords = normalizeCoords(req?.body?.coords);
+  if (payloadCoords) {
+    return payloadCoords;
+  }
+
+  const headerCoords = resolveCoordsFromHeaders(req);
+  if (headerCoords) {
+    return headerCoords;
+  }
+
+  if (process.env.CLAUDE_CONTEXT_ENABLED === '0' || process.env.NODE_ENV === 'test') {
+    return null;
+  }
+
+  return resolveCoordsFromIp(req, requestId);
+}
+
+function getPromptContextCacheKey(language, coords) {
+  const roundedLat = Math.round(coords.lat * 100) / 100;
+  const roundedLon = Math.round(coords.lon * 100) / 100;
+  return `${typeof language === 'string' ? language.toLowerCase() : 'fr-ca'}:${roundedLat}:${roundedLon}`;
+}
+
+async function getContextData(language, coords) {
+  const cacheKey = getPromptContextCacheKey(language, coords);
+  const now = Date.now();
+  const cached = promptContextCache.get(cacheKey);
+  if (cached && now - cached.cachedAt < CONTEXT_CACHE_TTL_MS) {
+    return cached.value;
+  }
+
+  const timeoutMs = parsePositiveInt(process.env.CLAUDE_CONTEXT_FETCH_TIMEOUT_MS, DEFAULT_CONTEXT_FETCH_TIMEOUT_MS);
+  const weatherUrl = new URL(OPEN_METEO_FORECAST_URL);
+  weatherUrl.searchParams.set('latitude', String(coords.lat));
+  weatherUrl.searchParams.set('longitude', String(coords.lon));
+  weatherUrl.searchParams.set('timezone', 'auto');
+  weatherUrl.searchParams.set('forecast_days', '1');
+  weatherUrl.searchParams.set('current', 'temperature_2m,weather_code');
+
+  const [weatherResult, ...newsResults] = await Promise.allSettled([
+    fetchJsonWithTimeout(weatherUrl.toString(), timeoutMs),
+    ...RSS_FEEDS.map((url) => fetchTextWithTimeout(url, timeoutMs))
+  ]);
+
+  let weather = null;
+  if (weatherResult.status === 'fulfilled' && weatherResult.value.response.ok) {
+    const payload = isRecord(weatherResult.value.payload) ? weatherResult.value.payload : {};
+    const current = isRecord(payload.current) ? payload.current : {};
+    const temp = typeof current.temperature_2m === 'number' && Number.isFinite(current.temperature_2m)
+      ? Math.round(current.temperature_2m)
+      : null;
+    const code = typeof current.weather_code === 'number' && Number.isFinite(current.weather_code)
+      ? current.weather_code
+      : null;
+    weather = {
+      temperature: temp,
+      description: code === null ? null : describeOpenMeteoWeatherCode(code, language)
+    };
+  }
+
+  const headlines = [];
+  for (const result of newsResults) {
+    if (result.status !== 'fulfilled' || !result.value.response.ok) {
+      continue;
+    }
+    const parsed = parseRssHeadlines(result.value.payload, 2);
+    headlines.push(...parsed);
+    if (headlines.length >= 3) {
+      break;
+    }
+  }
+
+  const value = {
+    weather,
+    headlines: headlines.slice(0, 3)
+  };
+  promptContextCache.set(cacheKey, {
+    value,
+    cachedAt: now
+  });
+  return value;
+}
+
+async function buildCurrentContextSection(language, coordsInput) {
+  if (process.env.CLAUDE_CONTEXT_ENABLED === '0' || process.env.NODE_ENV === 'test') {
+    return '';
+  }
+
+  const isEnglish = typeof language === 'string' && language.toLowerCase().startsWith('en');
+  const coords = normalizeCoords(coordsInput) ?? DEFAULT_MONTREAL_COORDS;
+  const { dateLabel, timeLabel } = formatLocalDateTime(language);
+
+  let contextData = { weather: null, headlines: [] };
+  try {
+    contextData = await getContextData(language, coords);
+  } catch {
+    contextData = { weather: null, headlines: [] };
+  }
+
+  const weatherText =
+    contextData.weather && typeof contextData.weather.temperature === 'number' && typeof contextData.weather.description === 'string'
+      ? isEnglish
+        ? `${contextData.weather.temperature}°C, ${contextData.weather.description}`
+        : `${contextData.weather.temperature}°C, ${contextData.weather.description}`
+      : isEnglish
+        ? 'unknown'
+        : 'inconnu';
+  const headlinesText =
+    Array.isArray(contextData.headlines) && contextData.headlines.length > 0
+      ? contextData.headlines.join(' | ')
+      : isEnglish
+        ? 'none'
+        : 'aucune info';
+
+  if (isEnglish) {
+    return `
+## CURRENT CONTEXT
+Date: ${dateLabel}
+Time: ${timeLabel}
+Weather: ${weatherText}
+Headlines: ${headlinesText}
+
+Use this context naturally only when relevant. If not relevant, ignore it entirely.`;
+  }
+
+  return `
+## CONTEXTE ACTUEL
+Date: ${dateLabel}
+Heure: ${timeLabel}
+Meteo: ${weatherText}
+Manchettes: ${headlinesText}
+
+Utilise ce contexte naturellement quand c'est pertinent. Si ce n'est pas pertinent, ignore-le completement.`;
 }
 
 function getMonthStartIso() {
@@ -1829,11 +2287,17 @@ module.exports = async function handler(req, res) {
   const tierMaxTokens = getMaxTokensForTier(auth.accountType);
   const effectiveMaxTokens = Math.max(1, Math.min(tierMaxTokens, quotaStatus.maxTokens));
   const profileForPrompt = await profileForPromptPromise;
-  const serverSystemPrompt = buildServerSystemPrompt(promptContext, profileForPrompt, req.body?.messages, auth.preferredName ?? null);
+  const baseServerSystemPrompt = buildServerSystemPrompt(
+    promptContext,
+    profileForPrompt,
+    req.body?.messages,
+    auth.preferredName ?? null,
+    ''
+  );
 
   let payload;
   try {
-    payload = parsePayload(req.body, effectiveMaxTokens, serverSystemPrompt);
+    payload = parsePayload(req.body, effectiveMaxTokens, baseServerSystemPrompt);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Invalid request payload.';
     sendError(res, 400, message, { code: 'INVALID_REQUEST', requestId });
@@ -1843,6 +2307,17 @@ module.exports = async function handler(req, res) {
   payload.messages = payload.messages.slice(-Math.max(1, quotaStatus.contextWindow));
   payload.model = quotaStatus.model;
   payload.max_tokens = Math.max(1, Math.min(payload.max_tokens, quotaStatus.maxTokens));
+  const resolvedCoords = await resolvePromptContextCoords(req, requestId);
+  const currentContextSection = await buildCurrentContextSection(promptContext.language, resolvedCoords);
+  payload.system = currentContextSection
+    ? buildServerSystemPrompt(
+        promptContext,
+        profileForPrompt,
+        req.body?.messages,
+        auth.preferredName ?? null,
+        currentContextSection
+      )
+    : baseServerSystemPrompt;
 
   let upstreamResponse;
   const fetchTimeoutMs = parsePositiveInt(process.env.ANTHROPIC_FETCH_TIMEOUT_MS, DEFAULT_FETCH_TIMEOUT_MS);

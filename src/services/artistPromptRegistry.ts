@@ -19,6 +19,16 @@ export interface PromptBlueprint {
     exaggerationLevel: number;
   };
   thematicAnchors: string[];
+  biography?: {
+    currentCity: string;
+    hometown: string;
+    childhoodRegion: string;
+  };
+  audioEmotionTags?: {
+    frequent: string[];
+    moderate: string[];
+    rare: string[];
+  };
   guardrails: {
     hardNo: string[];
     softZones: Array<{ topic: string; rule: string }>;

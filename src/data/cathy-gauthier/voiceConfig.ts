@@ -10,7 +10,7 @@ export const CATHY_VOICE_CONFIG: ArtistVoiceConfig = {
   provider: 'elevenlabs',
   voiceIdRegular: EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC ?? DEFAULT_GENERIC_VOICE_ID,
   voiceIdPremium: EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY ?? EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC ?? DEFAULT_GENERIC_VOICE_ID,
-  modelId: 'eleven_turbo_v2_5',
+  modelId: 'eleven_v3',
   stability: 0.5,
   similarityBoost: 0.8,
   style: 0.35
