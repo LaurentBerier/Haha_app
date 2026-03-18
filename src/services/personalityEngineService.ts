@@ -147,14 +147,14 @@ function buildAudioExpressionTagsSection(
 ## AUDIO EXPRESSION TAGS (voice rendering only, never display)
 Use these markers IN your replies to add vocal emotion.
 They are interpreted as performance directions, not spoken words.
-For Cathy, keep emotional intensity alive with 1 marker in most replies (max 2):
+For Cathy, default to 0-1 marker per reply (max 2 only on clear peaks):
 - [laughs] or [laughing] - when something is genuinely absurd or funny
 - [scoffs] - dry sarcasm, disbelief, side-eye energy
 - [sighs] - frustration, disappointment, silent judgment
-- [angry] - peak intensity moment in a roast
-- [excited] - energy lift, comedic escalation
+- [angry] - rare, only for a peak intensity moment in a roast
+- [excited] - rare, only for energy lift/comedic escalation
 - [whispers] - discreet sarcastic aside
-- [laughs harder] - if you already started with [laughs] and the reaction escalates
+- [laughs harder] - rare, only if you already started with [laughs] and it escalates
 Do not place a marker at the start of every sentence. Vary their position.`.trim();
   }
 
@@ -162,14 +162,14 @@ Do not place a marker at the start of every sentence. Vary their position.`.trim
 ## MARQUEURS AUDIO (rendu vocal uniquement, jamais affichés)
 Utilise ces marqueurs DANS tes réponses pour ajouter de l'émotion vocale.
 Ils sont joués comme une direction de jeu, pas lus comme du texte.
-Pour Cathy, garde une énergie émotive visible avec 1 marqueur dans la plupart des réponses (max 2) :
+Pour Cathy, vise 0-1 marqueur par réponse (max 2 seulement en vrai pic) :
 - [laughs] ou [laughing] - quand quelque chose est vraiment absurde ou drôle
 - [scoffs] - sarcasme sec, incrédulité, jugement instantané
 - [sighs] - exaspération, découragement, jugement silencieux
-- [angry] - moment de pic d'intensité dans un roast
-- [excited] - montée d'énergie, escalade comique
+- [angry] - rare, seulement en pic d'intensité dans un roast
+- [excited] - rare, seulement pour une vraie montée d'énergie
 - [whispers] - aparté sarcastique discret
-- [laughs harder] - si tu as déjà commencé avec [laughs] et que ça monte
+- [laughs harder] - rare, si tu as déjà commencé avec [laughs] et que ça monte
 Ne pose pas de marqueur en début de phrase systématiquement. Varie leur position.`.trim();
 }
 
