@@ -317,7 +317,10 @@ export async function synthesizeVoice(
   accessToken: string,
   options?: FetchVoiceOptions
 ): Promise<string> {
-  const uri = await fetchAndCacheVoice(text, artistId, language, accessToken, options);
+  const uri = await fetchAndCacheVoice(text, artistId, language, accessToken, {
+    ...options,
+    throwOnError: true
+  });
   if (!uri) {
     throw new Error('TTS unavailable');
   }

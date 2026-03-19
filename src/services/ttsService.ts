@@ -19,6 +19,14 @@ export type VoiceSynthesisPurpose = 'greeting' | 'reply';
 
 export interface FetchVoiceOptions {
   purpose?: VoiceSynthesisPurpose;
+  throwOnError?: boolean;
+}
+
+function buildTtsError(status: number): Error & { status: number; code: string } {
+  const error = new Error('TTS unavailable') as Error & { status: number; code: string };
+  error.status = status;
+  error.code = status === 429 ? 'TTS_QUOTA_EXCEEDED' : status === 403 ? 'TTS_FORBIDDEN' : 'TTS_UNAVAILABLE';
+  return error;
 }
 
 function normalizeUrl(value: string): string {
@@ -195,6 +203,9 @@ export async function fetchAndCacheVoice(
 
     const response = await fetchTtsBinary(normalizedText, normalizedArtistId, language, accessToken, options);
     if (!response.ok || !response.arrayBuffer) {
+      if (options?.throwOnError) {
+        throw buildTtsError(response.status);
+      }
       return null;
     }
 
@@ -221,6 +232,9 @@ export async function fetchAndCacheVoice(
 
   const response = await fetchTtsBinary(normalizedText, normalizedArtistId, language, accessToken, options);
   if (!response.ok || !response.arrayBuffer) {
+    if (options?.throwOnError) {
+      throw buildTtsError(response.status);
+    }
     return null;
   }
 

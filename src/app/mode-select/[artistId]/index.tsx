@@ -1250,14 +1250,22 @@ export default function ModeSelectHomeScreen() {
             }
           }, 900);
         }
-      } catch {
+      } catch (error) {
         if (!isCancelled) {
           updateMessage(introConversation.id, greetingMessageId, {
             metadata: {
               voiceStatus: undefined
             }
           });
-          if (Platform.OS === 'web') {
+
+          const status =
+            typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number'
+              ? error.status
+              : null;
+          const isQuotaOrRateError = status === 429 || status === 403;
+
+          // Keep Cathy identity: do not switch to generic Web Speech when TTS is quota/rate-limited.
+          if (Platform.OS === 'web' && !isQuotaOrRateError) {
             if (!speakGreetingWithWebFallback(nextGreeting, language)) {
               setPendingGreetingSpeechText(nextGreeting);
             } else {
