@@ -215,6 +215,7 @@ async function recordUsageEvent({ supabaseAdmin, userId, endpoint, requestId }) 
 module.exports = {
   enforceMonthlyQuota,
   getRetryAfterUntilNextMonthSeconds,
+  parsePositiveInt,
   recordUsageEvent,
   writeProfileMonthlyCounter
 };
