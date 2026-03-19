@@ -443,6 +443,7 @@ export function useChat(conversationId: string) {
   const failedJobsRef = useRef<Map<string, StreamJob>>(new Map());
   const activeMessageIdRef = useRef<string | null>(null);
   const streamingConversationIdRef = useRef<string | null>(null);
+  const streamInstanceIdRef = useRef(0);
   const isMountedRef = useRef(true);
   const isCancelledRef = useRef(false);
   const cancelRef = useRef<null | (() => void)>(null);
@@ -492,12 +493,25 @@ export function useChat(conversationId: string) {
       isStreamingRef.current = true;
       activeMessageIdRef.current = artistMessageId;
       streamingConversationIdRef.current = jobConversationId;
+      const streamInstanceId = streamInstanceIdRef.current + 1;
+      streamInstanceIdRef.current = streamInstanceId;
       isCancelledRef.current = false;
       bufferedTokensRef.current = '';
       displayPendingTagRef.current = '';
       rawTtsResponseRef.current = '';
 
+      const isCurrentStream = () =>
+        isMountedRef.current &&
+        !isCancelledRef.current &&
+        streamInstanceIdRef.current === streamInstanceId &&
+        streamingConversationIdRef.current === jobConversationId &&
+        activeMessageIdRef.current === artistMessageId;
+
       const flushBufferedTokens = () => {
+        if (!isCurrentStream()) {
+          bufferedTokensRef.current = '';
+          return;
+        }
         if (!bufferedTokensRef.current) {
           return;
         }
@@ -526,7 +540,7 @@ export function useChat(conversationId: string) {
 
         flushFrameRef.current = requestAnimationFrame(() => {
           flushFrameRef.current = null;
-          if (!isMountedRef.current || streamingConversationIdRef.current !== jobConversationId) {
+          if (!isCurrentStream()) {
             return;
           }
           flushBufferedTokens();
@@ -543,6 +557,7 @@ export function useChat(conversationId: string) {
         isStreamingRef.current = false;
         activeMessageIdRef.current = null;
         streamingConversationIdRef.current = null;
+        streamInstanceIdRef.current += 1;
         isCancelledRef.current = false;
         cancelRef.current = null;
         flushBufferedTokensRef.current = null;
@@ -730,13 +745,7 @@ export function useChat(conversationId: string) {
       };
 
       const onToken = (token: string) => {
-        if (!isMountedRef.current) {
-          return;
-        }
-        if (isCancelledRef.current) {
-          return;
-        }
-        if (streamingConversationIdRef.current !== jobConversationId) {
+        if (!isCurrentStream()) {
           return;
         }
         bufferedTokensRef.current += token;
@@ -759,8 +768,7 @@ export function useChat(conversationId: string) {
       };
 
       const onComplete = ({ tokensUsed }: { tokensUsed: number }) => {
-        if (!isMountedRef.current || streamingConversationIdRef.current !== jobConversationId) {
-          resetStreamState();
+        if (!isCurrentStream()) {
           return;
         }
         flushTtsChunks(true);
@@ -867,7 +875,7 @@ export function useChat(conversationId: string) {
           }
 
           void Promise.allSettled(ttsPendingPromises).then(async () => {
-            if (!isMountedRef.current || ignoreTtsUpdates) {
+            if (!isCurrentStream() || ignoreTtsUpdates) {
               return;
             }
 
@@ -933,8 +941,7 @@ export function useChat(conversationId: string) {
 
       const failStream = (error: Error) => {
         ignoreTtsUpdates = true;
-        if (!isMountedRef.current || streamingConversationIdRef.current !== jobConversationId) {
-          resetStreamState();
+        if (!isCurrentStream()) {
           return;
         }
         const errorWithMeta = error as Error & { code?: string; status?: number };

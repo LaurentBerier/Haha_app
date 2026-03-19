@@ -53,6 +53,7 @@ export function useVoiceConversation({
   const transcriptRef = useRef('');
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const webGestureListenerRef = useRef<((event: Event) => void) | null>(null);
   const iosRecoveryWindowStartedAtRef = useRef(0);
   const iosRecoveryAttemptCountRef = useRef(0);
 
@@ -100,6 +101,17 @@ export function useVoiceConversation({
     if (recoveryTimerRef.current) {
       clearTimeout(recoveryTimerRef.current);
       recoveryTimerRef.current = null;
+    }
+  }, []);
+
+  const clearWebGestureListener = useCallback(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') {
+      webGestureListenerRef.current = null;
+      return;
+    }
+    if (webGestureListenerRef.current) {
+      document.removeEventListener('pointerdown', webGestureListenerRef.current, true);
+      webGestureListenerRef.current = null;
     }
   }, []);
 
@@ -345,15 +357,16 @@ export function useVoiceConversation({
       startListeningSession(true);
 
       if (listeningRef.current) {
-        document.removeEventListener('pointerdown', startFromFirstGesture, true);
+        clearWebGestureListener();
       }
     };
-
+    clearWebGestureListener();
+    webGestureListenerRef.current = startFromFirstGesture;
     document.addEventListener('pointerdown', startFromFirstGesture, true);
     return () => {
-      document.removeEventListener('pointerdown', startFromFirstGesture, true);
+      clearWebGestureListener();
     };
-  }, [autoStartOnWeb, disabled, enabled, startListeningSession]);
+  }, [autoStartOnWeb, clearWebGestureListener, disabled, enabled, startListeningSession]);
 
   const interruptAndListen = useCallback(() => {
     onStopAudioRef.current();
@@ -385,9 +398,10 @@ export function useVoiceConversation({
       isMountedRef.current = false;
       stopListeningSession();
       clearRecoveryTimer();
+      clearWebGestureListener();
       resetTranscript();
     };
-  }, [clearRecoveryTimer, resetTranscript, stopListeningSession]);
+  }, [clearRecoveryTimer, clearWebGestureListener, resetTranscript, stopListeningSession]);
 
   return {
     isListening,

@@ -16,7 +16,12 @@ const MIN_BAR_HEIGHT = 4;
 const MAX_BAR_HEIGHT = 16;
 
 function WaveformButtonBase({ isPlaying, isLoading, onPress, disabled = false, testID }: WaveformButtonProps) {
-  const bars = useRef(Array.from({ length: BAR_COUNT }, () => new Animated.Value(IDLE_BAR_HEIGHT))).current;
+  const bars = useRef(
+    Array.from({ length: BAR_COUNT }, (_, index) => ({
+      key: `wave-bar-${index}`,
+      value: new Animated.Value(IDLE_BAR_HEIGHT)
+    }))
+  ).current;
   const loadingOpacity = useRef(new Animated.Value(1)).current;
   const animationRef = useRef<Animated.CompositeAnimation | null>(null);
 
@@ -30,8 +35,8 @@ function WaveformButtonBase({ isPlaying, isLoading, onPress, disabled = false, t
     animationRef.current?.stop();
     animationRef.current = null;
     bars.forEach((bar) => {
-      bar.stopAnimation();
-      bar.setValue(IDLE_BAR_HEIGHT);
+      bar.value.stopAnimation();
+      bar.value.setValue(IDLE_BAR_HEIGHT);
     });
     loadingOpacity.stopAnimation();
     loadingOpacity.setValue(1);
@@ -40,13 +45,13 @@ function WaveformButtonBase({ isPlaying, isLoading, onPress, disabled = false, t
       const loops = bars.map((bar, index) =>
         Animated.loop(
           Animated.sequence([
-            Animated.timing(bar, {
+            Animated.timing(bar.value, {
               toValue: MAX_BAR_HEIGHT,
               duration: 300 + index * 60,
               easing: Easing.inOut(Easing.ease),
               useNativeDriver: false
             }),
-            Animated.timing(bar, {
+            Animated.timing(bar.value, {
               toValue: MIN_BAR_HEIGHT,
               duration: 300 + index * 60,
               easing: Easing.inOut(Easing.ease),
@@ -99,12 +104,12 @@ function WaveformButtonBase({ isPlaying, isLoading, onPress, disabled = false, t
       <View style={[styles.barsWrap, disabled ? styles.barsWrapDisabled : null]}>
         {bars.map((bar, index) => (
           <Animated.View
-            key={index}
+            key={bar.key}
             style={[
               styles.bar,
               index < BAR_COUNT - 1 ? styles.barSpacing : null,
               {
-                height: bar,
+                height: bar.value,
                 opacity: isLoading ? loadingOpacity : 1
               }
             ]}

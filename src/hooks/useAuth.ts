@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { hasPermission } from '../config/accountTypes';
 import { getStoredSession, getUsageSummary, onAuthStateChange } from '../services/authService';
 import { getUserStats } from '../services/scoreManager';
@@ -19,19 +19,29 @@ export function useAuth() {
   const hydrateGamification = useStore((state) => state.hydrateGamification);
   const resetGamification = useStore((state) => state.resetGamification);
   const getCurrentUser = useStore((state) => state.getCurrentUser);
+  const sessionSyncRunIdRef = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
+    const nextRunId = () => {
+      sessionSyncRunIdRef.current += 1;
+      return sessionSyncRunIdRef.current;
+    };
+    const isRunCurrent = (runId: number) => isMounted && runId === sessionSyncRunIdRef.current;
 
     const bootstrap = async () => {
+      const runId = nextRunId();
       setAuthStatus('loading');
       try {
         const storedSession = await getStoredSession();
-        if (!isMounted) {
+        if (!isRunCurrent(runId)) {
           return;
         }
 
         await setSession(storedSession);
+        if (!isRunCurrent(runId)) {
+          return;
+        }
         const hasLocalChatData = () => {
           const state = useStore.getState();
           return (
@@ -58,28 +68,28 @@ export function useAuth() {
         const accountType = storedSession.user.accountType ?? 'free';
         try {
           const usageSummary = await getUsageSummary(storedSession.accessToken);
-          if (!isMounted) {
+          if (!isRunCurrent(runId)) {
             return;
           }
           hydrateQuota(usageSummary.messagesUsed, accountType);
         } catch {
-          if (isMounted) {
+          if (isRunCurrent(runId)) {
             hydrateQuota(0, accountType);
           }
         }
 
         try {
           await getUserStats(storedSession.accessToken);
-          if (!isMounted) {
+          if (!isRunCurrent(runId)) {
             return;
           }
         } catch {
-          if (isMounted) {
+          if (isRunCurrent(runId)) {
             hydrateGamification(EMPTY_GAMIFICATION_STATS);
           }
         }
       } catch {
-        if (!isMounted) {
+        if (!isRunCurrent(runId)) {
           return;
         }
         clearSession();
@@ -101,6 +111,7 @@ export function useAuth() {
       }
 
       if (event === 'SIGNED_OUT') {
+        nextRunId();
         clearSession();
         clearUserProfile();
         clearAccountScopedState();
@@ -110,8 +121,12 @@ export function useAuth() {
       }
 
       const syncSession = async () => {
+        const runId = nextRunId();
         const currentSessionUserId = useStore.getState().session?.user.id ?? null;
         await setSession(nextSession);
+        if (!isRunCurrent(runId)) {
+          return;
+        }
         if (!nextSession) {
           clearAccountScopedState();
           resetQuota();
@@ -133,23 +148,23 @@ export function useAuth() {
         const accountType = nextSession.user.accountType ?? 'free';
         try {
           const usageSummary = await getUsageSummary(nextSession.accessToken);
-          if (!isMounted) {
+          if (!isRunCurrent(runId)) {
             return;
           }
           hydrateQuota(usageSummary.messagesUsed, accountType);
         } catch {
-          if (isMounted) {
+          if (isRunCurrent(runId)) {
             hydrateQuota(0, accountType);
           }
         }
 
         try {
           await getUserStats(nextSession.accessToken);
-          if (!isMounted) {
+          if (!isRunCurrent(runId)) {
             return;
           }
         } catch {
-          if (isMounted) {
+          if (isRunCurrent(runId)) {
             hydrateGamification(EMPTY_GAMIFICATION_STATS);
           }
         }
