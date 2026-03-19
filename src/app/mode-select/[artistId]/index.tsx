@@ -903,6 +903,7 @@ export default function ModeSelectHomeScreen() {
     isQuotaBlocked,
     audioPlayer
   } = useChat(modeSelectConversationId);
+  const playGreetingAudio = audioPlayer.play;
   const isValidConversation = modeSelectConversationId.length > 0;
   const sendFromModeSelect = useCallback(
     (payload: ChatSendPayload) => {
@@ -1316,6 +1317,7 @@ export default function ModeSelectHomeScreen() {
 
     const greetedArtistIds = useStore.getState().greetedArtistIds;
     if (greetedArtistIds.has(artist.id)) {
+      setIsGreetingBooting(false);
       return;
     }
 
@@ -1327,6 +1329,7 @@ export default function ModeSelectHomeScreen() {
     const runGreeting = async () => {
       const sessionStateBeforeGreeting = useStore.getState();
       if (sessionStateBeforeGreeting.greetedArtistIds.has(artist.id)) {
+        setIsGreetingBooting(false);
         return;
       }
       setIsGreetingBooting(true);
@@ -1432,7 +1435,7 @@ export default function ModeSelectHomeScreen() {
               voiceStatus: 'ready'
             }
           });
-          void audioPlayer.play(greetingAudioUri, { messageId: greetingMessageId });
+          void playGreetingAudio(greetingAudioUri, { messageId: greetingMessageId });
           if (Platform.OS === 'web') {
             clearGreetingPlaybackCheck();
             greetingPlaybackCheckTimeoutRef.current = setTimeout(() => {
@@ -1503,7 +1506,7 @@ export default function ModeSelectHomeScreen() {
     markArtistGreeted,
     preferredName,
     pulseGreetingSpeechHint,
-    audioPlayer,
+    playGreetingAudio,
     setActiveConversation,
     updateMessage,
     updateConversation
