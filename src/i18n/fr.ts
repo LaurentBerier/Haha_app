@@ -243,6 +243,7 @@ export const fr = {
   voiceError: 'Transcription impossible, réessaie',
   voicePermissionDenied: 'Accès au microphone refusé',
   voiceInputPlaceholder: "Je t'écoute...",
+  micPausedHint: 'Micro en pause - touche pour reprendre',
   addButtonA11y: 'Ajouter une image',
   removeImageA11y: "Retirer l'image sélectionnée",
   imageAttached: 'Image jointe',

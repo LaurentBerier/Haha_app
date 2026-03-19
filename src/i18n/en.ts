@@ -243,6 +243,7 @@ export const en = {
   voiceError: 'Could not transcribe, please try again',
   voicePermissionDenied: 'Microphone access denied',
   voiceInputPlaceholder: 'Listening...',
+  micPausedHint: 'Mic paused - tap to resume',
   addButtonA11y: 'Add image',
   removeImageA11y: 'Remove selected image',
   imageAttached: 'Image attached',

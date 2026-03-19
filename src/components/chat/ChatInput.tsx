@@ -28,6 +28,7 @@ interface ConversationModeProps {
   transcript: string;
   error?: string | null;
   isPlaying?: boolean;
+  assistantBusy?: boolean;
   onToggle: () => void;
   onInterrupt?: () => void;
   onTypingStateChange?: (hasTypedText: boolean) => void;
@@ -135,7 +136,9 @@ export function ChatInput({
   const sendScale = useRef(new Animated.Value(1)).current;
   const isConversationEnabled = Boolean(conversationMode?.enabled);
   const isConversationListening = Boolean(conversationMode?.enabled && conversationMode.isListening);
-  const isConversationPlaying = Boolean(conversationMode?.enabled && conversationMode.isPlaying);
+  const isAssistantBusy = Boolean(conversationMode?.enabled && conversationMode.assistantBusy);
+  const isConversationPlaying = Boolean(conversationMode?.enabled && (conversationMode.isPlaying || isAssistantBusy));
+  const isConversationPaused = Boolean(isConversationEnabled && !isConversationListening);
   const conversationTranscript = conversationMode?.transcript.trim() ?? '';
   const conversationError = conversationMode?.error ?? null;
   const { pulse } = useVoiceAnimations(isConversationListening);
@@ -398,7 +401,8 @@ export function ChatInput({
             style={[
               styles.rightAction,
               (disabled || isEncodingImage) && styles.disabledButton,
-              !canSend && !isConversationEnabled && styles.conversationOff
+              !canSend && !isConversationEnabled && styles.conversationOff,
+              !canSend && isConversationPaused && styles.conversationPaused
             ]}
             onPress={handleRightActionPress}
             disabled={disabled || isEncodingImage}
@@ -410,7 +414,11 @@ export function ChatInput({
             ) : (
               <Image
                 source={micIconSource}
-                style={[styles.micIcon, !isConversationEnabled && styles.micIconDisabled]}
+                style={[
+                  styles.micIcon,
+                  !isConversationEnabled && styles.micIconDisabled,
+                  isConversationPaused && styles.micIconPaused
+                ]}
                 resizeMode="contain"
               />
             )}
@@ -429,6 +437,12 @@ export function ChatInput({
       {conversationError && !error && !pickerError ? (
         <Text style={styles.errorText} testID="chat-input-voice-error">
           {conversationError}
+        </Text>
+      ) : null}
+
+      {isConversationPaused && !disabled && !conversationError && !error && !pickerError ? (
+        <Text style={styles.pausedHint} testID="chat-input-mic-paused-hint">
+          {t('micPausedHint')}
         </Text>
       ) : null}
     </View>
@@ -537,6 +551,9 @@ const styles = StyleSheet.create({
   conversationOff: {
     backgroundColor: theme.colors.surfaceDeep
   },
+  conversationPaused: {
+    backgroundColor: theme.colors.surfaceRaised
+  },
   rightActionText: {
     color: theme.colors.textPrimary,
     fontSize: 20,
@@ -546,6 +563,9 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36
   },
+  micIconPaused: {
+    opacity: 0.75
+  },
   micIconDisabled: {
     opacity: 0.35
   },
@@ -554,6 +574,12 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: theme.colors.error,
+    fontSize: 11,
+    paddingHorizontal: theme.spacing.sm,
+    paddingBottom: theme.spacing.sm
+  },
+  pausedHint: {
+    color: theme.colors.textSecondary,
     fontSize: 11,
     paddingHorizontal: theme.spacing.sm,
     paddingBottom: theme.spacing.sm

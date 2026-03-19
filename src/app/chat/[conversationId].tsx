@@ -210,7 +210,8 @@ export default function ChatScreen() {
             isListening,
             transcript,
             error: conversationError,
-            isPlaying: audioPlayer.isPlaying,
+            isPlaying: hasStreaming || audioPlayer.isLoading || audioPlayer.isPlaying,
+            assistantBusy: hasStreaming || audioPlayer.isLoading || audioPlayer.isPlaying,
             onToggle: () => {
               setConversationModeEnabled(!conversationModeEnabled);
             },

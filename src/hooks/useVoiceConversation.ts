@@ -16,6 +16,10 @@ const IOS_TRANSIENT_ROUTE_ERROR_PATTERNS = [
 const IOS_ROUTE_RECOVERY_DELAY_MS = 320;
 const IOS_ROUTE_RECOVERY_WINDOW_MS = 10_000;
 const IOS_ROUTE_RECOVERY_MAX_ATTEMPTS = 4;
+const LISTENING_WATCHDOG_BASE_DELAY_MS = 650;
+const LISTENING_WATCHDOG_MAX_DELAY_MS = 3_200;
+const LISTENING_WATCHDOG_MAX_ATTEMPTS = 4;
+const HARD_PERMISSION_ERROR_PATTERNS = ['permission', 'not-allowed', 'service-not-allowed', 'denied', 'audio-capture'];
 
 export interface UseVoiceConversationProps {
   enabled: boolean;
@@ -53,7 +57,11 @@ export function useVoiceConversation({
   const transcriptRef = useRef('');
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchdogAttemptCountRef = useRef(0);
+  const hasHardPermissionErrorRef = useRef(false);
   const webGestureListenerRef = useRef<((event: Event) => void) | null>(null);
+  const scheduleWatchdogRetryRef = useRef<(() => void) | null>(null);
   const iosRecoveryWindowStartedAtRef = useRef(0);
   const iosRecoveryAttemptCountRef = useRef(0);
 
@@ -104,6 +112,13 @@ export function useVoiceConversation({
     }
   }, []);
 
+  const clearWatchdogTimer = useCallback(() => {
+    if (watchdogTimerRef.current) {
+      clearTimeout(watchdogTimerRef.current);
+      watchdogTimerRef.current = null;
+    }
+  }, []);
+
   const clearWebGestureListener = useCallback(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') {
       webGestureListenerRef.current = null;
@@ -125,6 +140,7 @@ export function useVoiceConversation({
   const stopListeningSession = useCallback(() => {
     clearSilenceTimer();
     clearRecoveryTimer();
+    clearWatchdogTimer();
     if (listeningRef.current) {
       stopListening();
       listeningRef.current = false;
@@ -132,7 +148,7 @@ export function useVoiceConversation({
     if (isMountedRef.current) {
       setIsListening(false);
     }
-  }, [clearRecoveryTimer, clearSilenceTimer]);
+  }, [clearRecoveryTimer, clearSilenceTimer, clearWatchdogTimer]);
 
   const isTransientIosRouteError = useCallback((rawMessage: string): boolean => {
     if (Platform.OS !== 'ios') {
@@ -141,6 +157,11 @@ export function useVoiceConversation({
 
     const normalized = rawMessage.toLowerCase();
     return IOS_TRANSIENT_ROUTE_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
+  }, []);
+
+  const isHardPermissionError = useCallback((rawMessage: string): boolean => {
+    const normalized = rawMessage.toLowerCase();
+    return HARD_PERMISSION_ERROR_PATTERNS.some((pattern) => normalized.includes(pattern));
   }, []);
 
   const canRecoverFromIosRouteError = useCallback((): boolean => {
@@ -227,6 +248,10 @@ export function useVoiceConversation({
           }
 
           const message = listenError instanceof Error && listenError.message.trim() ? listenError.message.trim() : t('voiceError');
+          if (isHardPermissionError(message)) {
+            hasHardPermissionErrorRef.current = true;
+            clearWatchdogTimer();
+          }
           if (Platform.OS === 'web' && WEB_NOISE_ERRORS.has(message.toLowerCase())) {
             return;
           }
@@ -264,8 +289,21 @@ export function useVoiceConversation({
 
       listeningRef.current = started;
       setIsListening(started);
+      if (started) {
+        hasHardPermissionErrorRef.current = false;
+        watchdogAttemptCountRef.current = 0;
+        clearWatchdogTimer();
+      }
     },
-    [canRecoverFromIosRouteError, clearRecoveryTimer, clearSilenceTimer, isTransientIosRouteError, scheduleSilenceTimeout]
+    [
+      canRecoverFromIosRouteError,
+      clearRecoveryTimer,
+      clearSilenceTimer,
+      clearWatchdogTimer,
+      isHardPermissionError,
+      isTransientIosRouteError,
+      scheduleSilenceTimeout
+    ]
   );
 
   const ensureListening = useCallback(
@@ -293,25 +331,104 @@ export function useVoiceConversation({
 
         hasPermissionRef.current = granted;
         if (!granted) {
+          hasHardPermissionErrorRef.current = true;
+          clearWatchdogTimer();
           setError(t('voicePermissionDenied'));
           if (!force) {
             stopListeningSession();
           }
           return;
         }
+
+        hasHardPermissionErrorRef.current = false;
+        watchdogAttemptCountRef.current = 0;
       }
 
       if (!listeningRef.current) {
         startListeningSession(force);
       }
     },
-    [startListeningSession, stopListeningSession]
+    [clearWatchdogTimer, startListeningSession, stopListeningSession]
   );
+
+  useEffect(() => {
+    scheduleWatchdogRetryRef.current = () => {
+      clearWatchdogTimer();
+      if (
+        !isMountedRef.current ||
+        !enabledRef.current ||
+        disabledRef.current ||
+        isPlayingRef.current ||
+        listeningRef.current ||
+        hasHardPermissionErrorRef.current
+      ) {
+        return;
+      }
+
+      if (watchdogAttemptCountRef.current >= LISTENING_WATCHDOG_MAX_ATTEMPTS) {
+        return;
+      }
+
+      const nextAttempt = watchdogAttemptCountRef.current + 1;
+      const delay = Math.min(
+        LISTENING_WATCHDOG_MAX_DELAY_MS,
+        LISTENING_WATCHDOG_BASE_DELAY_MS * 2 ** (nextAttempt - 1)
+      );
+
+      watchdogTimerRef.current = setTimeout(() => {
+        watchdogTimerRef.current = null;
+        if (
+          !isMountedRef.current ||
+          !enabledRef.current ||
+          disabledRef.current ||
+          isPlayingRef.current ||
+          listeningRef.current ||
+          hasHardPermissionErrorRef.current
+        ) {
+          return;
+        }
+
+        watchdogAttemptCountRef.current = nextAttempt;
+        void ensureListening(true);
+
+        if (!listeningRef.current && !hasHardPermissionErrorRef.current) {
+          scheduleWatchdogRetryRef.current?.();
+        }
+      }, delay);
+    };
+
+    return () => {
+      scheduleWatchdogRetryRef.current = null;
+    };
+  }, [clearWatchdogTimer, ensureListening]);
+
+  useEffect(() => {
+    if (!shouldAutoListen || !enabled || disabled || isPlaying) {
+      watchdogAttemptCountRef.current = 0;
+      clearWatchdogTimer();
+      return;
+    }
+
+    if (isListening) {
+      watchdogAttemptCountRef.current = 0;
+      clearWatchdogTimer();
+      return;
+    }
+
+    if (hasHardPermissionErrorRef.current) {
+      clearWatchdogTimer();
+      return;
+    }
+
+    scheduleWatchdogRetryRef.current?.();
+  }, [clearWatchdogTimer, disabled, enabled, isListening, isPlaying, shouldAutoListen]);
 
   useEffect(() => {
     if (!enabled || disabled) {
       stopListeningSession();
       resetTranscript();
+      hasHardPermissionErrorRef.current = false;
+      watchdogAttemptCountRef.current = 0;
       return;
     }
 
@@ -329,6 +446,7 @@ export function useVoiceConversation({
     if (isPlaying) {
       stopListeningSession();
       resetTranscript();
+      watchdogAttemptCountRef.current = 0;
       return;
     }
 
@@ -398,10 +516,11 @@ export function useVoiceConversation({
       isMountedRef.current = false;
       stopListeningSession();
       clearRecoveryTimer();
+      clearWatchdogTimer();
       clearWebGestureListener();
       resetTranscript();
     };
-  }, [clearRecoveryTimer, clearWebGestureListener, resetTranscript, stopListeningSession]);
+  }, [clearRecoveryTimer, clearWatchdogTimer, clearWebGestureListener, resetTranscript, stopListeningSession]);
 
   return {
     isListening,

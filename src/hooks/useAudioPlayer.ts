@@ -8,6 +8,7 @@ interface WebAudioLike {
   pause: () => void;
   play: () => Promise<void>;
   src: string;
+  volume: number;
 }
 
 export interface AudioPlayerController {
@@ -161,6 +162,7 @@ export function useAudioPlayer(): AudioPlayerController {
           }
 
           const webAudio = new WebAudioCtor(uri);
+          webAudio.volume = 1;
           webAudioRef.current = webAudio;
 
           const handleEnded = () => onChunkEnd();
@@ -211,7 +213,7 @@ export function useAudioPlayer(): AudioPlayerController {
             interruptionModeIOS: 1,
             playsInSilentModeIOS: true,
             staysActiveInBackground: false,
-            shouldDuckAndroid: true,
+            shouldDuckAndroid: false,
             interruptionModeAndroid: 1,
             playThroughEarpieceAndroid: false
           });
@@ -243,7 +245,12 @@ export function useAudioPlayer(): AudioPlayerController {
         });
 
         try {
-          await sound.loadAsync({ uri }, { shouldPlay: true }, true);
+          await sound.loadAsync({ uri }, { shouldPlay: true, volume: 1 }, true);
+          try {
+            await sound.setVolumeAsync(1);
+          } catch {
+            // Best effort.
+          }
           if (isMountedRef.current && playbackTokenRef.current === token) {
             setIsLoading(false);
             setIsPlaying(true);

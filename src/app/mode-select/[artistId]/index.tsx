@@ -758,7 +758,6 @@ export default function ModeSelectHomeScreen() {
   const [hasTypedDraft, setHasTypedDraft] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [categoryGridBottomY, setCategoryGridBottomY] = useState<number | null>(null);
-  const [isModeGridLockedCompact, setIsModeGridLockedCompact] = useState(false);
   const [isGreetingBooting, setIsGreetingBooting] = useState(false);
   const [greetingBootingLineIndex, setGreetingBootingLineIndex] = useState(() =>
     Math.floor(Math.random() * GREETING_BOOTING_FR_LINES.length)
@@ -857,11 +856,6 @@ export default function ModeSelectHomeScreen() {
   const isValidConversation = modeSelectConversationId.length > 0;
   const sendFromModeSelect = useCallback(
     (payload: ChatSendPayload) => {
-      const hasText = payload.text.trim().length > 0;
-      const hasImage = Boolean(payload.image);
-      if (hasText || hasImage) {
-        setIsModeGridLockedCompact(true);
-      }
       const shouldUseVoiceFiller = Boolean(
         conversationModeEnabled &&
           artist?.id &&
@@ -915,7 +909,9 @@ export default function ModeSelectHomeScreen() {
     currentUri: null
   });
   const isGreetingVoicePendingGesture = Boolean(pendingGreetingAudioUri || pendingGreetingSpeechText);
-  const hasUserSpokenInModeSelect = messages.some((message) => message.role === 'user');
+  const hasVisibleConversationText = messages.some(
+    (message) => message.status === 'complete' && message.content.trim().length > 0
+  );
   const isTutorialConversation = messages.some(
     (message) => message.role === 'artist' && message.metadata?.tutorialMode === true
   );
@@ -926,7 +922,9 @@ export default function ModeSelectHomeScreen() {
     : GREETING_BOOTING_FR_LINES[greetingBootingLineIndex % GREETING_BOOTING_FR_LINES.length];
   const shouldCompactModeGrid =
     isValidConversation &&
-    (isModeGridLockedCompact || hasStreaming || ((Platform.OS === 'ios' || Platform.OS === 'android') && isInputFocused));
+    (hasVisibleConversationText ||
+      hasStreaming ||
+      ((Platform.OS === 'ios' || Platform.OS === 'android') && isInputFocused));
   const isGreetingVoiceActive =
     greeting !== null &&
     (audioPlayer.isLoading || audioPlayer.isPlaying || isGreetingVoicePendingGesture || isWebSpeechFallbackActive);
@@ -1080,10 +1078,6 @@ export default function ModeSelectHomeScreen() {
     }
     scrollToLatest(true);
   }, [messages, scrollToLatest]);
-
-  useEffect(() => {
-    setIsModeGridLockedCompact(hasUserSpokenInModeSelect);
-  }, [hasUserSpokenInModeSelect]);
 
   useEffect(() => {
     setIsInputFocused(false);
@@ -1604,7 +1598,8 @@ export default function ModeSelectHomeScreen() {
                 isListening,
                 transcript,
                 error: conversationError,
-                isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading,
+                isPlaying: hasStreaming || audioPlayer.isPlaying || audioPlayer.isLoading,
+                assistantBusy: hasStreaming || audioPlayer.isPlaying || audioPlayer.isLoading,
                 onToggle: () => {
                   setConversationModeEnabled(!conversationModeEnabled);
                 },
