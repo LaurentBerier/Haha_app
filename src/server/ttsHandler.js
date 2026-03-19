@@ -6,6 +6,10 @@ const {
   sendError,
   setCorsHeaders
 } = require('../../api/_utils');
+const {
+  normalizeAccountType,
+  resolveEffectiveAccountType: resolveAccountTypeByRole
+} = require('../../api/_account-tier');
 
 const ELEVENLABS_API_BASE = 'https://api.elevenlabs.io/v1/text-to-speech';
 const DEFAULT_VOICE_ID_GENERIC = 'cgSgspJ2msm6clMCkdW9';
@@ -54,24 +58,6 @@ function parseBooleanEnv(value, fallback) {
     return false;
   }
   return fallback;
-}
-
-function normalizeAccountType(accountType) {
-  if (typeof accountType === 'string' && accountType.trim()) {
-    const normalized = accountType.trim().toLowerCase();
-    if (normalized === 'free' || normalized === 'regular' || normalized === 'premium' || normalized === 'admin') {
-      return normalized;
-    }
-
-    const compact = normalized.replace(/[\s_-]+/g, '');
-    if (compact === 'unlimited') {
-      return 'regular';
-    }
-    if (compact === 'proartist') {
-      return 'premium';
-    }
-  }
-  return 'free';
 }
 
 function getMonthStartIso() {
@@ -221,6 +207,7 @@ async function validateAuthHeader(supabaseAdmin, req, requestId) {
 
     return {
       userId: user.id,
+      role: typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : null,
       accountType: typeof user.app_metadata?.account_type === 'string' ? user.app_metadata.account_type : null,
       error: null
     };
@@ -230,8 +217,11 @@ async function validateAuthHeader(supabaseAdmin, req, requestId) {
   }
 }
 
-async function resolveEffectiveAccountType(supabaseAdmin, userId, fallbackAccountType, requestId) {
-  const fallback = normalizeAccountType(fallbackAccountType);
+async function resolveEffectiveAccountType(supabaseAdmin, userId, fallbackAccountType, role, requestId) {
+  const fallback = resolveAccountTypeByRole(fallbackAccountType, role);
+  if (fallback === 'admin') {
+    return fallback;
+  }
 
   try {
     const { data, error } = await supabaseAdmin
@@ -246,7 +236,7 @@ async function resolveEffectiveAccountType(supabaseAdmin, userId, fallbackAccoun
     }
 
     if (isRecord(data) && typeof data.account_type_id === 'string' && data.account_type_id.trim()) {
-      return normalizeAccountType(data.account_type_id);
+      return resolveAccountTypeByRole(data.account_type_id, role);
     }
 
     return fallback;
@@ -431,6 +421,7 @@ module.exports = async function handler(req, res) {
     supabaseAdmin,
     auth.userId,
     auth.accountType,
+    auth.role,
     requestId
   );
   const isGreetingPurpose = payload.purpose === 'greeting';

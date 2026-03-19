@@ -2,6 +2,7 @@ import type { StateCreator } from 'zustand';
 import type { AuthSession, AuthUser } from '../../models/AuthUser';
 import type { AccountTypeId } from '../../config/accountTypes';
 import { fetchAccountType, fetchProfile } from '../../services/profileService';
+import { isAdminRole, resolveEffectiveAccountType } from '../../utils/accountTypeUtils';
 import type { StoreState } from '../useStore';
 
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
@@ -15,16 +16,12 @@ export interface AuthSlice {
   getCurrentUser: () => AuthUser | null;
 }
 
-function toKnownAccountType(value: string | null, fallback: AccountTypeId | null): AccountTypeId | null {
-  if (!value) {
-    return fallback;
+function toKnownAccountType(value: string | null, fallback: AccountTypeId | null, role: string | null): AccountTypeId | null {
+  if (!value && !fallback) {
+    return isAdminRole(role) ? 'admin' : fallback;
   }
 
-  if (value === 'free' || value === 'regular' || value === 'premium' || value === 'admin') {
-    return value;
-  }
-
-  return fallback;
+  return resolveEffectiveAccountType(value ?? fallback, role);
 }
 
 export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set, get) => ({
@@ -52,7 +49,7 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
       ]);
       const profile = profileResult.status === 'fulfilled' ? profileResult.value : null;
       const accountTypeFromProfile = accountTypeResult.status === 'fulfilled' ? accountTypeResult.value : null;
-      const resolvedAccountType = toKnownAccountType(accountTypeFromProfile, session.user.accountType);
+      const resolvedAccountType = toKnownAccountType(accountTypeFromProfile, session.user.accountType, session.user.role);
       const mergedSession: AuthSession = {
         ...session,
         user: {

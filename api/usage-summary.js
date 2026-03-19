@@ -6,6 +6,7 @@ const {
   sendError,
   setCorsHeaders
 } = require('./_utils');
+const { resolveEffectiveAccountType } = require('./_account-tier');
 
 const SOFT_CAP_RATIO = 0.75;
 const MONTHLY_CAPS = { free: 50, regular: 500, premium: 1500 };
@@ -86,10 +87,12 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const accountType =
+  const accountTypeRaw =
     typeof user.app_metadata?.account_type === 'string' && user.app_metadata.account_type.trim()
       ? user.app_metadata.account_type
       : 'free';
+  const roleRaw = typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : null;
+  const accountType = resolveEffectiveAccountType(accountTypeRaw, roleRaw);
 
   const { count, error } = await supabaseAdmin
     .from('usage_events')

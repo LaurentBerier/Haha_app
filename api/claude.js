@@ -1,6 +1,7 @@
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
+const { normalizeAccountType, resolveEffectiveAccountType } = require('./_account-tier');
 const ttsHandler = require('../src/server/ttsHandler');
 const DEFAULT_MAX_TOKENS = 300;
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
@@ -1510,24 +1511,6 @@ function getMonthlyCap(accountType) {
   return cap ?? DEFAULT_MONTHLY_CAPS.free;
 }
 
-function normalizeAccountType(accountType) {
-  if (typeof accountType === 'string' && accountType.trim()) {
-    const normalized = accountType.trim().toLowerCase();
-    if (normalized === 'free' || normalized === 'regular' || normalized === 'premium' || normalized === 'admin') {
-      return normalized;
-    }
-
-    const compact = normalized.replace(/[\s_-]+/g, '');
-    if (compact === 'unlimited') {
-      return 'regular';
-    }
-    if (compact === 'proartist') {
-      return 'premium';
-    }
-  }
-  return 'free';
-}
-
 function getTierValueByType(mapByTier, accountType) {
   const normalized = normalizeAccountType(accountType);
   return mapByTier[normalized] ?? mapByTier.free;
@@ -1885,8 +1868,7 @@ async function enforceLimitsViaRpc(supabaseAdmin, options) {
     return { ok: false, unsupported: true };
   }
 
-  const normalizedAccountType =
-    typeof options.accountType === 'string' && options.accountType.trim() ? options.accountType.trim() : 'free';
+  const normalizedAccountType = normalizeAccountType(options.accountType);
   const monthlyCap = null;
   const nowIso = new Date(options.nowMs).toISOString();
   const windowStartIso = new Date(options.nowMs - options.windowMs).toISOString();
@@ -2205,6 +2187,7 @@ module.exports = async function handler(req, res) {
     sendError(res, 401, 'Unauthorized.', { code: 'UNAUTHORIZED', requestId });
     return;
   }
+  const effectiveAccountType = resolveEffectiveAccountType(auth.accountType, auth.role);
 
   const promptContext = normalizePromptContext(req.body);
   if (!promptContext.ok) {
@@ -2213,20 +2196,20 @@ module.exports = async function handler(req, res) {
   }
 
   const profileForPromptPromise = fetchUserProfileForPrompt(supabaseAdmin, auth.userId, requestId, auth.preferredName ?? null);
-  const monthlyQuota = await enforceMonthlyQuota(supabaseAdmin, auth.userId, auth.accountType, requestId);
+  const monthlyQuota = await enforceMonthlyQuota(supabaseAdmin, auth.userId, effectiveAccountType, requestId);
   if (!monthlyQuota.ok) {
     sendError(res, monthlyQuota.status, monthlyQuota.message, { code: monthlyQuota.code, requestId });
     return;
   }
 
   const projectedUsage = Number.isFinite(monthlyQuota.used) ? Math.max(0, Math.floor(monthlyQuota.used)) + 1 : 1;
-  const quotaStatus = computeQuotaStatus(projectedUsage, monthlyQuota.effectiveCap, auth.accountType);
+  const quotaStatus = computeQuotaStatus(projectedUsage, monthlyQuota.effectiveCap, effectiveAccountType);
   res.setHeader('X-Quota-Mode', quotaStatus.mode);
   res.setHeader('X-Quota-Ratio', quotaStatus.ratio.toFixed(2));
 
   if (quotaStatus.blocked) {
     res.setHeader('Retry-After', String(Math.max(1, Math.ceil((Date.parse(getNextMonthStartIso()) - Date.now()) / 1000))));
-    const isFreeBlocked = normalizeAccountType(auth.accountType) === 'free';
+    const isFreeBlocked = normalizeAccountType(effectiveAccountType) === 'free';
     sendError(
       res,
       429,
@@ -2246,7 +2229,7 @@ module.exports = async function handler(req, res) {
   const maxRequests = parsePositiveInt(process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS, DEFAULT_RATE_LIMIT_MAX_REQUESTS);
   const rpcLimits = await enforceLimitsViaRpc(supabaseAdmin, {
     userId: auth.userId,
-    accountType: auth.accountType,
+    accountType: effectiveAccountType,
     requestId,
     nowMs: now,
     windowMs,
@@ -2302,7 +2285,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const tierMaxTokens = getMaxTokensForTier(auth.accountType);
+  const tierMaxTokens = getMaxTokensForTier(effectiveAccountType);
   const effectiveMaxTokens = Math.max(1, Math.min(tierMaxTokens, quotaStatus.maxTokens));
   const profileForPrompt = await profileForPromptPromise;
   const baseServerSystemPrompt = buildServerSystemPrompt(

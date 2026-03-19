@@ -169,4 +169,28 @@ describe('api/usage-summary', () => {
     expect(res.payload.softCapReached).toBe(false);
     expect(res.payload.economyMode).toBe(false);
   });
+
+  it('treats role=admin as unlimited even when account_type is regular', async () => {
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'role-admin-user', app_metadata: { role: 'admin', account_type: 'regular' } },
+          usageCount: 99999
+        })
+      )
+    }));
+
+    const handler = require('../usage-summary');
+    const { req, res } = createReqRes({
+      method: 'GET',
+      headers: { authorization: 'Bearer role-admin-token' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.messagesCap).toBeNull();
+    expect(res.payload.softCapReached).toBe(false);
+    expect(res.payload.economyMode).toBe(false);
+  });
 });

@@ -1,3 +1,5 @@
+const { normalizeAccountType } = require('./_account-tier');
+
 const DEFAULT_MONTHLY_CAPS = {
   free: 50,
   regular: 500,
@@ -30,7 +32,7 @@ function getRetryAfterUntilNextMonthSeconds() {
 }
 
 function getMonthlyCap(accountType) {
-  const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
+  const normalizedAccountType = normalizeAccountType(accountType);
   const key = `CLAUDE_MONTHLY_CAP_${normalizedAccountType.toUpperCase()}`;
   const fromEnv = parsePositiveInt(process.env[key], 0);
   if (fromEnv > 0) {
@@ -121,7 +123,7 @@ async function enforceMonthlyQuota({
   logPrefix,
   usageEndpoints
 }) {
-  const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
+  const normalizedAccountType = normalizeAccountType(accountType);
   if (normalizedAccountType === 'admin') {
     return { ok: true, source: 'admin', monthStartIso: getMonthStartIso(), used: 0 };
   }

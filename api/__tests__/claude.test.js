@@ -779,6 +779,30 @@ describe('api/claude', () => {
       expect(res.statusCode).toBe(200);
     });
 
+    it('treats role=admin as unlimited even when account_type is regular', async () => {
+      process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = '20000';
+      global.fetch = jest.fn().mockResolvedValue(buildSuccessResponse());
+      jest.doMock('@supabase/supabase-js', () => ({
+        createClient: jest.fn(() =>
+          buildSupabaseClient({
+            user: { id: 'role-admin-user', app_metadata: { role: 'admin', account_type: 'regular' } },
+            initialUsageCount: 9999
+          })
+        )
+      }));
+
+      const handler = require('../claude');
+      const { req, res } = createReqRes({
+        headers: { authorization: 'Bearer role-admin-token' },
+        body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello' }] }
+      });
+
+      await handler(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['X-Quota-Mode']).not.toBe('blocked');
+    });
+
     it('blocks when CLAUDE_MONTHLY_CAP_FREE override is reached', async () => {
       process.env.CLAUDE_MONTHLY_CAP_FREE = '3';
       jest.doMock('@supabase/supabase-js', () => ({

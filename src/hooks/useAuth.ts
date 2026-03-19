@@ -3,6 +3,7 @@ import { hasPermission } from '../config/accountTypes';
 import { getStoredSession, getUsageSummary, onAuthStateChange } from '../services/authService';
 import { getUserStats } from '../services/scoreManager';
 import { useStore } from '../store/useStore';
+import { resolveEffectiveAccountType } from '../utils/accountTypeUtils';
 import { EMPTY_GAMIFICATION_STATS } from '../models/Gamification';
 
 export function useAuth() {
@@ -65,7 +66,7 @@ export function useAuth() {
           clearAccountScopedState();
         }
 
-        const accountType = storedSession.user.accountType ?? 'free';
+        const accountType = resolveEffectiveAccountType(storedSession.user.accountType, storedSession.user.role);
         try {
           const usageSummary = await getUsageSummary(storedSession.accessToken);
           if (!isRunCurrent(runId)) {
@@ -145,7 +146,7 @@ export function useAuth() {
           clearAccountScopedState();
         }
 
-        const accountType = nextSession.user.accountType ?? 'free';
+        const accountType = resolveEffectiveAccountType(nextSession.user.accountType, nextSession.user.role);
         try {
           const usageSummary = await getUsageSummary(nextSession.accessToken);
           if (!isRunCurrent(runId)) {
@@ -192,8 +193,8 @@ export function useAuth() {
   ]);
 
   const user = getCurrentUser();
-  const accountType = user?.accountType ?? null;
   const role = user?.role ?? null;
+  const accountType = user ? resolveEffectiveAccountType(user.accountType, role) : null;
   const isAdmin = hasPermission(accountType, 'admin:all') || role === 'admin';
   const isAuthenticated = authStatus === 'authenticated' && Boolean(session);
   const isLoading = authStatus === 'loading';

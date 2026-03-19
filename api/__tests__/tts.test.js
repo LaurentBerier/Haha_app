@@ -74,6 +74,7 @@ describe('api/tts', () => {
     ELEVENLABS_VOICE_ID_REGULAR: process.env.ELEVENLABS_VOICE_ID_REGULAR,
     ELEVENLABS_VOICE_ID_PREMIUM: process.env.ELEVENLABS_VOICE_ID_PREMIUM,
     ELEVENLABS_USE_CATHY_FOR_ALL_PAID: process.env.ELEVENLABS_USE_CATHY_FOR_ALL_PAID,
+    TTS_MONTHLY_CAP_REGULAR: process.env.TTS_MONTHLY_CAP_REGULAR,
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
     EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC: process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC,
     EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY: process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY
@@ -92,6 +93,7 @@ describe('api/tts', () => {
     delete process.env.ELEVENLABS_VOICE_ID_REGULAR;
     delete process.env.ELEVENLABS_VOICE_ID_PREMIUM;
     delete process.env.ELEVENLABS_USE_CATHY_FOR_ALL_PAID;
+    delete process.env.TTS_MONTHLY_CAP_REGULAR;
     process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC = 'generic-voice-id';
     process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY = 'premium-voice-id';
     delete process.env.ALLOWED_ORIGINS;
@@ -154,6 +156,12 @@ describe('api/tts', () => {
       process.env.ELEVENLABS_USE_CATHY_FOR_ALL_PAID = originalEnv.ELEVENLABS_USE_CATHY_FOR_ALL_PAID;
     } else {
       delete process.env.ELEVENLABS_USE_CATHY_FOR_ALL_PAID;
+    }
+
+    if (typeof originalEnv.TTS_MONTHLY_CAP_REGULAR === 'string') {
+      process.env.TTS_MONTHLY_CAP_REGULAR = originalEnv.TTS_MONTHLY_CAP_REGULAR;
+    } else {
+      delete process.env.TTS_MONTHLY_CAP_REGULAR;
     }
 
     if (typeof originalEnv.ALLOWED_ORIGINS === 'string') {
@@ -271,6 +279,37 @@ describe('api/tts', () => {
     expect(Buffer.isBuffer(res.payload)).toBe(true);
     expect(global.fetch).toHaveBeenCalledTimes(1);
     expect(global.fetch.mock.calls[0][0]).toContain('/premium-voice-id');
+  });
+
+  it('treats role=admin as unlimited even when account_type is regular', async () => {
+    const audioBytes = Uint8Array.from([7, 7, 7, 7]).buffer;
+    process.env.TTS_MONTHLY_CAP_REGULAR = '1';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: jest.fn().mockResolvedValue(audioBytes)
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'role-admin-user', app_metadata: { role: 'admin', account_type: 'regular' } },
+          profileAccountType: 'regular',
+          initialUsageCount: 1
+        })
+      )
+    }));
+
+    const handler = require('../../src/server/ttsHandler');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer role-admin-token' },
+      body: { text: 'bonjour admin', artistId: 'cathy-gauthier', language: 'fr-CA' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('maps ELEVENLABS_MODEL_ID alias 2.5 to eleven_turbo_v2_5', async () => {

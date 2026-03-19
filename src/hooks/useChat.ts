@@ -25,7 +25,7 @@ import { findConversationById } from '../utils/conversationUtils';
 import { shouldAutoSwitchToEnglish } from '../utils/languageDetection';
 import { generateId } from '../utils/generateId';
 import { splitDisplayChunkFromRaw, stripAudioTags } from '../utils/audioTags';
-import { hasVoiceAccessForAccountType, normalizeAccountType } from '../utils/accountTypeUtils';
+import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../utils/accountTypeUtils';
 import type { ScoreAction } from '../models/Gamification';
 import { useAudioPlayer } from './useAudioPlayer';
 
@@ -390,6 +390,7 @@ export function useChat(conversationId: string) {
   const userProfile = useStore((state) => state.userProfile);
   const sessionDisplayName = useStore((state) => state.session?.user.displayName ?? null);
   const currentAccountType = useStore((state) => state.session?.user.accountType ?? 'free');
+  const currentRole = useStore((state) => state.session?.user.role ?? null);
   const accessToken = useStore((state) => state.session?.accessToken ?? '');
   const isQuotaBlocked = useStore((state) => Boolean(state.quota.isBlocked));
   const artists = useStore((state) => state.artists);
@@ -561,7 +562,11 @@ export function useChat(conversationId: string) {
         });
       };
 
-      const latestAccountType = normalizeAccountType(useStore.getState().session?.user.accountType ?? currentAccountType);
+      const latestSessionUser = useStore.getState().session?.user;
+      const latestAccountType = resolveEffectiveAccountType(
+        latestSessionUser?.accountType ?? currentAccountType,
+        latestSessionUser?.role ?? currentRole
+      );
       const canGenerateVoice =
         artistId === ARTIST_IDS.CATHY_GAUTHIER &&
         hasVoiceAccessForAccountType(latestAccountType) &&
@@ -792,11 +797,13 @@ export function useChat(conversationId: string) {
         incrementUsage();
         const latestState = useStore.getState();
         const latestQuota = latestState.quota;
-        const normalizedAccountType = normalizeAccountType(
-          latestState.session?.user.accountType ?? currentAccountType
+        const normalizedAccountType = resolveEffectiveAccountType(
+          latestState.session?.user.accountType ?? currentAccountType,
+          latestState.session?.user.role ?? currentRole
         );
         let shouldBlockInput = false;
         if (
+          normalizedAccountType !== 'admin' &&
           typeof latestQuota.messagesCap === 'number' &&
           Number.isFinite(latestQuota.messagesCap) &&
           latestQuota.messagesCap > 0
@@ -938,9 +945,25 @@ export function useChat(conversationId: string) {
           ? error.message.trim()
           : 'Erreur pendant la génération';
         if (isQuotaBlockedErrorCode(errorCode)) {
-          const latestAccountType = normalizeAccountType(
-            useStore.getState().session?.user.accountType ?? currentAccountType
+          const latestSessionUser = useStore.getState().session?.user;
+          const latestAccountType = resolveEffectiveAccountType(
+            latestSessionUser?.accountType ?? currentAccountType,
+            latestSessionUser?.role ?? currentRole
           );
+          if (latestAccountType === 'admin') {
+            failedJobsRef.current.set(artistMessageId, nextJob);
+            updateMessage(jobConversationId, artistMessageId, {
+              content: message,
+              status: 'error',
+              metadata: {
+                errorMessage: message,
+                errorCode: errorCode ?? undefined
+              }
+            });
+            resetStreamState();
+            runNext();
+            return;
+          }
           const quotaMessage =
             latestAccountType === 'free' ? t('cathyThreshold3FreeMessage') : t('cathyThreshold4PaidMessage');
           markThresholdMessageShown(latestAccountType === 'free' ? 3 : 4);
@@ -1064,6 +1087,7 @@ export function useChat(conversationId: string) {
     conversationId,
     accessToken,
     currentAccountType,
+    currentRole,
     incrementUsage,
     markThresholdMessageShown,
     setBlocked,

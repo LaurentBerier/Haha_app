@@ -18,6 +18,7 @@ const {
   recordUsageEvent,
   writeProfileMonthlyCounter
 } = require('./_quota-utils');
+const { resolveEffectiveAccountType } = require('./_account-tier');
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -288,10 +289,12 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const accountType =
+  const accountTypeRaw =
     typeof user.app_metadata?.account_type === 'string' && user.app_metadata.account_type.trim()
       ? user.app_metadata.account_type.trim()
       : 'free';
+  const roleRaw = typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : null;
+  const accountType = resolveEffectiveAccountType(accountTypeRaw, roleRaw);
 
   const monthlyQuota = await enforceMonthlyQuota({
     supabaseAdmin,

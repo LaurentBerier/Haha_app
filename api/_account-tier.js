@@ -1,6 +1,4 @@
-const VOICE_ENABLED_ACCOUNT_TYPES = new Set(['regular', 'premium', 'admin']);
-
-export function normalizeAccountType(accountType: string | null | undefined): 'free' | 'regular' | 'premium' | 'admin' {
+function normalizeAccountType(accountType) {
   if (typeof accountType === 'string' && accountType.trim()) {
     const normalized = accountType.trim().toLowerCase();
     if (normalized === 'free' || normalized === 'regular' || normalized === 'premium' || normalized === 'admin') {
@@ -19,14 +17,11 @@ export function normalizeAccountType(accountType: string | null | undefined): 'f
   return 'free';
 }
 
-export function isAdminRole(role: string | null | undefined): boolean {
+function isAdminRole(role) {
   return typeof role === 'string' && role.trim().toLowerCase() === 'admin';
 }
 
-export function resolveEffectiveAccountType(
-  accountType: string | null | undefined,
-  role: string | null | undefined
-): 'free' | 'regular' | 'premium' | 'admin' {
+function resolveEffectiveAccountType(accountType, role) {
   if (isAdminRole(role)) {
     return 'admin';
   }
@@ -34,6 +29,8 @@ export function resolveEffectiveAccountType(
   return normalizeAccountType(accountType);
 }
 
-export function hasVoiceAccessForAccountType(accountType: string | null | undefined): boolean {
-  return VOICE_ENABLED_ACCOUNT_TYPES.has(normalizeAccountType(accountType));
-}
+module.exports = {
+  normalizeAccountType,
+  isAdminRole,
+  resolveEffectiveAccountType
+};
