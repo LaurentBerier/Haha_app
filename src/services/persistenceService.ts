@@ -60,6 +60,12 @@ function isValidMessageMetadata(value: unknown): boolean {
       value.voiceChunkBoundaries.every((entry) => typeof entry === 'number' && Number.isFinite(entry) && entry >= 0));
   const voiceStatusValid = value.voiceStatus === undefined || value.voiceStatus === 'generating' || value.voiceStatus === 'ready';
   const cathyReactionValid = value.cathyReaction === undefined || typeof value.cathyReaction === 'string';
+  const tutorialModeValid = value.tutorialMode === undefined || typeof value.tutorialMode === 'boolean';
+  const injectedTypeValid =
+    value.injectedType === undefined ||
+    value.injectedType === 'greeting' ||
+    value.injectedType === 'tutorial_greeting' ||
+    value.injectedType === 'mode_nudge';
   const imageUriValid = value.imageUri === undefined || typeof value.imageUri === 'string';
   const imageMediaTypeValid = value.imageMediaType === undefined || typeof value.imageMediaType === 'string';
   const errorMessageValid = value.errorMessage === undefined || typeof value.errorMessage === 'string';
@@ -79,6 +85,8 @@ function isValidMessageMetadata(value: unknown): boolean {
     voiceChunkBoundariesValid &&
     voiceStatusValid &&
     cathyReactionValid &&
+    tutorialModeValid &&
+    injectedTypeValid &&
     imageUriValid &&
     imageMediaTypeValid &&
     errorMessageValid &&

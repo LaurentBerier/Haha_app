@@ -12,6 +12,8 @@ const MAX_WEATHER_CACHE_ENTRIES = 200;
 const NEWS_CACHE_TTL_MS = 30 * 60_000;
 const MAX_RSS_ITEMS_PER_FEED = 14;
 const MAX_NEWS_SIGNALS_PER_REGION = 3;
+const TUTORIAL_CONNECTION_LIMIT = 3;
+const TUTORIAL_NUDGE_AFTER_USER_MESSAGES = 2;
 
 const RSS_FEEDS = [
   {
@@ -36,6 +38,8 @@ let newsSignalsCache = {
   value: null,
   expiresAt: 0
 };
+let profileSelectSupportsTutorialCounterColumn = true;
+let profileUpdateSupportsTutorialCounterColumn = true;
 
 const {
   attachRequestId,
@@ -238,7 +242,7 @@ function parsePayload(body) {
     throw new Error('artistId is required.');
   }
 
-  const includeVoiceHint = body.includeVoiceHint === true;
+  const isSessionFirstGreeting = body.isSessionFirstGreeting === true;
   const availableModes = Array.isArray(body.availableModes)
     ? body.availableModes
         .filter((entry) => typeof entry === 'string')
@@ -252,7 +256,7 @@ function parsePayload(body) {
     artistId,
     language: normalizeLanguage(body.language),
     coords: parseCoords(body.coords),
-    includeVoiceHint,
+    isSessionFirstGreeting,
     availableModes,
     preferredName: normalizeOptionalString(body.preferredName, 40)
   };
@@ -673,23 +677,135 @@ async function fetchNewsSignals(requestId) {
   return signals;
 }
 
-async function fetchUserHoroscope(supabaseAdmin, userId, requestId) {
+function isGreetingTutorialCounterColumnMissingError(error) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const code = typeof error.code === 'string' ? error.code : '';
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  const details = typeof error.details === 'string' ? error.details.toLowerCase() : '';
+  const hint = typeof error.hint === 'string' ? error.hint.toLowerCase() : '';
+  const merged = `${message} ${details} ${hint}`;
+  return (
+    code === '42703' &&
+    merged.includes('greeting_tutorial_sessions_count')
+  );
+}
+
+function createTutorialState({
+  isSessionFirstGreeting,
+  persistedCount,
+  hasPersistedCounter
+}) {
+  const safePersistedCount =
+    typeof persistedCount === 'number' && Number.isFinite(persistedCount)
+      ? Math.max(0, Math.floor(persistedCount))
+      : 0;
+  const active = isSessionFirstGreeting && (hasPersistedCounter ? safePersistedCount < TUTORIAL_CONNECTION_LIMIT : true);
+  const nextCountIfIncremented = isSessionFirstGreeting
+    ? hasPersistedCounter
+      ? Math.min(TUTORIAL_CONNECTION_LIMIT, safePersistedCount + 1)
+      : 1
+    : safePersistedCount;
+  const sessionIndex = active
+    ? nextCountIfIncremented
+    : Math.min(TUTORIAL_CONNECTION_LIMIT, safePersistedCount);
+
+  return {
+    active,
+    sessionIndex,
+    connectionLimit: TUTORIAL_CONNECTION_LIMIT,
+    modeNudgeAfterUserMessages: TUTORIAL_NUDGE_AFTER_USER_MESSAGES,
+    nextPersistedCount: nextCountIfIncremented
+  };
+}
+
+async function fetchUserGreetingProfile(supabaseAdmin, userId, requestId) {
   try {
-    const { data, error } = await supabaseAdmin
+    let columns = profileSelectSupportsTutorialCounterColumn
+      ? 'horoscope_sign, greeting_tutorial_sessions_count'
+      : 'horoscope_sign';
+
+    let result = await supabaseAdmin
       .from('profiles')
-      .select('horoscope_sign')
+      .select(columns)
       .eq('id', userId)
       .maybeSingle();
 
-    if (error) {
-      console.error(`[api/greeting][${requestId}] Failed to read user profile`, error);
-      return null;
+    if (
+      result.error &&
+      profileSelectSupportsTutorialCounterColumn &&
+      isGreetingTutorialCounterColumnMissingError(result.error)
+    ) {
+      profileSelectSupportsTutorialCounterColumn = false;
+      columns = 'horoscope_sign';
+      result = await supabaseAdmin
+        .from('profiles')
+        .select(columns)
+        .eq('id', userId)
+        .maybeSingle();
     }
 
-    return normalizeOptionalString(data?.horoscope_sign, 30);
+    if (result.error) {
+      console.error(`[api/greeting][${requestId}] Failed to read user profile`, result.error);
+      return {
+        horoscopeSign: null,
+        tutorialSessionsCount: null,
+        hasPersistedCounter: false
+      };
+    }
+
+    const row = isRecord(result.data) ? result.data : {};
+    const tutorialSessionsCount =
+      profileSelectSupportsTutorialCounterColumn &&
+      typeof row.greeting_tutorial_sessions_count === 'number' &&
+      Number.isFinite(row.greeting_tutorial_sessions_count)
+        ? Math.max(0, Math.floor(row.greeting_tutorial_sessions_count))
+        : 0;
+
+    return {
+      horoscopeSign: normalizeOptionalString(row.horoscope_sign, 30),
+      tutorialSessionsCount,
+      hasPersistedCounter: profileSelectSupportsTutorialCounterColumn
+    };
   } catch (error) {
     console.error(`[api/greeting][${requestId}] Failed to read user profile`, error);
-    return null;
+    return {
+      horoscopeSign: null,
+      tutorialSessionsCount: null,
+      hasPersistedCounter: false
+    };
+  }
+}
+
+async function incrementTutorialSessionCountIfNeeded(supabaseAdmin, userId, count, requestId) {
+  if (!profileUpdateSupportsTutorialCounterColumn) {
+    return false;
+  }
+
+  try {
+    const { error } = await supabaseAdmin
+      .from('profiles')
+      .update({
+        greeting_tutorial_sessions_count: Math.max(0, Math.floor(count))
+      })
+      .eq('id', userId);
+
+    if (!error) {
+      return true;
+    }
+
+    if (isGreetingTutorialCounterColumnMissingError(error)) {
+      profileUpdateSupportsTutorialCounterColumn = false;
+      return false;
+    }
+
+    console.error(`[api/greeting][${requestId}] Failed to update tutorial counter`, error);
+    return false;
+  } catch (error) {
+    console.error(`[api/greeting][${requestId}] Failed to update tutorial counter`, error);
+    return false;
   }
 }
 
@@ -776,8 +892,51 @@ function toHeadlineSummaryText(newsSignals, language) {
   return primary ?? fallback;
 }
 
-function buildGreetingSystemPrompt(language, includeVoiceHint) {
+function buildGreetingSystemPrompt(language, options = {}) {
   const isEnglish = language.toLowerCase().startsWith('en');
+  const tutorialActive = options.tutorialActive === true;
+  const includeVoiceHint = options.includeVoiceHint === true;
+
+  if (tutorialActive && isEnglish) {
+    return `You are Cathy Gauthier, intense, playful, sarcastic, welcoming the user in mode selection.
+Write exactly 3 short sentences in this strict order:
+1) Greet the user by first name when available, ask how they are doing, and add a short playful joke about being Cathy's clone (funny but kind).
+2) Explain that voice conversation is already active and the lit mic at the bottom-right is how they talk to you directly right now.
+3) Explain that if they prefer typing, they can tap the mic to turn voice mode off, then end with one easy first prompt.
+Hard rules:
+- During tutorial, do NOT introduce weather, headlines, or mode lists unless the user explicitly asks.
+- Never write "how are you with Cathy" or similar unnatural phrasing.
+- Tone must feel welcoming and confidence-building for onboarding.
+- Humor should be witty and light, never mean in this greeting.
+- Keep spoken-style contractions and lively oral rhythm.
+- Include one brief emotional cue naturally (laugh, excitement, or sarcasm), without overdoing it.
+- Keep it natural, coherent, and concise.
+- The 3 sentences must flow as one smooth mini welcome arc.
+- No markdown, no bullets, no asterisks, no em dashes.
+- Keep proper punctuation and contractions.
+- 30 to 60 words total.`;
+  }
+
+  if (tutorialActive) {
+    return `Tu es Cathy Gauthier, intense, excitée, sarcastique et drôle, et tu accueilles l'utilisateur dans l'ecran de selection de mode.
+Ecris exactement 3 phrases courtes, dans cet ordre strict :
+1) Salue la personne par son prenom si disponible, demande comment elle va, et ajoute une mini blague sur le fait que tu es le clone de Cathy (drôle, vive, mais bienveillante).
+2) Explique que la conversation vocale est deja active et que le micro allume en bas a droite sert a lui parler direct.
+3) Explique que si la personne prefere texter, elle peut cliquer sur le micro pour couper la voix, puis termine avec une invitation facile.
+Regles absolues :
+- Pendant le tutorial, n'introduis JAMAIS meteo, actualite ou liste de modes sauf si l'utilisateur le demande explicitement.
+- Interdit de dire "comment tu vas avec Cathy" ou une tournure equivalente.
+- Ton d'accueil onboarding: chaleureux, complice, rassurant, energique.
+- Humour d'entree: taquin, jamais agressif dans ce message d'accueil.
+- Le texte doit etre logique, naturel et court en francais quebecois parle.
+- Utilise des contractions orales quebecoises fortes (ex: j'suis, t'es, t'as, y'a, j'peux, j'vais, t'tente, t'veux, t'peux, s'pas, c'est-tu, han). Elision obligatoire : "te" -> "t'" devant consonne (t'tente, t'vois, t'penses), "tu" -> "t'" dans les questions (t'as-tu, t'veux-tu). Pas de "te" isole apres verbe quand l'elision est naturelle.
+- Ajoute un micro-signal d'emotion (rire, excitation ou sarcasme) de facon naturelle.
+- Les 3 phrases doivent s'enchainer de facon fluide comme un mini accueil.
+- Pas de markdown, pas d'asterisque, pas de liste, pas de tiret long.
+- Orthographe et ponctuation impeccables (accents et apostrophes obligatoires).
+- 30 a 60 mots au total.`;
+  }
+
   if (isEnglish) {
     return `You are Cathy Gauthier, intense, playful, sarcastic, welcoming the user in mode selection.
 Write exactly 3 short sentences in this strict order:
@@ -845,8 +1004,9 @@ function buildGreetingUserPrompt(context) {
       `Horoscope sign: ${context.horoscopeSign ?? 'Unknown'}`,
       `Weather: ${context.weatherSummary}`,
       `Headline: ${context.headlineSummary}`,
-      `Available modes: ${context.availableModes.join(', ') || 'chat, roast, impro, horoscope, personalized message, image modes'}`,
+      `Available modes: ${context.availableModes.join(', ') || 'none provided'}`,
       `Variation cue: ${context.variationCue}`,
+      `Tutorial mode active: ${context.tutorialActive ? 'yes' : 'no'}`,
       `Include voice hint sentence: ${context.includeVoiceHint ? 'yes' : 'no'}`
     ].join('\n');
   }
@@ -859,8 +1019,9 @@ function buildGreetingUserPrompt(context) {
     `Signe astro: ${context.horoscopeSign ?? 'Inconnu'}`,
     `Meteo: ${context.weatherSummary}`,
     `Manchette: ${context.headlineSummary}`,
-    `Modes disponibles: ${context.availableModes.join(', ') || 'discussion, roast, impro, horoscope, message personnalise, modes image'}`,
+    `Modes disponibles: ${context.availableModes.join(', ') || 'aucun fourni'}`,
     `Variation: ${context.variationCue}`,
+    `Tutorial actif: ${context.tutorialActive ? 'oui' : 'non'}`,
     `Inclure phrase micro: ${context.includeVoiceHint ? 'oui' : 'non'}`
   ].join('\n');
 }
@@ -918,7 +1079,10 @@ async function generateGreetingText(context) {
         max_tokens: 140,
         temperature: 0.9,
         stream: false,
-        system: buildGreetingSystemPrompt(context.language, context.includeVoiceHint),
+        system: buildGreetingSystemPrompt(context.language, {
+          includeVoiceHint: context.includeVoiceHint,
+          tutorialActive: context.tutorialActive
+        }),
         messages: [
           {
             role: 'user',
@@ -1009,19 +1173,47 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const [coords, userHoroscope] = await Promise.all([
+  const [coords, userGreetingProfile] = await Promise.all([
     resolveCoords(input.coords, req, requestId),
-    fetchUserHoroscope(supabaseAdmin, user.id, requestId)
+    fetchUserGreetingProfile(supabaseAdmin, user.id, requestId)
   ]);
-  const [weather, newsSignals] = await Promise.all([
-    fetchWeatherSummary(coords, input.language, requestId),
-    fetchNewsSignals(requestId)
-  ]);
+  const tutorial = createTutorialState({
+    isSessionFirstGreeting: input.isSessionFirstGreeting,
+    persistedCount: userGreetingProfile.tutorialSessionsCount,
+    hasPersistedCounter: userGreetingProfile.hasPersistedCounter
+  });
+
+  if (input.isSessionFirstGreeting && userGreetingProfile.hasPersistedCounter) {
+    await incrementTutorialSessionCountIfNeeded(
+      supabaseAdmin,
+      user.id,
+      tutorial.nextPersistedCount,
+      requestId
+    );
+  }
+
+  let weather = null;
+  let newsSignals = null;
+  if (!tutorial.active) {
+    [weather, newsSignals] = await Promise.all([
+      fetchWeatherSummary(coords, input.language, requestId),
+      fetchNewsSignals(requestId)
+    ]);
+  }
 
   const { dateLabel, timeLabel } = formatLocalDateTime(input.language);
   const preferredName = input.preferredName || extractPreferredName(user);
-  const weatherSummary = toWeatherSummaryText(weather, input.language);
-  const headlineSummary = toHeadlineSummaryText(newsSignals, input.language);
+  const weatherSummary = tutorial.active
+    ? input.language.toLowerCase().startsWith('en')
+      ? 'not used during tutorial'
+      : 'non utilise pendant le tutorial'
+    : toWeatherSummaryText(weather, input.language);
+  const headlineSummary = tutorial.active
+    ? input.language.toLowerCase().startsWith('en')
+      ? 'not used during tutorial'
+      : 'non utilise pendant le tutorial'
+    : toHeadlineSummaryText(newsSignals, input.language);
+  const includeVoiceHint = tutorial.active;
 
   let greeting;
   try {
@@ -1032,11 +1224,12 @@ module.exports = async function handler(req, res) {
         dateLabel,
         timeLabel,
         preferredName,
-        horoscopeSign: userHoroscope,
+        horoscopeSign: userGreetingProfile.horoscopeSign,
         weatherSummary,
         headlineSummary,
         variationCue: buildGreetingVariationCue(input.language),
-        includeVoiceHint: input.includeVoiceHint,
+        includeVoiceHint,
+        tutorialActive: tutorial.active,
         availableModes: input.availableModes
       }
     );
@@ -1046,5 +1239,13 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  res.status(200).json({ greeting });
+  res.status(200).json({
+    greeting,
+    tutorial: {
+      active: tutorial.active,
+      sessionIndex: tutorial.sessionIndex,
+      connectionLimit: tutorial.connectionLimit,
+      modeNudgeAfterUserMessages: tutorial.modeNudgeAfterUserMessages
+    }
+  });
 };

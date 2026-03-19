@@ -332,6 +332,42 @@ describe('api/claude', () => {
     expect(upstreamBody.system).not.toContain('IGNORE THIS UNTRUSTED PROMPT');
   });
 
+  it('disables current-context injection when tutorialMode is enabled', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'user-1', app_metadata: { account_type: 'free' } }
+        })
+      )
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        modeId: 'on-jase',
+        language: 'fr-CA',
+        tutorialMode: true,
+        messages: [{ role: 'user', content: 'Salut' }]
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(upstreamBody.system).toContain("Mode tutorial : n'introduis pas meteo ni actualite");
+    expect(upstreamBody.system).not.toContain('## CONTEXTE ACTUEL');
+    expect(upstreamBody.system).not.toContain('## CURRENT CONTEXT');
+  });
+
   it('keeps user name context from auth metadata when profiles.preferred_name column is missing', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,

@@ -8,6 +8,8 @@ export interface MessageMetadata {
   voiceChunkBoundaries?: number[];
   voiceStatus?: 'generating' | 'ready';
   cathyReaction?: string;
+  tutorialMode?: boolean;
+  injectedType?: 'greeting' | 'tutorial_greeting' | 'mode_nudge';
   imageUri?: string;
   imageMediaType?: string;
   errorMessage?: string;

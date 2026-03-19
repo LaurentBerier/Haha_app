@@ -34,6 +34,7 @@ interface StreamJob {
   modeFewShots: ReturnType<typeof getCathyModeFewShots>;
   modeId: string;
   imageIntent: ImageIntent;
+  tutorialMode: boolean;
 }
 
 const EMPTY_MESSAGES: Message[] = [];
@@ -479,7 +480,8 @@ export function useChat(conversationId: string) {
         language,
         modeFewShots,
         modeId,
-        imageIntent
+        imageIntent,
+        tutorialMode
       } = nextJob;
       const jobConversationId = conversationId;
       const conversationModeEnabledForJob = useStore.getState().conversationModeEnabled;
@@ -1043,6 +1045,7 @@ export function useChat(conversationId: string) {
           artistId,
           modeId,
           language,
+          tutorialMode,
           messages: [...history, claudeUserMessage],
           imageIntent,
           onToken,
@@ -1121,7 +1124,8 @@ export function useChat(conversationId: string) {
     }
 
     const now = new Date().toISOString();
-    const historyBeforeSend = formatConversationHistory(getMessages(conversationId));
+    const rawMessagesBeforeSend = getMessages(conversationId);
+    const historyBeforeSend = formatConversationHistory(rawMessagesBeforeSend);
     const previewText = trimmed || '[Image]';
 
     const userMessage: Message = {
@@ -1173,6 +1177,9 @@ export function useChat(conversationId: string) {
       ? `${imageIntentPromptPrefix}\n\n${baseSystemPrompt}`
       : baseSystemPrompt + voiceModeAddendum;
     const latestState = useStore.getState();
+    const tutorialMode = rawMessagesBeforeSend.some(
+      (message) => message.role === 'artist' && message.metadata?.tutorialMode === true
+    );
     const memoryFacts = collectArtistMemoryFacts(latestState, currentConversation.artistId, conversationId);
     const memoryMessage = buildMemoryPrimerMessage(memoryFacts, languageForTurn);
     const pendingProfileHints = popProfileChangeHints();
@@ -1220,7 +1227,8 @@ export function useChat(conversationId: string) {
       language: languageForTurn,
       modeFewShots,
       modeId,
-      imageIntent
+      imageIntent,
+      tutorialMode
     });
     runNext();
 

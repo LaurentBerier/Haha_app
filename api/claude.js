@@ -473,7 +473,8 @@ function normalizePromptContext(body) {
       artistId: DEFAULT_ARTIST_ID,
       modeId: DEFAULT_MODE_ID,
       language: 'fr-CA',
-      imageIntent: null
+      imageIntent: null,
+      tutorialMode: false
     };
   }
 
@@ -488,13 +489,15 @@ function normalizePromptContext(body) {
   const language = rawLanguage && rawLanguage.length <= 24 ? rawLanguage : 'fr-CA';
   const rawImageIntent = typeof body.imageIntent === 'string' ? body.imageIntent.trim() : '';
   const imageIntent = rawImageIntent && IMAGE_INTENT_PROMPTS[rawImageIntent] ? rawImageIntent : null;
+  const tutorialMode = body.tutorialMode === true;
 
   return {
     ok: true,
     artistId: rawArtistId || DEFAULT_ARTIST_ID,
     modeId,
     language,
-    imageIntent
+    imageIntent,
+    tutorialMode
   };
 }
 
@@ -964,6 +967,13 @@ La balise doit etre le tout premier element, avant tout autre texte.`
           ? '- When referring to yourself, use first person (I/me/my), never third-person self-reference.'
           : '- Quand tu parles de toi, utilise je/moi/mon, jamais la troisieme personne.'
       ];
+  if (context.tutorialMode === true) {
+    absoluteRules.push(
+      promptLanguage === 'en'
+        ? '- Tutorial mode: do not introduce weather or headlines unless the user explicitly asks.'
+        : "- Mode tutorial : n'introduis pas meteo ni actualite sauf si l'utilisateur le demande explicitement."
+    );
+  }
   const cathyIdentitySection = isCathy
     ? `Femme directe. Energie de chantier dans un corps glamour.
 Tu refuses d'etre polie pour plaire.
@@ -2307,8 +2317,11 @@ module.exports = async function handler(req, res) {
   payload.messages = payload.messages.slice(-Math.max(1, quotaStatus.contextWindow));
   payload.model = quotaStatus.model;
   payload.max_tokens = Math.max(1, Math.min(payload.max_tokens, quotaStatus.maxTokens));
-  const resolvedCoords = await resolvePromptContextCoords(req, requestId);
-  const currentContextSection = await buildCurrentContextSection(promptContext.language, resolvedCoords);
+  let currentContextSection = '';
+  if (!promptContext.tutorialMode) {
+    const resolvedCoords = await resolvePromptContextCoords(req, requestId);
+    currentContextSection = await buildCurrentContextSection(promptContext.language, resolvedCoords);
+  }
   payload.system = currentContextSection
     ? buildServerSystemPrompt(
         promptContext,

@@ -131,4 +131,38 @@ describe('claudeApiService', () => {
     expect(onComplete).toHaveBeenCalledWith({ tokensUsed: 4 });
     expect(onError).not.toHaveBeenCalled();
   });
+
+  it('forwards tutorialMode=true in request payload', async () => {
+    const onToken = jest.fn();
+    const onComplete = jest.fn();
+    const onError = jest.fn();
+
+    (globalThis as { navigator?: { product?: string } }).navigator = { product: 'ReactNative' };
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'Tutorial reply' }],
+        usage: { output_tokens: 5 }
+      })
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    streamClaudeResponse({
+      artistId: 'cathy-gauthier',
+      modeId: 'default',
+      language: 'fr-CA',
+      tutorialMode: true,
+      messages: [{ role: 'user', content: 'Allo' }],
+      onToken,
+      onComplete,
+      onError
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? '{}')) as Record<string, unknown>;
+    expect(body.tutorialMode).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+  });
 });

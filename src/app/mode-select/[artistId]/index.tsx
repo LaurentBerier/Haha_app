@@ -44,6 +44,19 @@ interface GreetingCoordinates {
 
 interface GreetingEndpointResponse {
   greeting?: unknown;
+  tutorial?: unknown;
+}
+
+interface GreetingTutorialInfo {
+  active: boolean;
+  sessionIndex: number;
+  connectionLimit: number;
+  modeNudgeAfterUserMessages: number;
+}
+
+interface GreetingFetchResult {
+  greeting: string | null;
+  tutorial: GreetingTutorialInfo | null;
 }
 
 interface OptionalLocationModule {
@@ -66,6 +79,8 @@ const GREETING_API_BACKOFF_MS = 5 * 60_000;
 const GREETING_API_REQUEST_TIMEOUT_MS = 12_000;
 const GREETING_API_MAX_ATTEMPTS = 2;
 const GREETING_API_RETRY_DELAY_MS = 850;
+const DEFAULT_TUTORIAL_CONNECTION_LIMIT = 3;
+const DEFAULT_TUTORIAL_NUDGE_AFTER_MESSAGES = 2;
 let greetingApiBackoffUntilTs = 0;
 
 interface ArtistModeSource {
@@ -214,7 +229,7 @@ function buildFallbackGreetingText(
   language: string,
   preferredName: string | null,
   _availableModes: string[],
-  includeVoiceHint: boolean
+  isTutorialGreeting: boolean
 ): string {
   const isEnglish = language.toLowerCase().startsWith('en');
   const displayName = preferredName ?? (isEnglish ? 'there' : 'toi');
@@ -228,7 +243,7 @@ function buildFallbackGreetingText(
       `Hi ${displayName}, how's it going? ${artistName} here, same energy, slightly less sleep.`,
       `Yo ${displayName}, how are you doing? It's ${artistName}, still loud, still helpful.`
     ];
-    const voiceSentenceVariants = includeVoiceHint
+    const voiceSentenceVariants = isTutorialGreeting
       ? [
           "The mic at the bottom is how you talk to me — tap it if you'd rather text, totally up to you.",
           "That little mic at the bottom? That's how we interact. Tap it off if you prefer typing.",
@@ -262,7 +277,7 @@ function buildFallbackGreetingText(
         `Allô ${displayName}, tu vas bien? Moi c'est ${artistName}, pis oui, j'suis déjà crinquée.`,
         `Yo ${displayName}, comment ça roule? C'est ${artistName}, pis on part ça smooth.`
       ];
-  const voiceSentenceVariants = includeVoiceHint
+  const voiceSentenceVariants = isTutorialGreeting
     ? [
         "Le micro en bas, c'est là que tu me parles — clique dessus si t'aimes mieux texter, c'est toé qui décides.",
         "T'as un micro en bas pour jaser avec moi direct; si tu préfères écrire, t'as juste à peser dessus pour l'éteindre.",
@@ -321,12 +336,20 @@ function buildAvailableModesForGreeting(artist: ArtistModeSource): string[] {
 function buildModeNudgeText(language: string, modeNames: string[]): string {
   const isEnglish = language.toLowerCase().startsWith('en');
   const shuffled = [...modeNames].sort(() => Math.random() - 0.5);
-  const fallbackM1 = isEnglish ? 'Roast mode' : 'Le roast';
-  const fallbackM2 = isEnglish ? 'Improv mode' : "L'impro";
-  const m1 = shuffled[0] ?? fallbackM1;
-  const m2 = shuffled[1] ?? fallbackM2;
+  const m1 = shuffled[0] ?? '';
+  const m2 = shuffled[1] ?? '';
+  const hasTwoModeExamples = Boolean(m1 && m2);
 
   if (isEnglish) {
+    if (!hasTwoModeExamples) {
+      const genericVariants: [string, string, string] = [
+        `[sighs] We've been chatting for a bit. If you want to switch it up, check the modes at the top of the chat. Pick one if it fits your mood, or stay here with me.`,
+        `[laughs] Quick reminder: you can try other modes up there anytime. Scroll up, pick one, or keep going here with me.`,
+        `We can keep this going all day, but there are other modes waiting at the top. Take a look if you feel like changing pace.`
+      ];
+      return genericVariants[Math.floor(Math.random() * genericVariants.length)] ?? genericVariants[0];
+    }
+
     const variants: [string, string, string] = [
       `[sighs] Hey, we've been chatting for a bit — if you feel like mixing it up, ${m1} or ${m2} might be your thing. Check the top of the chat, you'll see all the modes. Pick what sounds fun, or we can just keep going here too, no pressure.`,
       `[laughs] Okay we've been at this a while. Not complaining, but just so you know — there's ${m1}, ${m2} and more up there at the top. Take a look if you're curious. Or stay here, I don't mind either way.`,
@@ -336,6 +359,15 @@ function buildModeNudgeText(language: string, modeNames: string[]): string {
     return variants[Math.floor(Math.random() * variants.length)] ?? variants[0];
   }
 
+  if (!hasTwoModeExamples) {
+    const genericVariants: [string, string, string] = [
+      `[sighs] Ça fait un bout qu'on jase. Si t'as envie de changer d'ambiance, regarde les modes en haut du chat. Choisis-en un si ça t'allume, ou on continue ici.`,
+      `[laughs] Petit rappel: t'as d'autres modes en haut quand tu veux. Monte voir ça, ou reste avec moi ici.`,
+      `On peut continuer comme ça toute la journée, mais t'as d'autres modes qui t'attendent en haut. Jette un oeil si t'as envie de varier.`
+    ];
+    return genericVariants[Math.floor(Math.random() * genericVariants.length)] ?? genericVariants[0];
+  }
+
   const variants: [string, string, string] = [
     `[sighs] Hey, ça fait quand même un moment qu'on jase — si t'as envie d'essayer de quoi, ${m1} ou ${m2} ça t'tenterait p'être. Regarde en haut du chat, t'as les différents modes là. Choisis c'qui t'intéresse, ou on continue juste à parler ici aussi, c'est correct.`,
     `[laughs] Bon, on se parle depuis un boutte. Je me plains pas, mais y'a ${m1}, ${m2} pis d'autres modes là-haut. Regarde ça si t'es curieux. Ou reste ici, ça me dérange pas pantoute.`,
@@ -343,6 +375,33 @@ function buildModeNudgeText(language: string, modeNames: string[]): string {
   ];
 
   return variants[Math.floor(Math.random() * variants.length)] ?? variants[0];
+}
+
+function parseGreetingTutorialInfo(value: unknown): GreetingTutorialInfo | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const raw = value as Record<string, unknown>;
+  const active = raw.active === true;
+  const sessionIndex = typeof raw.sessionIndex === 'number' && Number.isFinite(raw.sessionIndex)
+    ? Math.max(0, Math.floor(raw.sessionIndex))
+    : 0;
+  const connectionLimit =
+    typeof raw.connectionLimit === 'number' && Number.isFinite(raw.connectionLimit)
+      ? Math.max(1, Math.floor(raw.connectionLimit))
+      : DEFAULT_TUTORIAL_CONNECTION_LIMIT;
+  const modeNudgeAfterUserMessages =
+    typeof raw.modeNudgeAfterUserMessages === 'number' && Number.isFinite(raw.modeNudgeAfterUserMessages)
+      ? Math.max(1, Math.floor(raw.modeNudgeAfterUserMessages))
+      : DEFAULT_TUTORIAL_NUDGE_AFTER_MESSAGES;
+
+  return {
+    active,
+    sessionIndex,
+    connectionLimit,
+    modeNudgeAfterUserMessages
+  };
 }
 
 function normalizeUrl(value: string): string {
@@ -474,18 +533,21 @@ async function fetchGreetingFromApi(
   coords: GreetingCoordinates | null,
   availableModes: string[],
   preferredName: string | null,
-  includeVoiceHint: boolean
-): Promise<string | null> {
+  isSessionFirstGreeting: boolean
+): Promise<GreetingFetchResult> {
   const token = accessToken.trim();
   if (!token || shouldSkipGreetingApiCall()) {
-    return null;
+    return {
+      greeting: null,
+      tutorial: null
+    };
   }
 
   const payload: Record<string, unknown> = {
     artistId,
     language,
     availableModes,
-    includeVoiceHint
+    isSessionFirstGreeting
   };
   if (preferredName) {
     payload.preferredName = preferredName;
@@ -523,7 +585,10 @@ async function fetchGreetingFromApi(
         const greeting = typeof data.greeting === 'string' ? data.greeting.trim() : '';
         if (greeting) {
           clearGreetingApiBackoff();
-          return greeting;
+          return {
+            greeting,
+            tutorial: parseGreetingTutorialInfo(data.tutorial)
+          };
         }
       } catch {
         shouldBackoff = true;
@@ -542,7 +607,10 @@ async function fetchGreetingFromApi(
     markGreetingApiBackoff();
   }
 
-  return null;
+  return {
+    greeting: null,
+    tutorial: null
+  };
 }
 
 interface CategoryMenuButtonProps {
@@ -839,6 +907,9 @@ export default function ModeSelectHomeScreen() {
   });
   const isGreetingVoicePendingGesture = Boolean(pendingGreetingAudioUri || pendingGreetingSpeechText);
   const hasUserSpokenInModeSelect = messages.some((message) => message.role === 'user');
+  const isTutorialConversation = messages.some(
+    (message) => message.role === 'artist' && message.metadata?.tutorialMode === true
+  );
   const shouldCompactModeGrid =
     isValidConversation &&
     (isModeGridLockedCompact || hasStreaming || ((Platform.OS === 'ios' || Platform.OS === 'android') && isInputFocused));
@@ -1006,12 +1077,16 @@ export default function ModeSelectHomeScreen() {
   }, [artistId]);
 
   useEffect(() => {
-    if (modeNudgeShownRef.current || !modeSelectConversationId || hasStreaming || !artist) {
+    const hasInjectedModeNudge = messages.some(
+      (message) => message.role === 'artist' && message.metadata?.injectedType === 'mode_nudge'
+    );
+    if (modeNudgeShownRef.current || hasInjectedModeNudge || !modeSelectConversationId || hasStreaming || !artist) {
       return;
     }
 
     const userMessages = messages.filter((message) => message.role === 'user' && message.status === 'complete');
-    if (userMessages.length < 4) {
+    const modeNudgeThreshold = isTutorialConversation ? DEFAULT_TUTORIAL_NUDGE_AFTER_MESSAGES : 4;
+    if (userMessages.length < modeNudgeThreshold) {
       return;
     }
 
@@ -1037,7 +1112,8 @@ export default function ModeSelectHomeScreen() {
       status: 'complete',
       timestamp: new Date().toISOString(),
       metadata: {
-        injected: true
+        injected: true,
+        injectedType: 'mode_nudge'
       }
     });
 
@@ -1048,6 +1124,7 @@ export default function ModeSelectHomeScreen() {
     updateMessage(modeSelectConversationId, nudgeMessageId, {
       metadata: {
         injected: true,
+        injectedType: 'mode_nudge',
         voiceStatus: 'generating'
       }
     });
@@ -1058,6 +1135,7 @@ export default function ModeSelectHomeScreen() {
           updateMessage(modeSelectConversationId, nudgeMessageId, {
             metadata: {
               injected: true,
+              injectedType: 'mode_nudge',
               voiceStatus: undefined
             }
           });
@@ -1067,6 +1145,7 @@ export default function ModeSelectHomeScreen() {
         updateMessage(modeSelectConversationId, nudgeMessageId, {
           metadata: {
             injected: true,
+            injectedType: 'mode_nudge',
             voiceUrl: nudgeVoiceUri,
             voiceQueue: [nudgeVoiceUri],
             voiceStatus: 'ready'
@@ -1082,11 +1161,24 @@ export default function ModeSelectHomeScreen() {
         updateMessage(modeSelectConversationId, nudgeMessageId, {
           metadata: {
             injected: true,
+            injectedType: 'mode_nudge',
             voiceStatus: undefined
           }
         });
       });
-  }, [accessToken, addMessage, artist, audioPlayer, hasStreaming, language, messages, modeSelectConversationId, updateMessage, voiceAutoPlay]);
+  }, [
+    accessToken,
+    addMessage,
+    artist,
+    audioPlayer,
+    hasStreaming,
+    isTutorialConversation,
+    language,
+    messages,
+    modeSelectConversationId,
+    updateMessage,
+    voiceAutoPlay
+  ]);
 
   useEffect(() => {
     Animated.timing(modeGridCompactProgress, {
@@ -1149,7 +1241,7 @@ export default function ModeSelectHomeScreen() {
       if (sessionStateBeforeGreeting.greetedArtistIds.has(artist.id)) {
         return;
       }
-      const includeVoiceHint = sessionStateBeforeGreeting.greetedArtistIds.size === 0;
+      const isSessionFirstGreeting = sessionStateBeforeGreeting.greetedArtistIds.size === 0;
       markArtistGreeted(artist.id);
       const introConversation = createConversation(
         artist.id,
@@ -1164,17 +1256,25 @@ export default function ModeSelectHomeScreen() {
         return;
       }
 
-      const fetchedGreeting = await fetchGreetingFromApi(
+      const fetchedResult = await fetchGreetingFromApi(
         artist.id,
         language,
         accessToken,
         coords,
         availableModes,
         preferredName,
-        includeVoiceHint
+        isSessionFirstGreeting
       );
+      const fallbackTutorialMode = isSessionFirstGreeting;
+      const isTutorialGreeting = fetchedResult.tutorial?.active ?? fallbackTutorialMode;
+      const greetingMetadata = {
+        injected: true,
+        tutorialMode: isTutorialGreeting,
+        injectedType: isTutorialGreeting ? 'tutorial_greeting' : 'greeting'
+      } as const;
       const nextGreeting =
-        fetchedGreeting ?? buildFallbackGreetingText(artist, language, preferredName, availableModes, includeVoiceHint);
+        fetchedResult.greeting ??
+        buildFallbackGreetingText(artist, language, preferredName, availableModes, isTutorialGreeting);
       if (isCancelled || !nextGreeting) {
         return;
       }
@@ -1187,7 +1287,8 @@ export default function ModeSelectHomeScreen() {
         role: 'artist',
         content: nextGreeting,
         status: 'complete',
-        timestamp: now
+        timestamp: now,
+        metadata: greetingMetadata
       });
       updateConversation(
         introConversation.id,
@@ -1217,6 +1318,7 @@ export default function ModeSelectHomeScreen() {
       try {
         updateMessage(introConversation.id, greetingMessageId, {
           metadata: {
+            ...greetingMetadata,
             voiceStatus: 'generating'
           }
         });
@@ -1229,6 +1331,7 @@ export default function ModeSelectHomeScreen() {
 
         updateMessage(introConversation.id, greetingMessageId, {
           metadata: {
+            ...greetingMetadata,
             voiceUrl: greetingAudioUri,
             voiceQueue: [greetingAudioUri],
             voiceStatus: 'ready'
@@ -1254,6 +1357,7 @@ export default function ModeSelectHomeScreen() {
         if (!isCancelled) {
           updateMessage(introConversation.id, greetingMessageId, {
             metadata: {
+              ...greetingMetadata,
               voiceStatus: undefined
             }
           });
