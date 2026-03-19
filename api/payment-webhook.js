@@ -99,35 +99,94 @@ function isMissingProviderEventIdColumn(error) {
   return message.includes('provider_event_id');
 }
 
+function isMissingProviderEventConflictConstraint(error) {
+  if (!isRecord(error)) {
+    return false;
+  }
+  const code = typeof error.code === 'string' ? error.code : '';
+  if (code === '42P10') {
+    return true;
+  }
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return message.includes('no unique') && message.includes('on conflict');
+}
+
+async function upsertPaymentEventByProviderEventId(supabaseAdmin, row) {
+  const { data, error } = await supabaseAdmin
+    .from('payment_events')
+    .upsert(row, {
+      onConflict: 'provider,provider_event_id',
+      ignoreDuplicates: true
+    })
+    .select('id');
+
+  if (error) {
+    if (isMissingProviderEventIdColumn(error) || isMissingProviderEventConflictConstraint(error)) {
+      return { ok: false, unsupported: true, error };
+    }
+    return { ok: false, unsupported: false, error };
+  }
+
+  const insertedRows = Array.isArray(data) ? data.length : 0;
+  return {
+    ok: true,
+    duplicate: insertedRows === 0
+  };
+}
+
 async function insertPaymentEvent(supabaseAdmin, row) {
   const withProviderEventId = { ...row, provider_event_id: row.provider_event_id ?? null };
+
+  const providerEventId = typeof row.provider_event_id === 'string' ? row.provider_event_id.trim() : '';
+  if (providerEventId) {
+    const upsertResult = await upsertPaymentEventByProviderEventId(supabaseAdmin, withProviderEventId);
+    if (upsertResult.ok) {
+      return { error: null, duplicate: upsertResult.duplicate };
+    }
+    if (!upsertResult.unsupported) {
+      return { error: upsertResult.error, duplicate: false };
+    }
+  }
+
   let result = await supabaseAdmin.from('payment_events').insert(withProviderEventId);
   if (result.error && isMissingProviderEventIdColumn(result.error)) {
     const legacyRow = { ...withProviderEventId };
     delete legacyRow.provider_event_id;
     result = await supabaseAdmin.from('payment_events').insert(legacyRow);
   }
-  return result;
+
+  if (result.error) {
+    if (providerEventId && isUniqueViolation(result.error)) {
+      return { error: null, duplicate: true };
+    }
+    return { error: result.error, duplicate: false };
+  }
+
+  return { error: null, duplicate: false };
 }
 
-function isAuthorized(req) {
+function getAuthorizationStatus(req) {
   const sharedSecret = process.env.REVENUECAT_WEBHOOK_SECRET;
   if (!sharedSecret) {
-    return false;
+    return { ok: false, reason: 'missing_shared_secret' };
   }
 
   const token = extractBearerToken(req.headers.authorization);
   if (!token) {
-    return false;
+    return { ok: false, reason: 'missing_bearer_token' };
   }
 
   const tokenBuffer = Buffer.from(token, 'utf8');
   const secretBuffer = Buffer.from(sharedSecret, 'utf8');
   if (tokenBuffer.length !== secretBuffer.length) {
-    return false;
+    return { ok: false, reason: 'token_length_mismatch' };
   }
 
-  return timingSafeEqual(tokenBuffer, secretBuffer);
+  if (!timingSafeEqual(tokenBuffer, secretBuffer)) {
+    return { ok: false, reason: 'token_mismatch' };
+  }
+
+  return { ok: true, reason: 'ok' };
 }
 
 async function updateAppMetadata(supabaseAdmin, userId, accountTypeId) {
@@ -151,24 +210,6 @@ async function updateAppMetadata(supabaseAdmin, userId, accountTypeId) {
       account_type: accountTypeId
     }
   });
-}
-
-async function isDuplicateRevenueCatEvent(supabaseAdmin, providerEventId) {
-  if (!providerEventId) {
-    return { ok: true, duplicate: false };
-  }
-
-  const { count, error } = await supabaseAdmin
-    .from('payment_events')
-    .select('id', { count: 'exact', head: true })
-    .eq('provider', 'revenuecat')
-    .contains('raw_payload', { _provider_event_id: providerEventId });
-
-  if (error) {
-    return { ok: false, error };
-  }
-
-  return { ok: true, duplicate: (count ?? 0) > 0 };
 }
 
 module.exports = async function handler(req, res) {
@@ -207,7 +248,9 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  if (!isAuthorized(req)) {
+  const authorization = getAuthorizationStatus(req);
+  if (!authorization.ok) {
+    console.error(`[api/payment-webhook][${requestId}] Unauthorized webhook call (${authorization.reason}).`);
     sendError(res, 401, 'Unauthorized webhook call.', { code: 'UNAUTHORIZED', requestId });
     return;
   }
@@ -230,18 +273,7 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const duplicateCheck = await isDuplicateRevenueCatEvent(supabaseAdmin, providerEventId);
-    if (!duplicateCheck.ok) {
-      sendError(res, 500, duplicateCheck.error.message, { code: 'SERVER_ERROR', requestId });
-      return;
-    }
-
-    if (duplicateCheck.duplicate) {
-      res.status(200).json({ ok: true, duplicate: true, userId: userId || null, accountTypeId });
-      return;
-    }
-
-    const { error: eventError } = await insertPaymentEvent(supabaseAdmin, {
+    const insertResult = await insertPaymentEvent(supabaseAdmin, {
       user_id: userId,
       provider: 'revenuecat',
       provider_event_id: providerEventId || null,
@@ -254,12 +286,13 @@ module.exports = async function handler(req, res) {
       }
     });
 
-    if (eventError) {
-      if (providerEventId && isUniqueViolation(eventError)) {
-        res.status(200).json({ ok: true, duplicate: true, userId: userId || null, accountTypeId });
-        return;
-      }
-      sendError(res, 500, eventError.message, { code: 'SERVER_ERROR', requestId });
+    if (insertResult.error) {
+      sendError(res, 500, insertResult.error.message, { code: 'SERVER_ERROR', requestId });
+      return;
+    }
+
+    if (insertResult.duplicate) {
+      res.status(200).json({ ok: true, duplicate: true, userId: userId || null, accountTypeId });
       return;
     }
 

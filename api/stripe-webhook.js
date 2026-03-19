@@ -3,7 +3,6 @@ const { attachRequestId, getMissingEnv, getSupabaseAdmin, logAuditEvent, sendErr
 
 const STRIPE_SIGNATURE_TOLERANCE_SECONDS = 300;
 const STRIPE_API_BASE_URL = 'https://api.stripe.com/v1';
-const stripeClient = new Stripe('sk_test_placeholder');
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -199,13 +198,16 @@ async function verifyStripeSignature(req, requestId) {
   }
 
   if (webhookSecretCandidates.length === 0 || !signatureHeader) {
+    console.error(
+      `[api/stripe-webhook][${requestId}] Signature verification rejected: missing configured webhook secret or signature header.`
+    );
     return { ok: false, status: 401, code: 'UNAUTHORIZED', message: 'Invalid Stripe signature.' };
   }
 
   let event = null;
   for (const webhookSecret of webhookSecretCandidates) {
     try {
-      event = stripeClient.webhooks.constructEvent(rawBody, signatureHeader, webhookSecret, STRIPE_SIGNATURE_TOLERANCE_SECONDS);
+      event = Stripe.webhooks.constructEvent(rawBody, signatureHeader, webhookSecret, STRIPE_SIGNATURE_TOLERANCE_SECONDS);
       break;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -214,6 +216,7 @@ async function verifyStripeSignature(req, requestId) {
   }
 
   if (!event) {
+    console.error(`[api/stripe-webhook][${requestId}] Signature verification failed for all configured Stripe webhook secrets.`);
     return { ok: false, status: 401, code: 'UNAUTHORIZED', message: 'Invalid Stripe signature.' };
   }
 

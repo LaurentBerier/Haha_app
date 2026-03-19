@@ -1,13 +1,18 @@
 const { createReqRes } = require('./testHelpers');
 
-function buildPaymentEventsTable({ insert, duplicateEventCount = 0 } = {}) {
+function buildPaymentEventsTable({ insert, upsertData = [{ id: 'event-1' }], upsertError = null } = {}) {
+  const upsertSelect = jest.fn().mockResolvedValue({ data: upsertData, error: upsertError });
+  const upsert = jest.fn().mockReturnValue({
+    select: upsertSelect
+  });
+
   return {
     insert: insert ?? jest.fn().mockResolvedValue({ error: null }),
-    select: () => ({
-      eq: () => ({
-        contains: jest.fn().mockResolvedValue({ count: duplicateEventCount, error: null })
-      })
-    })
+    upsert,
+    __spies: {
+      upsert,
+      upsertSelect
+    }
   };
 }
 
@@ -185,7 +190,7 @@ describe('api/payment-webhook', () => {
   it('returns duplicate=true when RevenueCat event already exists', async () => {
     process.env.REVENUECAT_WEBHOOK_SECRET = 'top-secret';
     const insert = jest.fn().mockResolvedValue({ error: null });
-    const paymentEvents = buildPaymentEventsTable({ insert, duplicateEventCount: 1 });
+    const paymentEvents = buildPaymentEventsTable({ insert, upsertData: [] });
 
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => ({
@@ -239,6 +244,7 @@ describe('api/payment-webhook', () => {
         userId: 'user-1'
       })
     );
+    expect(paymentEvents.__spies.upsert).toHaveBeenCalledTimes(1);
     expect(insert).not.toHaveBeenCalled();
   });
 });
