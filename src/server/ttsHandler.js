@@ -115,7 +115,13 @@ function canonicalizeModelId(rawModelId) {
   if (typeof rawModelId !== 'string') {
     return null;
   }
-  const trimmed = rawModelId.trim();
+  let trimmed = rawModelId.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    trimmed = trimmed.slice(1, -1).trim();
+  }
   if (!trimmed) {
     return null;
   }
@@ -139,11 +145,15 @@ function canonicalizeModelId(rawModelId) {
   if (
     normalized === 'eleven_turbo_v2_5' ||
     normalized === 'eleven_turbo_v2.5' ||
+    normalized === 'eleven_v2.5' ||
+    normalized === 'eleven_v25' ||
+    normalized === 'eleven-v2-5' ||
     normalized === 'eleven-turbo-v2-5' ||
     normalized === 'v2.5' ||
     normalized === '2.5' ||
     normalized === 'v2_5' ||
     normalized === '2_5' ||
+    collapsed === 'elevenv25' ||
     collapsed === 'eleventurbov25' ||
     collapsed === 'v25' ||
     collapsed === '25'
