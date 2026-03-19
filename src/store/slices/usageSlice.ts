@@ -1,5 +1,10 @@
 import type { StateCreator } from 'zustand';
 import { accountTypesById } from '../../config/accountTypes';
+import {
+  QUOTA_THRESHOLD_HARD_FREE_RATIO,
+  QUOTA_THRESHOLD_SOFT_1_RATIO,
+  QUOTA_THRESHOLD_SOFT_2_RATIO
+} from '../../config/quotaThresholds';
 import type { UsageQuota } from '../../models/Usage';
 import type { StoreState } from '../useStore';
 
@@ -18,9 +23,6 @@ export interface UsageSlice {
   resetQuota: () => void;
   hydrateQuota: (messagesUsed: number, accountType: string) => void;
 }
-
-const THRESHOLD_1_RATIO = 0.75;
-const THRESHOLD_2_RATIO = 0.9;
 
 function computeNextResetDate(now: Date): string {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0, 0)).toISOString();
@@ -53,13 +55,13 @@ function getRatio(quota: UsageQuota): number {
 
 function resolveThreshold(quota: UsageQuota): QuotaThreshold {
   const ratio = getRatio(quota);
-  if (ratio >= 1) {
+  if (ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO) {
     return 'exceeded';
   }
-  if (ratio >= THRESHOLD_2_RATIO) {
+  if (ratio >= QUOTA_THRESHOLD_SOFT_2_RATIO) {
     return 'soft2';
   }
-  if (ratio >= THRESHOLD_1_RATIO) {
+  if (ratio >= QUOTA_THRESHOLD_SOFT_1_RATIO) {
     return 'soft1';
   }
   return 'normal';
@@ -107,7 +109,8 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
   isSoftCapReached: () => {
     const { quota } = get();
     const normalized = normalizeQuotaWindow(quota);
-    return resolveThreshold(normalized) === 'soft1' || resolveThreshold(normalized) === 'soft2' || resolveThreshold(normalized) === 'exceeded';
+    const threshold = resolveThreshold(normalized);
+    return threshold !== 'normal';
   },
   markThresholdMessageShown: (threshold) =>
     set((state) => {
@@ -164,12 +167,13 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
     const cap = config?.monthlyMessageCap ?? accountTypesById.free?.monthlyMessageCap ?? 50;
     const normalizedMessagesUsed =
       Number.isFinite(messagesUsed) && messagesUsed > 0 ? Math.floor(messagesUsed) : 0;
+    const clampedMessagesUsed = cap === null ? normalizedMessagesUsed : Math.min(normalizedMessagesUsed, cap);
 
     set((state) => ({
       quota: {
         ...normalizeQuotaWindow(state.quota),
         messagesCap: cap,
-        messagesUsed: normalizedMessagesUsed,
+        messagesUsed: clampedMessagesUsed,
         threshold1MessageShown: false,
         threshold2MessageShown: false,
         threshold3MessageShown: false,

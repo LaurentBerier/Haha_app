@@ -18,6 +18,7 @@ interface ToastContextValue {
 }
 
 const ToastContext = createContext<ToastContextValue | null>(null);
+let hasWarnedMissingToastProvider = false;
 
 function getToastBackground(type: ToastType): string {
   if (type === 'success') {
@@ -124,6 +125,10 @@ export function ToastProvider({ children }: ToastProviderProps) {
 export function useToast(): ToastContextValue {
   const context = useContext(ToastContext);
   if (!context) {
+    if (__DEV__ && !hasWarnedMissingToastProvider) {
+      hasWarnedMissingToastProvider = true;
+      console.warn('[ToastProvider] useToast() called outside ToastProvider. Calls will be no-op.');
+    }
     return {
       showToast: () => {},
       success: () => {},

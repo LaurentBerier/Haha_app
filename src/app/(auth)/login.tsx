@@ -17,7 +17,7 @@ export default function LoginScreen() {
     if (error instanceof Error) {
       const message = error.message.trim();
       if (/network request failed|failed to fetch/i.test(message)) {
-        return "Connexion au service d'auth impossible. Vérifie la connexion internet et la config Supabase (URL + clé publique).";
+        return t('authNetworkError');
       }
       if (message) {
         return message;

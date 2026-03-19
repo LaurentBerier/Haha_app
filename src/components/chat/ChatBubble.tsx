@@ -7,6 +7,7 @@ import type { Message } from '../../models/Message';
 import { fetchAndCacheVoice } from '../../services/ttsService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
+import { hasVoiceAccessForAccountType } from '../../utils/accountTypeUtils';
 import { findConversationById } from '../../utils/conversationUtils';
 import type { AudioPlayerController } from '../../hooks/useAudioPlayer';
 import { WaveformButton } from './WaveformButton';
@@ -21,30 +22,6 @@ interface ChatBubbleProps {
 
 const VOICE_HYDRATION_ATTEMPTS = new Set<string>();
 const REACT_TAG_GLOBAL_PATTERN = /\[REACT:[^\]\n]{1,12}\]/gi;
-
-function normalizeAccountType(accountType: string | null | undefined): string {
-  if (typeof accountType === 'string' && accountType.trim()) {
-    const normalized = accountType.trim().toLowerCase();
-    if (normalized === 'free' || normalized === 'regular' || normalized === 'premium' || normalized === 'admin') {
-      return normalized;
-    }
-
-    const compact = normalized.replace(/[\s_-]+/g, '');
-    if (compact === 'unlimited') {
-      return 'regular';
-    }
-    if (compact === 'proartist') {
-      return 'premium';
-    }
-  }
-
-  return 'free';
-}
-
-function hasVoiceAccess(accountType: string | null | undefined): boolean {
-  const normalized = normalizeAccountType(accountType);
-  return normalized === 'regular' || normalized === 'premium' || normalized === 'admin';
-}
 
 function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMessage, audioPlayer }: ChatBubbleProps) {
   const router = useRouter();
@@ -144,7 +121,7 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
     !voiceUrl &&
     voiceStatus !== 'generating' &&
     conversation?.artistId === ARTIST_IDS.CATHY_GAUTHIER &&
-    hasVoiceAccess(accountType) &&
+    hasVoiceAccessForAccountType(accountType) &&
     accessToken.trim().length > 0;
 
   const mergeMetadata = useCallback(

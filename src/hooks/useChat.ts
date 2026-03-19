@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ARTIST_IDS, MAX_MESSAGE_LENGTH, MODE_IDS } from '../config/constants';
 import { resolveModeIdCompat } from '../config/modeCompat';
+import {
+  QUOTA_THRESHOLD_ABSOLUTE_PAID_RATIO,
+  QUOTA_THRESHOLD_HARD_FREE_RATIO,
+  QUOTA_THRESHOLD_SOFT_1_RATIO,
+  QUOTA_THRESHOLD_SOFT_2_RATIO
+} from '../config/quotaThresholds';
 import { USE_MOCK_LLM } from '../config/env';
 import { getAllCathyFewShots, getCathyModeFewShots } from '../data/cathy-gauthier/modeFewShots';
 import { getLanguage, setLanguage, t } from '../i18n';
@@ -19,6 +25,7 @@ import { findConversationById } from '../utils/conversationUtils';
 import { shouldAutoSwitchToEnglish } from '../utils/languageDetection';
 import { generateId } from '../utils/generateId';
 import { splitDisplayChunkFromRaw, stripAudioTags } from '../utils/audioTags';
+import { hasVoiceAccessForAccountType, normalizeAccountType } from '../utils/accountTypeUtils';
 import type { ScoreAction } from '../models/Gamification';
 import { useAudioPlayer } from './useAudioPlayer';
 
@@ -41,10 +48,6 @@ const EMPTY_MESSAGES: Message[] = [];
 const MAX_CLAUDE_HISTORY_MESSAGES = 39;
 const VOICE_MAX_CLAUDE_HISTORY_MESSAGES = 8;
 const MAX_MEMORY_FACTS = 6;
-const THRESHOLD_1_RATIO = 0.75;
-const THRESHOLD_2_RATIO = 0.9;
-const THRESHOLD_3_RATIO = 1;
-const THRESHOLD_4_RATIO = 1.5;
 const MIN_TTS_CHUNK_CHARS = 20;
 const MAX_TTS_CHUNK_CHARS = 200;
 const VOICE_FIRST_CHUNK_MIN_CHARS = 60;
@@ -52,35 +55,12 @@ const REACT_TAG_PATTERN = /^\s*\[REACT:([^\]\n]{1,8})\]\s*/i;
 const REACT_TAG_GLOBAL_PATTERN = /\[REACT:[^\]\n]{1,12}\]/gi;
 const ALLOWED_REACTIONS = new Set(['😂', '💀', '😮', '😤', '🙄', '😬', '🤔', '👍']);
 
-function normalizeAccountType(accountType: string | null | undefined): string {
-  if (typeof accountType === 'string' && accountType.trim()) {
-    const normalized = accountType.trim().toLowerCase();
-    if (normalized === 'free' || normalized === 'regular' || normalized === 'premium' || normalized === 'admin') {
-      return normalized;
-    }
-
-    const compact = normalized.replace(/[\s_-]+/g, '');
-    if (compact === 'unlimited') {
-      return 'regular';
-    }
-    if (compact === 'proartist') {
-      return 'premium';
-    }
-  }
-  return 'free';
-}
-
 function isQuotaBlockedErrorCode(code: string | null): boolean {
   return (
     code === 'QUOTA_EXCEEDED_BLOCKED' ||
     code === 'QUOTA_ABSOLUTE_BLOCKED' ||
     code === 'MONTHLY_QUOTA_EXCEEDED'
   );
-}
-
-function hasVoiceAccess(accountType: string | null | undefined): boolean {
-  const normalized = normalizeAccountType(accountType);
-  return normalized === 'regular' || normalized === 'premium' || normalized === 'admin';
 }
 
 function isSentenceBoundary(input: string, index: number): boolean {
@@ -583,7 +563,9 @@ export function useChat(conversationId: string) {
 
       const latestAccountType = normalizeAccountType(useStore.getState().session?.user.accountType ?? currentAccountType);
       const canGenerateVoice =
-        artistId === ARTIST_IDS.CATHY_GAUTHIER && hasVoiceAccess(latestAccountType) && Boolean(accessToken.trim());
+        artistId === ARTIST_IDS.CATHY_GAUTHIER &&
+        hasVoiceAccessForAccountType(latestAccountType) &&
+        Boolean(accessToken.trim());
       let ttsBuffer = '';
       let ttsChunkCount = 0;
       let hasStartedVoiceGeneration = false;
@@ -823,17 +805,21 @@ export function useChat(conversationId: string) {
           let thresholdToShow: 1 | 2 | 3 | 4 | null = null;
           let thresholdMessage = '';
 
-          if (ratio >= THRESHOLD_4_RATIO && normalizedAccountType !== 'free' && !latestQuota.threshold4MessageShown) {
+          if (
+            ratio >= QUOTA_THRESHOLD_ABSOLUTE_PAID_RATIO &&
+            normalizedAccountType !== 'free' &&
+            !latestQuota.threshold4MessageShown
+          ) {
             thresholdToShow = 4;
             thresholdMessage = t('cathyThreshold4PaidMessage');
-          } else if (ratio >= THRESHOLD_3_RATIO && !latestQuota.threshold3MessageShown) {
+          } else if (ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO && !latestQuota.threshold3MessageShown) {
             thresholdToShow = 3;
             thresholdMessage =
               normalizedAccountType === 'free' ? t('cathyThreshold3FreeMessage') : t('cathyThreshold3PaidMessage');
-          } else if (ratio >= THRESHOLD_2_RATIO && !latestQuota.threshold2MessageShown) {
+          } else if (ratio >= QUOTA_THRESHOLD_SOFT_2_RATIO && !latestQuota.threshold2MessageShown) {
             thresholdToShow = 2;
             thresholdMessage = t('cathyThreshold2Message');
-          } else if (ratio >= THRESHOLD_1_RATIO && !latestQuota.threshold1MessageShown) {
+          } else if (ratio >= QUOTA_THRESHOLD_SOFT_1_RATIO && !latestQuota.threshold1MessageShown) {
             thresholdToShow = 1;
             thresholdMessage = t('cathyThreshold1Message');
           }
@@ -855,8 +841,9 @@ export function useChat(conversationId: string) {
             });
           }
 
-          const shouldBlockFree = normalizedAccountType === 'free' && ratio >= THRESHOLD_3_RATIO;
-          const shouldBlockPaidAbsolute = normalizedAccountType !== 'free' && ratio >= THRESHOLD_4_RATIO;
+          const shouldBlockFree = normalizedAccountType === 'free' && ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO;
+          const shouldBlockPaidAbsolute =
+            normalizedAccountType !== 'free' && ratio >= QUOTA_THRESHOLD_ABSOLUTE_PAID_RATIO;
           shouldBlockInput = shouldBlockFree || shouldBlockPaidAbsolute;
           if (shouldBlockInput) {
             setBlocked(true);

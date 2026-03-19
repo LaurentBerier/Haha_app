@@ -44,4 +44,13 @@ describe('usageSlice', () => {
     expect(slice.quota.messagesCap).toBe(500);
     expect(slice.quota.messagesUsed).toBe(42);
   });
+
+  it('clamps hydrated usage to the plan cap', () => {
+    const slice = createSliceHarness((set, get) => createUsageSlice(set as never, get as never, undefined as never));
+
+    slice.hydrateQuota(999, 'free');
+
+    expect(slice.quota.messagesCap).toBe(50);
+    expect(slice.quota.messagesUsed).toBe(50);
+  });
 });

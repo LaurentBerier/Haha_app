@@ -2,6 +2,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import { Link, router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { t } from '../../i18n';
 import { signInWithApple, signUpWithEmail } from '../../services/authService';
 import { theme } from '../../theme';
 
@@ -18,7 +19,7 @@ export default function SignupScreen() {
     if (error instanceof Error) {
       const message = error.message.trim();
       if (/network request failed|failed to fetch/i.test(message)) {
-        return "Connexion au service d'auth impossible. Vérifie la connexion internet et la config Supabase (URL + clé publique).";
+        return t('authNetworkError');
       }
       if (message) {
         return message;
@@ -41,7 +42,7 @@ export default function SignupScreen() {
     setError(null);
 
     if (password !== confirmPassword) {
-      setError('Les mots de passe ne correspondent pas.');
+      setError(t('signupPasswordsMismatch'));
       return;
     }
 
@@ -56,7 +57,7 @@ export default function SignupScreen() {
       }
     } catch (err) {
       console.error('[Signup] signUpWithEmail failed', err);
-      const message = formatAuthError(err, 'Impossible de créer le compte.');
+      const message = formatAuthError(err, t('signupError'));
       setError(message);
     } finally {
       setIsSubmitting(false);
@@ -72,7 +73,7 @@ export default function SignupScreen() {
       router.replace('/');
     } catch (err) {
       console.error('[Signup] signInWithApple failed', err);
-      const message = formatAuthError(err, 'Connexion Apple impossible.');
+      const message = formatAuthError(err, t('signupAppleError'));
       setError(message);
     } finally {
       setIsSubmitting(false);
@@ -82,14 +83,11 @@ export default function SignupScreen() {
   if (showVerifyMessage) {
     return (
       <View style={styles.screen} testID="signup-screen">
-        <Text style={styles.title}>Vérifie ton email</Text>
-        <Text style={styles.subtitle}>
-          Un lien de confirmation vient d&apos;être envoyé. Ouvre-le pour activer ton compte. Pense aussi à vérifier ton
-          dossier spam/courrier indésirable pour trouver l&apos;email de Ha-Ha.ai.
-        </Text>
+        <Text style={styles.title}>{t('signupVerifyEmailTitle')}</Text>
+        <Text style={styles.subtitle}>{t('signupVerifyEmailBody')}</Text>
         <Link href="/(auth)/login" asChild>
           <Pressable>
-            <Text style={styles.link}>Retour à la connexion</Text>
+            <Text style={styles.link}>{t('signupBackToLogin')}</Text>
           </Pressable>
         </Link>
       </View>
@@ -98,12 +96,12 @@ export default function SignupScreen() {
 
   return (
     <View style={styles.screen} testID="signup-screen">
-      <Text style={styles.title}>Créer mon compte</Text>
+      <Text style={styles.title}>{t('signupTitle')}</Text>
 
       <TextInput
         value={email}
         onChangeText={setEmail}
-        placeholder="Email"
+        placeholder={t('signupEmailPlaceholder')}
         placeholderTextColor={theme.colors.textDisabled}
         keyboardType="email-address"
         autoCapitalize="none"
@@ -113,7 +111,7 @@ export default function SignupScreen() {
       <TextInput
         value={password}
         onChangeText={setPassword}
-        placeholder="Mot de passe"
+        placeholder={t('signupPasswordPlaceholder')}
         placeholderTextColor={theme.colors.textDisabled}
         secureTextEntry
         style={styles.input}
@@ -122,7 +120,7 @@ export default function SignupScreen() {
       <TextInput
         value={confirmPassword}
         onChangeText={setConfirmPassword}
-        placeholder="Confirmer le mot de passe"
+        placeholder={t('signupConfirmPasswordPlaceholder')}
         placeholderTextColor={theme.colors.textDisabled}
         secureTextEntry
         style={styles.input}
@@ -135,7 +133,11 @@ export default function SignupScreen() {
         onPress={onSubmit}
         disabled={isSubmitting || !email.trim() || !password || !confirmPassword}
       >
-        {isSubmitting ? <ActivityIndicator color={theme.colors.textPrimary} /> : <Text style={styles.buttonLabel}>Créer mon compte</Text>}
+        {isSubmitting ? (
+          <ActivityIndicator color={theme.colors.textPrimary} />
+        ) : (
+          <Text style={styles.buttonLabel}>{t('signupSubmit')}</Text>
+        )}
       </Pressable>
 
       {appleAvailable ? (
@@ -150,7 +152,7 @@ export default function SignupScreen() {
 
       <Link href="/(auth)/login" asChild>
         <Pressable>
-          <Text style={styles.link}>Déjà un compte ?</Text>
+          <Text style={styles.link}>{t('signupAlreadyHaveAccount')}</Text>
         </Pressable>
       </Link>
     </View>
