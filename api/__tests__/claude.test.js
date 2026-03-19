@@ -412,6 +412,48 @@ describe('api/claude', () => {
     expect(upstreamBody.system).toContain("n'affirme jamais que tu ne sais rien");
   });
 
+  it('caps each user interest to 50 chars before injecting prompt context', async () => {
+    const veryLongInterest = 'a'.repeat(120);
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'ok' }] })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'user-1', app_metadata: { account_type: 'free' } },
+          profile: {
+            age: 34,
+            sex: 'female',
+            relationship_status: 'single',
+            horoscope_sign: 'aries',
+            interests: [veryLongInterest]
+          }
+        })
+      )
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        modeId: 'on-jase',
+        language: 'fr-CA',
+        messages: [{ role: 'user', content: 'Salut' }]
+      }
+    });
+
+    await handler(req, res);
+
+    const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(res.statusCode).toBe(200);
+    expect(upstreamBody.system).toContain(`Interets : ${'a'.repeat(50)}`);
+    expect(upstreamBody.system).not.toContain('a'.repeat(51));
+  });
+
   it('returns 400 for unsupported artist in prompt context', async () => {
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => buildSupabaseClient())

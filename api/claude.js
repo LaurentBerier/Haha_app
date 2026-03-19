@@ -520,7 +520,11 @@ function normalizeProfileForPrompt(row) {
   }
 
   const interests = Array.isArray(row.interests)
-    ? row.interests.filter((value) => typeof value === 'string' && value.trim()).slice(0, 12)
+    ? row.interests
+        .filter((value) => typeof value === 'string')
+        .map((value) => value.trim().slice(0, 50))
+        .filter(Boolean)
+        .slice(0, 12)
     : [];
 
   return {
