@@ -13,3 +13,6 @@ dist-web
 expo-env.d.ts
 # @end expo-cli
 .vercel
+artifacts
+.codex
+0

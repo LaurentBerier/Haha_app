@@ -46,6 +46,11 @@ const EXPO_PUBLIC_API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL;
 const EXPO_PUBLIC_E2E_AUTH_BYPASS = process.env.EXPO_PUBLIC_E2E_AUTH_BYPASS;
 const EXPO_PUBLIC_GREETING_FORCE_TUTORIAL = process.env.EXPO_PUBLIC_GREETING_FORCE_TUTORIAL;
 
+const IS_DEV_RUNTIME =
+  (typeof __DEV__ !== 'undefined' && __DEV__) ||
+  (typeof process.env.NODE_ENV === 'string' && process.env.NODE_ENV !== 'production');
+const RAW_E2E_AUTH_BYPASS = readBoolean(EXPO_PUBLIC_E2E_AUTH_BYPASS, false);
+
 export const USE_MOCK_LLM = readBoolean(EXPO_PUBLIC_USE_MOCK_LLM, false);
 export const CLAUDE_PROXY_URL = EXPO_PUBLIC_CLAUDE_PROXY_URL ?? '';
 export const API_BASE_URL = EXPO_PUBLIC_API_BASE_URL ?? '';
@@ -74,11 +79,13 @@ export const STRIPE_CHECKOUT_URL_PREMIUM =
   STRIPE_CHECKOUT_MODE === 'test' ? STRIPE_CHECKOUT_URL_TEST_PREMIUM : STRIPE_CHECKOUT_URL_LIVE_PREMIUM;
 export const PAYPAL_CHECKOUT_URL = EXPO_PUBLIC_PAYPAL_CHECKOUT_URL ?? '';
 export const APPLE_PAY_CHECKOUT_URL = EXPO_PUBLIC_APPLE_PAY_CHECKOUT_URL ?? '';
-export const E2E_AUTH_BYPASS = readBoolean(EXPO_PUBLIC_E2E_AUTH_BYPASS, false);
+// Safety guard: never allow test bypass flags in production bundles.
+export const E2E_AUTH_BYPASS = RAW_E2E_AUTH_BYPASS && IS_DEV_RUNTIME;
 export const GREETING_FORCE_TUTORIAL = readBoolean(EXPO_PUBLIC_GREETING_FORCE_TUTORIAL, false);
 
-const IS_DEV_RUNTIME =
-  (typeof __DEV__ !== 'undefined' && __DEV__) || (typeof process.env.NODE_ENV === 'string' && process.env.NODE_ENV !== 'production');
+if (RAW_E2E_AUTH_BYPASS && !IS_DEV_RUNTIME) {
+  console.warn('[env] E2E_AUTH_BYPASS is enabled in a production runtime. The flag is ignored for safety.');
+}
 
 if (USE_MOCK_LLM && !IS_DEV_RUNTIME) {
   console.warn('[env] USE_MOCK_LLM is enabled in a non-dev runtime. Verify EXPO_PUBLIC_USE_MOCK_LLM.');
