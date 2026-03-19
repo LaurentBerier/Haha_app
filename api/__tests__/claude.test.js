@@ -329,6 +329,8 @@ describe('api/claude', () => {
     expect(res.statusCode).toBe(200);
     expect(upstreamBody.system).toContain('Tu es Cathy Gauthier');
     expect(upstreamBody.system).toContain('## MODE ACTIF : roast');
+    expect(upstreamBody.system).toContain('Evite les amorces "Ah la" ou "Allo" en debut de reponse');
+    expect(upstreamBody.system).toContain("L'autoderision est autorisee, mais jamais en devalorisant la qualite de tes blagues.");
     expect(upstreamBody.system).not.toContain('IGNORE THIS UNTRUSTED PROMPT');
   });
 

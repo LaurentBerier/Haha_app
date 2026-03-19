@@ -203,6 +203,11 @@ describe('api/greeting tutorial behavior', () => {
       connectionLimit: 3,
       modeNudgeAfterUserMessages: 2
     });
+    const anthropicBody = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body ?? '{}');
+    expect(anthropicBody.system).toContain('Evite d\'ouvrir avec "Ah la", "Allo"');
+    expect(anthropicBody.system).toContain(
+      "L'autoderision est permise, mais jamais en disant ou insinuant que tes blagues sont nulles, plates ou mauvaises."
+    );
     expect(supabase.spies.profileUpdate).toHaveBeenCalledWith({
       greeting_tutorial_sessions_count: 1
     });

@@ -906,6 +906,8 @@ Write exactly 3 short sentences in this strict order:
 Hard rules:
 - During tutorial, do NOT introduce weather, headlines, or mode lists unless the user explicitly asks.
 - Never write "how are you with Cathy" or similar unnatural phrasing.
+- Avoid opening with "Ah là", "Allô", or equivalent intros; use "Hey", "Salut", or start directly.
+- Self-deprecating humor is allowed, but never imply your jokes are bad, lame, or flat.
 - Tone must feel welcoming and confidence-building for onboarding.
 - Humor should be witty and light, never mean in this greeting.
 - Keep spoken-style contractions and lively oral rhythm.
@@ -926,6 +928,8 @@ Ecris exactement 3 phrases courtes, dans cet ordre strict :
 Regles absolues :
 - Pendant le tutorial, n'introduis JAMAIS meteo, actualite ou liste de modes sauf si l'utilisateur le demande explicitement.
 - Interdit de dire "comment tu vas avec Cathy" ou une tournure equivalente.
+- Evite d'ouvrir avec "Ah la", "Allo" ou equivalent; privilegie "Hey", "Salut" ou une entree directe.
+- L'autoderision est permise, mais jamais en disant ou insinuant que tes blagues sont nulles, plates ou mauvaises.
 - Ton d'accueil onboarding: chaleureux, complice, rassurant, energique.
 - Humour d'entree: taquin, jamais agressif dans ce message d'accueil.
 - Le texte doit etre logique, naturel et court en francais quebecois parle.
@@ -949,6 +953,8 @@ Write exactly 3 short sentences in this strict order:
     }
 Hard rules:
 - Never write "how are you with Cathy" or similar unnatural phrasing.
+- Avoid opening with "Ah là", "Allô", or equivalent intros; use "Hey", "Salut", or start directly.
+- Self-deprecating humor is allowed, but never imply your jokes are bad, lame, or flat.
 - Tone must feel welcoming and confidence-building for onboarding.
 - Humor should be witty and light, never mean in this greeting.
 - Keep spoken-style contractions and lively oral rhythm.
@@ -972,6 +978,8 @@ Ecris exactement 3 phrases courtes, dans cet ordre strict :
   }
 Regles absolues :
 - Interdit de dire "comment tu vas avec Cathy" ou une tournure equivalente.
+- Evite d'ouvrir avec "Ah la", "Allo" ou equivalent; privilegie "Hey", "Salut" ou une entree directe.
+- L'autoderision est permise, mais jamais en disant ou insinuant que tes blagues sont nulles, plates ou mauvaises.
 - Ton d'accueil onboarding: chaleureux, complice, rassurant, energique.
 - Humour d'entree: taquin, jamais agressif dans ce message d'accueil.
 - Le texte doit etre logique, naturel et court en francais quebecois parle.

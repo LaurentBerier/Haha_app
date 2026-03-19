@@ -81,6 +81,13 @@ const GREETING_API_MAX_ATTEMPTS = 2;
 const GREETING_API_RETRY_DELAY_MS = 850;
 const DEFAULT_TUTORIAL_CONNECTION_LIMIT = 3;
 const DEFAULT_TUTORIAL_NUDGE_AFTER_MESSAGES = 2;
+const GREETING_BOOTING_ROTATION_MS = 1_200;
+const GREETING_BOOTING_FR_LINES = [
+  "Chargement du cerveau de Cathy... attention, y'a du trafic",
+  "Calibration du sarcasme... 92%... 104%... ok c'est trop tard",
+  "Synchronisation avec ton sens de l'humour... erreur detectee",
+  "Injection d'opinions non sollicitees... en cours"
+] as const;
 let greetingApiBackoffUntilTs = 0;
 
 interface ArtistModeSource {
@@ -267,14 +274,14 @@ function buildFallbackGreetingText(
   const openingVariants = isCathyArtist
     ? [
         `Hey ${displayName}, ça va? J'suis le clone de Cathy: même mordant, un rire de plus, pis juste assez de bugs pour être attachante.`,
-        `Allô ${displayName}, tu vas bien? J'suis le clone de Cathy: copié-collé de la répartie, version un peu trop énergique.`,
+        `Salut ${displayName}, tu vas bien? J'suis le clone de Cathy: copié-colle de la repartie, version un peu trop energique.`,
         `Yo ${displayName}, comment ça roule? J'suis le clone de Cathy: même sarcasme, même tempo, zéro bouton pause.`,
-        `Hé ${displayName}, prêt(e) ou pas? J'suis le clone de Cathy, edition turbo: j'arrive vite, j'parle franc, pis j'ris fort.`,
+        `Salut ${displayName}, pret(e) ou pas? J'suis le clone de Cathy, edition turbo: j'arrive vite, j'parle franc, pis j'ris fort.`,
         `Bon ${displayName}, on s'le dit? J'suis le clone de Cathy: même queue de comète, juste un p'tit glitch dans l'attitude.`
       ]
     : [
         `Hey ${displayName}, ça va? J'suis ${artistName} au micro, pis j'arrive avec du jus.`,
-        `Allô ${displayName}, tu vas bien? Moi c'est ${artistName}, pis oui, j'suis déjà crinquée.`,
+        `Salut ${displayName}, tu vas bien? Moi c'est ${artistName}, pis oui, j'suis deja crinquee.`,
         `Yo ${displayName}, comment ça roule? C'est ${artistName}, pis on part ça smooth.`
       ];
   const voiceSentenceVariants = isTutorialGreeting
@@ -754,6 +761,10 @@ export default function ModeSelectHomeScreen() {
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [categoryGridBottomY, setCategoryGridBottomY] = useState<number | null>(null);
   const [isModeGridLockedCompact, setIsModeGridLockedCompact] = useState(false);
+  const [isGreetingBooting, setIsGreetingBooting] = useState(false);
+  const [greetingBootingLineIndex, setGreetingBootingLineIndex] = useState(() =>
+    Math.floor(Math.random() * GREETING_BOOTING_FR_LINES.length)
+  );
 
   const artists = useStore((state) => state.artists);
   const language = useStore((state) => state.language);
@@ -910,13 +921,18 @@ export default function ModeSelectHomeScreen() {
   const isTutorialConversation = messages.some(
     (message) => message.role === 'artist' && message.metadata?.tutorialMode === true
   );
+  const isEnglishLanguage = language.toLowerCase().startsWith('en');
+  const showGreetingBootingIndicator = isValidConversation && messages.length === 0 && isGreetingBooting;
+  const greetingBootingLabel = isEnglishLanguage
+    ? 'Loading...'
+    : GREETING_BOOTING_FR_LINES[greetingBootingLineIndex % GREETING_BOOTING_FR_LINES.length];
   const shouldCompactModeGrid =
     isValidConversation &&
     (isModeGridLockedCompact || hasStreaming || ((Platform.OS === 'ios' || Platform.OS === 'android') && isInputFocused));
   const isGreetingVoiceActive =
     greeting !== null &&
     (audioPlayer.isLoading || audioPlayer.isPlaying || isGreetingVoicePendingGesture || isWebSpeechFallbackActive);
-  const greetingVoiceLabel = language.toLowerCase().startsWith('en')
+  const greetingVoiceLabel = isEnglishLanguage
     ? isGreetingVoicePendingGesture
       ? 'Tap anywhere to enable Cathy audio.'
       : 'Cathy is speaking...'
@@ -1073,6 +1089,7 @@ export default function ModeSelectHomeScreen() {
 
   useEffect(() => {
     setIsInputFocused(false);
+    setIsGreetingBooting(false);
     modeNudgeShownRef.current = false;
   }, [artistId]);
 
@@ -1181,6 +1198,21 @@ export default function ModeSelectHomeScreen() {
   ]);
 
   useEffect(() => {
+    if (!showGreetingBootingIndicator || isEnglishLanguage) {
+      return;
+    }
+
+    setGreetingBootingLineIndex(Math.floor(Math.random() * GREETING_BOOTING_FR_LINES.length));
+    const intervalId = setInterval(() => {
+      setGreetingBootingLineIndex((previous) => (previous + 1) % GREETING_BOOTING_FR_LINES.length);
+    }, GREETING_BOOTING_ROTATION_MS);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [isEnglishLanguage, showGreetingBootingIndicator]);
+
+  useEffect(() => {
     Animated.timing(modeGridCompactProgress, {
       toValue: shouldCompactModeGrid ? 1 : 0,
       duration: 240,
@@ -1241,141 +1273,156 @@ export default function ModeSelectHomeScreen() {
       if (sessionStateBeforeGreeting.greetedArtistIds.has(artist.id)) {
         return;
       }
-      const isSessionFirstGreeting = sessionStateBeforeGreeting.greetedArtistIds.size === 0;
-      markArtistGreeted(artist.id);
-      const introConversation = createConversation(
-        artist.id,
-        resolveGreetingConversationLanguage(artist, language),
-        MODE_IDS.ON_JASE
-      );
-      setActiveConversation(introConversation.id);
-
-      const availableModes = buildAvailableModesForGreeting(artist);
-      const coords = await getOptionalCoords();
-      if (isCancelled) {
-        return;
-      }
-
-      const fetchedResult = await fetchGreetingFromApi(
-        artist.id,
-        language,
-        accessToken,
-        coords,
-        availableModes,
-        preferredName,
-        isSessionFirstGreeting
-      );
-      const fallbackTutorialMode = isSessionFirstGreeting;
-      const isTutorialGreeting = fetchedResult.tutorial?.active ?? fallbackTutorialMode;
-      const greetingMetadata = {
-        injected: true,
-        tutorialMode: isTutorialGreeting,
-        injectedType: isTutorialGreeting ? 'tutorial_greeting' : 'greeting'
-      } as const;
-      const nextGreeting =
-        fetchedResult.greeting ??
-        buildFallbackGreetingText(artist, language, preferredName, availableModes, isTutorialGreeting);
-      if (isCancelled || !nextGreeting) {
-        return;
-      }
-
-      const now = new Date().toISOString();
-      const greetingMessageId = generateId('msg');
-      addMessage(introConversation.id, {
-        id: greetingMessageId,
-        conversationId: introConversation.id,
-        role: 'artist',
-        content: nextGreeting,
-        status: 'complete',
-        timestamp: now,
-        metadata: greetingMetadata
-      });
-      updateConversation(
-        introConversation.id,
-        {
-          lastMessagePreview: nextGreeting.slice(0, 120),
-          title: nextGreeting.slice(0, 30)
-        },
-        artist.id
-      );
-
-      setGreeting(nextGreeting);
-      setPendingGreetingAudioUri(null);
-      setPendingGreetingSpeechText(null);
-      clearGreetingSpeechHint();
-
-      if (!accessToken.trim()) {
-        if (Platform.OS === 'web') {
-          if (!speakGreetingWithWebFallback(nextGreeting, language)) {
-            setPendingGreetingSpeechText(nextGreeting);
-          } else {
-            pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
-          }
-        }
-        return;
-      }
+      setIsGreetingBooting(true);
+      let hasInsertedGreetingMessage = false;
 
       try {
-        updateMessage(introConversation.id, greetingMessageId, {
-          metadata: {
-            ...greetingMetadata,
-            voiceStatus: 'generating'
-          }
-        });
-        const greetingAudioUri = await synthesizeVoice(nextGreeting, artist.id, language, accessToken, {
-          purpose: 'greeting'
-        });
+        const isSessionFirstGreeting = sessionStateBeforeGreeting.greetedArtistIds.size === 0;
+        markArtistGreeted(artist.id);
+        const introConversation = createConversation(
+          artist.id,
+          resolveGreetingConversationLanguage(artist, language),
+          MODE_IDS.ON_JASE
+        );
+        setActiveConversation(introConversation.id);
+
+        const availableModes = buildAvailableModesForGreeting(artist);
+        const coords = await getOptionalCoords();
         if (isCancelled) {
           return;
         }
 
-        updateMessage(introConversation.id, greetingMessageId, {
-          metadata: {
-            ...greetingMetadata,
-            voiceUrl: greetingAudioUri,
-            voiceQueue: [greetingAudioUri],
-            voiceStatus: 'ready'
-          }
+        const fetchedResult = await fetchGreetingFromApi(
+          artist.id,
+          language,
+          accessToken,
+          coords,
+          availableModes,
+          preferredName,
+          isSessionFirstGreeting
+        );
+        const fallbackTutorialMode = isSessionFirstGreeting;
+        const isTutorialGreeting = fetchedResult.tutorial?.active ?? fallbackTutorialMode;
+        const greetingMetadata = {
+          injected: true,
+          tutorialMode: isTutorialGreeting,
+          injectedType: isTutorialGreeting ? 'tutorial_greeting' : 'greeting'
+        } as const;
+        const nextGreeting =
+          fetchedResult.greeting ??
+          buildFallbackGreetingText(artist, language, preferredName, availableModes, isTutorialGreeting);
+        if (isCancelled || !nextGreeting) {
+          return;
+        }
+
+        const now = new Date().toISOString();
+        const greetingMessageId = generateId('msg');
+        addMessage(introConversation.id, {
+          id: greetingMessageId,
+          conversationId: introConversation.id,
+          role: 'artist',
+          content: nextGreeting,
+          status: 'complete',
+          timestamp: now,
+          metadata: greetingMetadata
         });
-        void playGreetingAudio(greetingAudioUri);
-        if (Platform.OS === 'web') {
-          clearGreetingPlaybackCheck();
-          greetingPlaybackCheckTimeoutRef.current = setTimeout(() => {
-            const audioState = audioStateRef.current;
-            if (audioState.isPlaying || audioState.isLoading || audioState.currentUri === greetingAudioUri) {
-              return;
-            }
+        hasInsertedGreetingMessage = true;
+        setIsGreetingBooting(false);
+        updateConversation(
+          introConversation.id,
+          {
+            lastMessagePreview: nextGreeting.slice(0, 120),
+            title: nextGreeting.slice(0, 30)
+          },
+          artist.id
+        );
+
+        setGreeting(nextGreeting);
+        setPendingGreetingAudioUri(null);
+        setPendingGreetingSpeechText(null);
+        clearGreetingSpeechHint();
+
+        if (!accessToken.trim()) {
+          if (Platform.OS === 'web') {
             if (!speakGreetingWithWebFallback(nextGreeting, language)) {
-              setPendingGreetingAudioUri(greetingAudioUri);
               setPendingGreetingSpeechText(nextGreeting);
             } else {
               pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
             }
-          }, 900);
+          }
+          return;
         }
-      } catch (error) {
-        if (!isCancelled) {
+
+        try {
           updateMessage(introConversation.id, greetingMessageId, {
             metadata: {
               ...greetingMetadata,
-              voiceStatus: undefined
+              voiceStatus: 'generating'
             }
           });
+          const greetingAudioUri = await synthesizeVoice(nextGreeting, artist.id, language, accessToken, {
+            purpose: 'greeting'
+          });
+          if (isCancelled) {
+            return;
+          }
 
-          const status =
-            typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number'
-              ? error.status
-              : null;
-          const isQuotaOrRateError = status === 429 || status === 403;
+          updateMessage(introConversation.id, greetingMessageId, {
+            metadata: {
+              ...greetingMetadata,
+              voiceUrl: greetingAudioUri,
+              voiceQueue: [greetingAudioUri],
+              voiceStatus: 'ready'
+            }
+          });
+          void playGreetingAudio(greetingAudioUri);
+          if (Platform.OS === 'web') {
+            clearGreetingPlaybackCheck();
+            greetingPlaybackCheckTimeoutRef.current = setTimeout(() => {
+              const audioState = audioStateRef.current;
+              if (audioState.isPlaying || audioState.isLoading || audioState.currentUri === greetingAudioUri) {
+                return;
+              }
+              if (!speakGreetingWithWebFallback(nextGreeting, language)) {
+                setPendingGreetingAudioUri(greetingAudioUri);
+                setPendingGreetingSpeechText(nextGreeting);
+              } else {
+                pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
+              }
+            }, 900);
+          }
+        } catch (error) {
+          if (!isCancelled) {
+            updateMessage(introConversation.id, greetingMessageId, {
+              metadata: {
+                ...greetingMetadata,
+                voiceStatus: undefined
+              }
+            });
 
-          // Keep Cathy identity: do not switch to generic Web Speech when TTS is quota/rate-limited.
-          if (Platform.OS === 'web' && !isQuotaOrRateError) {
-            if (!speakGreetingWithWebFallback(nextGreeting, language)) {
-              setPendingGreetingSpeechText(nextGreeting);
-            } else {
-              pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
+            const status =
+              typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number'
+                ? error.status
+                : null;
+            const isQuotaOrRateError = status === 429 || status === 403;
+
+            // Keep Cathy identity: do not switch to generic Web Speech when TTS is quota/rate-limited.
+            if (Platform.OS === 'web' && !isQuotaOrRateError) {
+              if (!speakGreetingWithWebFallback(nextGreeting, language)) {
+                setPendingGreetingSpeechText(nextGreeting);
+              } else {
+                pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
+              }
             }
           }
+        }
+      } catch {
+        if (!isCancelled) {
+          setIsGreetingBooting(false);
+        }
+      } finally {
+        if (!isCancelled && !hasInsertedGreetingMessage) {
+          setIsGreetingBooting(false);
         }
       }
     };
@@ -1507,6 +1554,12 @@ export default function ModeSelectHomeScreen() {
             style={[styles.conversationOverlay, { bottom: modeSelectInputOffset, top: conversationOverlayTop }]}
           >
             <View style={[styles.conversationWindow, { maxHeight: chatWindowMaxHeight }]}>
+              {showGreetingBootingIndicator ? (
+                <View style={styles.greetingBootingIndicator} testID="mode-select-greeting-booting-indicator">
+                  <View style={styles.greetingBootingDot} />
+                  <Text style={styles.greetingBootingLabel}>{greetingBootingLabel}</Text>
+                </View>
+              ) : null}
               {isGreetingVoiceActive ? (
                 <View
                   style={[
@@ -1628,6 +1681,31 @@ const styles = StyleSheet.create({
   conversationListContent: {
     paddingTop: theme.spacing.xs,
     paddingBottom: theme.spacing.sm
+  },
+  greetingBootingIndicator: {
+    alignSelf: 'flex-start',
+    marginLeft: theme.spacing.md,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.colors.neonBlueSoft,
+    backgroundColor: 'rgba(10, 14, 24, 0.82)',
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 5
+  },
+  greetingBootingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: theme.colors.textMuted
+  },
+  greetingBootingLabel: {
+    color: theme.colors.textPrimary,
+    fontSize: 11,
+    fontWeight: '700'
   },
   greetingVoiceIndicator: {
     alignSelf: 'flex-start',
