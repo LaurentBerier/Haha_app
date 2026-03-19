@@ -24,7 +24,7 @@ import { useStore } from '../store/useStore';
 import { findConversationById } from '../utils/conversationUtils';
 import { shouldAutoSwitchToEnglish } from '../utils/languageDetection';
 import { generateId } from '../utils/generateId';
-import { splitDisplayChunkFromRaw, stripAudioTags } from '../utils/audioTags';
+import { normalizeSpeechText, splitDisplayChunkFromRaw, stripAudioTags } from '../utils/audioTags';
 import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../utils/accountTypeUtils';
 import type { ScoreAction } from '../models/Gamification';
 import { useAudioPlayer } from './useAudioPlayer';
@@ -52,7 +52,6 @@ const MIN_TTS_CHUNK_CHARS = 20;
 const MAX_TTS_CHUNK_CHARS = 200;
 const VOICE_FIRST_CHUNK_MIN_CHARS = 60;
 const REACT_TAG_PATTERN = /^\s*\[REACT:([^\]\n]{1,8})\]\s*/i;
-const REACT_TAG_GLOBAL_PATTERN = /\[REACT:[^\]\n]{1,12}\]/gi;
 const ALLOWED_REACTIONS = new Set(['😂', '💀', '😮', '😤', '🙄', '😬', '🤔', '👍']);
 
 function isQuotaBlockedErrorCode(code: string | null): boolean {
@@ -83,14 +82,6 @@ function isSentenceBoundary(input: string, index: number): boolean {
 
 function normalizeTtsChunk(chunk: string): string {
   return chunk.replace(/\s+/g, ' ').trim();
-}
-
-function stripReactionTagMarkers(text: string): string {
-  return text.replace(REACT_TAG_GLOBAL_PATTERN, '').replace(/\s+/g, ' ').trim();
-}
-
-function stripReactionTagMarkersForDisplay(text: string): string {
-  return text.replace(REACT_TAG_GLOBAL_PATTERN, '');
 }
 
 function extractReactionTag(text: string): { reaction: string | null; cleaned: string } {
@@ -502,9 +493,8 @@ export function useChat(conversationId: string) {
         const mergedChunk = `${displayPendingTagRef.current}${chunk}`;
         const { displayChunk, pendingChunk } = splitDisplayChunkFromRaw(mergedChunk);
         displayPendingTagRef.current = pendingChunk;
-        const cleanedDisplayChunk = stripReactionTagMarkersForDisplay(displayChunk);
-        if (cleanedDisplayChunk) {
-          appendMessageContent(jobConversationId, artistMessageId, cleanedDisplayChunk);
+        if (displayChunk) {
+          appendMessageContent(jobConversationId, artistMessageId, displayChunk);
         }
       };
       flushBufferedTokensRef.current = flushBufferedTokens;
@@ -575,6 +565,7 @@ export function useChat(conversationId: string) {
       let ttsChunkCount = 0;
       let hasStartedVoiceGeneration = false;
       let ignoreTtsUpdates = false;
+      let hasTtsChunkFailure = false;
       let hasDevLocalFallbackAttempt = false;
       const ttsChunkUrisByIndex = new Map<number, string>();
       const ttsChunkDisplayBoundariesByIndex = new Map<number, number>();
@@ -592,7 +583,7 @@ export function useChat(conversationId: string) {
         for (let index = 0; index < ttsChunkCount; index += 1) {
           const uri = ttsChunkUrisByIndex.get(index);
           if (!uri) {
-            continue;
+            break;
           }
 
           const boundaryCandidate = ttsChunkDisplayBoundariesByIndex.get(index);
@@ -623,10 +614,10 @@ export function useChat(conversationId: string) {
           if (uri && shouldAutoPlay) {
             if (nextPlayableChunkIndex === 0 && !hasQueuedAutoplayChunk) {
               // First real chunk interrupts any filler currently playing.
-              void audioPlayer.playQueue([uri]);
+              void audioPlayer.playQueue([uri], { messageId: artistMessageId });
               hasQueuedAutoplayChunk = true;
             } else if (hasQueuedAutoplayChunk) {
-              audioPlayer.appendToQueue(uri);
+              audioPlayer.appendToQueue(uri, { messageId: artistMessageId });
             }
           }
           nextPlayableChunkIndex += 1;
@@ -655,7 +646,7 @@ export function useChat(conversationId: string) {
           return;
         }
 
-        const normalizedChunk = normalizeTtsChunk(stripReactionTagMarkers(chunk));
+        const normalizedChunk = normalizeSpeechText(chunk, { trim: true });
         if (normalizedChunk.length < MIN_TTS_CHUNK_CHARS) {
           return;
         }
@@ -694,26 +685,10 @@ export function useChat(conversationId: string) {
               return;
             }
 
-            if (!ignoreTtsUpdates) {
-              ignoreTtsUpdates = true;
-              mergeArtistMetadata({
-                voiceStatus: undefined,
-                voiceUrl: undefined,
-                voiceQueue: undefined,
-                voiceChunkBoundaries: undefined
-              });
-            }
+            hasTtsChunkFailure = true;
           })
           .catch(() => {
-            if (!ignoreTtsUpdates) {
-              ignoreTtsUpdates = true;
-              mergeArtistMetadata({
-                voiceStatus: undefined,
-                voiceUrl: undefined,
-                voiceQueue: undefined,
-                voiceChunkBoundaries: undefined
-              });
-            }
+            hasTtsChunkFailure = true;
           });
 
         ttsPendingPromises.push(ttsPromise);
@@ -743,7 +718,7 @@ export function useChat(conversationId: string) {
             const lastOpenBracketIndex = ttsBuffer.lastIndexOf('[');
             const lastCloseBracketIndex = ttsBuffer.lastIndexOf(']');
             const hasUnclosedBracketTag = lastOpenBracketIndex > lastCloseBracketIndex;
-            const firstChunkCandidate = normalizeTtsChunk(stripReactionTagMarkers(ttsBuffer));
+            const firstChunkCandidate = normalizeSpeechText(ttsBuffer, { trim: true });
             if (!hasUnclosedBracketTag && firstChunkCandidate.length >= VOICE_FIRST_CHUNK_MIN_CHARS) {
               queueTtsChunk(ttsBuffer);
               ttsBuffer = '';
@@ -761,7 +736,7 @@ export function useChat(conversationId: string) {
         flushTtsChunks(true);
         const latestArtistMessage = getLatestArtistMessage();
         const rawFinalContent = latestArtistMessage?.content ?? '';
-        const finalContent = stripReactionTagMarkersForDisplay(rawFinalContent);
+        const finalContent = stripAudioTags(rawFinalContent);
         if (finalContent !== rawFinalContent) {
           updateMessage(jobConversationId, artistMessageId, {
             content: finalContent
@@ -857,7 +832,7 @@ export function useChat(conversationId: string) {
           }
         }
         if (canGenerateVoice && !ignoreTtsUpdates) {
-          const fallbackPreviewText = normalizeTtsChunk(stripReactionTagMarkers(rawTtsResponseRef.current));
+          const fallbackPreviewText = normalizeSpeechText(rawTtsResponseRef.current, { trim: true });
           if (!hasStartedVoiceGeneration && fallbackPreviewText) {
             hasStartedVoiceGeneration = true;
             mergeArtistMetadata({
@@ -874,21 +849,19 @@ export function useChat(conversationId: string) {
             }
 
             let { orderedVoiceUris, orderedBoundaries } = buildVoicePlaybackData();
+            const fallbackText = normalizeSpeechText(rawTtsResponseRef.current, { trim: true });
+            const fallbackAccessToken = useStore.getState().session?.accessToken ?? accessToken;
 
-            // Fallback for short replies or chunking misses: synthesize full final text once.
-            if (orderedVoiceUris.length === 0) {
-              const fallbackText = normalizeTtsChunk(stripReactionTagMarkers(rawTtsResponseRef.current));
-              const fallbackAccessToken = useStore.getState().session?.accessToken ?? accessToken;
-              if (fallbackText && fallbackAccessToken.trim()) {
-                try {
-                  const fallbackUri = await fetchAndCacheVoice(fallbackText, artistId, language, fallbackAccessToken);
-                  if (fallbackUri) {
-                    orderedVoiceUris = [fallbackUri];
-                    orderedBoundaries = [fallbackText.length];
-                  }
-                } catch {
-                  // Silent failure: keep no voice button when fallback also fails.
+            // Recover gracefully from short replies and per-chunk failures.
+            if ((hasTtsChunkFailure || orderedVoiceUris.length === 0) && fallbackText && fallbackAccessToken.trim()) {
+              try {
+                const fallbackUri = await fetchAndCacheVoice(fallbackText, artistId, language, fallbackAccessToken);
+                if (fallbackUri) {
+                  orderedVoiceUris = [fallbackUri];
+                  orderedBoundaries = [stripAudioTags(fallbackText, { trim: true }).length];
                 }
+              } catch {
+                // Silent failure: keep existing voice chunks when available.
               }
             }
 
@@ -911,7 +884,7 @@ export function useChat(conversationId: string) {
 
             const shouldAutoPlay = Boolean(useStore.getState().voiceAutoPlay);
             if (shouldAutoPlay && !shouldBlockInput && !hasQueuedAutoplayChunk) {
-              void audioPlayer.playQueue(orderedVoiceUris);
+              void audioPlayer.playQueue(orderedVoiceUris, { messageId: artistMessageId });
             }
           });
         }

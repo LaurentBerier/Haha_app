@@ -20,6 +20,7 @@ import type { ChatImageAttachment, ChatSendPayload } from '../../models/ChatSend
 import type { ClaudeImageMediaType } from '../../services/claudeApiService';
 import { impactLight } from '../../services/hapticsService';
 import { theme } from '../../theme';
+import { resolveChatInputVoiceAction } from './chatInputVoiceAction';
 import micIconSource from '../../../assets/icons/Mic_Icon.png';
 
 interface ConversationModeProps {
@@ -138,7 +139,7 @@ export function ChatInput({
   const isConversationListening = Boolean(conversationMode?.enabled && conversationMode.isListening);
   const isAssistantBusy = Boolean(conversationMode?.enabled && conversationMode.assistantBusy);
   const isConversationPlaying = Boolean(conversationMode?.enabled && (conversationMode.isPlaying || isAssistantBusy));
-  const isConversationPaused = Boolean(isConversationEnabled && !isConversationListening);
+  const isConversationPaused = Boolean(isConversationEnabled && !isConversationListening && !isConversationPlaying);
   const conversationTranscript = conversationMode?.transcript.trim() ?? '';
   const conversationError = conversationMode?.error ?? null;
   const { pulse } = useVoiceAnimations(isConversationListening);
@@ -273,7 +274,15 @@ export function ChatInput({
   };
 
   const handleRightActionPress = () => {
-    if (canSend) {
+    const action = resolveChatInputVoiceAction({
+      canSend,
+      hasConversationMode: Boolean(conversationMode),
+      isConversationEnabled,
+      isConversationListening,
+      isConversationPlaying
+    });
+
+    if (action === 'send') {
       Animated.sequence([
         Animated.timing(sendScale, { toValue: 0.9, duration: 70, useNativeDriver: true }),
         Animated.timing(sendScale, { toValue: 1, duration: 110, useNativeDriver: true })
@@ -282,28 +291,19 @@ export function ChatInput({
       return;
     }
 
-    if (!conversationMode) {
+    if (!conversationMode || action === 'noop') {
       return;
     }
 
     void impactLight();
-    if (!isConversationEnabled) {
+
+    if (action === 'enable_and_listen') {
       conversationMode.onToggle();
       conversationMode.onInterrupt?.();
       return;
     }
 
-    if (isConversationPlaying && conversationMode.onInterrupt) {
-      conversationMode.onInterrupt();
-      return;
-    }
-
-    if (!isConversationListening && conversationMode.onInterrupt) {
-      conversationMode.onInterrupt();
-      return;
-    }
-
-    conversationMode.onToggle();
+    conversationMode.onInterrupt?.();
   };
 
   const handleInputKeyPress = (event: NativeSyntheticEvent<TextInputKeyPressEventData>) => {

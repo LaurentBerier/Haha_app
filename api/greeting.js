@@ -126,6 +126,43 @@ function normalizeOptionalString(value, maxLength = 120) {
   return trimmed.slice(0, maxLength);
 }
 
+function classifyGreetingNameStyle(preferredName) {
+  const normalized = normalizeOptionalString(preferredName, 40);
+  if (!normalized) {
+    return 'normal';
+  }
+
+  const compact = normalized.replace(/\s+/g, '');
+  if (compact.length >= 15) {
+    return 'unusual';
+  }
+
+  if (/\d/.test(compact)) {
+    return 'unusual';
+  }
+
+  if (/[^A-Za-zÀ-ÖØ-öø-ÿ'’\- ]/.test(normalized)) {
+    return 'unusual';
+  }
+
+  if (/(.)\1\1/i.test(compact)) {
+    return 'unusual';
+  }
+
+  const lettersOnly = compact.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ]/g, '');
+  if (lettersOnly.length >= 4) {
+    const upperCount = (lettersOnly.match(/[A-ZÀ-ÖØ-Þ]/g) ?? []).length;
+    const lowerCount = (lettersOnly.match(/[a-zà-öø-ÿ]/g) ?? []).length;
+    const hasAggressiveMixedCase =
+      /[a-zà-öø-ÿ][A-ZÀ-ÖØ-Þ]/.test(lettersOnly) || /[A-ZÀ-ÖØ-Þ]{2,}[a-zà-öø-ÿ]/.test(lettersOnly);
+    if (upperCount > 0 && lowerCount > 0 && (hasAggressiveMixedCase || upperCount >= Math.ceil(lettersOnly.length * 0.6))) {
+      return 'unusual';
+    }
+  }
+
+  return 'normal';
+}
+
 function toCacheCoordinate(value) {
   if (typeof value !== 'number' || !Number.isFinite(value)) {
     return null;
@@ -921,6 +958,7 @@ Write exactly 3 short sentences in this strict order:
 3) Explain that if they prefer typing, they can tap the mic to return to text mode, then end with one easy first prompt.
 Hard rules:
 - During tutorial, do NOT introduce weather, headlines, or mode lists unless the user explicitly asks.
+- If Name style is unusual, add one short positive acknowledgment about the name (playful, never mocking).
 - Never write "how are you with Cathy" or similar unnatural phrasing.
 - Avoid opening with "Ah là", "Allô", or equivalent intros; use "Hey", "Salut", or start directly.
 - Self-deprecating humor is allowed, but never imply your jokes are bad, lame, or flat.
@@ -939,10 +977,11 @@ Hard rules:
     return `Tu es Cathy Gauthier, intense, excitée, sarcastique et drôle, et tu accueilles l'utilisateur dans l'ecran de selection de mode.
 Ecris exactement 3 phrases courtes, dans cet ordre strict :
 1) Salue la personne par son prenom si disponible, demande comment elle va, et ajoute une mini blague sur le fait que tu es le clone de Cathy (drôle, vive, mais bienveillante).
-2) Explique que la conversation vocale est deja active et que le micro allume en bas a droite sert a lui parler direct.
+2) Explique que la conversation vocale est déjà active et que le micro allumé en bas à droite sert à lui parler direct.
 3) Explique que si la personne prefere texter, elle peut cliquer sur le micro pour retourner en mode texte, puis termine avec une invitation facile.
 Regles absolues :
 - Pendant le tutorial, n'introduis JAMAIS meteo, actualite ou liste de modes sauf si l'utilisateur le demande explicitement.
+- Si le style du prenom est inhabituel, ajoute un clin d'oeil positif bref sur le prenom (jamais moqueur).
 - Interdit de dire "comment tu vas avec Cathy" ou une tournure equivalente.
 - Evite d'ouvrir avec "Ah la", "Allo" ou equivalent; privilegie "Hey", "Salut" ou une entree directe.
 - L'autoderision est permise, mais jamais en disant ou insinuant que tes blagues sont nulles, plates ou mauvaises.
@@ -1025,6 +1064,7 @@ function buildGreetingUserPrompt(context) {
       `Time: ${context.timeLabel}`,
       `Artist: ${context.artistId}`,
       `First name: ${context.preferredName ?? 'Unknown'}`,
+      `Name style: ${context.nameStyle === 'unusual' ? 'unusual' : 'normal'}`,
       `Horoscope sign: ${context.horoscopeSign ?? 'Unknown'}`,
       `Weather: ${context.weatherSummary}`,
       `Headline: ${context.headlineSummary}`,
@@ -1040,6 +1080,7 @@ function buildGreetingUserPrompt(context) {
     `Heure: ${context.timeLabel}`,
     `Artiste: ${context.artistId}`,
     `Prenom: ${context.preferredName ?? 'Inconnu'}`,
+    `Style du prenom: ${context.nameStyle === 'unusual' ? 'inhabituel' : 'normal'}`,
     `Signe astro: ${context.horoscopeSign ?? 'Inconnu'}`,
     `Meteo: ${context.weatherSummary}`,
     `Manchette: ${context.headlineSummary}`,
@@ -1084,21 +1125,24 @@ function clampToSentenceLimit(text, maxSentences) {
   return sentences.slice(0, maxSentences).join(' ');
 }
 
-function buildForcedTutorialGreetingText(language, preferredName) {
+function buildForcedTutorialGreetingText(language, preferredName, nameStyle = 'normal') {
   const isEnglish = language.toLowerCase().startsWith('en');
   const displayName = normalizeOptionalString(preferredName, 40);
+  const shouldAcknowledgeName = Boolean(displayName) && nameStyle === 'unusual';
 
   if (isEnglish) {
     const intro = displayName
       ? `Hey ${displayName}, how are you doing?`
       : 'Hey, how are you doing?';
-    return `${intro} Voice conversation is already active: you can see the small lit mic at the bottom-right, so you can simply speak to interact with me. If you prefer texting, tap the mic to turn it off, then send me your texts.`;
+    const nameBeat = shouldAcknowledgeName ? ' Your name is unique and I love it.' : '';
+    return `${intro}${nameBeat} Voice conversation is already active: you can see the small lit mic at the bottom-right, so you can simply speak to interact with me. If you prefer texting, tap the mic to turn it off, then send me your texts.`;
   }
 
   const intro = displayName
     ? `Hey ${displayName}, comment tu vas?`
     : 'Hey, comment tu vas?';
-  return `${intro} La conversation vocale est deja active: tu vois le petit micro allume en bas a droite, donc tu peux simplement parler pour interagir avec moi. Si tu preferes texter, clique sur le micro pour le couper, puis envoie-moi tes textos.`;
+  const nameBeat = shouldAcknowledgeName ? " Ton prénom est original, j'aime ça." : '';
+  return `${intro}${nameBeat} La conversation vocale est déjà active: tu vois le petit micro allumé en bas à droite, donc tu peux simplement parler pour interagir avec moi. Si tu préfères texter, clique sur le micro pour le couper, puis envoie-moi tes textos.`;
 }
 
 async function generateGreetingText(context) {
@@ -1249,6 +1293,7 @@ module.exports = async function handler(req, res) {
 
   const { dateLabel, timeLabel } = formatLocalDateTime(input.language);
   const preferredName = input.preferredName || extractPreferredName(user);
+  const nameStyle = classifyGreetingNameStyle(preferredName);
   const weatherSummary = tutorialGreetingContextActive
     ? input.language.toLowerCase().startsWith('en')
       ? 'not used during tutorial'
@@ -1263,7 +1308,7 @@ module.exports = async function handler(req, res) {
 
   let greeting;
   if (forcedTutorialGreetingActive) {
-    greeting = buildForcedTutorialGreetingText(input.language, preferredName);
+    greeting = buildForcedTutorialGreetingText(input.language, preferredName, nameStyle);
   } else {
     try {
       greeting = await generateGreetingText(
@@ -1273,6 +1318,7 @@ module.exports = async function handler(req, res) {
           dateLabel,
           timeLabel,
           preferredName,
+          nameStyle,
           horoscopeSign: userGreetingProfile.horoscopeSign,
           weatherSummary,
           headlineSummary,

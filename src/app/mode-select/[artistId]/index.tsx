@@ -23,6 +23,7 @@ import { MODE_IDS } from '../../../config/constants';
 import { MODE_CATEGORY_META, MODE_CATEGORY_ORDER, type ModeCategoryId } from '../../../config/modeCategories';
 import { getModeById } from '../../../config/modes';
 import { API_BASE_URL, CLAUDE_PROXY_URL, E2E_AUTH_BYPASS, GREETING_FORCE_TUTORIAL } from '../../../config/env';
+import { useAutoReplayLastArtistMessage } from '../../../hooks/useAutoReplayLastArtistMessage';
 import { useChat } from '../../../hooks/useChat';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
 import { useVoiceConversation } from '../../../hooks/useVoiceConversation';
@@ -57,6 +58,11 @@ interface GreetingTutorialInfo {
 interface GreetingFetchResult {
   greeting: string | null;
   tutorial: GreetingTutorialInfo | null;
+}
+
+interface PendingGreetingAudio {
+  uri: string;
+  messageId: string;
 }
 
 interface OptionalLocationModule {
@@ -125,6 +131,47 @@ function resolveGreetingPreferredName(params: {
     toFirstName(params.displayName ?? null) ??
     toFirstName(params.email ?? null)
   );
+}
+
+function classifyGreetingNameStyle(preferredName: string | null | undefined): 'normal' | 'unusual' {
+  if (typeof preferredName !== 'string') {
+    return 'normal';
+  }
+
+  const normalized = preferredName.trim().slice(0, 40);
+  if (!normalized) {
+    return 'normal';
+  }
+
+  const compact = normalized.replace(/\s+/g, '');
+  if (compact.length >= 15) {
+    return 'unusual';
+  }
+
+  if (/\d/.test(compact)) {
+    return 'unusual';
+  }
+
+  if (/[^A-Za-zÀ-ÖØ-öø-ÿ'’\- ]/.test(normalized)) {
+    return 'unusual';
+  }
+
+  if (/(.)\1\1/i.test(compact)) {
+    return 'unusual';
+  }
+
+  const lettersOnly = compact.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ]/g, '');
+  if (lettersOnly.length >= 4) {
+    const upperCount = (lettersOnly.match(/[A-ZÀ-ÖØ-Þ]/g) ?? []).length;
+    const lowerCount = (lettersOnly.match(/[a-zà-öø-ÿ]/g) ?? []).length;
+    const hasAggressiveMixedCase =
+      /[a-zà-öø-ÿ][A-ZÀ-ÖØ-Þ]/.test(lettersOnly) || /[A-ZÀ-ÖØ-Þ]{2,}[a-zà-öø-ÿ]/.test(lettersOnly);
+    if (upperCount > 0 && lowerCount > 0 && (hasAggressiveMixedCase || upperCount >= Math.ceil(lettersOnly.length * 0.6))) {
+      return 'unusual';
+    }
+  }
+
+  return 'normal';
 }
 
 function resolveGreetingConversationLanguage(artist: ArtistModeSource, preferredLanguage: string): string {
@@ -240,6 +287,8 @@ function buildFallbackGreetingText(
 ): string {
   const isEnglish = language.toLowerCase().startsWith('en');
   const displayName = preferredName ?? (isEnglish ? 'there' : 'toi');
+  const nameStyle = classifyGreetingNameStyle(preferredName);
+  const shouldAcknowledgeName = Boolean(preferredName) && nameStyle === 'unusual';
   const artistName = artist.name?.trim() || 'Cathy';
   const isCathyArtist = artistName.toLowerCase().includes('cathy');
   const variationIndex = Math.floor(Math.random() * 5);
@@ -247,11 +296,13 @@ function buildFallbackGreetingText(
   if (isTutorialGreeting) {
     if (isEnglish) {
       const intro = preferredName ? `Hey ${displayName}, how are you doing?` : 'Hey, how are you doing?';
-      return `${intro} Voice conversation is already active: you can see the small lit mic at the bottom-right, so you can simply speak to interact with me. If you prefer texting, tap the mic to turn it off, then send me your texts.`;
+      const nameBeat = shouldAcknowledgeName ? ' Your name is unique and I love it.' : '';
+      return `${intro}${nameBeat} Voice conversation is already active: you can see the small lit mic at the bottom-right, so you can simply speak to interact with me. If you prefer texting, tap the mic to turn it off, then send me your texts.`;
     }
 
     const intro = preferredName ? `Hey ${displayName}, comment tu vas?` : 'Hey, comment tu vas?';
-    return `${intro} La conversation vocale est deja active: tu vois le petit micro allume en bas a droite, donc tu peux simplement parler pour interagir avec moi. Si tu preferes texter, clique sur le micro pour le couper, puis envoie-moi tes textos.`;
+    const nameBeat = shouldAcknowledgeName ? " Ton prénom est original, j'aime ça." : '';
+    return `${intro}${nameBeat} La conversation vocale est déjà active: tu vois le petit micro allumé en bas à droite, donc tu peux simplement parler pour interagir avec moi. Si tu préfères texter, clique sur le micro pour le couper, puis envoie-moi tes textos.`;
   }
 
   if (isEnglish) {
@@ -829,7 +880,7 @@ export default function ModeSelectHomeScreen() {
   }, [activeConversationId, artistId, conversationsForArtist, hasArtistBeenGreetedThisSession, sortedOnJaseConversations]);
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? null);
   const artistDisplayName = formatArtistDisplayName(artist?.name ?? null);
-  const [pendingGreetingAudioUri, setPendingGreetingAudioUri] = useState<string | null>(null);
+  const [pendingGreetingAudio, setPendingGreetingAudio] = useState<PendingGreetingAudio | null>(null);
   const [pendingGreetingSpeechText, setPendingGreetingSpeechText] = useState<string | null>(null);
   const [isWebSpeechFallbackActive, setIsWebSpeechFallbackActive] = useState(false);
   const modeGridCompactProgress = useRef(new Animated.Value(0)).current;
@@ -852,7 +903,6 @@ export default function ModeSelectHomeScreen() {
     isQuotaBlocked,
     audioPlayer
   } = useChat(modeSelectConversationId);
-  const playGreetingAudio = audioPlayer.play;
   const isValidConversation = modeSelectConversationId.length > 0;
   const sendFromModeSelect = useCallback(
     (payload: ChatSendPayload) => {
@@ -908,7 +958,7 @@ export default function ModeSelectHomeScreen() {
     isLoading: false,
     currentUri: null
   });
-  const isGreetingVoicePendingGesture = Boolean(pendingGreetingAudioUri || pendingGreetingSpeechText);
+  const isGreetingVoicePendingGesture = Boolean(pendingGreetingAudio || pendingGreetingSpeechText);
   const hasVisibleConversationText = messages.some(
     (message) => message.status === 'complete' && message.content.trim().length > 0
   );
@@ -935,12 +985,19 @@ export default function ModeSelectHomeScreen() {
     : isGreetingVoicePendingGesture
       ? "Touchez l'écran pour activer la voix de Cathy."
       : 'Cathy parle...';
-  const fallbackOverlayTop = Math.floor(viewportHeight * (Platform.OS === 'ios' ? 0.58 : 0.54));
+  const isNativeMobile = Platform.OS === 'ios' || Platform.OS === 'android';
+  const fallbackOverlayTop = Math.floor(
+    viewportHeight * (isNativeMobile && shouldCompactModeGrid ? 0.3 : Platform.OS === 'ios' ? 0.58 : 0.54)
+  );
   const measuredOverlayTop =
     typeof categoryGridBottomY === 'number' ? Math.ceil(categoryGridBottomY + theme.spacing.sm) : fallbackOverlayTop;
+  const mobileCompactOverlayMinTop = Math.max(theme.spacing.xl * 2, Math.floor(viewportHeight * 0.18));
   const minOverlayTop = Math.floor(viewportHeight * 0.46);
   const maxOverlayTop = Math.floor(viewportHeight * 0.75);
-  const conversationOverlayTop = Math.min(Math.max(measuredOverlayTop, minOverlayTop), maxOverlayTop);
+  const conversationOverlayTop =
+    isNativeMobile && shouldCompactModeGrid
+      ? Math.max(measuredOverlayTop, mobileCompactOverlayMinTop)
+      : Math.min(Math.max(measuredOverlayTop, minOverlayTop), maxOverlayTop);
   const chatWindowMaxHeight = Math.max(
     160,
     Math.floor(viewportHeight - modeSelectInputOffset - conversationOverlayTop - theme.spacing.xs)
@@ -1079,6 +1136,13 @@ export default function ModeSelectHomeScreen() {
     scrollToLatest(true);
   }, [messages, scrollToLatest]);
 
+  useAutoReplayLastArtistMessage({
+    messages,
+    audioPlayer,
+    enabled: isValidConversation,
+    hasStreaming
+  });
+
   useEffect(() => {
     setIsInputFocused(false);
     setIsGreetingBooting(false);
@@ -1163,7 +1227,7 @@ export default function ModeSelectHomeScreen() {
 
         const latestAudioState = audioStateRef.current;
         if (voiceAutoPlay && !latestAudioState.isPlaying && !latestAudioState.isLoading) {
-          void audioPlayer.play(nudgeVoiceUri);
+          void audioPlayer.play(nudgeVoiceUri, { messageId: nudgeMessageId });
         }
       })
       .catch(() => {
@@ -1331,7 +1395,7 @@ export default function ModeSelectHomeScreen() {
         );
 
         setGreeting(nextGreeting);
-        setPendingGreetingAudioUri(null);
+        setPendingGreetingAudio(null);
         setPendingGreetingSpeechText(null);
         clearGreetingSpeechHint();
 
@@ -1368,7 +1432,7 @@ export default function ModeSelectHomeScreen() {
               voiceStatus: 'ready'
             }
           });
-          void playGreetingAudio(greetingAudioUri);
+          void audioPlayer.play(greetingAudioUri, { messageId: greetingMessageId });
           if (Platform.OS === 'web') {
             clearGreetingPlaybackCheck();
             greetingPlaybackCheckTimeoutRef.current = setTimeout(() => {
@@ -1377,7 +1441,10 @@ export default function ModeSelectHomeScreen() {
                 return;
               }
               if (!speakGreetingWithWebFallback(nextGreeting, language)) {
-                setPendingGreetingAudioUri(greetingAudioUri);
+                setPendingGreetingAudio({
+                  uri: greetingAudioUri,
+                  messageId: greetingMessageId
+                });
                 setPendingGreetingSpeechText(nextGreeting);
               } else {
                 pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
@@ -1436,7 +1503,7 @@ export default function ModeSelectHomeScreen() {
     markArtistGreeted,
     preferredName,
     pulseGreetingSpeechHint,
-    playGreetingAudio,
+    audioPlayer,
     setActiveConversation,
     updateMessage,
     updateConversation
@@ -1445,20 +1512,20 @@ export default function ModeSelectHomeScreen() {
   useEffect(() => {
     if (
       Platform.OS !== 'web' ||
-      (!pendingGreetingAudioUri && !pendingGreetingSpeechText) ||
+      (!pendingGreetingAudio && !pendingGreetingSpeechText) ||
       typeof document === 'undefined'
     ) {
       return;
     }
 
     const handleFirstGesture = () => {
-      const uri = pendingGreetingAudioUri;
+      const pendingAudio = pendingGreetingAudio;
       const speechText = pendingGreetingSpeechText;
-      setPendingGreetingAudioUri(null);
+      setPendingGreetingAudio(null);
       setPendingGreetingSpeechText(null);
 
-      if (uri) {
-        void playGreetingAudio(uri);
+      if (pendingAudio) {
+        void audioPlayer.play(pendingAudio.uri, { messageId: pendingAudio.messageId });
       }
 
       if (speechText) {
@@ -1480,7 +1547,7 @@ export default function ModeSelectHomeScreen() {
       document.removeEventListener('pointerdown', handleFirstGesture);
       clearGreetingGestureRetry();
     };
-  }, [clearGreetingGestureRetry, language, pendingGreetingAudioUri, pendingGreetingSpeechText, playGreetingAudio, pulseGreetingSpeechHint]);
+  }, [audioPlayer, clearGreetingGestureRetry, language, pendingGreetingAudio, pendingGreetingSpeechText, pulseGreetingSpeechHint]);
 
   useEffect(() => {
     return () => {

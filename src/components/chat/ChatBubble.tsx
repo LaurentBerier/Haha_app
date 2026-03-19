@@ -8,6 +8,7 @@ import { fetchAndCacheVoice } from '../../services/ttsService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 import { hasVoiceAccessForAccountType } from '../../utils/accountTypeUtils';
+import { stripAudioTags } from '../../utils/audioTags';
 import { findConversationById } from '../../utils/conversationUtils';
 import type { AudioPlayerController } from '../../hooks/useAudioPlayer';
 import { WaveformButton } from './WaveformButton';
@@ -21,7 +22,6 @@ interface ChatBubbleProps {
 }
 
 const VOICE_HYDRATION_ATTEMPTS = new Set<string>();
-const REACT_TAG_GLOBAL_PATTERN = /\[REACT:[^\]\n]{1,12}\]/gi;
 
 function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMessage, audioPlayer }: ChatBubbleProps) {
   const router = useRouter();
@@ -37,7 +37,7 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
     typeof message.metadata?.errorMessage === 'string' && message.metadata.errorMessage.trim()
       ? message.metadata.errorMessage.trim()
       : t('errorStreaming');
-  const safeMessageContent = message.content.replace(REACT_TAG_GLOBAL_PATTERN, '');
+  const safeMessageContent = stripAudioTags(message.content);
   const hasText = safeMessageContent.trim().length > 0;
   const shouldShowPlaceholder = !hasText && !imageUri;
   const senderName = isUser ? userDisplayName : artistDisplayName;
@@ -59,11 +59,7 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
   const hasVoiceButton = message.role === 'artist' && message.status === 'complete' && !!voiceUrl;
   const isVoiceGenerating =
     message.role === 'artist' && message.status === 'complete' && !voiceUrl && voiceStatus === 'generating';
-  const isCurrentVoiceMessage = Boolean(
-    audioPlayer &&
-      audioPlayer.currentUri &&
-      (audioPlayer.currentUri === voiceUrl || (voiceQueue.length > 0 && voiceQueue.includes(audioPlayer.currentUri)))
-  );
+  const isCurrentVoiceMessage = Boolean(audioPlayer && audioPlayer.currentMessageId === message.id);
   const isVoicePlaying = Boolean(audioPlayer && audioPlayer.isPlaying && isCurrentVoiceMessage);
   const hasSeenInitialSyncedPlaybackRef = useRef(false);
   const hasCompletedInitialSyncedPlaybackRef = useRef(false);
@@ -82,7 +78,7 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
       hasSeenInitialSyncedPlaybackRef.current &&
       !audioPlayer.isPlaying &&
       !audioPlayer.isLoading &&
-      audioPlayer.currentUri === null
+      !isCurrentVoiceMessage
     ) {
       hasCompletedInitialSyncedPlaybackRef.current = true;
     }
@@ -153,7 +149,7 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
     }
 
     const uris = voiceQueue.length > 0 ? voiceQueue : [voiceUrl];
-    void audioPlayer.playQueue(uris);
+    void audioPlayer.playQueue(uris, { messageId: message.id });
   };
 
   useEffect(() => {

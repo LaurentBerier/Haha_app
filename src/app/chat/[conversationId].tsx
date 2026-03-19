@@ -7,6 +7,7 @@ import { StreamingIndicator } from '../../components/chat/StreamingIndicator';
 import { BackButton } from '../../components/common/BackButton';
 import { getModeById } from '../../config/modes';
 import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
+import { useAutoReplayLastArtistMessage } from '../../hooks/useAutoReplayLastArtistMessage';
 import { useChat } from '../../hooks/useChat';
 import { useVoiceConversation } from '../../hooks/useVoiceConversation';
 import { t } from '../../i18n';
@@ -176,6 +177,13 @@ export default function ChatScreen() {
       sendWithFiller(queuedPayload);
     }
   }, [consumeChatSendPayload, conversationId, isValidConversation, queuedNonceParam, sendWithFiller]);
+
+  useAutoReplayLastArtistMessage({
+    messages,
+    audioPlayer,
+    enabled: isValidConversation,
+    hasStreaming
+  });
 
   return (
     <KeyboardAvoidingView

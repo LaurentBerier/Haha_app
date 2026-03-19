@@ -15,13 +15,23 @@ export interface AudioPlayerController {
   isPlaying: boolean;
   isLoading: boolean;
   currentUri: string | null;
+  currentMessageId: string | null;
   currentIndex: number;
   totalChunks: number;
-  play: (uri: string) => Promise<void>;
-  playQueue: (uris: string[]) => Promise<void>;
-  appendToQueue: (uri: string) => void;
+  play: (uri: string, context?: AudioPlaybackContext) => Promise<void>;
+  playQueue: (uris: string[], context?: AudioPlaybackContext) => Promise<void>;
+  appendToQueue: (uri: string, context?: AudioPlaybackContext) => void;
   pause: () => Promise<void>;
   stop: () => Promise<void>;
+}
+
+export interface AudioPlaybackContext {
+  messageId?: string | null;
+}
+
+interface AudioPlaybackQueueItem {
+  uri: string;
+  messageId: string | null;
 }
 
 function isLoadedStatus(status: AVPlaybackStatus): status is AVPlaybackStatus & { isLoaded: true } {
@@ -32,13 +42,14 @@ export function useAudioPlayer(): AudioPlayerController {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentUri, setCurrentUri] = useState<string | null>(null);
+  const [currentMessageId, setCurrentMessageId] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [totalChunks, setTotalChunks] = useState(0);
 
   const soundRef = useRef<Audio.Sound | null>(null);
   const webAudioRef = useRef<WebAudioLike | null>(null);
   const detachWebListenersRef = useRef<null | (() => void)>(null);
-  const queueRef = useRef<string[]>([]);
+  const queueRef = useRef<AudioPlaybackQueueItem[]>([]);
   const queueIndexRef = useRef(0);
   const playbackTokenRef = useRef(0);
   const isMountedRef = useRef(true);
@@ -89,6 +100,7 @@ export function useAudioPlayer(): AudioPlayerController {
     setIsPlaying(false);
     setIsLoading(false);
     setCurrentUri(null);
+    setCurrentMessageId(null);
     setCurrentIndex(0);
     setTotalChunks(0);
   }, []);
@@ -102,8 +114,14 @@ export function useAudioPlayer(): AudioPlayerController {
   }, [releaseAllAudio, resetState]);
 
   const playQueue = useCallback(
-    async (uris: string[]) => {
-      const nextQueue = uris.map((uri) => uri.trim()).filter(Boolean);
+    async (uris: string[], context?: AudioPlaybackContext) => {
+      const nextQueue = uris
+        .map((uri) => uri.trim())
+        .filter(Boolean)
+        .map((uri) => ({
+          uri,
+          messageId: context?.messageId ?? null
+        }));
       if (nextQueue.length === 0) {
         return;
       }
@@ -127,14 +145,16 @@ export function useAudioPlayer(): AudioPlayerController {
         }
 
         const queue = queueRef.current;
-        const uri = queue[index];
-        if (!uri) {
+        const queueItem = queue[index];
+        if (!queueItem?.uri) {
           await stop();
           return;
         }
+        const uri = queueItem.uri;
 
         queueIndexRef.current = index;
         setCurrentUri(uri);
+        setCurrentMessageId(queueItem.messageId);
         setCurrentIndex(index);
         setTotalChunks(queue.length);
         setIsLoading(true);
@@ -265,26 +285,29 @@ export function useAudioPlayer(): AudioPlayerController {
     [clearWebListeners, releaseAllAudio, stop]
   );
 
-  const play = useCallback(async (uri: string) => {
-    await playQueue([uri]);
+  const play = useCallback(async (uri: string, context?: AudioPlaybackContext) => {
+    await playQueue([uri], context);
   }, [playQueue]);
 
   const appendToQueue = useCallback(
-    (uri: string) => {
+    (uri: string, context?: AudioPlaybackContext) => {
       const trimmed = uri.trim();
       if (!trimmed) {
         return;
       }
 
       if (queueRef.current.length > 0) {
-        queueRef.current.push(trimmed);
+        queueRef.current.push({
+          uri: trimmed,
+          messageId: context?.messageId ?? null
+        });
         if (isMountedRef.current) {
           setTotalChunks(queueRef.current.length);
         }
         return;
       }
 
-      void playQueue([trimmed]);
+      void playQueue([trimmed], context);
     },
     [playQueue]
   );
@@ -330,6 +353,7 @@ export function useAudioPlayer(): AudioPlayerController {
     isPlaying,
     isLoading,
     currentUri,
+    currentMessageId,
     currentIndex,
     totalChunks,
     play,

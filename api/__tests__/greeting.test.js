@@ -358,6 +358,7 @@ describe('api/greeting tutorial behavior', () => {
         language: 'fr-CA',
         isSessionFirstGreeting: false,
         availableModes: ['On Jase', 'Jeux'],
+        preferredName: 'xX_DR4G0N',
         coords: { lat: 45.5, lon: -73.5 }
       }
     });
@@ -366,7 +367,9 @@ describe('api/greeting tutorial behavior', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.payload.tutorial.active).toBe(false);
-    expect(res.payload.greeting).toContain('petit micro allume en bas a droite');
+    expect(res.payload.greeting).toContain('Hey xX_DR4G0N');
+    expect(res.payload.greeting).toContain("Ton prénom est original, j'aime ça.");
+    expect(res.payload.greeting).toContain('petit micro allumé en bas à droite');
     expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(0);
   });

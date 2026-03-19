@@ -89,6 +89,8 @@ function WaveformButtonBase({ isPlaying, isLoading, onPress, disabled = false, t
     }
   }, [bars, isLoading, isPlaying, loadingOpacity]);
 
+  const shouldShowWaveform = isPlaying || isLoading;
+
   return (
     <Pressable
       onPress={onPress}
@@ -101,21 +103,25 @@ function WaveformButtonBase({ isPlaying, isLoading, onPress, disabled = false, t
       testID={testID}
       accessibilityRole="button"
     >
-      <View style={[styles.barsWrap, disabled ? styles.barsWrapDisabled : null]}>
-        {bars.map((bar, index) => (
-          <Animated.View
-            key={bar.key}
-            style={[
-              styles.bar,
-              index < BAR_COUNT - 1 ? styles.barSpacing : null,
-              {
-                height: bar.value,
-                opacity: isLoading ? loadingOpacity : 1
-              }
-            ]}
-          />
-        ))}
-      </View>
+      {shouldShowWaveform ? (
+        <View style={[styles.barsWrap, disabled ? styles.barsWrapDisabled : null]}>
+          {bars.map((bar, index) => (
+            <Animated.View
+              key={bar.key}
+              style={[
+                styles.bar,
+                index < BAR_COUNT - 1 ? styles.barSpacing : null,
+                {
+                  height: bar.value,
+                  opacity: isLoading ? loadingOpacity : 1
+                }
+              ]}
+            />
+          ))}
+        </View>
+      ) : (
+        <View style={[styles.playIcon, disabled ? styles.playIconDisabled : null]} />
+      )}
     </Pressable>
   );
 }
@@ -159,5 +165,19 @@ const styles = StyleSheet.create({
   },
   barSpacing: {
     marginRight: 3
+  },
+  playIcon: {
+    marginLeft: 2,
+    width: 0,
+    height: 0,
+    borderTopWidth: 7,
+    borderBottomWidth: 7,
+    borderLeftWidth: 11,
+    borderTopColor: 'transparent',
+    borderBottomColor: 'transparent',
+    borderLeftColor: '#3A8DFF'
+  },
+  playIconDisabled: {
+    opacity: 0.35
   }
 });
