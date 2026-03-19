@@ -22,7 +22,7 @@ import { BackButton } from '../../../components/common/BackButton';
 import { MODE_IDS } from '../../../config/constants';
 import { MODE_CATEGORY_META, MODE_CATEGORY_ORDER, type ModeCategoryId } from '../../../config/modeCategories';
 import { getModeById } from '../../../config/modes';
-import { API_BASE_URL, CLAUDE_PROXY_URL, E2E_AUTH_BYPASS } from '../../../config/env';
+import { API_BASE_URL, CLAUDE_PROXY_URL, E2E_AUTH_BYPASS, GREETING_FORCE_TUTORIAL } from '../../../config/env';
 import { useChat } from '../../../hooks/useChat';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
 import { useVoiceConversation } from '../../../hooks/useVoiceConversation';
@@ -244,19 +244,23 @@ function buildFallbackGreetingText(
   const isCathyArtist = artistName.toLowerCase().includes('cathy');
   const variationIndex = Math.floor(Math.random() * 5);
 
+  if (isTutorialGreeting) {
+    if (isEnglish) {
+      const intro = preferredName ? `Hey ${displayName}, how are you doing?` : 'Hey, how are you doing?';
+      return `${intro} Voice conversation is already active: you can see the small lit mic at the bottom-right, so you can simply speak to interact with me. If you prefer texting, tap the mic to turn it off, then send me your texts.`;
+    }
+
+    const intro = preferredName ? `Hey ${displayName}, comment tu vas?` : 'Hey, comment tu vas?';
+    return `${intro} La conversation vocale est deja active: tu vois le petit micro allume en bas a droite, donc tu peux simplement parler pour interagir avec moi. Si tu preferes texter, clique sur le micro pour le couper, puis envoie-moi tes textos.`;
+  }
+
   if (isEnglish) {
     const openingVariants = [
       `Hey ${displayName}, how are you? It's ${artistName} on the mic, yes, huge surprise, I know.`,
       `Hi ${displayName}, how's it going? ${artistName} here, same energy, slightly less sleep.`,
       `Yo ${displayName}, how are you doing? It's ${artistName}, still loud, still helpful.`
     ];
-    const voiceSentenceVariants = isTutorialGreeting
-      ? [
-          "The mic at the bottom is how you talk to me — tap it to return to text mode if you'd rather type.",
-          "That little mic at the bottom? That's how we interact. Tap it to return to text mode if you prefer typing.",
-          "Use the mic at the bottom to speak with me directly — or tap it to go back to text mode, your call."
-        ]
-      : ['The mic at the bottom is how you talk to me.'];
+    const voiceSentenceVariants = ['The mic at the bottom is how you talk to me.'];
     const onboardingVariants = [
       "No pressure: start with one short line, and I'll guide the rest.",
       "We'll keep it simple, just tell me your vibe and we'll roll from there.",
@@ -284,13 +288,7 @@ function buildFallbackGreetingText(
         `Salut ${displayName}, tu vas bien? Moi c'est ${artistName}, pis oui, j'suis deja crinquee.`,
         `Yo ${displayName}, comment ça roule? C'est ${artistName}, pis on part ça smooth.`
       ];
-  const voiceSentenceVariants = isTutorialGreeting
-    ? [
-        "Le micro en bas, c'est là que tu me parles — clique dessus pour retourner en mode texte si t'aimes mieux écrire.",
-        "T'as un micro en bas pour jaser avec moi direct; si tu préfères écrire, t'as juste à peser dessus pour revenir en mode texte.",
-        "Le p'tit micro en bas, c'est pour me parler pour vrai — pis si t'aimes mieux les textos, clique dessus pour retourner en mode texte."
-      ]
-    : ["Le micro en bas permet de me parler direct."];
+  const voiceSentenceVariants = ["Le micro en bas permet de me parler direct."];
   const onboardingVariants = [
     "Aucune pression: lance juste une phrase, pis j't'accompagne pour le reste.",
     "On garde ça simple: dis-moi ton mood, pis j'te guide sans te brusquer.",
@@ -1302,15 +1300,16 @@ export default function ModeSelectHomeScreen() {
           isSessionFirstGreeting
         );
         const fallbackTutorialMode = isSessionFirstGreeting;
-        const isTutorialGreeting = fetchedResult.tutorial?.active ?? fallbackTutorialMode;
+        const isTutorialConversationForMetadata = fetchedResult.tutorial?.active ?? fallbackTutorialMode;
+        const isTutorialGreetingCopy = isTutorialConversationForMetadata || GREETING_FORCE_TUTORIAL;
         const greetingMetadata = {
           injected: true,
-          tutorialMode: isTutorialGreeting,
-          injectedType: isTutorialGreeting ? 'tutorial_greeting' : 'greeting'
+          tutorialMode: isTutorialConversationForMetadata,
+          injectedType: isTutorialConversationForMetadata ? 'tutorial_greeting' : 'greeting'
         } as const;
         const nextGreeting =
           fetchedResult.greeting ??
-          buildFallbackGreetingText(artist, language, preferredName, availableModes, isTutorialGreeting);
+          buildFallbackGreetingText(artist, language, preferredName, availableModes, isTutorialGreetingCopy);
         if (isCancelled || !nextGreeting) {
           return;
         }

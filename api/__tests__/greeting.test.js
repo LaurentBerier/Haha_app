@@ -140,7 +140,8 @@ describe('api/greeting tutorial behavior', () => {
   const originalEnv = {
     SUPABASE_URL: process.env.SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    GREETING_FORCE_TUTORIAL: process.env.GREETING_FORCE_TUTORIAL
   };
   const originalFetch = global.fetch;
 
@@ -150,6 +151,7 @@ describe('api/greeting tutorial behavior', () => {
     process.env.SUPABASE_URL = 'https://example.supabase.co';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
     process.env.ANTHROPIC_API_KEY = 'anthropic-api-key';
+    delete process.env.GREETING_FORCE_TUTORIAL;
   });
 
   afterEach(() => {
@@ -170,6 +172,11 @@ describe('api/greeting tutorial behavior', () => {
       process.env.ANTHROPIC_API_KEY = originalEnv.ANTHROPIC_API_KEY;
     } else {
       delete process.env.ANTHROPIC_API_KEY;
+    }
+    if (typeof originalEnv.GREETING_FORCE_TUTORIAL === 'string') {
+      process.env.GREETING_FORCE_TUTORIAL = originalEnv.GREETING_FORCE_TUTORIAL;
+    } else {
+      delete process.env.GREETING_FORCE_TUTORIAL;
     }
   });
 
@@ -331,5 +338,98 @@ describe('api/greeting tutorial behavior', () => {
     expect(supabase.spies.profileSelect).toHaveBeenCalledTimes(2);
     expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('forces tutorial greeting copy without changing tutorial.active semantics when isSessionFirstGreeting is false', async () => {
+    process.env.GREETING_FORCE_TUTORIAL = 'true';
+    const supabase = buildSupabaseClient({
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 2 }
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    const fetchMock = installFetchMock();
+
+    const handler = require('../greeting');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        language: 'fr-CA',
+        isSessionFirstGreeting: false,
+        availableModes: ['On Jase', 'Jeux'],
+        coords: { lat: 45.5, lon: -73.5 }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.tutorial.active).toBe(false);
+    expect(res.payload.greeting).toContain('petit micro allume en bas a droite');
+    expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(0);
+  });
+
+  it('forces tutorial greeting copy but never increments tutorial counter when isSessionFirstGreeting is true', async () => {
+    process.env.GREETING_FORCE_TUTORIAL = 'true';
+    const supabase = buildSupabaseClient({
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 0 }
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    const fetchMock = installFetchMock();
+
+    const handler = require('../greeting');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        language: 'fr-CA',
+        isSessionFirstGreeting: true,
+        availableModes: ['On Jase', 'Jeux'],
+        coords: { lat: 45.5, lon: -73.5 }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.tutorial.active).toBe(true);
+    expect(res.payload.greeting).toContain('tu peux simplement parler pour interagir avec moi');
+    expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(0);
+  });
+
+  it('does not require ANTHROPIC_API_KEY while GREETING_FORCE_TUTORIAL is enabled', async () => {
+    process.env.GREETING_FORCE_TUTORIAL = 'true';
+    delete process.env.ANTHROPIC_API_KEY;
+
+    const supabase = buildSupabaseClient({
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 1 }
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    const fetchMock = installFetchMock();
+
+    const handler = require('../greeting');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        language: 'fr-CA',
+        isSessionFirstGreeting: false,
+        availableModes: ['On Jase', 'Jeux'],
+        coords: { lat: 45.5, lon: -73.5 }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.greeting).toContain('clique sur le micro pour le couper');
+    expect(fetchMock).toHaveBeenCalledTimes(0);
   });
 });

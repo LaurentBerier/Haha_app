@@ -59,6 +59,22 @@ function parsePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseBooleanEnv(value, fallback = false) {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
+    return true;
+  }
+  if (['0', 'false', 'no', 'off'].includes(normalized)) {
+    return false;
+  }
+
+  return fallback;
+}
+
 async function fetchJsonWithTimeout(url, timeoutMs) {
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
@@ -1068,6 +1084,23 @@ function clampToSentenceLimit(text, maxSentences) {
   return sentences.slice(0, maxSentences).join(' ');
 }
 
+function buildForcedTutorialGreetingText(language, preferredName) {
+  const isEnglish = language.toLowerCase().startsWith('en');
+  const displayName = normalizeOptionalString(preferredName, 40);
+
+  if (isEnglish) {
+    const intro = displayName
+      ? `Hey ${displayName}, how are you doing?`
+      : 'Hey, how are you doing?';
+    return `${intro} Voice conversation is already active: you can see the small lit mic at the bottom-right, so you can simply speak to interact with me. If you prefer texting, tap the mic to turn it off, then send me your texts.`;
+  }
+
+  const intro = displayName
+    ? `Hey ${displayName}, comment tu vas?`
+    : 'Hey, comment tu vas?';
+  return `${intro} La conversation vocale est deja active: tu vois le petit micro allume en bas a droite, donc tu peux simplement parler pour interagir avec moi. Si tu preferes texter, clique sur le micro pour le couper, puis envoie-moi tes textos.`;
+}
+
 async function generateGreetingText(context) {
   const apiKey = (process.env.ANTHROPIC_API_KEY ?? '').trim();
   const timeoutMs = parsePositiveInt(process.env.ANTHROPIC_FETCH_TIMEOUT_MS, DEFAULT_FETCH_TIMEOUT_MS);
@@ -1125,6 +1158,7 @@ async function generateGreetingText(context) {
 
 module.exports = async function handler(req, res) {
   const requestId = attachRequestId(req, res);
+  const forcedTutorialGreetingActive = parseBooleanEnv(process.env.GREETING_FORCE_TUTORIAL, false);
   const corsResult = setCorsHeaders(req, res);
   if (!corsResult.ok) {
     if (corsResult.reason === 'cors_not_configured') {
@@ -1145,7 +1179,10 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const missingEnv = getMissingEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'ANTHROPIC_API_KEY']);
+  const requiredEnv = forcedTutorialGreetingActive
+    ? ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']
+    : ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'ANTHROPIC_API_KEY'];
+  const missingEnv = getMissingEnv(requiredEnv);
   if (missingEnv.length > 0) {
     sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
@@ -1191,7 +1228,7 @@ module.exports = async function handler(req, res) {
     hasPersistedCounter: userGreetingProfile.hasPersistedCounter
   });
 
-  if (input.isSessionFirstGreeting && userGreetingProfile.hasPersistedCounter) {
+  if (!forcedTutorialGreetingActive && input.isSessionFirstGreeting && userGreetingProfile.hasPersistedCounter) {
     await incrementTutorialSessionCountIfNeeded(
       supabaseAdmin,
       user.id,
@@ -1200,9 +1237,10 @@ module.exports = async function handler(req, res) {
     );
   }
 
+  const tutorialGreetingContextActive = tutorial.active || forcedTutorialGreetingActive;
   let weather = null;
   let newsSignals = null;
-  if (!tutorial.active) {
+  if (!tutorialGreetingContextActive) {
     [weather, newsSignals] = await Promise.all([
       fetchWeatherSummary(coords, input.language, requestId),
       fetchNewsSignals(requestId)
@@ -1211,40 +1249,44 @@ module.exports = async function handler(req, res) {
 
   const { dateLabel, timeLabel } = formatLocalDateTime(input.language);
   const preferredName = input.preferredName || extractPreferredName(user);
-  const weatherSummary = tutorial.active
+  const weatherSummary = tutorialGreetingContextActive
     ? input.language.toLowerCase().startsWith('en')
       ? 'not used during tutorial'
       : 'non utilise pendant le tutorial'
     : toWeatherSummaryText(weather, input.language);
-  const headlineSummary = tutorial.active
+  const headlineSummary = tutorialGreetingContextActive
     ? input.language.toLowerCase().startsWith('en')
       ? 'not used during tutorial'
       : 'non utilise pendant le tutorial'
     : toHeadlineSummaryText(newsSignals, input.language);
-  const includeVoiceHint = tutorial.active;
+  const includeVoiceHint = tutorialGreetingContextActive;
 
   let greeting;
-  try {
-    greeting = await generateGreetingText(
-      {
-        artistId: input.artistId,
-        language: input.language,
-        dateLabel,
-        timeLabel,
-        preferredName,
-        horoscopeSign: userGreetingProfile.horoscopeSign,
-        weatherSummary,
-        headlineSummary,
-        variationCue: buildGreetingVariationCue(input.language),
-        includeVoiceHint,
-        tutorialActive: tutorial.active,
-        availableModes: input.availableModes
-      }
-    );
-  } catch (error) {
-    const message = error instanceof Error && error.message ? error.message : 'Greeting generator unavailable.';
-    sendError(res, 502, message, { code: 'UPSTREAM_ERROR', requestId });
-    return;
+  if (forcedTutorialGreetingActive) {
+    greeting = buildForcedTutorialGreetingText(input.language, preferredName);
+  } else {
+    try {
+      greeting = await generateGreetingText(
+        {
+          artistId: input.artistId,
+          language: input.language,
+          dateLabel,
+          timeLabel,
+          preferredName,
+          horoscopeSign: userGreetingProfile.horoscopeSign,
+          weatherSummary,
+          headlineSummary,
+          variationCue: buildGreetingVariationCue(input.language),
+          includeVoiceHint,
+          tutorialActive: tutorialGreetingContextActive,
+          availableModes: input.availableModes
+        }
+      );
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : 'Greeting generator unavailable.';
+      sendError(res, 502, message, { code: 'UPSTREAM_ERROR', requestId });
+      return;
+    }
   }
 
   res.status(200).json({
