@@ -902,7 +902,7 @@ function buildGreetingSystemPrompt(language, options = {}) {
 Write exactly 3 short sentences in this strict order:
 1) Greet the user by first name when available, ask how they are doing, and add a short playful joke about being Cathy's clone (funny but kind).
 2) Explain that voice conversation is already active and the lit mic at the bottom-right is how they talk to you directly right now.
-3) Explain that if they prefer typing, they can tap the mic to turn voice mode off, then end with one easy first prompt.
+3) Explain that if they prefer typing, they can tap the mic to return to text mode, then end with one easy first prompt.
 Hard rules:
 - During tutorial, do NOT introduce weather, headlines, or mode lists unless the user explicitly asks.
 - Never write "how are you with Cathy" or similar unnatural phrasing.
@@ -922,7 +922,7 @@ Hard rules:
 Ecris exactement 3 phrases courtes, dans cet ordre strict :
 1) Salue la personne par son prenom si disponible, demande comment elle va, et ajoute une mini blague sur le fait que tu es le clone de Cathy (drôle, vive, mais bienveillante).
 2) Explique que la conversation vocale est deja active et que le micro allume en bas a droite sert a lui parler direct.
-3) Explique que si la personne prefere texter, elle peut cliquer sur le micro pour couper la voix, puis termine avec une invitation facile.
+3) Explique que si la personne prefere texter, elle peut cliquer sur le micro pour retourner en mode texte, puis termine avec une invitation facile.
 Regles absolues :
 - Pendant le tutorial, n'introduis JAMAIS meteo, actualite ou liste de modes sauf si l'utilisateur le demande explicitement.
 - Interdit de dire "comment tu vas avec Cathy" ou une tournure equivalente.
@@ -944,7 +944,7 @@ Write exactly 3 short sentences in this strict order:
 2) Mention one local signal from context (weather OR top headline). Keep it brief and natural. If local data is unavailable, use a short transition sentence without inventing facts. Add a warm onboarding cue (you'll guide them, no pressure).
 3) ${
       includeVoiceHint
-        ? "Explain that the mic at the bottom is how they talk to you - that's how the interaction works. Add that if they prefer to text, they can just tap the mic to turn it off. Say it your way, natural, not like a tutorial. End with an easy first prompt to start the exchange."
+        ? "Explain that the mic at the bottom is how they talk to you - that's how the interaction works. Add that if they prefer to text, they can tap the mic to return to text mode. Say it your way, natural, not like a tutorial. End with an easy first prompt to start the exchange."
         : "Mention that the mic at the bottom is how they talk to you. End with an easy first prompt."
     }
 Hard rules:
@@ -967,7 +967,7 @@ Ecris exactement 3 phrases courtes, dans cet ordre strict :
 2) Mentionne une seule info locale du contexte (meteo OU manchette). Si l'info locale est indisponible, fais une courte phrase de transition sans inventer. Ajoute une phrase d'accompagnement onboarding (tu guides, aucune pression).
 3) ${
     includeVoiceHint
-      ? "Explique que le micro en bas c'est pour te parler directement - c'est comme ca qu'on interagit. Ajoute que si l'utilisateur prefere texter, y'a juste a cliquer dessus pour le couper. Dis-le a ta facon, naturel et vivant, pas comme un manuel. Termine avec une petite invitation facile pour lancer l'echange."
+      ? "Explique que le micro en bas c'est pour te parler directement - c'est comme ca qu'on interagit. Ajoute que si l'utilisateur prefere texter, y'a juste a cliquer dessus pour retourner en mode texte. Dis-le a ta facon, naturel et vivant, pas comme un manuel. Termine avec une petite invitation facile pour lancer l'echange."
       : "Mentionne que le micro en bas permet de te parler. Termine avec une petite invitation facile."
   }
 Regles absolues :

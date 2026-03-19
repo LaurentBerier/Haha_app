@@ -245,9 +245,9 @@ function buildFallbackGreetingText(
     ];
     const voiceSentenceVariants = isTutorialGreeting
       ? [
-          "The mic at the bottom is how you talk to me — tap it if you'd rather text, totally up to you.",
-          "That little mic at the bottom? That's how we interact. Tap it off if you prefer typing.",
-          "Use the mic at the bottom to speak with me directly — or tap it to switch to text, your call."
+          "The mic at the bottom is how you talk to me — tap it to return to text mode if you'd rather type.",
+          "That little mic at the bottom? That's how we interact. Tap it to return to text mode if you prefer typing.",
+          "Use the mic at the bottom to speak with me directly — or tap it to go back to text mode, your call."
         ]
       : ['The mic at the bottom is how you talk to me.'];
     const onboardingVariants = [
@@ -279,9 +279,9 @@ function buildFallbackGreetingText(
       ];
   const voiceSentenceVariants = isTutorialGreeting
     ? [
-        "Le micro en bas, c'est là que tu me parles — clique dessus si t'aimes mieux texter, c'est toé qui décides.",
-        "T'as un micro en bas pour jaser avec moi direct; si tu préfères écrire, t'as juste à peser dessus pour l'éteindre.",
-        "Le p'tit micro en bas, c'est pour me parler pour vrai — pis si t'aimes mieux les textos, clique dessus, c'est réglé."
+        "Le micro en bas, c'est là que tu me parles — clique dessus pour retourner en mode texte si t'aimes mieux écrire.",
+        "T'as un micro en bas pour jaser avec moi direct; si tu préfères écrire, t'as juste à peser dessus pour revenir en mode texte.",
+        "Le p'tit micro en bas, c'est pour me parler pour vrai — pis si t'aimes mieux les textos, clique dessus pour retourner en mode texte."
       ]
     : ["Le micro en bas permet de me parler direct."];
   const onboardingVariants = [
