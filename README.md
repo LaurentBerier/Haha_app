@@ -27,11 +27,16 @@ Implemented in this repository:
 - Artist selection now distinguishes available vs upcoming artists with a clear CTA for available artists and "Disponible bientôt" cards for locked artists.
 - Paid-tier voice strategy is on ElevenLabs v3 with emotional audio tags support and display-safe tag stripping.
 - Conversation naturelle (Phase 4) is integrated across chat and mode-select:
-  - default-on conversation mode with shared composer UX
-  - STT silence auto-send and TTS-aware listening control
+  - default-on conversation mode with shared composer UX and explicit mic states (`off`, `starting`, `listening`, `assistant_busy`, `paused_manual`, `recovering`, `paused_recovery`, `unsupported`, `error`)
+  - STT silence auto-send (`1800ms` default) and strict STT/TTS mutual exclusion
+  - session-based STT ownership (stale callbacks are ignored) + bounded recovery policy (`250ms`, `800ms`, `2000ms`, then explicit paused-recovery state)
+  - right-mic action model: mode-off => enable+listen, active => pause, paused/recovery => resume, assistant-speaking => pause
   - inline mode-select conversation stack (no forced route switch)
+  - mode-select greeting/tutorial auto-arms mic once per injected greeting message, while respecting manual user override
   - first-session greeting with weather/news signal context
-  - chunk-synced text/voice playback with animated waveform replay control
+  - auto-replay of latest replayable Cathy message when app/window returns to active (current conversation only, once per message id)
+  - chunk-synced text/voice playback keyed by `message.id` with animated waveform replay control (`loading`, `playing`, `idle/play`)
+  - mobile mode-select conversation overlay expands up to compact top controls (instead of fixed half-screen clamp)
 - Subscription screen includes current plan, next billing cycle, and cancel-at-period-end for Stripe subscriptions.
 - User profile model and profile personalization injection in system prompts.
 - Gamification layer (score, titles, streak, mode-driven scoring) persisted in Zustand and synced with Supabase.
@@ -56,7 +61,7 @@ Implemented in this repository:
 - [`docs/phase2-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase2-status.md)
 - [`docs/phase3-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase3-status.md)
 - [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
-- Latest QA run: [`docs/qa-run-2026-03-17.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-17.md)
+- Latest QA run: [`docs/qa-run-2026-03-19.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-19.md)
 - Latest code-review snapshot: [`docs/code-review-2026-03-17.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-17.md)
 
 ## Repos and Vercel Projects
@@ -486,7 +491,12 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/phase3-status.md`
 - `docs/phase3-qa-matrix.md`
 - `docs/qa-run-2026-03-14.md`
+- `docs/qa-run-2026-03-17.md`
+- `docs/qa-run-2026-03-18.md`
+- `docs/qa-run-2026-03-19.md`
 - `docs/code-review-2026-03-15.md`
+- `docs/code-review-2026-03-16.md`
+- `docs/code-review-2026-03-17.md`
 - `docs/voice-ops-runbook.md`
 - `docs/troubleshooting.md`
 - `ha-ha-ai-build-prompt.improved.md`

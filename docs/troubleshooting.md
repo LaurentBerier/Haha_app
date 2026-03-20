@@ -278,33 +278,6 @@ If `REVENUECAT_WEBHOOK_SECRET` is missing, endpoint returns `500` (`SERVER_MISCO
 
 Fix:
 
-## 15) Web console shows `POST /api/greeting 500` on mode-select
-
-Symptoms:
-
-- On `mode-select`, greeting still appears, but browser console shows `POST /api/greeting 500`.
-
-Expected behavior:
-
-- Greeting has a fallback path, so UX should continue even if greeting API fails.
-- On `localhost`/`127.0.0.1`/`::1`, client intentionally skips greeting API and uses fallback greeting text.
-
-Checks:
-
-1. Hard refresh the browser after updating frontend bundle.
-2. Confirm page host is local (`localhost`, `127.0.0.1`, or `::1`) if you want API bypass.
-3. In production, if API keeps returning `500`, verify server env:
-   - `ANTHROPIC_API_KEY`
-   - `SUPABASE_URL`
-   - `SUPABASE_SERVICE_ROLE_KEY`
-
-Notes:
-
-- Client applies short backoff after greeting API server/network failures to reduce repeated failing requests.
-- Even with API failure, greeting fallback remains functional and conversation flow continues.
-- Weather lookup now uses Open-Meteo (`/v1/forecast`), so no weather API key is required.
-- News lookup now uses RSS feeds (Radio-Canada, La Presse, TVA Nouvelles), so no news API key is required.
-
 - rerun [`docs/supabase-account-types.sql`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-account-types.sql)
 
 Notes:
@@ -321,6 +294,31 @@ from public.payment_events
 order by created_at desc
 limit 20;
 ```
+
+### Additional: web console shows `POST /api/greeting 500` on mode-select
+
+Symptoms:
+
+- On `/mode-select/[artistId]`, greeting still appears, but browser console logs `POST /api/greeting 500`.
+
+Expected behavior:
+
+- Greeting has a fallback path, so UX should continue even if greeting API fails.
+- On `localhost`/`127.0.0.1`/`::1`, client intentionally skips greeting API and uses fallback greeting text.
+
+Checks:
+
+1. Hard refresh browser bundle after frontend updates.
+2. Confirm host is local if you expect greeting API bypass.
+3. In production, verify backend env:
+   - `ANTHROPIC_API_KEY`
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+
+Notes:
+
+- Client applies short backoff after greeting API server/network failures.
+- Weather uses Open-Meteo and news uses RSS feeds (no weather/news API keys required).
 
 ## 15) `POST /api/stripe-webhook` returns 401
 
@@ -731,3 +729,86 @@ Use this before testing or shipping subscription changes:
 6. Redeploy after env changes:
    - `npx vercel --prod --yes --scope snadeau-breakingwalls-projects`
 7. Validate with Stripe event resend and expect `200 OK`.
+
+## 31) Mic looks active but stops capturing after a few turns
+
+Symptoms:
+
+- Mic icon stays on, but Cathy no longer receives voice input.
+- User can sometimes pause mic, but resume appears ineffective.
+
+Current behavior to expect:
+
+- Voice controller uses bounded recovery retries for transient STT endings: `250ms`, `800ms`, `2000ms`.
+- After recovery budget is exhausted, mic enters `paused_recovery` and waits for explicit user tap.
+
+Checks:
+
+1. Read hint text above composer:
+   - `Micro en pause - touche pour reprendre` => manual pause (`paused_manual`)
+   - `Micro interrompu - touche pour relancer` => recovery pause (`paused_recovery`)
+2. Ensure no blocking condition prevents restart:
+   - Cathy audio currently playing/loading
+   - typed draft present in composer
+   - conversation disabled or quota-blocked
+3. On web, confirm STT support exists (`SpeechRecognition` or `webkitSpeechRecognition` available).
+4. In dev, inspect logs:
+   - `[useVoiceConversation] session_end`
+   - `[useVoiceConversation] recovery_scheduled`
+   - `[useVoiceConversation] state_transition`
+
+## 32) Mic does not auto-start after greeting/tutorial on first load
+
+Symptoms:
+
+- Greeting bubble appears but mic remains inactive until user toggles it manually.
+
+Current behavior:
+
+- Mode-select greeting/tutorial should arm mic automatically once per greeting `messageId`.
+- Manual user pause during greeting cancels forced auto-start for that greeting.
+
+Checks:
+
+1. Confirm conversation mode is enabled.
+2. Confirm conversation is valid and not quota-blocked.
+3. Confirm no typed draft is active when greeting is injected.
+4. If testing web, hard refresh to avoid stale bundle (old bundles may keep outdated mic bootstrap behavior).
+
+## 33) Cathy text appears but no voice is heard
+
+Symptoms:
+
+- Artist bubble is complete but no audible output.
+- Replay button may be absent or voice may fail on replay.
+
+Checks:
+
+1. Inspect `/api/tts` calls in network tab:
+   - `200` => audio should be available
+   - `403`/`429` => tier/quota/rate limit may block voice output
+2. Confirm account tier (`regular`, `premium`, or `admin`) and valid session token.
+3. Verify `ELEVENLABS_API_KEY` is configured in Vercel project `haha-app`.
+4. On web, verify autoplay restriction path:
+   - greeting audio may require first user gesture before playback
+   - replay button should still appear once voice metadata reaches `ready`
+
+## 34) Mic pause does not persist (auto-resumes unexpectedly)
+
+Symptoms:
+
+- User taps mic to pause, hint appears, then mic resumes without user action.
+
+Current expected behavior:
+
+- Manual pause must persist until explicit resume tap.
+- Auto-recovery and auto-listen must not override `paused_manual`.
+
+Checks:
+
+1. Validate the build is current (includes manual pause precedence in `useVoiceConversation` state machine).
+2. Confirm UI uses dedicated pause/resume callbacks (`onPauseListening` / `onResumeListening`) instead of generic interrupt toggle.
+3. Verify all surfaces behave the same:
+   - chat screen
+   - mode-select conversation
+   - global dock input

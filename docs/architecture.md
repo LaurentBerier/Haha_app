@@ -87,6 +87,8 @@ Store-level account isolation:
 - `artistPromptRegistry.ts`: artist-aware blueprint/mode prompt resolution (Cathy + fallback artists)
 - `subscriptionService.ts`: Stripe checkout launcher (regular/premium), subscription summary fetch, and cancel-at-period-end action
 - `persistenceService.ts`: local cache persistence (conversations/messages/ui selections)
+- `ttsService.ts`: multi-endpoint TTS fetch/cache (`same-origin /api/tts` first on web, timeout + failover across candidates)
+- `voiceEngine.ts`: session-based STT engine abstraction (web/native), restart handling, stale-session isolation
 
 ### Mode Selection UX
 
@@ -107,25 +109,38 @@ Store-level account isolation:
 - `ChatInput` is the single shared composer UI across chat contexts (chat screen + global composer + mode-select composer), including:
   - image attachment support (`+`)
   - send arrow when text/image is present
-  - mic state/toggle with voice transcript placeholder
+  - mic visual states driven by explicit `micState` + `hint`
+  - off/paused/unsupported icon path via `assets/icons/Mic_Icon_off.png`
 - Voice loop orchestration lives in `src/hooks/useVoiceConversation.ts`:
-  - auto-starts listening when enabled
-  - pauses STT while TTS is speaking (`isPlaying=true`) to avoid echo loops
-  - resumes listening after playback
-  - auto-sends transcript after silence timeout (`2.8s`)
-  - retries iOS transient route-change failures (audio route changed / engine restart errors)
+  - reducer/state-machine statuses: `off`, `starting`, `listening`, `assistant_busy`, `paused_manual`, `recovering`, `paused_recovery`, `unsupported`, `error`
+  - STT/TTS mutual exclusion (`assistant_busy` while audio is active)
+  - transcript auto-send after silence timeout (`1800ms`, override with `EXPO_PUBLIC_SILENCE_TIMEOUT_MS`)
+  - bounded recovery policy for transient ends: `250ms`, `800ms`, `2000ms`, then `paused_recovery` until manual resume
+  - manual pause always wins over auto-listen/recovery
+  - web auto-listen requires explicit user activation (`hasUserActivation`), then can auto-restart when eligible
+  - dedicated control API: `pauseListening()`, `resumeListening()`, `interruptAndListen()`, `armListeningActivation()`
+- STT engine ownership is session-based in `src/services/voiceEngine.ts`:
+  - each `startVoiceListeningSession(...)` returns a session handle with unique `sessionId`
+  - `result`/`error`/`end` callbacks are ignored for stale sessions
+  - web `onend` attempts local restarts (bounded) and emits terminal `onEnd` when restart budget is exhausted
 - Mode-select (`/mode-select/[artistId]`) now embeds the same conversation stack directly in-screen:
   - bubbles are anchored above the bottom composer
-  - visible chat stack is clipped to roughly half the viewport height
   - no route push to `/chat/[conversationId]` when user replies in mode-select
   - navigation to a new mode/chat happens only when user chooses a mode
+  - on iOS/Android, overlay top is measured from compact category-grid bottom so conversation takes maximum vertical space up to top controls
   - after several user turns, Cathy injects a one-time in-character mode-discovery nudge with optional voice playback
 - Greeting behavior:
   - once per artist per app session (`uiSlice.greetedArtistIds`, memory-only)
   - greeting message is inserted as an artist message in a fresh `on-jase` conversation
   - best-effort voice playback via TTS (with web speech fallback)
+  - greeting/tutorial message injection triggers one-time auto-mic arming for that `messageId` in mode-select (`armListeningActivation`)
+  - manual user pause during greeting cancels forced auto-start for that greeting message
   - web localhost bypasses `/api/greeting` and uses local fallback copy to avoid local 500 noise
   - greeting API failures trigger a short client backoff before retrying
+- Auto replay on return:
+  - `useAutoReplayLastArtistMessage` replays only the latest replayable artist message in the current conversation
+  - triggers on initial mount, `AppState=active`, web `focus`, and web `visibilitychange`
+  - guarded once per `messageId` and skipped while streaming/playing/loading
 - Greeting backend (`api/greeting.js`) data sources:
   - weather via Open-Meteo `/v1/forecast` (current + same-day forecast, no API key)
   - local-news signal via RSS feeds (Radio-Canada, La Presse, TVA Nouvelles)
@@ -134,13 +149,23 @@ Store-level account isolation:
 ### Voice Rendering and Sync
 
 - Paid-tier TTS uses ElevenLabs v3 by default (`src/server/ttsHandler.js`), with env override still supported (`ELEVENLABS_MODEL_ID`).
-- Audio-expression tags are injected in Cathy prompts and kept in TTS provider text.
-- Display text strips audio tags through `src/utils/audioTags.ts`.
+- Audio-expression tags are injected in Cathy prompts and preserved for TTS text.
+- Display text and spoken text share the same normalization rules through `src/utils/audioTags.ts`:
+  - `stripAudioTags(...)` for visible bubble text
+  - `normalizeSpeechText(...)` for TTS input normalization while preserving supported audio tags
 - Streaming TTS in `src/hooks/useChat.ts`:
   - queues chunk playback as soon as first URI is ready
   - appends subsequent chunks in-order without waiting for all chunks
+  - keeps successful chunks when some chunk generation fails
+  - performs final full-text fallback synthesis only when needed
+  - stabilizes metadata transitions (`voiceStatus: generating -> ready` or explicit clear)
   - stores `voiceChunkBoundaries` for text/voice synchronization
-- `ChatBubble` progressively reveals text for the currently speaking chunk and exposes replay via animated waveform control.
+- `useAudioPlayer` tracks playback context by `currentMessageId` so sync/playback targets are message-identity based (not URI based).
+- `ChatBubble` progressively reveals text only for the active `currentMessageId`; non-active bubbles render full text.
+- `WaveformButton` states:
+  - `isPlaying=true` => animated waveform bars
+  - `isLoading=true` => pulsing waveform
+  - idle/ready => play icon for manual replay
 
 ### Games UX
 

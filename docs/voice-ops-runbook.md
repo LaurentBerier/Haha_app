@@ -41,6 +41,20 @@ Model switch aliases supported by the API:
 - v3: `eleven_v3`, `v3`, `3`
 - v2.5 turbo: `eleven_turbo_v2_5`, `v2.5`, `2.5`
 
+### Web TTS endpoint order (client failover)
+
+`src/services/ttsService.ts` tries endpoints in this order:
+
+1. `<window.origin>/api/tts`
+2. `/api/tts`
+3. `${EXPO_PUBLIC_API_BASE_URL}/tts`
+4. `${EXPO_PUBLIC_CLAUDE_PROXY_URL}` rewritten from `/claude` to `/tts`
+
+Notes:
+
+- each candidate uses an `AbortController` timeout (`10s`) before failing over
+- partial candidate failures (timeout/CORS/network) do not stop fallback sequence
+
 ## 3) CORS Allowlist Baseline
 
 `ALLOWED_ORIGINS` should include at minimum:
@@ -117,6 +131,7 @@ npm run smoke:voice
 1. Confirm user tier is paid (`regular`, `premium`, or `admin`).
 2. Check `/api/tts` authenticated smoke (`SMOKE_AUTH_TOKEN=...`).
 3. If API fails, inspect Vercel logs for `api/claude` and `api/tts` proxy path.
+4. In chat metadata, confirm `voiceStatus` reaches `ready` (not stuck at `generating`).
 
 ### Symptom: play button visible but no sound
 
@@ -124,10 +139,32 @@ npm run smoke:voice
 2. On web, validate browser autoplay policy and user gesture.
 3. On native, verify `expo-av` playback state and cached file write success.
 
+### Symptom: text appears but Cathy does not speak
+
+1. Check network for `/api/tts` status:
+   - `429` / `403` can produce text-only replies when voice fallback also fails.
+2. Verify premium/regular/admin tier and `ELEVENLABS_API_KEY`.
+3. Confirm client has valid bearer token (expired auth token can silently drop TTS eligibility).
+
 ### Symptom: frequent `TTS_QUOTA_EXCEEDED`
 
 1. Verify tier and monthly usage in `usage_events` where `endpoint='tts'`.
 2. Adjust caps via env if needed (`TTS_MONTHLY_CAP_REGULAR`, `TTS_MONTHLY_CAP_PREMIUM`).
+
+### Symptom: mic appears on but stops capturing after repeated turns
+
+1. Check `micState` hint shown above composer:
+   - `paused_manual`: user paused manually, tap mic to resume
+   - `paused_recovery`: retry budget exhausted, tap mic to restart
+   - `unsupported`: browser STT unavailable
+2. In dev logs, inspect `[useVoiceConversation] state_transition` and `session_end` events.
+3. Confirm no blocking condition is active:
+   - assistant speaking/loading
+   - typed draft in composer
+   - quota-blocked conversation
+4. Expected recovery policy:
+   - transient retries at `250ms`, `800ms`, `2000ms`
+   - then explicit `paused_recovery` (no infinite hidden retries)
 
 ## 7) Logs and Correlation
 
