@@ -1,0 +1,147 @@
+jest.mock('react-native', () => ({
+  Platform: {
+    OS: 'web'
+  }
+}));
+
+jest.mock('../i18n', () => ({
+  t: (value: string) => value
+}));
+
+jest.mock('../services/voiceEngine', () => ({
+  requestVoicePermission: jest.fn(),
+  startVoiceListeningSession: jest.fn()
+}));
+
+import {
+  getVoiceConversationHint,
+  getVoiceRecoveryPlan,
+  getVoiceRecoveryDelayMs,
+  shouldAttemptAutoListen,
+  shouldConsumeVoiceRecoveryBudget
+} from './useVoiceConversation';
+
+describe('useVoiceConversation helpers', () => {
+  it('blocks auto-listen while manually paused', () => {
+    expect(
+      shouldAttemptAutoListen({
+        shouldAutoListen: true,
+        hasUserActivation: true,
+        enabled: true,
+        disabled: false,
+        isPlaying: false,
+        hasTypedDraft: false,
+        status: 'paused_manual'
+      })
+    ).toBe(false);
+  });
+
+  it('blocks auto-listen when recovery is exhausted or unsupported', () => {
+    expect(
+      shouldAttemptAutoListen({
+        shouldAutoListen: true,
+        hasUserActivation: true,
+        enabled: true,
+        disabled: false,
+        isPlaying: false,
+        hasTypedDraft: false,
+        status: 'paused_recovery'
+      })
+    ).toBe(false);
+
+    expect(
+      shouldAttemptAutoListen({
+        shouldAutoListen: true,
+        hasUserActivation: true,
+        enabled: true,
+        disabled: false,
+        isPlaying: false,
+        hasTypedDraft: false,
+        status: 'unsupported'
+      })
+    ).toBe(false);
+  });
+
+  it('allows auto-listen from active non-blocking states', () => {
+    expect(
+      shouldAttemptAutoListen({
+        shouldAutoListen: true,
+        hasUserActivation: true,
+        enabled: true,
+        disabled: false,
+        isPlaying: false,
+        hasTypedDraft: false,
+        status: 'assistant_busy'
+      })
+    ).toBe(true);
+  });
+
+  it('blocks auto-listen while the user has a typed draft', () => {
+    expect(
+      shouldAttemptAutoListen({
+        shouldAutoListen: true,
+        hasUserActivation: true,
+        enabled: true,
+        disabled: false,
+        isPlaying: false,
+        hasTypedDraft: true,
+        status: 'off'
+      })
+    ).toBe(false);
+  });
+
+  it('blocks auto-listen on web until the user explicitly activates mic once', () => {
+    expect(
+      shouldAttemptAutoListen({
+        shouldAutoListen: true,
+        hasUserActivation: false,
+        enabled: true,
+        disabled: false,
+        isPlaying: false,
+        hasTypedDraft: false,
+        status: 'off'
+      })
+    ).toBe(false);
+  });
+
+  it('returns the bounded recovery delays', () => {
+    expect(getVoiceRecoveryDelayMs(1)).toBe(250);
+    expect(getVoiceRecoveryDelayMs(2)).toBe(800);
+    expect(getVoiceRecoveryDelayMs(3)).toBe(2000);
+    expect(getVoiceRecoveryDelayMs(4)).toBeNull();
+  });
+
+  it('only consumes the bounded recovery budget for genuine error conditions', () => {
+    expect(shouldConsumeVoiceRecoveryBudget('transient')).toBe(true);
+    expect(shouldConsumeVoiceRecoveryBudget('aborted')).toBe(true);
+    expect(shouldConsumeVoiceRecoveryBudget('no_speech')).toBe(false);
+    expect(shouldConsumeVoiceRecoveryBudget('ended_unexpectedly')).toBe(false);
+  });
+
+  it('keeps silent web restarts out of the bounded recovery countdown', () => {
+    expect(getVoiceRecoveryPlan('no_speech', 2)).toEqual({
+      attempt: 2,
+      delayMs: 250,
+      consumesBudget: false
+    });
+
+    expect(getVoiceRecoveryPlan('ended_unexpectedly', 1)).toEqual({
+      attempt: 1,
+      delayMs: 250,
+      consumesBudget: false
+    });
+
+    expect(getVoiceRecoveryPlan('transient', 2)).toEqual({
+      attempt: 3,
+      delayMs: 2000,
+      consumesBudget: true
+    });
+  });
+
+  it('returns explicit hints for paused and unsupported states', () => {
+    expect(getVoiceConversationHint('paused_manual')).toBe('micPausedHint');
+    expect(getVoiceConversationHint('paused_recovery')).toBe('micRecoveryPausedHint');
+    expect(getVoiceConversationHint('unsupported')).toBe('micUnsupportedHint');
+    expect(getVoiceConversationHint('listening')).toBeNull();
+  });
+});

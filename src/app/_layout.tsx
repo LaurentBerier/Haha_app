@@ -248,14 +248,17 @@ export default function RootLayout() {
     isListening: isGlobalConversationListening,
     transcript: globalConversationTranscript,
     error: globalConversationError,
-    interruptAndListen: interruptGlobalConversation
+    status: globalConversationStatus,
+    hint: globalConversationHint,
+    pauseListening: pauseGlobalConversation,
+    resumeListening: resumeGlobalConversation
   } = useVoiceConversation({
     enabled:
       showGlobalChatInput &&
       conversationModeEnabled &&
-      !hasTypedGlobalDraft &&
       !globalInputDisabled,
     disabled: globalInputDisabled,
+    hasTypedDraft: hasTypedGlobalDraft,
     isPlaying: false,
     onSend: (text) => {
       sendGlobalMessage({ text });
@@ -516,11 +519,13 @@ export default function RootLayout() {
                         isListening: isGlobalConversationListening,
                         transcript: globalConversationTranscript,
                         error: globalConversationError,
-                        isPlaying: false,
+                        micState: globalConversationStatus,
+                        hint: globalConversationHint,
                         onToggle: () => {
                           setConversationModeEnabled(!conversationModeEnabled);
                         },
-                        onInterrupt: interruptGlobalConversation,
+                        onPauseListening: pauseGlobalConversation,
+                        onResumeListening: resumeGlobalConversation,
                         onTypingStateChange: setHasTypedGlobalDraft
                       }}
                     />

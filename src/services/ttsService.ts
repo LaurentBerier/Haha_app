@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { API_BASE_URL, CLAUDE_PROXY_URL } from '../config/env';
 
 const MAX_TTS_INPUT_CHARS = 1000;
+const TTS_ENDPOINT_TIMEOUT_MS = 10_000;
 const WEB_TTS_CACHE = new Map<string, string>();
 const EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC = process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC;
 const EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY = process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY;
@@ -33,7 +34,7 @@ function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
 }
 
-function buildTtsProxyCandidates(): string[] {
+export function buildTtsProxyCandidates(): string[] {
   const candidates: string[] = [];
 
   const addCandidate = (candidate: string) => {
@@ -46,6 +47,15 @@ function buildTtsProxyCandidates(): string[] {
     }
   };
 
+  // Web first: try same-origin API routes before cross-origin backends.
+  if (typeof window !== 'undefined' && typeof window.location?.origin === 'string' && window.location.origin) {
+    const origin = normalizeUrl(window.location.origin);
+    if (origin) {
+      addCandidate(`${origin}/api/tts`);
+    }
+  }
+  addCandidate('/api/tts');
+
   const apiBase = normalizeUrl(API_BASE_URL);
   if (apiBase) {
     addCandidate(`${apiBase}/tts`);
@@ -55,15 +65,6 @@ function buildTtsProxyCandidates(): string[] {
   if (claudeProxy) {
     addCandidate(claudeProxy.replace(/\/claude$/, '/tts'));
   }
-
-  if (typeof window !== 'undefined' && typeof window.location?.origin === 'string' && window.location.origin) {
-    const origin = normalizeUrl(window.location.origin);
-    if (origin) {
-      addCandidate(`${origin}/api/tts`);
-    }
-  }
-
-  addCandidate('/api/tts');
   return candidates;
 }
 
@@ -136,6 +137,11 @@ async function fetchTtsBinary(
   let lastStatus = 0;
 
   for (const endpoint of candidates) {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutHandle = setTimeout(() => {
+      controller?.abort();
+    }, TTS_ENDPOINT_TIMEOUT_MS);
+
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -143,7 +149,8 @@ async function fetchTtsBinary(
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller?.signal
       });
 
       if (!response.ok) {
@@ -166,6 +173,8 @@ async function fetchTtsBinary(
       };
     } catch {
       // Try next candidate.
+    } finally {
+      clearTimeout(timeoutHandle);
     }
   }
 

@@ -244,6 +244,8 @@ export const fr = {
   voicePermissionDenied: 'Accès au microphone refusé',
   voiceInputPlaceholder: "Je t'écoute...",
   micPausedHint: 'Micro en pause - touche pour reprendre',
+  micRecoveryPausedHint: 'Micro interrompu - touche pour relancer',
+  micUnsupportedHint: 'Micro indisponible sur ce navigateur',
   addButtonA11y: 'Ajouter une image',
   removeImageA11y: "Retirer l'image sélectionnée",
   imageAttached: 'Image jointe',

@@ -808,6 +808,7 @@ export default function ModeSelectHomeScreen() {
   const [greeting, setGreeting] = useState<string | null>(null);
   const [hasTypedDraft, setHasTypedDraft] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
+  const [pendingAutoMicGreetingMessageId, setPendingAutoMicGreetingMessageId] = useState<string | null>(null);
   const [categoryGridBottomY, setCategoryGridBottomY] = useState<number | null>(null);
   const [isGreetingBooting, setIsGreetingBooting] = useState(false);
   const [greetingBootingLineIndex, setGreetingBootingLineIndex] = useState(() =>
@@ -892,6 +893,8 @@ export default function ModeSelectHomeScreen() {
   const greetingPlaybackCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingGestureRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingSpeechHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoMicTriggeredGreetingIdsRef = useRef<Set<string>>(new Set());
+  const autoMicManualOverrideRef = useRef(false);
   const modeNudgeShownRef = useRef(false);
   const modeSelectInputOffset = Platform.select({ ios: 108, default: 96 }) ?? 96;
   const {
@@ -933,9 +936,19 @@ export default function ModeSelectHomeScreen() {
     },
     [accessToken, artist?.id, audioPlayer, conversationModeEnabled, language, sendMessage, sessionUser?.accountType]
   );
-  const { isListening, transcript, error: conversationError, interruptAndListen } = useVoiceConversation({
-    enabled: isValidConversation && conversationModeEnabled && !hasTypedDraft && !isQuotaBlocked && !hasStreaming,
+  const {
+    isListening,
+    transcript,
+    error: conversationError,
+    status: conversationStatus,
+    hint: conversationHint,
+    pauseListening,
+    resumeListening,
+    armListeningActivation
+  } = useVoiceConversation({
+    enabled: isValidConversation && conversationModeEnabled && !isQuotaBlocked,
     disabled: !isValidConversation || isQuotaBlocked,
+    hasTypedDraft,
     isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
     onSend: (text) => {
       const normalized = text.trim();
@@ -1147,8 +1160,69 @@ export default function ModeSelectHomeScreen() {
   useEffect(() => {
     setIsInputFocused(false);
     setIsGreetingBooting(false);
+    setPendingAutoMicGreetingMessageId(null);
+    autoMicManualOverrideRef.current = false;
+    autoMicTriggeredGreetingIdsRef.current.clear();
     modeNudgeShownRef.current = false;
   }, [artistId]);
+
+  useEffect(() => {
+    const targetMessageId = pendingAutoMicGreetingMessageId;
+    if (!targetMessageId) {
+      return;
+    }
+
+    if (autoMicTriggeredGreetingIdsRef.current.has(targetMessageId)) {
+      setPendingAutoMicGreetingMessageId(null);
+      return;
+    }
+
+    if (autoMicManualOverrideRef.current) {
+      autoMicTriggeredGreetingIdsRef.current.add(targetMessageId);
+      setPendingAutoMicGreetingMessageId(null);
+      return;
+    }
+
+    const targetMessage =
+      messages.find((message) => message.id === targetMessageId && message.role === 'artist' && message.status === 'complete') ??
+      null;
+    const injectedType = targetMessage?.metadata?.injectedType;
+    const isEligibleGreeting = injectedType === 'greeting' || injectedType === 'tutorial_greeting';
+    if (!isEligibleGreeting) {
+      return;
+    }
+
+    if (!isValidConversation || isQuotaBlocked || hasTypedDraft || hasStreaming) {
+      return;
+    }
+
+    if (!conversationModeEnabled) {
+      setConversationModeEnabled(true);
+    }
+    armListeningActivation();
+    autoMicTriggeredGreetingIdsRef.current.add(targetMessageId);
+    setPendingAutoMicGreetingMessageId(null);
+  }, [
+    armListeningActivation,
+    conversationModeEnabled,
+    hasStreaming,
+    hasTypedDraft,
+    isQuotaBlocked,
+    isValidConversation,
+    messages,
+    pendingAutoMicGreetingMessageId,
+    setConversationModeEnabled
+  ]);
+
+  const handlePauseListening = useCallback(() => {
+    const pendingMessageId = pendingAutoMicGreetingMessageId;
+    if (pendingMessageId && !autoMicTriggeredGreetingIdsRef.current.has(pendingMessageId)) {
+      autoMicManualOverrideRef.current = true;
+      autoMicTriggeredGreetingIdsRef.current.add(pendingMessageId);
+      setPendingAutoMicGreetingMessageId(null);
+    }
+    pauseListening();
+  }, [pauseListening, pendingAutoMicGreetingMessageId]);
 
   useEffect(() => {
     const hasInjectedModeNudge = messages.some(
@@ -1386,6 +1460,8 @@ export default function ModeSelectHomeScreen() {
           timestamp: now,
           metadata: greetingMetadata
         });
+        autoMicManualOverrideRef.current = false;
+        setPendingAutoMicGreetingMessageId(greetingMessageId);
         hasInsertedGreetingMessage = true;
         setIsGreetingBooting(false);
         updateConversation(
@@ -1668,12 +1744,13 @@ export default function ModeSelectHomeScreen() {
                 isListening,
                 transcript,
                 error: conversationError,
-                isPlaying: hasStreaming || audioPlayer.isPlaying || audioPlayer.isLoading,
-                assistantBusy: hasStreaming || audioPlayer.isPlaying || audioPlayer.isLoading,
+                micState: conversationStatus,
+                hint: conversationHint,
                 onToggle: () => {
                   setConversationModeEnabled(!conversationModeEnabled);
                 },
-                onInterrupt: interruptAndListen,
+                onPauseListening: handlePauseListening,
+                onResumeListening: resumeListening,
                 onTypingStateChange: setHasTypedDraft
               }}
               onInputFocusChange={setIsInputFocused}

@@ -58,12 +58,46 @@ interface WebSpeechRecognition {
 }
 
 type WebSpeechRecognitionCtor = new () => WebSpeechRecognition;
+const WEB_SESSION_MAX_RESTARTS = 3;
 
-let listeners: Listener[] = [];
 let cachedModule: SpeechRecognitionModule | null | undefined;
-let webRecognition: WebSpeechRecognition | null = null;
-let webShouldRestart = false;
 let hasLoggedMissingNativeSpeechModule = false;
+let nextVoiceSessionId = 1;
+let activeVoiceSessionId: number | null = null;
+let activeNativeListeners: Listener[] = [];
+let activeWebRecognition: WebSpeechRecognition | null = null;
+
+export type VoiceSessionEndReason =
+  | 'stopped'
+  | 'unsupported'
+  | 'permission'
+  | 'no_speech'
+  | 'aborted'
+  | 'ended_unexpectedly'
+  | 'transient'
+  | 'error';
+
+export interface VoiceListeningResultEvent {
+  sessionId: number;
+  transcript: string;
+}
+
+export interface VoiceListeningEndEvent {
+  sessionId: number;
+  reason: VoiceSessionEndReason;
+  message: string | null;
+}
+
+export interface VoiceListeningSession {
+  id: number;
+  stop: () => void;
+}
+
+export interface StartVoiceListeningSessionOptions {
+  locale: string;
+  onResult: (event: VoiceListeningResultEvent) => void;
+  onEnd: (event: VoiceListeningEndEvent) => void;
+}
 
 function hasSpeechRecognitionNativeBinding(): boolean {
   if (Platform.OS === 'web') {
@@ -122,9 +156,9 @@ function getSpeechRecognitionModule(): SpeechRecognitionModule | null {
   return cachedModule;
 }
 
-function clearListeners(): void {
-  listeners.forEach((listener) => listener.remove());
-  listeners = [];
+function clearNativeListeners(): void {
+  activeNativeListeners.forEach((listener) => listener.remove());
+  activeNativeListeners = [];
 }
 
 function getWebSpeechRecognitionCtor(): WebSpeechRecognitionCtor | null {
@@ -140,10 +174,62 @@ function getWebSpeechRecognitionCtor(): WebSpeechRecognitionCtor | null {
   return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null;
 }
 
-function stopWebListening(): void {
-  webShouldRestart = false;
-  const recognition = webRecognition;
-  webRecognition = null;
+function normalizeVoiceErrorMessage(rawMessage: string | null | undefined): string | null {
+  if (typeof rawMessage !== 'string') {
+    return null;
+  }
+
+  const normalized = rawMessage.trim();
+  return normalized ? normalized : null;
+}
+
+function scheduleVoiceMicrotask(callback: () => void): void {
+  Promise.resolve().then(callback).catch(() => {
+    // No-op
+  });
+}
+
+function isPermissionLikeMessage(rawMessage: string): boolean {
+  const normalized = rawMessage.toLowerCase();
+  return (
+    normalized.includes('permission') ||
+    normalized.includes('not-allowed') ||
+    normalized.includes('service-not-allowed') ||
+    normalized.includes('audio-capture') ||
+    normalized.includes('denied')
+  );
+}
+
+function classifyWebErrorReason(event: WebSpeechRecognitionErrorEvent): VoiceSessionEndReason {
+  const code = (event.error ?? '').toLowerCase();
+  if (code === 'no-speech') {
+    return 'no_speech';
+  }
+  if (code === 'aborted') {
+    return 'aborted';
+  }
+  if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture') {
+    return 'permission';
+  }
+  return 'transient';
+}
+
+function classifyStartErrorReason(error: unknown): VoiceSessionEndReason {
+  const message =
+    error instanceof Error ? error.message : typeof error === 'string' ? error : 'Speech recognition failed';
+  return isPermissionLikeMessage(message) ? 'permission' : 'transient';
+}
+
+function classifyNativeErrorReason(rawMessage: string): VoiceSessionEndReason {
+  if (isPermissionLikeMessage(rawMessage)) {
+    return 'permission';
+  }
+  return 'transient';
+}
+
+function cleanupWebRecognition(): void {
+  const recognition = activeWebRecognition;
+  activeWebRecognition = null;
 
   if (!recognition) {
     return;
@@ -162,6 +248,26 @@ function stopWebListening(): void {
       // No-op
     }
   }
+}
+
+function cleanupNativeRecognition(): void {
+  if (Platform.OS === 'web') {
+    return;
+  }
+
+  const module = getSpeechRecognitionModule();
+  try {
+    module?.stop();
+  } catch {
+    // No-op
+  } finally {
+    clearNativeListeners();
+  }
+}
+
+function cleanupActiveRecognition(): void {
+  cleanupWebRecognition();
+  cleanupNativeRecognition();
 }
 
 function extractWebTranscript(event: WebSpeechRecognitionEvent): string {
@@ -190,22 +296,82 @@ export async function requestVoicePermission(): Promise<boolean> {
   return false;
 }
 
-export function startListening(
-  locale: string,
-  onResult: (text: string) => void,
-  onError: (error: Error) => void
-): boolean {
+export function startVoiceListeningSession({
+  locale,
+  onResult,
+  onEnd
+}: StartVoiceListeningSessionOptions): VoiceListeningSession {
+  const sessionId = nextVoiceSessionId;
+  nextVoiceSessionId += 1;
+  let stopped = false;
+  let pendingWebEndReason: VoiceSessionEndReason | null = null;
+  let pendingWebEndMessage: string | null = null;
+  let webRestartAttemptCount = 0;
+
+  const stop = () => {
+    if (stopped) {
+      return;
+    }
+
+    stopped = true;
+    if (activeVoiceSessionId !== sessionId) {
+      return;
+    }
+
+    cleanupActiveRecognition();
+    activeVoiceSessionId = null;
+  };
+
+  const session: VoiceListeningSession = {
+    id: sessionId,
+    stop
+  };
+
+  const emitResult = (transcript: string) => {
+    if (stopped || activeVoiceSessionId !== sessionId) {
+      return;
+    }
+
+    const normalizedTranscript = transcript.trim();
+    if (!normalizedTranscript) {
+      return;
+    }
+
+    onResult({
+      sessionId,
+      transcript: normalizedTranscript
+    });
+  };
+
+  const emitEnd = (reason: VoiceSessionEndReason, rawMessage?: string | null) => {
+    if (stopped || activeVoiceSessionId !== sessionId) {
+      return;
+    }
+
+    stopped = true;
+    cleanupActiveRecognition();
+    activeVoiceSessionId = null;
+    onEnd({
+      sessionId,
+      reason,
+      message: normalizeVoiceErrorMessage(rawMessage)
+    });
+  };
+
+  cleanupActiveRecognition();
+  activeVoiceSessionId = sessionId;
+
   if (Platform.OS === 'web') {
     const WebRecognitionCtor = getWebSpeechRecognitionCtor();
     if (!WebRecognitionCtor) {
-      onError(new Error('Speech recognition is unavailable on this build.'));
-      return false;
+      scheduleVoiceMicrotask(() => {
+        emitEnd('unsupported', 'Speech recognition is unavailable on this build.');
+      });
+      return session;
     }
 
-    stopWebListening();
     const recognition = new WebRecognitionCtor();
-    webRecognition = recognition;
-    webShouldRestart = true;
+    activeWebRecognition = recognition;
 
     recognition.continuous = true;
     recognition.interimResults = true;
@@ -215,63 +381,80 @@ export function startListening(
     recognition.onresult = (event) => {
       const transcript = extractWebTranscript(event);
       if (transcript) {
-        onResult(transcript);
+        webRestartAttemptCount = 0;
+        pendingWebEndReason = null;
+        pendingWebEndMessage = null;
+        emitResult(transcript);
       }
     };
 
     recognition.onerror = (event) => {
-      const code = (event.error ?? '').toLowerCase();
-      if (code === 'no-speech' || code === 'aborted') {
+      const reason = classifyWebErrorReason(event);
+      const message = event.message || event.error || 'Speech recognition failed';
+
+      if (reason === 'permission') {
+        emitEnd(reason, message);
         return;
       }
 
-      if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture') {
-        webShouldRestart = false;
-      }
-
-      onError(new Error(event.message || event.error || 'Speech recognition failed'));
+      pendingWebEndReason = reason;
+      pendingWebEndMessage = message;
     };
 
     recognition.onend = () => {
-      if (!webShouldRestart || webRecognition !== recognition) {
+      if (stopped || activeVoiceSessionId !== sessionId) {
         return;
       }
 
+      const endReason = pendingWebEndReason ?? 'ended_unexpectedly';
+      const endMessage = pendingWebEndMessage ?? 'Speech recognition ended unexpectedly';
+      pendingWebEndReason = null;
+      pendingWebEndMessage = null;
+
+      if (webRestartAttemptCount >= WEB_SESSION_MAX_RESTARTS) {
+        emitEnd(endReason, endMessage);
+        return;
+      }
+
+      webRestartAttemptCount += 1;
       try {
         recognition.start();
-      } catch {
-        webShouldRestart = false;
+      } catch (error) {
+        emitEnd(
+          endReason,
+          error instanceof Error ? error.message : typeof error === 'string' ? error : endMessage
+        );
       }
     };
 
     try {
       recognition.start();
     } catch (error) {
-      const normalized =
-        error instanceof Error ? error : new Error(typeof error === 'string' ? error : 'Speech recognition failed');
-      onError(normalized);
-      stopWebListening();
-      return false;
+      const message =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : 'Speech recognition failed';
+      scheduleVoiceMicrotask(() => {
+        emitEnd(classifyStartErrorReason(error), message);
+      });
+      return session;
     }
 
-    return true;
+    return session;
   }
 
   const module = getSpeechRecognitionModule();
   if (module) {
-    clearListeners();
-
-    listeners.push(
+    activeNativeListeners = [
       module.addListener('result', (event) => {
         const transcript = event.results?.[0]?.transcript?.trim();
         if (transcript) {
-          onResult(transcript);
+          emitResult(transcript);
         }
       }),
       module.addListener('error', (event) => {
-        onError(new Error(event.message || event.error || 'Speech recognition failed'));
+        const message = event.message || event.error || 'Speech recognition failed';
+        emitEnd(classifyNativeErrorReason(message), message);
       })
-    );
+    ];
 
     try {
       module.start({
@@ -282,32 +465,21 @@ export function startListening(
         addsPunctuation: true
       });
     } catch (error) {
-      const normalized =
-        error instanceof Error ? error : new Error(typeof error === 'string' ? error : 'Speech recognition failed');
-      onError(normalized);
-      clearListeners();
-      return false;
+      const message =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : 'Speech recognition failed';
+      scheduleVoiceMicrotask(() => {
+        emitEnd(classifyStartErrorReason(error), message);
+      });
+      return session;
     }
 
-    return true;
+    return session;
   }
 
-  onError(new Error('Speech recognition is unavailable on this build.'));
-  return false;
-}
-
-export function stopListening(): void {
-  stopWebListening();
-  if (Platform.OS === 'web') {
-    return;
-  }
-
-  const module = getSpeechRecognitionModule();
-  try {
-    module?.stop();
-  } finally {
-    clearListeners();
-  }
+  scheduleVoiceMicrotask(() => {
+    emitEnd('unsupported', 'Speech recognition is unavailable on this build.');
+  });
+  return session;
 }
 
 export async function synthesizeVoice(

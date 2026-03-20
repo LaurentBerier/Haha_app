@@ -81,9 +81,19 @@ export default function ChatScreen() {
   const { messages, sendMessage, retryMessage, hasStreaming, currentArtistName, isQuotaBlocked, audioPlayer } = useChat(conversationId);
   const sendWithFillerRef = useRef<(payload: ChatSendPayload) => unknown>(() => null);
 
-  const { isListening, transcript, error: conversationError, interruptAndListen } = useVoiceConversation({
-    enabled: conversationModeEnabled && !hasTypedDraft && !isQuotaBlocked && isValidConversation && !hasStreaming,
+  const {
+    isListening,
+    transcript,
+    error: conversationError,
+    status: conversationStatus,
+    hint: conversationHint,
+    pauseListening,
+    resumeListening
+  } =
+    useVoiceConversation({
+    enabled: conversationModeEnabled && !isQuotaBlocked && isValidConversation,
     disabled: !isValidConversation || isQuotaBlocked,
+    hasTypedDraft,
     isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
     onSend: (text) => {
       const normalized = text.trim();
@@ -96,7 +106,7 @@ export default function ChatScreen() {
       void audioPlayer.stop();
     },
     language
-  });
+    });
 
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? '');
   const artistDisplayName = formatArtistDisplayName(currentArtistName);
@@ -218,12 +228,13 @@ export default function ChatScreen() {
             isListening,
             transcript,
             error: conversationError,
-            isPlaying: hasStreaming || audioPlayer.isLoading || audioPlayer.isPlaying,
-            assistantBusy: hasStreaming || audioPlayer.isLoading || audioPlayer.isPlaying,
+            micState: conversationStatus,
+            hint: conversationHint,
             onToggle: () => {
               setConversationModeEnabled(!conversationModeEnabled);
             },
-            onInterrupt: interruptAndListen,
+            onPauseListening: pauseListening,
+            onResumeListening: resumeListening,
             onTypingStateChange: setHasTypedDraft
           }}
         />

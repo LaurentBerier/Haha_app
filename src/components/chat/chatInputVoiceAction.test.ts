@@ -1,4 +1,4 @@
-import { resolveChatInputVoiceAction } from './chatInputVoiceAction';
+import { resolveChatInputVoiceAction, runChatInputVoiceAction } from './chatInputVoiceAction';
 
 describe('chatInputVoiceAction', () => {
   it('resolves send when payload is ready', () => {
@@ -7,8 +7,7 @@ describe('chatInputVoiceAction', () => {
         canSend: true,
         hasConversationMode: true,
         isConversationEnabled: true,
-        isConversationListening: true,
-        isConversationPlaying: false
+        micState: 'listening'
       })
     ).toBe('send');
   });
@@ -19,8 +18,7 @@ describe('chatInputVoiceAction', () => {
         canSend: false,
         hasConversationMode: false,
         isConversationEnabled: false,
-        isConversationListening: false,
-        isConversationPlaying: false
+        micState: 'off'
       })
     ).toBe('noop');
   });
@@ -31,22 +29,20 @@ describe('chatInputVoiceAction', () => {
         canSend: false,
         hasConversationMode: true,
         isConversationEnabled: false,
-        isConversationListening: false,
-        isConversationPlaying: false
+        micState: 'off'
       })
     ).toBe('enable_and_listen');
   });
 
-  it('resolves interrupt-and-listen while assistant is speaking', () => {
+  it('resolves pause while the assistant is speaking', () => {
     expect(
       resolveChatInputVoiceAction({
         canSend: false,
         hasConversationMode: true,
         isConversationEnabled: true,
-        isConversationListening: false,
-        isConversationPlaying: true
+        micState: 'assistant_busy'
       })
-    ).toBe('interrupt_and_listen');
+    ).toBe('pause_listening');
   });
 
   it('resolves pause when listening', () => {
@@ -55,8 +51,18 @@ describe('chatInputVoiceAction', () => {
         canSend: false,
         hasConversationMode: true,
         isConversationEnabled: true,
-        isConversationListening: true,
-        isConversationPlaying: false
+        micState: 'listening'
+      })
+    ).toBe('pause_listening');
+  });
+
+  it('resolves pause while mic is recovering', () => {
+    expect(
+      resolveChatInputVoiceAction({
+        canSend: false,
+        hasConversationMode: true,
+        isConversationEnabled: true,
+        micState: 'recovering'
       })
     ).toBe('pause_listening');
   });
@@ -67,9 +73,41 @@ describe('chatInputVoiceAction', () => {
         canSend: false,
         hasConversationMode: true,
         isConversationEnabled: true,
-        isConversationListening: false,
-        isConversationPlaying: false
+        micState: 'paused_manual'
       })
     ).toBe('resume_listening');
+  });
+
+  it('invokes send handler for send action', () => {
+    const handlers = {
+      onSend: jest.fn(),
+      onEnableAndListen: jest.fn(),
+      onPauseListening: jest.fn(),
+      onResumeListening: jest.fn()
+    };
+
+    runChatInputVoiceAction('send', handlers);
+
+    expect(handlers.onSend).toHaveBeenCalledTimes(1);
+    expect(handlers.onEnableAndListen).not.toHaveBeenCalled();
+    expect(handlers.onPauseListening).not.toHaveBeenCalled();
+    expect(handlers.onResumeListening).not.toHaveBeenCalled();
+  });
+
+  it('invokes pause and resume handlers for pause and resume actions', () => {
+    const handlers = {
+      onSend: jest.fn(),
+      onEnableAndListen: jest.fn(),
+      onPauseListening: jest.fn(),
+      onResumeListening: jest.fn()
+    };
+
+    runChatInputVoiceAction('pause_listening', handlers);
+    runChatInputVoiceAction('resume_listening', handlers);
+
+    expect(handlers.onPauseListening).toHaveBeenCalledTimes(1);
+    expect(handlers.onResumeListening).toHaveBeenCalledTimes(1);
+    expect(handlers.onSend).not.toHaveBeenCalled();
+    expect(handlers.onEnableAndListen).not.toHaveBeenCalled();
   });
 });

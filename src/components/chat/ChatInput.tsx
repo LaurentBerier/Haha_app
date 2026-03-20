@@ -20,18 +20,27 @@ import type { ChatImageAttachment, ChatSendPayload } from '../../models/ChatSend
 import type { ClaudeImageMediaType } from '../../services/claudeApiService';
 import { impactLight } from '../../services/hapticsService';
 import { theme } from '../../theme';
-import { resolveChatInputVoiceAction } from './chatInputVoiceAction';
+import type { VoiceConversationStatus } from '../../hooks/useVoiceConversation';
+import { resolveChatInputVoiceAction, runChatInputVoiceAction } from './chatInputVoiceAction';
+import {
+  isChatInputMicActive,
+  isChatInputMicPaused,
+  shouldShowConversationHint,
+  shouldUseOffMicAsset
+} from './chatInputMicState';
 import micIconSource from '../../../assets/icons/Mic_Icon.png';
+import micIconOffSource from '../../../assets/icons/Mic_Icon_off.png';
 
 interface ConversationModeProps {
   enabled: boolean;
   isListening: boolean;
   transcript: string;
   error?: string | null;
-  isPlaying?: boolean;
-  assistantBusy?: boolean;
+  micState?: VoiceConversationStatus;
+  hint?: string | null;
   onToggle: () => void;
-  onInterrupt?: () => void;
+  onPauseListening?: () => void;
+  onResumeListening?: () => void;
   onTypingStateChange?: (hasTypedText: boolean) => void;
 }
 
@@ -136,13 +145,21 @@ export function ChatInput({
   const [pickerError, setPickerError] = useState<string | null>(null);
   const sendScale = useRef(new Animated.Value(1)).current;
   const isConversationEnabled = Boolean(conversationMode?.enabled);
-  const isConversationListening = Boolean(conversationMode?.enabled && conversationMode.isListening);
-  const isAssistantBusy = Boolean(conversationMode?.enabled && conversationMode.assistantBusy);
-  const isConversationPlaying = Boolean(conversationMode?.enabled && (conversationMode.isPlaying || isAssistantBusy));
-  const isConversationPaused = Boolean(isConversationEnabled && !isConversationListening && !isConversationPlaying);
+  const micState = conversationMode?.micState ?? 'off';
+  const isConversationMicActive = isChatInputMicActive(micState);
+  const isConversationPaused = isChatInputMicPaused(isConversationEnabled, micState);
   const conversationTranscript = conversationMode?.transcript.trim() ?? '';
   const conversationError = conversationMode?.error ?? null;
-  const { pulse } = useVoiceAnimations(isConversationListening);
+  const conversationHint = conversationMode?.hint ?? null;
+  const shouldShowMicHint = shouldShowConversationHint({
+    hint: conversationHint,
+    disabled,
+    hasConversationError: Boolean(conversationError),
+    hasValidationError: Boolean(error),
+    hasPickerError: Boolean(pickerError)
+  });
+  const shouldUseOffMic = shouldUseOffMicAsset(isConversationEnabled, micState);
+  const { pulse } = useVoiceAnimations(isConversationMicActive);
 
   const trimmed = value.trim();
   const hasText = trimmed.length > 0;
@@ -278,8 +295,7 @@ export function ChatInput({
       canSend,
       hasConversationMode: Boolean(conversationMode),
       isConversationEnabled,
-      isConversationListening,
-      isConversationPlaying
+      micState
     });
 
     if (action === 'send') {
@@ -296,14 +312,21 @@ export function ChatInput({
     }
 
     void impactLight();
-
-    if (action === 'enable_and_listen') {
-      conversationMode.onToggle();
-      conversationMode.onInterrupt?.();
-      return;
-    }
-
-    conversationMode.onInterrupt?.();
+    runChatInputVoiceAction(action, {
+      onSend: () => {},
+      onEnableAndListen: () => {
+        conversationMode.onToggle();
+        requestAnimationFrame(() => {
+          conversationMode.onResumeListening?.();
+        });
+      },
+      onPauseListening: () => {
+        conversationMode.onPauseListening?.();
+      },
+      onResumeListening: () => {
+        conversationMode.onResumeListening?.();
+      }
+    });
   };
 
   const handleInputKeyPress = (event: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
@@ -350,6 +373,14 @@ export function ChatInput({
         </View>
       ) : null}
 
+      {shouldShowMicHint ? (
+        <View style={styles.pausedHintRow}>
+          <Text style={styles.pausedHint} testID="chat-input-mic-paused-hint">
+            {conversationHint}
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.container}>
         {allowImage ? (
           <Pressable
@@ -379,7 +410,7 @@ export function ChatInput({
               setValue(nextValue);
             }}
             placeholder={
-              isConversationListening
+              isConversationMicActive
                 ? conversationTranscript || t('voiceInputPlaceholder')
                 : t('chatPlaceholder')
             }
@@ -413,11 +444,10 @@ export function ChatInput({
               <Text style={styles.rightActionText}>➤</Text>
             ) : (
               <Image
-                source={micIconSource}
+                source={shouldUseOffMic ? micIconOffSource : micIconSource}
                 style={[
                   styles.micIcon,
-                  !isConversationEnabled && styles.micIconDisabled,
-                  isConversationPaused && styles.micIconPaused
+                  shouldUseOffMic && styles.micIconOff
                 ]}
                 resizeMode="contain"
               />
@@ -440,11 +470,6 @@ export function ChatInput({
         </Text>
       ) : null}
 
-      {isConversationPaused && !disabled && !conversationError && !error && !pickerError ? (
-        <Text style={styles.pausedHint} testID="chat-input-mic-paused-hint">
-          {t('micPausedHint')}
-        </Text>
-      ) : null}
     </View>
   );
 }
@@ -563,11 +588,8 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36
   },
-  micIconPaused: {
-    opacity: 0.75
-  },
-  micIconDisabled: {
-    opacity: 0.35
+  micIconOff: {
+    opacity: 0.98
   },
   disabledButton: {
     opacity: 0.45
@@ -578,10 +600,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.sm,
     paddingBottom: theme.spacing.sm
   },
+  pausedHintRow: {
+    paddingHorizontal: theme.spacing.sm,
+    paddingTop: theme.spacing.xs,
+    paddingBottom: 2,
+    alignItems: 'flex-end'
+  },
   pausedHint: {
     color: theme.colors.textSecondary,
     fontSize: 11,
     paddingHorizontal: theme.spacing.sm,
-    paddingBottom: theme.spacing.sm
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface
   }
 });

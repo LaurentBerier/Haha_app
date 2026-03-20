@@ -244,6 +244,8 @@ export const en = {
   voicePermissionDenied: 'Microphone access denied',
   voiceInputPlaceholder: 'Listening...',
   micPausedHint: 'Mic paused - tap to resume',
+  micRecoveryPausedHint: 'Mic stopped - tap to restart',
+  micUnsupportedHint: 'Mic unavailable in this browser',
   addButtonA11y: 'Add image',
   removeImageA11y: 'Remove selected image',
   imageAttached: 'Image attached',

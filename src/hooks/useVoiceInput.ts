@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getLanguage, t } from '../i18n';
 import { useStore } from '../store/useStore';
-import { requestVoicePermission, startListening, stopListening } from '../services/voiceEngine';
+import { requestVoicePermission, startVoiceListeningSession, type VoiceListeningSession } from '../services/voiceEngine';
 
 const ERROR_RESET_MS = 2000;
 const TRANSCRIBING_DELAY_MS = 250;
@@ -15,6 +15,7 @@ export function useVoiceInput() {
   const transcriptRef = useRef('');
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const transcribingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionRef = useRef<VoiceListeningSession | null>(null);
 
   const resetErrorState = useCallback(() => {
     if (resetTimerRef.current) {
@@ -46,7 +47,8 @@ export function useVoiceInput() {
     return () => {
       resetErrorState();
       resetTranscribingTimer();
-      stopListening();
+      sessionRef.current?.stop();
+      sessionRef.current = null;
       setVoiceStatus('idle');
     };
   }, [resetErrorState, resetTranscribingTimer, setVoiceStatus]);
@@ -73,16 +75,25 @@ export function useVoiceInput() {
     setTranscript('');
     setVoiceStatus('recording');
 
-    startListening(
-      getLanguage(),
-      (nextTranscript) => {
-        transcriptRef.current = nextTranscript;
-        setTranscript(nextTranscript);
+    sessionRef.current?.stop();
+    sessionRef.current = startVoiceListeningSession({
+      locale: getLanguage(),
+      onResult: (event) => {
+        transcriptRef.current = event.transcript;
+        setTranscript(event.transcript);
       },
-      () => {
-        enterErrorState(t('voiceError'));
+      onEnd: (event) => {
+        if (sessionRef.current?.id !== event.sessionId) {
+          return;
+        }
+        sessionRef.current = null;
+        if (event.reason === 'stopped') {
+          setVoiceStatus('idle');
+          return;
+        }
+        enterErrorState(event.reason === 'permission' ? t('voicePermissionDenied') : t('voiceError'));
       }
-    );
+    });
   }, [enterErrorState, hasPermission, resetErrorState, setVoiceStatus, voiceStatus]);
 
   const stopRecording = useCallback(async (): Promise<string> => {
@@ -91,7 +102,8 @@ export function useVoiceInput() {
     }
 
     setVoiceStatus('transcribing');
-    stopListening();
+    sessionRef.current?.stop();
+    sessionRef.current = null;
 
     resetTranscribingTimer();
     await new Promise<void>((resolve) => {
