@@ -592,6 +592,21 @@ export function useChat(conversationId: string) {
         });
       };
 
+      const getLatestMessageById = (messageId: string): Message | null => {
+        const latestMessages = useStore.getState().messagesByConversation[jobConversationId]?.messages ?? [];
+        return latestMessages.find((message) => message.id === messageId) ?? null;
+      };
+
+      const mergeMessageMetadata = (messageId: string, metadataPatch: NonNullable<Message['metadata']>) => {
+        const latestMessage = getLatestMessageById(messageId);
+        updateMessage(jobConversationId, messageId, {
+          metadata: {
+            ...(latestMessage?.metadata ?? {}),
+            ...metadataPatch
+          }
+        });
+      };
+
       const latestSessionUser = useStore.getState().session?.user;
       const latestAccountType = resolveEffectiveAccountType(
         latestSessionUser?.accountType ?? currentAccountType,
@@ -601,6 +616,68 @@ export function useChat(conversationId: string) {
         artistId === ARTIST_IDS.CATHY_GAUTHIER &&
         hasVoiceAccessForAccountType(latestAccountType) &&
         Boolean(accessToken.trim());
+      const synthesizeNoticeVoice = (messageId: string, content: string) => {
+        if (!canGenerateVoice) {
+          return;
+        }
+
+        const normalizedNotice = normalizeSpeechText(content, { trim: true });
+        if (!normalizedNotice) {
+          return;
+        }
+
+        const latestAccessToken = useStore.getState().session?.accessToken ?? accessToken;
+        if (!latestAccessToken.trim()) {
+          return;
+        }
+
+        mergeMessageMetadata(messageId, {
+          voiceStatus: 'generating',
+          voiceUrl: undefined,
+          voiceQueue: undefined,
+          voiceChunkBoundaries: undefined
+        });
+
+        void fetchAndCacheVoice(normalizedNotice, artistId, language, latestAccessToken, {
+          throwOnError: true,
+          purpose: 'reply'
+        })
+          .then((uri) => {
+            if (!uri) {
+              mergeMessageMetadata(messageId, {
+                voiceStatus: undefined,
+                voiceUrl: undefined,
+                voiceQueue: undefined,
+                voiceChunkBoundaries: undefined
+              });
+              return;
+            }
+
+            const boundary = stripAudioTags(normalizedNotice, { trim: true }).length;
+            mergeMessageMetadata(messageId, {
+              voiceStatus: 'ready',
+              voiceUrl: uri,
+              voiceQueue: [uri],
+              voiceChunkBoundaries: [boundary]
+            });
+
+            if (useStore.getState().voiceAutoPlay) {
+              if (audioPlayer.isPlaying || audioPlayer.isLoading) {
+                audioPlayer.appendToQueue(uri, { messageId });
+              } else {
+                void audioPlayer.play(uri, { messageId });
+              }
+            }
+          })
+          .catch(() => {
+            mergeMessageMetadata(messageId, {
+              voiceStatus: undefined,
+              voiceUrl: undefined,
+              voiceQueue: undefined,
+              voiceChunkBoundaries: undefined
+            });
+          });
+      };
       let ttsBuffer = '';
       let ttsChunkCount = 0;
       let hasStartedVoiceGeneration = false;
@@ -883,8 +960,9 @@ export function useChat(conversationId: string) {
 
           if (thresholdToShow !== null) {
             markThresholdMessageShown(thresholdToShow);
+            const thresholdMessageId = generateId('msg');
             addMessage(jobConversationId, {
-              id: generateId('msg'),
+              id: thresholdMessageId,
               conversationId: jobConversationId,
               role: 'artist',
               content: thresholdMessage,
@@ -896,6 +974,7 @@ export function useChat(conversationId: string) {
                 upgradeFromTier: normalizedAccountType
               }
             });
+            synthesizeNoticeVoice(thresholdMessageId, thresholdMessage);
           }
 
           const shouldBlockFree = normalizedAccountType === 'free' && ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO;
@@ -1056,6 +1135,7 @@ export function useChat(conversationId: string) {
               errorCode: errorCode ?? undefined
             }
           });
+          synthesizeNoticeVoice(artistMessageId, quotaMessage);
           resetStreamState();
           runNext();
           return;

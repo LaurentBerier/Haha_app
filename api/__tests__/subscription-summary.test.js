@@ -3,11 +3,15 @@ const { createReqRes } = require('./testHelpers');
 function buildSupabaseClient({
   user = { id: 'user-1', app_metadata: { account_type: 'free' } },
   profileAccountType = null,
-  stripeLink = null
+  stripeLink = null,
+  profileMaybeSingleError = null,
+  stripeLinkMaybeSingleError = null,
+  stripeLinkListRows = null,
+  profileListRows = null
 } = {}) {
   const profileMaybeSingle = jest.fn().mockResolvedValue({
     data: profileAccountType ? { account_type_id: profileAccountType } : null,
-    error: null
+    error: profileMaybeSingleError
   });
 
   const stripeLinkMaybeSingle = jest.fn().mockResolvedValue({
@@ -17,7 +21,7 @@ function buildSupabaseClient({
           stripe_subscription_id: stripeLink.stripeSubscriptionId ?? ''
         }
       : null,
-    error: null
+    error: stripeLinkMaybeSingleError
   });
 
   return {
@@ -32,7 +36,11 @@ function buildSupabaseClient({
         return {
           select: () => ({
             eq: () => ({
-              maybeSingle: profileMaybeSingle
+              maybeSingle: profileMaybeSingle,
+              limit: jest.fn().mockResolvedValue({
+                data: profileListRows ?? (profileAccountType ? [{ account_type_id: profileAccountType }] : []),
+                error: null
+              })
             })
           })
         };
@@ -42,7 +50,20 @@ function buildSupabaseClient({
         return {
           select: () => ({
             eq: () => ({
-              maybeSingle: stripeLinkMaybeSingle
+              maybeSingle: stripeLinkMaybeSingle,
+              limit: jest.fn().mockResolvedValue({
+                data:
+                  stripeLinkListRows ??
+                  (stripeLink
+                    ? [
+                        {
+                          stripe_customer_id: stripeLink.stripeCustomerId ?? '',
+                          stripe_subscription_id: stripeLink.stripeSubscriptionId ?? ''
+                        }
+                      ]
+                    : []),
+                error: null
+              })
             })
           })
         };
@@ -192,6 +213,47 @@ describe('api/subscription-summary', () => {
     expect(res.payload.cancelAtPeriodEnd).toBe(false);
     expect(res.payload.canCancel).toBe(true);
     expect(res.payload.nextBillingDate).toBe('2024-03-09T16:00:00.000Z');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to list query when maybeSingle returns ambiguous rows error', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_live_test';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue({
+        status: 'active',
+        cancel_at_period_end: false,
+        current_period_end: 1_710_000_000
+      })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'u-legacy', app_metadata: { account_type: 'regular' } },
+          profileAccountType: 'regular',
+          stripeLinkMaybeSingleError: { code: 'PGRST116', message: 'JSON object requested, multiple (or no) rows returned' },
+          stripeLink: null,
+          stripeLinkListRows: [
+            { stripe_customer_id: 'cus_legacy', stripe_subscription_id: '' },
+            { stripe_customer_id: 'cus_legacy', stripe_subscription_id: 'sub_legacy' }
+          ]
+        })
+      )
+    }));
+
+    const handler = require('../subscription-summary');
+    const { req, res } = createReqRes({
+      method: 'GET',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.provider).toBe('stripe');
+    expect(res.payload.subscriptionStatus).toBe('active');
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });

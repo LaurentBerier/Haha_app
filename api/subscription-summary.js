@@ -30,6 +30,24 @@ function toIsoFromStripeTimestamp(value) {
     : null;
 }
 
+function isRecord(value) {
+  return typeof value === 'object' && value !== null;
+}
+
+function isMaybeSingleAmbiguousError(error) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const code = typeof error.code === 'string' ? error.code : '';
+  if (code === 'PGRST116') {
+    return true;
+  }
+
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return message.includes('multiple (or no) rows returned') || message.includes('multiple rows returned');
+}
+
 function extractStripeErrorMessage(payload) {
   if (
     payload &&
@@ -57,41 +75,92 @@ async function getAuthenticatedUser(supabaseAdmin, token) {
 }
 
 async function fetchStripeLink(supabaseAdmin, userId) {
-  const { data, error } = await supabaseAdmin
+  const singleResult = await supabaseAdmin
     .from('stripe_customer_links')
     .select('stripe_customer_id, stripe_subscription_id')
     .eq('user_id', userId)
     .maybeSingle();
 
-  if (error) {
-    return { ok: false, error };
+  if (!singleResult.error) {
+    const data = singleResult.data;
+    return {
+      ok: true,
+      link: data
+        ? {
+            stripeCustomerId: typeof data.stripe_customer_id === 'string' ? data.stripe_customer_id : '',
+            stripeSubscriptionId: typeof data.stripe_subscription_id === 'string' ? data.stripe_subscription_id : ''
+          }
+        : null
+    };
   }
+
+  if (!isMaybeSingleAmbiguousError(singleResult.error)) {
+    return { ok: false, error: singleResult.error };
+  }
+
+  const listResult = await supabaseAdmin
+    .from('stripe_customer_links')
+    .select('stripe_customer_id, stripe_subscription_id')
+    .eq('user_id', userId)
+    .limit(10);
+
+  if (listResult.error) {
+    return { ok: false, error: listResult.error };
+  }
+
+  const rows = Array.isArray(listResult.data) ? listResult.data : [];
+  if (rows.length === 0) {
+    return { ok: true, link: null };
+  }
+
+  const preferredRow =
+    rows.find((row) => isRecord(row) && typeof row.stripe_subscription_id === 'string' && row.stripe_subscription_id.trim()) ??
+    rows[0];
 
   return {
     ok: true,
-    link: data
+    link: preferredRow
       ? {
-          stripeCustomerId: typeof data.stripe_customer_id === 'string' ? data.stripe_customer_id : '',
-          stripeSubscriptionId: typeof data.stripe_subscription_id === 'string' ? data.stripe_subscription_id : ''
+          stripeCustomerId: typeof preferredRow.stripe_customer_id === 'string' ? preferredRow.stripe_customer_id : '',
+          stripeSubscriptionId: typeof preferredRow.stripe_subscription_id === 'string' ? preferredRow.stripe_subscription_id : ''
         }
       : null
   };
 }
 
 async function fetchProfileAccountType(supabaseAdmin, userId) {
-  const { data, error } = await supabaseAdmin
+  const singleResult = await supabaseAdmin
     .from('profiles')
     .select('account_type_id')
     .eq('id', userId)
     .maybeSingle();
 
-  if (error) {
-    return { ok: false, error };
+  if (!singleResult.error) {
+    const data = singleResult.data;
+    return {
+      ok: true,
+      accountType: toProfileAccountType(data?.account_type_id)
+    };
   }
 
+  if (!isMaybeSingleAmbiguousError(singleResult.error)) {
+    return { ok: false, error: singleResult.error };
+  }
+
+  const listResult = await supabaseAdmin
+    .from('profiles')
+    .select('account_type_id')
+    .eq('id', userId)
+    .limit(1);
+
+  if (listResult.error) {
+    return { ok: false, error: listResult.error };
+  }
+
+  const firstRow = Array.isArray(listResult.data) ? listResult.data[0] : null;
   return {
     ok: true,
-    accountType: toProfileAccountType(data?.account_type_id)
+    accountType: toProfileAccountType(firstRow?.account_type_id)
   };
 }
 
