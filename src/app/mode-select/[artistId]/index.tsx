@@ -1192,7 +1192,7 @@ export default function ModeSelectHomeScreen() {
       return;
     }
 
-    if (!isValidConversation || isQuotaBlocked || hasTypedDraft || hasStreaming) {
+    if (!isValidConversation || isQuotaBlocked || hasTypedDraft || hasStreaming || isGreetingVoiceActive) {
       return;
     }
 
@@ -1205,6 +1205,7 @@ export default function ModeSelectHomeScreen() {
   }, [
     armListeningActivation,
     conversationModeEnabled,
+    isGreetingVoiceActive,
     hasStreaming,
     hasTypedDraft,
     isQuotaBlocked,
