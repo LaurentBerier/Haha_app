@@ -616,7 +616,14 @@ export function useChat(conversationId: string) {
         artistId === ARTIST_IDS.CATHY_GAUTHIER &&
         hasVoiceAccessForAccountType(latestAccountType) &&
         Boolean(accessToken.trim());
-      const synthesizeNoticeVoice = (messageId: string, content: string) => {
+      const synthesizeNoticeVoice = (
+        messageId: string,
+        content: string,
+        options?: {
+          queueOnly?: boolean;
+          expectedCurrentMessageId?: string | null;
+        }
+      ) => {
         if (!canGenerateVoice) {
           return;
         }
@@ -662,9 +669,12 @@ export function useChat(conversationId: string) {
             });
 
             if (useStore.getState().voiceAutoPlay) {
-              if (audioPlayer.isPlaying || audioPlayer.isLoading) {
+              const hasActivePlayback = audioPlayer.isPlaying || audioPlayer.isLoading;
+              const matchesExpectedMessage =
+                !options?.expectedCurrentMessageId || audioPlayer.currentMessageId === options.expectedCurrentMessageId;
+              if (hasActivePlayback && matchesExpectedMessage) {
                 audioPlayer.appendToQueue(uri, { messageId });
-              } else {
+              } else if (!options?.queueOnly) {
                 void audioPlayer.play(uri, { messageId });
               }
             }
@@ -705,9 +715,6 @@ export function useChat(conversationId: string) {
 
         ignoreTtsUpdates = true;
         hasTtsChunkFailure = true;
-        if (audioPlayer.currentMessageId === artistMessageId) {
-          void audioPlayer.stop();
-        }
         mergeArtistMetadata({
           voiceStatus: undefined,
           voiceUrl: undefined,
@@ -974,7 +981,10 @@ export function useChat(conversationId: string) {
                 upgradeFromTier: normalizedAccountType
               }
             });
-            synthesizeNoticeVoice(thresholdMessageId, thresholdMessage);
+            synthesizeNoticeVoice(thresholdMessageId, thresholdMessage, {
+              queueOnly: true,
+              expectedCurrentMessageId: artistMessageId
+            });
           }
 
           const shouldBlockFree = normalizedAccountType === 'free' && ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO;

@@ -220,21 +220,21 @@ export const fr = {
   chatModeLabel: 'Mode',
   chatModeUnknown: 'Discussion',
   cathyThreshold1Message:
-    "Petite note entre nous: t'as utilise les 3/4 de tes messages ce mois-ci. Je reponds encore pleine puissance, mais je surveille mon energie. Upgrade si tu veux jamais ralentir.",
+    "Petite note entre nous: t'as utilisé les 3/4 de tes messages ce mois-ci. Je réponds encore à pleine puissance, mais je surveille mon énergie. Upgrade si tu veux jamais ralentir.",
   cathyThreshold2Message:
-    "Ok la, je suis en mode express. Je reponds encore, mais plus courte et avec moins de memoire. Certaines fonctions avancées sont en pause jusqu'au mois prochain.",
+    "Ok là, je suis en mode express. Je réponds encore, mais plus court et avec moins de mémoire. Certaines fonctions avancées sont en pause jusqu'au mois prochain.",
   cathyThreshold3PaidMessage:
-    "Je suis officiellement en mode economique pour le reste du mois. Je reponds encore, promis, mais en version allégée.",
+    "Je suis officiellement en mode économique pour le reste du mois. Je réponds encore, promis, mais en version allégée.",
   cathyThreshold3FreeMessage:
-    "T'as epuise tes messages gratuits pour ce mois. Je m'en vais pas, mais je peux pu repondre. Passe en Regulier pour continuer a jaser.",
+    "T'as épuisé tes messages gratuits pour ce mois. Je m'en vais pas, mais je peux pu répondre. Passe en Régulier pour continuer à jaser.",
   cathyThreshold4PaidMessage:
-    "La c'est vraiment la fin du mois pour moi. On se retrouve le 1er, ou upgrade pour ne plus attendre.",
-  upgradeCtaLabel: "Passer a l'abonnement superieur ->",
-  chatInputBlocked: 'Messages epuises - renouvellement le 1er du mois',
+    "Là, c'est vraiment la fin du mois pour moi. On se retrouve le 1er, ou upgrade pour ne plus attendre.",
+  upgradeCtaLabel: "Passer à l'abonnement supérieur ->",
+  chatInputBlocked: 'Messages épuisés - renouvellement le 1er du mois',
   cathyVoiceQuotaExceededMessage:
-    "Je continue en texte, mais ma voix est a sec pour ton forfait actuel. Passe au plan superieur et on repart en vocal.",
+    "Je continue en texte, mais ma voix est à sec pour ton forfait actuel. Passe au plan supérieur et on repart en vocal.",
   cathyVoiceRateLimitMessage:
-    "Je continue en texte pour l'instant: on a frappe la limite voix temporaire. Reessaie dans une minute et on reprend.",
+    "Je continue en texte pour l'instant: on a frappé la limite voix temporaire. Réessaie dans une minute et on reprend.",
   messageTooLong: 'Message trop long',
   newConversation: 'Nouvelle conversation',
   noMessages: 'Commence la conversation',
