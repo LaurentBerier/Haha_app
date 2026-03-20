@@ -52,6 +52,9 @@ const MAX_MEMORY_FACTS = 6;
 const MIN_TTS_CHUNK_CHARS = 20;
 const MAX_TTS_CHUNK_CHARS = 200;
 const VOICE_FIRST_CHUNK_MIN_CHARS = 60;
+const NOTICE_AUDIO_SYNC_START_WAIT_MS = 1_500;
+const NOTICE_AUDIO_SYNC_FINISH_WAIT_MS = 15_000;
+const NOTICE_AUDIO_SYNC_POLL_MS = 120;
 const REACT_TAG_PATTERN = /^\s*\[REACT:([^\]\n]{1,8})\]\s*/i;
 const ALLOWED_REACTIONS = new Set(['😂', '💀', '😮', '😤', '🙄', '😬', '🤔', '👍']);
 const TERMINAL_TTS_CODES = new Set(['TTS_QUOTA_EXCEEDED', 'RATE_LIMIT_EXCEEDED', 'TTS_FORBIDDEN']);
@@ -122,6 +125,12 @@ function isSentenceBoundary(input: string, index: number): boolean {
 
 function normalizeTtsChunk(chunk: string): string {
   return chunk.replace(/\s+/g, ' ').trim();
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function extractReactionTag(text: string): { reaction: string | null; cleaned: string } {
@@ -464,6 +473,19 @@ export function useChat(conversationId: string) {
   const flushFrameRef = useRef<number | null>(null);
   const displayPendingTagRef = useRef('');
   const rawTtsResponseRef = useRef('');
+  const audioPlaybackStateRef = useRef({
+    isPlaying: audioPlayer.isPlaying,
+    isLoading: audioPlayer.isLoading,
+    currentMessageId: audioPlayer.currentMessageId
+  });
+
+  useEffect(() => {
+    audioPlaybackStateRef.current = {
+      isPlaying: audioPlayer.isPlaying,
+      isLoading: audioPlayer.isLoading,
+      currentMessageId: audioPlayer.currentMessageId
+    };
+  }, [audioPlayer.currentMessageId, audioPlayer.isLoading, audioPlayer.isPlaying]);
 
   const runNext = useCallback(() => {
     if (!conversationId || runNextLockRef.current || !isMountedRef.current) {
@@ -669,9 +691,10 @@ export function useChat(conversationId: string) {
             });
 
             if (useStore.getState().voiceAutoPlay) {
-              const hasActivePlayback = audioPlayer.isPlaying || audioPlayer.isLoading;
+              const playbackState = audioPlaybackStateRef.current;
+              const hasActivePlayback = playbackState.isPlaying || playbackState.isLoading;
               const matchesExpectedMessage =
-                !options?.expectedCurrentMessageId || audioPlayer.currentMessageId === options.expectedCurrentMessageId;
+                !options?.expectedCurrentMessageId || playbackState.currentMessageId === options.expectedCurrentMessageId;
               if (hasActivePlayback && matchesExpectedMessage) {
                 audioPlayer.appendToQueue(uri, { messageId });
               } else if (!options?.queueOnly) {
@@ -687,6 +710,83 @@ export function useChat(conversationId: string) {
               voiceChunkBoundaries: undefined
             });
           });
+      };
+      const waitForReplyAudioToSettle = async (): Promise<void> => {
+        if (!canGenerateVoice || !useStore.getState().voiceAutoPlay) {
+          return;
+        }
+
+        const isReplyVoiceGenerating = () => {
+          const latestArtistMessage = getLatestArtistMessage();
+          return latestArtistMessage?.metadata?.voiceStatus === 'generating';
+        };
+
+        const isReplyAudioActive = () => {
+          const playbackState = audioPlaybackStateRef.current;
+          return (
+            (playbackState.isPlaying || playbackState.isLoading) && playbackState.currentMessageId === artistMessageId
+          );
+        };
+
+        const waitFor = async (predicate: () => boolean, timeoutMs: number): Promise<boolean> => {
+          const deadline = Date.now() + timeoutMs;
+          while (Date.now() < deadline) {
+            if (!isMountedRef.current) {
+              return false;
+            }
+            if (predicate()) {
+              return true;
+            }
+            await sleep(NOTICE_AUDIO_SYNC_POLL_MS);
+          }
+          return predicate();
+        };
+
+        if (isReplyVoiceGenerating()) {
+          await waitFor(() => !isReplyVoiceGenerating(), NOTICE_AUDIO_SYNC_FINISH_WAIT_MS);
+        }
+
+        if (isReplyAudioActive()) {
+          await waitFor(() => !isReplyAudioActive(), NOTICE_AUDIO_SYNC_FINISH_WAIT_MS);
+          return;
+        }
+
+        const started = await waitFor(() => isReplyAudioActive(), NOTICE_AUDIO_SYNC_START_WAIT_MS);
+        if (!started) {
+          return;
+        }
+
+        await waitFor(() => !isReplyAudioActive(), NOTICE_AUDIO_SYNC_FINISH_WAIT_MS);
+      };
+
+      const enqueuePostReplyNotice = (
+        content: string,
+        metadata: NonNullable<Message['metadata']>,
+        options?: {
+          spoken?: boolean;
+        }
+      ) => {
+        const noticeMessageId = generateId('msg');
+        void (async () => {
+          await waitForReplyAudioToSettle();
+          if (!isMountedRef.current) {
+            return;
+          }
+
+          addMessage(jobConversationId, {
+            id: noticeMessageId,
+            conversationId: jobConversationId,
+            role: 'artist',
+            content,
+            status: 'complete',
+            timestamp: new Date().toISOString(),
+            metadata
+          });
+
+          if (options?.spoken ?? true) {
+            synthesizeNoticeVoice(noticeMessageId, content);
+          }
+        })();
       };
       let ttsBuffer = '';
       let ttsChunkCount = 0;
@@ -935,6 +1035,12 @@ export function useChat(conversationId: string) {
           latestState.session?.user.accountType ?? currentAccountType,
           latestState.session?.user.role ?? currentRole
         );
+        let postReplyNotice:
+          | {
+              content: string;
+              metadata: NonNullable<Message['metadata']>;
+            }
+          | null = null;
         let shouldBlockInput = false;
         if (
           normalizedAccountType !== 'admin' &&
@@ -967,24 +1073,16 @@ export function useChat(conversationId: string) {
 
           if (thresholdToShow !== null) {
             markThresholdMessageShown(thresholdToShow);
-            const thresholdMessageId = generateId('msg');
-            addMessage(jobConversationId, {
-              id: thresholdMessageId,
-              conversationId: jobConversationId,
-              role: 'artist',
-              content: thresholdMessage,
-              status: 'complete',
-              timestamp: new Date().toISOString(),
-              metadata: {
-                injected: true,
-                showUpgradeCta: true,
-                upgradeFromTier: normalizedAccountType
-              }
-            });
-            synthesizeNoticeVoice(thresholdMessageId, thresholdMessage, {
-              queueOnly: true,
-              expectedCurrentMessageId: artistMessageId
-            });
+            if (!postReplyNotice) {
+              postReplyNotice = {
+                content: thresholdMessage,
+                metadata: {
+                  injected: true,
+                  showUpgradeCta: true,
+                  upgradeFromTier: normalizedAccountType
+                }
+              };
+            }
           }
 
           const shouldBlockFree = normalizedAccountType === 'free' && ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO;
@@ -1071,14 +1169,14 @@ export function useChat(conversationId: string) {
             noticeMetadata.upgradeFromTier = normalizedAccountType;
           }
 
-          addMessage(jobConversationId, {
-            id: generateId('msg'),
-            conversationId: jobConversationId,
-            role: 'artist',
+          postReplyNotice = {
             content: buildCathyVoiceNotice(pendingVoiceNoticeCode),
-            status: 'complete',
-            timestamp: new Date().toISOString(),
             metadata: noticeMetadata
+          };
+        }
+        if (postReplyNotice) {
+          enqueuePostReplyNotice(postReplyNotice.content, postReplyNotice.metadata, {
+            spoken: true
           });
         }
         if (scoreActionSet.size > 0) {
