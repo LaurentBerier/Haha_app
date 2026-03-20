@@ -232,18 +232,22 @@ function buildReactionTagSection(language: 'fr' | 'en'): string {
   if (language === 'en') {
     return `
 ## USER MESSAGE REACTION TAG
-Start EVERY reply with exactly one tag:
+Use this tag only when a reaction is clearly appropriate:
 [REACT:emoji]
 Allowed emojis: 😂 💀 😮 😤 🙄 😬 🤔 👍
-This tag must be the first element before any other text.`;
+If used, this tag must be the first element before any other text.
+Frequency target: roughly every few replies, not every reply.
+Skip on neutral/informational turns.`;
   }
 
   return `
 ## REACTION AU MESSAGE UTILISATEUR
-Commence CHAQUE reponse avec exactement une balise:
+Utilise cette balise seulement quand une reaction est vraiment appropriee :
 [REACT:emoji]
 Emojis autorises: 😂 💀 😮 😤 🙄 😬 🤔 👍
-La balise doit etre le tout premier element, avant tout autre texte.`;
+Si utilisee, la balise doit etre le tout premier element, avant tout autre texte.
+Frequence cible: environ aux quelques reponses, pas a chaque fois.
+Saute-la sur les tours neutres ou purement informatifs.`;
 }
 
 export function buildSystemPromptForArtist(

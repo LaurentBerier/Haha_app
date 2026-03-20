@@ -41,7 +41,7 @@ describe('usageSlice', () => {
 
     slice.hydrateQuota(42, 'regular');
 
-    expect(slice.quota.messagesCap).toBe(500);
+    expect(slice.quota.messagesCap).toBe(3000);
     expect(slice.quota.messagesUsed).toBe(42);
   });
 
@@ -50,7 +50,16 @@ describe('usageSlice', () => {
 
     slice.hydrateQuota(999, 'free');
 
-    expect(slice.quota.messagesCap).toBe(50);
-    expect(slice.quota.messagesUsed).toBe(50);
+    expect(slice.quota.messagesCap).toBe(200);
+    expect(slice.quota.messagesUsed).toBe(200);
+  });
+
+  it('hydrates quota from server cap when provided', () => {
+    const slice = createSliceHarness((set, get) => createUsageSlice(set as never, get as never, undefined as never));
+
+    slice.hydrateQuotaWithCap(1500, 25000);
+
+    expect(slice.quota.messagesCap).toBe(25000);
+    expect(slice.quota.messagesUsed).toBe(1500);
   });
 });

@@ -30,9 +30,9 @@ const MONTHLY_QUOTA_CACHE_TTL_MS = 5_000;
 const DEFAULT_ARTIST_ID = 'cathy-gauthier';
 const DEFAULT_MODE_ID = 'default';
 const DEFAULT_MONTHLY_CAPS = {
-  free: 50,
-  regular: 500,
-  premium: 1500
+  free: 200,
+  regular: 3_000,
+  premium: 25_000
   // admin intentionally omitted => unlimited
 };
 const DEFAULT_MAX_TOKENS_BY_TIER = {
@@ -889,16 +889,20 @@ Ne commence jamais par un emoji seul.`
     ? promptLanguage === 'en'
       ? `
 ## USER MESSAGE REACTION TAG
-Start EVERY reply with exactly one tag:
+Use this tag only when a reaction is clearly appropriate:
 [REACT:emoji]
 Allowed emojis: 😂 💀 😮 😤 🙄 😬 🤔 👍
-This tag must be the first element before any other text.`
+If used, this tag must be the first element before any other text.
+Frequency target: roughly every few replies, not every reply.
+Skip on neutral/informational turns.`
       : `
 ## REACTION AU MESSAGE UTILISATEUR
-Commence CHAQUE reponse avec exactement une balise:
+Utilise cette balise seulement quand une reaction est vraiment appropriee :
 [REACT:emoji]
 Emojis autorises: 😂 💀 😮 😤 🙄 😬 🤔 👍
-La balise doit etre le tout premier element, avant tout autre texte.`
+Si utilisee, la balise doit etre le tout premier element, avant tout autre texte.
+Frequence cible: environ aux quelques reponses, pas a chaque fois.
+Saute-la sur les tours neutres ou purement informatifs.`
     : '';
   const cultureAnchorRules = promptLanguage === 'en'
     ? [
@@ -2131,6 +2135,35 @@ async function validateAuthHeader(supabaseAdmin, req, requestId) {
   }
 }
 
+async function resolveEffectiveAccountTypeFromProfile(supabaseAdmin, userId, fallbackAccountType, role, requestId) {
+  const fallback = resolveEffectiveAccountType(fallbackAccountType, role);
+  if (fallback === 'admin') {
+    return fallback;
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .select('account_type_id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error(`[api/claude][${requestId}] Failed to read profile account type`, error);
+      return fallback;
+    }
+
+    if (isRecord(data) && typeof data.account_type_id === 'string' && data.account_type_id.trim()) {
+      return resolveEffectiveAccountType(data.account_type_id, role);
+    }
+
+    return fallback;
+  } catch (error) {
+    console.error(`[api/claude][${requestId}] Failed to read profile account type`, error);
+    return fallback;
+  }
+}
+
 function isTtsProxyRequest(req) {
   if (req && typeof req.url === 'string' && req.url.includes('__proxy=tts')) {
     return true;
@@ -2187,7 +2220,13 @@ module.exports = async function handler(req, res) {
     sendError(res, 401, 'Unauthorized.', { code: 'UNAUTHORIZED', requestId });
     return;
   }
-  const effectiveAccountType = resolveEffectiveAccountType(auth.accountType, auth.role);
+  const effectiveAccountType = await resolveEffectiveAccountTypeFromProfile(
+    supabaseAdmin,
+    auth.userId,
+    auth.accountType,
+    auth.role,
+    requestId
+  );
 
   const promptContext = normalizePromptContext(req.body);
   if (!promptContext.ok) {

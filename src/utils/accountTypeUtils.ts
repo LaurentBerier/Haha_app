@@ -1,4 +1,4 @@
-const VOICE_ENABLED_ACCOUNT_TYPES = new Set(['regular', 'premium', 'admin']);
+const VOICE_ENABLED_ACCOUNT_TYPES = new Set(['free', 'regular', 'premium', 'admin']);
 
 export function normalizeAccountType(accountType: string | null | undefined): 'free' | 'regular' | 'premium' | 'admin' {
   if (typeof accountType === 'string' && accountType.trim()) {

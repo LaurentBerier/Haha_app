@@ -1,9 +1,9 @@
 const { normalizeAccountType } = require('./_account-tier');
 
 const DEFAULT_MONTHLY_CAPS = {
-  free: 50,
-  regular: 500,
-  premium: 1500
+  free: 200,
+  regular: 3_000,
+  premium: 25_000
   // admin intentionally omitted => unlimited
 };
 

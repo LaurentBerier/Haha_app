@@ -14,6 +14,8 @@ interface FetchTtsResponse {
   status: number;
   arrayBuffer?: ArrayBuffer;
   contentType?: string;
+  code?: string;
+  retryAfterSeconds?: number;
 }
 
 export type VoiceSynthesisPurpose = 'greeting' | 'reply';
@@ -23,10 +25,66 @@ export interface FetchVoiceOptions {
   throwOnError?: boolean;
 }
 
-function buildTtsError(status: number): Error & { status: number; code: string } {
-  const error = new Error('TTS unavailable') as Error & { status: number; code: string };
+const KNOWN_TTS_ERROR_CODES = new Set([
+  'TTS_QUOTA_EXCEEDED',
+  'RATE_LIMIT_EXCEEDED',
+  'TTS_FORBIDDEN',
+  'TTS_PROVIDER_ERROR',
+  'UNAUTHORIZED'
+]);
+
+function normalizeTtsErrorCode(status: number, code?: string | null): string {
+  const normalizedCode = typeof code === 'string' ? code.trim() : '';
+  if (normalizedCode && KNOWN_TTS_ERROR_CODES.has(normalizedCode)) {
+    return normalizedCode;
+  }
+
+  if (status === 429) {
+    return 'TTS_QUOTA_EXCEEDED';
+  }
+  if (status === 403) {
+    return 'TTS_FORBIDDEN';
+  }
+  if (status === 401) {
+    return 'UNAUTHORIZED';
+  }
+  return 'TTS_PROVIDER_ERROR';
+}
+
+function isTerminalTtsStatus(status: number): boolean {
+  return status === 401 || status === 403 || status === 429;
+}
+
+function parseRetryAfterSeconds(value: string | null): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+async function extractApiErrorCode(response: Response): Promise<string | null> {
+  const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+  if (!contentType.includes('application/json')) {
+    return null;
+  }
+
+  try {
+    const payload = (await response.clone().json()) as {
+      error?: { code?: unknown };
+    };
+    const code = payload?.error?.code;
+    return typeof code === 'string' && code.trim() ? code.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildTtsError(status: number, code?: string): Error & { status: number; code: string; retryAfterSeconds?: number } {
+  const error = new Error('TTS unavailable') as Error & { status: number; code: string; retryAfterSeconds?: number };
   error.status = status;
-  error.code = status === 429 ? 'TTS_QUOTA_EXCEEDED' : status === 403 ? 'TTS_FORBIDDEN' : 'TTS_UNAVAILABLE';
+  error.code = normalizeTtsErrorCode(status, code);
   return error;
 }
 
@@ -135,6 +193,8 @@ async function fetchTtsBinary(
     payload.purpose = options.purpose;
   }
   let lastStatus = 0;
+  let lastCode: string | undefined;
+  let lastRetryAfterSeconds: number | undefined;
 
   for (const endpoint of candidates) {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -154,13 +214,27 @@ async function fetchTtsBinary(
       });
 
       if (!response.ok) {
+        const responseCode = await extractApiErrorCode(response);
+        const normalizedCode = normalizeTtsErrorCode(response.status, responseCode);
+        const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('retry-after'));
         lastStatus = response.status;
+        lastCode = normalizedCode;
+        lastRetryAfterSeconds = retryAfterSeconds;
+        if (isTerminalTtsStatus(response.status)) {
+          return {
+            ok: false,
+            status: response.status,
+            code: normalizedCode,
+            retryAfterSeconds
+          };
+        }
         continue;
       }
 
       const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
       if (!contentType.includes('audio/')) {
         lastStatus = response.status;
+        lastCode = normalizeTtsErrorCode(response.status);
         continue;
       }
 
@@ -180,7 +254,9 @@ async function fetchTtsBinary(
 
   return {
     ok: false,
-    status: lastStatus
+    status: lastStatus,
+    code: lastCode,
+    retryAfterSeconds: lastRetryAfterSeconds
   };
 }
 
@@ -213,7 +289,9 @@ export async function fetchAndCacheVoice(
     const response = await fetchTtsBinary(normalizedText, normalizedArtistId, language, accessToken, options);
     if (!response.ok || !response.arrayBuffer) {
       if (options?.throwOnError) {
-        throw buildTtsError(response.status);
+        const error = buildTtsError(response.status, response.code);
+        error.retryAfterSeconds = response.retryAfterSeconds;
+        throw error;
       }
       return null;
     }
@@ -242,7 +320,9 @@ export async function fetchAndCacheVoice(
   const response = await fetchTtsBinary(normalizedText, normalizedArtistId, language, accessToken, options);
   if (!response.ok || !response.arrayBuffer) {
     if (options?.throwOnError) {
-      throw buildTtsError(response.status);
+      const error = buildTtsError(response.status, response.code);
+      error.retryAfterSeconds = response.retryAfterSeconds;
+      throw error;
     }
     return null;
   }

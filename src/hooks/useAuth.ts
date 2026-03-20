@@ -16,6 +16,7 @@ export function useAuth() {
   const clearUserProfile = useStore((state) => state.clearUserProfile);
   const clearAccountScopedState = useStore((state) => state.clearAccountScopedState);
   const hydrateQuota = useStore((state) => state.hydrateQuota);
+  const hydrateQuotaWithCap = useStore((state) => state.hydrateQuotaWithCap);
   const resetQuota = useStore((state) => state.resetQuota);
   const hydrateGamification = useStore((state) => state.hydrateGamification);
   const resetGamification = useStore((state) => state.resetGamification);
@@ -72,7 +73,7 @@ export function useAuth() {
           if (!isRunCurrent(runId)) {
             return;
           }
-          hydrateQuota(usageSummary.messagesUsed, accountType);
+          hydrateQuotaWithCap(usageSummary.messagesUsed, usageSummary.messagesCap);
         } catch {
           if (isRunCurrent(runId)) {
             hydrateQuota(0, accountType);
@@ -152,7 +153,7 @@ export function useAuth() {
           if (!isRunCurrent(runId)) {
             return;
           }
-          hydrateQuota(usageSummary.messagesUsed, accountType);
+          hydrateQuotaWithCap(usageSummary.messagesUsed, usageSummary.messagesCap);
         } catch {
           if (isRunCurrent(runId)) {
             hydrateQuota(0, accountType);
@@ -185,6 +186,7 @@ export function useAuth() {
     clearSession,
     clearUserProfile,
     hydrateQuota,
+    hydrateQuotaWithCap,
     hydrateGamification,
     resetQuota,
     resetGamification,

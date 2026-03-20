@@ -22,6 +22,7 @@ export interface UsageSlice {
   markHardCapMessageShown: () => void;
   resetQuota: () => void;
   hydrateQuota: (messagesUsed: number, accountType: string) => void;
+  hydrateQuotaWithCap: (messagesUsed: number, messagesCap: number | null) => void;
 }
 
 function computeNextResetDate(now: Date): string {
@@ -74,7 +75,7 @@ function resolveThreshold(quota: UsageQuota): QuotaThreshold {
  */
 export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (set, get) => ({
   quota: {
-    messagesCap: 50,
+    messagesCap: 200,
     messagesUsed: 0,
     threshold1MessageShown: false,
     threshold2MessageShown: false,
@@ -164,7 +165,26 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
     })),
   hydrateQuota: (messagesUsed, accountType) => {
     const config = accountTypesById[accountType];
-    const cap = config?.monthlyMessageCap ?? accountTypesById.free?.monthlyMessageCap ?? 50;
+    const cap = config?.monthlyMessageCap ?? accountTypesById.free?.monthlyMessageCap ?? 200;
+    const normalizedMessagesUsed =
+      Number.isFinite(messagesUsed) && messagesUsed > 0 ? Math.floor(messagesUsed) : 0;
+    const clampedMessagesUsed = cap === null ? normalizedMessagesUsed : Math.min(normalizedMessagesUsed, cap);
+
+    set((state) => ({
+      quota: {
+        ...normalizeQuotaWindow(state.quota),
+        messagesCap: cap,
+        messagesUsed: clampedMessagesUsed,
+        threshold1MessageShown: false,
+        threshold2MessageShown: false,
+        threshold3MessageShown: false,
+        threshold4MessageShown: false,
+        isBlocked: false
+      }
+    }));
+  },
+  hydrateQuotaWithCap: (messagesUsed, messagesCap) => {
+    const cap = typeof messagesCap === 'number' && Number.isFinite(messagesCap) && messagesCap > 0 ? messagesCap : null;
     const normalizedMessagesUsed =
       Number.isFinite(messagesUsed) && messagesUsed > 0 ? Math.floor(messagesUsed) : 0;
     const clampedMessagesUsed = cap === null ? normalizedMessagesUsed : Math.min(normalizedMessagesUsed, cap);

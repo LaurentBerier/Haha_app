@@ -201,12 +201,20 @@ describe('api/tts', () => {
     expect(res.payload.error.code).toBe('UNAUTHORIZED');
   });
 
-  it('returns 403 for free tier users', async () => {
+  it('accepts free tier voice requests while under monthly cap', async () => {
+    const audioBytes = Uint8Array.from([5, 4, 3, 2]).buffer;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: jest.fn().mockResolvedValue(audioBytes)
+    });
+
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() =>
         buildSupabaseClient({
           user: { id: 'free-user', app_metadata: { account_type: 'free' } },
-          profileAccountType: 'free'
+          profileAccountType: 'free',
+          initialUsageCount: 12
         })
       )
     }));
@@ -219,9 +227,8 @@ describe('api/tts', () => {
 
     await handler(req, res);
 
-    expect(res.statusCode).toBe(403);
-    expect(res.payload.error.code).toBe('TTS_QUOTA_EXCEEDED');
-    expect(global.fetch).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('returns 429 when regular tier monthly TTS cap is reached', async () => {
@@ -230,7 +237,31 @@ describe('api/tts', () => {
         buildSupabaseClient({
           user: { id: 'regular-user', app_metadata: { account_type: 'regular' } },
           profileAccountType: 'regular',
-          initialUsageCount: 200
+          initialUsageCount: 2000
+        })
+      )
+    }));
+
+    const handler = require('../../src/server/ttsHandler');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer free-cap-token' },
+      body: { text: 'bonjour', artistId: 'cathy-gauthier', language: 'fr-CA' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(429);
+    expect(res.payload.error.code).toBe('TTS_QUOTA_EXCEEDED');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns 429 when free tier monthly TTS cap is reached', async () => {
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'free-user-cap', app_metadata: { account_type: 'free' } },
+          profileAccountType: 'free',
+          initialUsageCount: 80
         })
       )
     }));
@@ -245,6 +276,34 @@ describe('api/tts', () => {
 
     expect(res.statusCode).toBe(429);
     expect(res.payload.error.code).toBe('TTS_QUOTA_EXCEEDED');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['free', 20],
+    ['regular', 60],
+    ['premium', 180]
+  ])('enforces Pack A per-minute rate limit for %s tier', async (accountType, usedInWindow) => {
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: `${accountType}-rate-user`, app_metadata: { account_type: accountType } },
+          profileAccountType: accountType,
+          initialUsageCount: usedInWindow
+        })
+      )
+    }));
+
+    const handler = require('../../src/server/ttsHandler');
+    const { req, res } = createReqRes({
+      headers: { authorization: `Bearer ${accountType}-token` },
+      body: { text: 'bonjour rate limit', artistId: 'cathy-gauthier', language: 'fr-CA' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(429);
+    expect(res.payload.error.code).toBe('RATE_LIMIT_EXCEEDED');
     expect(global.fetch).not.toHaveBeenCalled();
   });
 

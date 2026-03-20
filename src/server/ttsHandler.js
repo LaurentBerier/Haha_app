@@ -16,11 +16,18 @@ const DEFAULT_VOICE_ID_GENERIC = 'cgSgspJ2msm6clMCkdW9';
 const DEFAULT_MODEL_ID = 'eleven_v3';
 const DEFAULT_TTS_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_TTS_RATE_LIMIT_MAX_REQUESTS = 20;
+const DEFAULT_TTS_RATE_LIMIT_MAX_REQUESTS_BY_TIER = {
+  free: 20,
+  regular: 60,
+  premium: 180,
+  admin: 600
+};
 const MAX_INPUT_TEXT_CHARS = 5_000;
 const MAX_PROVIDER_TEXT_CHARS = 1_000;
 const DEFAULT_TTS_CAPS = {
-  regular: 200,
-  premium: 500
+  free: 80,
+  regular: 2_000,
+  premium: 20_000
 };
 
 function isRecord(value) {
@@ -300,10 +307,26 @@ async function getMonthlyTtsUsageCount(supabaseAdmin, userId, requestId) {
   };
 }
 
-async function enforceUserRateLimit(supabaseAdmin, userId, requestId) {
+function getTtsRateLimitMaxRequests(accountType) {
+  const normalized = normalizeAccountType(accountType);
+  const tierEnvKey = `TTS_RATE_LIMIT_MAX_REQUESTS_${normalized.toUpperCase()}`;
+  const tierFromEnv = parsePositiveInt(process.env[tierEnvKey], 0);
+  if (tierFromEnv > 0) {
+    return tierFromEnv;
+  }
+
+  const fromSharedEnv = parsePositiveInt(process.env.TTS_RATE_LIMIT_MAX_REQUESTS, 0);
+  if (fromSharedEnv > 0) {
+    return fromSharedEnv;
+  }
+
+  return DEFAULT_TTS_RATE_LIMIT_MAX_REQUESTS_BY_TIER[normalized] ?? DEFAULT_TTS_RATE_LIMIT_MAX_REQUESTS;
+}
+
+async function enforceUserRateLimit(supabaseAdmin, userId, accountType, requestId) {
   const nowMs = Date.now();
   const windowMs = parsePositiveInt(process.env.TTS_RATE_LIMIT_WINDOW_MS, DEFAULT_TTS_RATE_LIMIT_WINDOW_MS);
-  const maxRequests = parsePositiveInt(process.env.TTS_RATE_LIMIT_MAX_REQUESTS, DEFAULT_TTS_RATE_LIMIT_MAX_REQUESTS);
+  const maxRequests = getTtsRateLimitMaxRequests(accountType);
   const windowStartIso = new Date(nowMs - windowMs).toISOString();
 
   const { count, error } = await supabaseAdmin
@@ -424,12 +447,6 @@ module.exports = async function handler(req, res) {
     auth.role,
     requestId
   );
-  const isGreetingPurpose = payload.purpose === 'greeting';
-  const isPaidTier = normalizedAccountType === 'regular' || normalizedAccountType === 'premium' || normalizedAccountType === 'admin';
-  if (!isPaidTier && !isGreetingPurpose) {
-    sendError(res, 403, 'Voice quota exceeded.', { code: 'TTS_QUOTA_EXCEEDED', requestId });
-    return;
-  }
 
   const monthlyCap = getTtsMonthlyCap(normalizedAccountType);
   const usage = await getMonthlyTtsUsageCount(supabaseAdmin, auth.userId, requestId);
@@ -443,7 +460,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const rateLimit = await enforceUserRateLimit(supabaseAdmin, auth.userId, requestId);
+  const rateLimit = await enforceUserRateLimit(supabaseAdmin, auth.userId, normalizedAccountType, requestId);
   if (!rateLimit.ok) {
     if (rateLimit.status === 429 && typeof rateLimit.retryAfterSeconds === 'number') {
       res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));

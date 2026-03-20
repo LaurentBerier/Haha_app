@@ -54,7 +54,7 @@ describe('ttsService', () => {
     ]);
   });
 
-  it('fails over across endpoints and returns cached blob URL on first audio success', async () => {
+  it('stops endpoint failover after terminal 403 response', async () => {
     const fetchMock = jest
       .fn()
       .mockRejectedValueOnce(new Error('Network error'))
@@ -64,29 +64,56 @@ describe('ttsService', () => {
         headers: {
           get: () => 'application/json'
         }
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        headers: {
-          get: () => 'audio/mpeg'
-        },
-        arrayBuffer: jest.fn().mockResolvedValue(new Uint8Array([1, 2, 3]).buffer)
       });
     global.fetch = fetchMock as unknown as typeof fetch;
 
     const uri = await fetchAndCacheVoice('Salut Cathy', 'cathy-gauthier', 'fr-CA', 'token-premium');
 
-    expect(uri).toBe('blob:https://app.ha-ha.ai/test-audio');
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(uri).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://app.ha-ha.ai/api/tts');
     expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/tts');
-    expect(fetchMock.mock.calls[2]?.[0]).toBe('https://api.ha-ha.ai/tts');
     expect(fetchMock.mock.calls[0]?.[1]).toEqual(
       expect.objectContaining({
         method: 'POST',
         signal: expect.any(Object)
       })
     );
+  });
+
+  it('throws structured terminal error with retry-after when throwOnError is enabled', async () => {
+    const response = {
+      ok: false,
+      status: 429,
+      headers: {
+        get: (key: string) => {
+          if (key === 'content-type') {
+            return 'application/json';
+          }
+          if (key === 'retry-after') {
+            return '17';
+          }
+          return null;
+        }
+      },
+      clone: () => ({
+        json: async () => ({
+          error: {
+            code: 'RATE_LIMIT_EXCEEDED'
+          }
+        })
+      })
+    };
+    global.fetch = jest.fn().mockResolvedValue(response) as unknown as typeof fetch;
+
+    await expect(
+      fetchAndCacheVoice('Salut Cathy', 'cathy-gauthier', 'fr-CA', 'token-premium', {
+        throwOnError: true
+      })
+    ).rejects.toMatchObject({
+      status: 429,
+      code: 'RATE_LIMIT_EXCEEDED',
+      retryAfterSeconds: 17
+    });
   });
 });

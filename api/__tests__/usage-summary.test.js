@@ -2,6 +2,7 @@ const { createReqRes } = require('./testHelpers');
 
 function buildSupabaseClient({
   user = { id: 'user-1', app_metadata: { account_type: 'free' } },
+  profileAccountType = 'free',
   usageCount = 0,
   usageError = null
 } = {}) {
@@ -24,6 +25,19 @@ function buildSupabaseClient({
       })
     },
     from: jest.fn((table) => {
+      if (table === 'profiles') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: jest.fn().mockResolvedValue({
+                data: { account_type_id: profileAccountType },
+                error: null
+              })
+            })
+          })
+        };
+      }
+
       if (table === 'usage_events') {
         return {
           select: usageSelect
@@ -101,6 +115,7 @@ describe('api/usage-summary', () => {
       createClient: jest.fn(() =>
         buildSupabaseClient({
           user: { id: 'regular-user', app_metadata: { account_type: 'regular' } },
+          profileAccountType: 'regular',
           usageCount: 380
         })
       )
@@ -116,8 +131,8 @@ describe('api/usage-summary', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.payload.messagesUsed).toBe(380);
-    expect(res.payload.messagesCap).toBe(500);
-    expect(res.payload.softCapReached).toBe(true);
+    expect(res.payload.messagesCap).toBe(3000);
+    expect(res.payload.softCapReached).toBe(false);
     expect(res.payload.economyMode).toBe(false);
   });
 
@@ -127,6 +142,7 @@ describe('api/usage-summary', () => {
       createClient: jest.fn(() =>
         buildSupabaseClient({
           user: { id: 'premium-user', app_metadata: { account_type: 'premium' } },
+          profileAccountType: 'premium',
           usageCount: 1700
         })
       )
@@ -151,6 +167,7 @@ describe('api/usage-summary', () => {
       createClient: jest.fn(() =>
         buildSupabaseClient({
           user: { id: 'admin-user', app_metadata: { account_type: 'admin' } },
+          profileAccountType: 'admin',
           usageCount: 99999
         })
       )
@@ -170,11 +187,35 @@ describe('api/usage-summary', () => {
     expect(res.payload.economyMode).toBe(false);
   });
 
+  it('uses profile account type when app metadata is stale', async () => {
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'stale-user', app_metadata: { account_type: 'free' } },
+          profileAccountType: 'premium',
+          usageCount: 1200
+        })
+      )
+    }));
+
+    const handler = require('../usage-summary');
+    const { req, res } = createReqRes({
+      method: 'GET',
+      headers: { authorization: 'Bearer stale-token' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.messagesCap).toBe(25000);
+  });
+
   it('treats role=admin as unlimited even when account_type is regular', async () => {
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() =>
         buildSupabaseClient({
           user: { id: 'role-admin-user', app_metadata: { role: 'admin', account_type: 'regular' } },
+          profileAccountType: 'regular',
           usageCount: 99999
         })
       )

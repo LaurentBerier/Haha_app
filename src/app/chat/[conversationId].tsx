@@ -15,6 +15,7 @@ import type { ChatSendPayload } from '../../models/ChatSendPayload';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../services/voiceFillerService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
+import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../../utils/accountTypeUtils';
 import { findConversationById } from '../../utils/conversationUtils';
 
 function formatUserDisplayName(displayName: string | null, email: string): string {
@@ -37,21 +38,6 @@ function formatArtistDisplayName(artistName: string | null): string {
   }
 
   return artistName;
-}
-
-function hasVoiceAccess(accountType: string | null | undefined): boolean {
-  if (typeof accountType !== 'string') {
-    return false;
-  }
-
-  const normalized = accountType.trim().toLowerCase().replace(/[\s_-]+/g, '');
-  return (
-    normalized === 'regular' ||
-    normalized === 'premium' ||
-    normalized === 'admin' ||
-    normalized === 'unlimited' ||
-    normalized === 'proartist'
-  );
 }
 
 export default function ChatScreen() {
@@ -114,14 +100,18 @@ export default function ChatScreen() {
     () => (currentConversation?.modeId ? getModeById(currentConversation.modeId) : null),
     [currentConversation?.modeId]
   );
+  const effectiveAccountType = useMemo(
+    () => resolveEffectiveAccountType(sessionUser?.accountType ?? null, sessionUser?.role ?? null),
+    [sessionUser?.accountType, sessionUser?.role]
+  );
   const activeModeLabel = activeMode?.name ?? t('chatModeUnknown');
   const activeModeEmoji = activeMode?.emoji ?? '💬';
   const chatHeaderTitle = `${activeModeEmoji} ${activeModeLabel}`;
   const shouldUseVoiceFiller = Boolean(
-    conversationModeEnabled &&
+      conversationModeEnabled &&
       currentConversation?.artistId &&
       accessToken.trim() &&
-      hasVoiceAccess(sessionUser?.accountType ?? null)
+      hasVoiceAccessForAccountType(effectiveAccountType)
   );
 
   const sendWithFiller = useCallback(

@@ -9,7 +9,11 @@ const {
 const { resolveEffectiveAccountType } = require('./_account-tier');
 
 const SOFT_CAP_RATIO = 0.75;
-const MONTHLY_CAPS = { free: 50, regular: 500, premium: 1500 };
+const MONTHLY_CAPS = { free: 200, regular: 3_000, premium: 25_000 };
+
+function isRecord(value) {
+  return typeof value === 'object' && value !== null;
+}
 
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(value ?? '', 10);
@@ -35,6 +39,35 @@ function getMonthStartIso() {
 function getNextMonthStartIso() {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
+}
+
+async function resolveAccountTypeFromProfile(supabaseAdmin, userId, fallbackAccountType, role, requestId) {
+  const fallback = resolveEffectiveAccountType(fallbackAccountType, role);
+  if (fallback === 'admin') {
+    return fallback;
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .select('account_type_id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error(`[api/usage-summary][${requestId}] Failed to read profile account type`, error);
+      return fallback;
+    }
+
+    if (isRecord(data) && typeof data.account_type_id === 'string' && data.account_type_id.trim()) {
+      return resolveEffectiveAccountType(data.account_type_id, role);
+    }
+
+    return fallback;
+  } catch (error) {
+    console.error(`[api/usage-summary][${requestId}] Failed to read profile account type`, error);
+    return fallback;
+  }
 }
 
 module.exports = async function handler(req, res) {
@@ -92,7 +125,7 @@ module.exports = async function handler(req, res) {
       ? user.app_metadata.account_type
       : 'free';
   const roleRaw = typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : null;
-  const accountType = resolveEffectiveAccountType(accountTypeRaw, roleRaw);
+  const accountType = await resolveAccountTypeFromProfile(supabaseAdmin, user.id, accountTypeRaw, roleRaw, requestId);
 
   const { count, error } = await supabaseAdmin
     .from('usage_events')

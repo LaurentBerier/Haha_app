@@ -1,0 +1,86 @@
+import type { Message } from '../models/Message';
+import { computeTutorialModeForRequest, shouldApplyReactionForUserMessage } from './chatBehavior';
+
+function createMessage(overrides: Partial<Message>): Message {
+  return {
+    id: overrides.id ?? 'msg-default',
+    conversationId: overrides.conversationId ?? 'conv-1',
+    role: overrides.role ?? 'artist',
+    content: overrides.content ?? '',
+    status: overrides.status ?? 'complete',
+    timestamp: overrides.timestamp ?? '2026-03-20T00:00:00.000Z',
+    metadata: overrides.metadata
+  };
+}
+
+describe('chatBehavior', () => {
+  describe('computeTutorialModeForRequest', () => {
+    it('returns true on first user turn after tutorial greeting', () => {
+      const messages: Message[] = [
+        createMessage({
+          id: 'greet-1',
+          role: 'artist',
+          content: 'Hey, comment tu vas?',
+          metadata: {
+            injected: true,
+            injectedType: 'tutorial_greeting',
+            tutorialMode: true
+          }
+        })
+      ];
+
+      expect(computeTutorialModeForRequest(messages)).toBe(true);
+    });
+
+    it('returns false once one completed user message already exists', () => {
+      const messages: Message[] = [
+        createMessage({
+          id: 'greet-1',
+          role: 'artist',
+          content: 'Hey, comment tu vas?',
+          metadata: {
+            injected: true,
+            injectedType: 'tutorial_greeting',
+            tutorialMode: true
+          }
+        }),
+        createMessage({
+          id: 'user-1',
+          role: 'user',
+          content: 'Salut!',
+          status: 'complete'
+        })
+      ];
+
+      expect(computeTutorialModeForRequest(messages)).toBe(false);
+    });
+  });
+
+  describe('shouldApplyReactionForUserMessage', () => {
+    it('returns true when previous completed user message has no reaction', () => {
+      const messages: Message[] = [
+        createMessage({ id: 'user-1', role: 'user', content: 'allo', status: 'complete' }),
+        createMessage({ id: 'artist-1', role: 'artist', content: 'yo', status: 'complete' }),
+        createMessage({ id: 'user-2', role: 'user', content: 'et la?', status: 'complete' })
+      ];
+
+      expect(shouldApplyReactionForUserMessage(messages, 'user-2')).toBe(true);
+    });
+
+    it('returns false when previous completed user message already has a reaction', () => {
+      const messages: Message[] = [
+        createMessage({
+          id: 'user-1',
+          role: 'user',
+          content: 'allo',
+          status: 'complete',
+          metadata: { cathyReaction: '😂' }
+        }),
+        createMessage({ id: 'artist-1', role: 'artist', content: 'yo', status: 'complete' }),
+        createMessage({ id: 'user-2', role: 'user', content: 'et la?', status: 'complete' })
+      ];
+
+      expect(shouldApplyReactionForUserMessage(messages, 'user-2')).toBe(false);
+    });
+  });
+});

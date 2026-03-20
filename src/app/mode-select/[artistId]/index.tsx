@@ -33,8 +33,8 @@ import { synthesizeVoice } from '../../../services/voiceEngine';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voiceFillerService';
 import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
+import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../../../utils/accountTypeUtils';
 import { generateId } from '../../../utils/generateId';
-import { stripAudioTags } from '../../../utils/audioTags';
 import { findConversationById } from '../../../utils/conversationUtils';
 import type { ChatSendPayload } from '../../../models/ChatSendPayload';
 
@@ -52,7 +52,6 @@ interface GreetingTutorialInfo {
   active: boolean;
   sessionIndex: number;
   connectionLimit: number;
-  modeNudgeAfterUserMessages: number;
 }
 
 interface GreetingFetchResult {
@@ -86,7 +85,6 @@ const GREETING_API_REQUEST_TIMEOUT_MS = 12_000;
 const GREETING_API_MAX_ATTEMPTS = 2;
 const GREETING_API_RETRY_DELAY_MS = 850;
 const DEFAULT_TUTORIAL_CONNECTION_LIMIT = 3;
-const DEFAULT_TUTORIAL_NUDGE_AFTER_MESSAGES = 2;
 const GREETING_BOOTING_ROTATION_MS = 1_200;
 const GREETING_BOOTING_FR_LINES = [
   "Chargement du cerveau de Cathy... attention, y'a du trafic",
@@ -94,7 +92,45 @@ const GREETING_BOOTING_FR_LINES = [
   "Synchronisation avec ton sens de l'humour... erreur detectee",
   "Injection d'opinions non sollicitees... en cours"
 ] as const;
+const TERMINAL_TTS_CODES = new Set(['TTS_QUOTA_EXCEEDED', 'RATE_LIMIT_EXCEEDED', 'TTS_FORBIDDEN']);
 let greetingApiBackoffUntilTs = 0;
+
+type TerminalTtsCode = 'TTS_QUOTA_EXCEEDED' | 'RATE_LIMIT_EXCEEDED' | 'TTS_FORBIDDEN';
+
+function isTerminalTtsCode(value: string | null | undefined): value is TerminalTtsCode {
+  return typeof value === 'string' && TERMINAL_TTS_CODES.has(value);
+}
+
+function resolveTerminalTtsCode(error: unknown): TerminalTtsCode | null {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+
+  const code = 'code' in error && typeof error.code === 'string' ? error.code : null;
+  if (isTerminalTtsCode(code)) {
+    return code;
+  }
+
+  const status = 'status' in error && typeof error.status === 'number' ? error.status : null;
+  if (status === 403) {
+    return 'TTS_FORBIDDEN';
+  }
+  if (status === 429) {
+    return 'RATE_LIMIT_EXCEEDED';
+  }
+  return null;
+}
+
+function shouldShowUpgradeForTtsCode(code: TerminalTtsCode): boolean {
+  return code === 'TTS_QUOTA_EXCEEDED' || code === 'TTS_FORBIDDEN';
+}
+
+function buildCathyVoiceNotice(code: TerminalTtsCode): string {
+  if (code === 'RATE_LIMIT_EXCEEDED') {
+    return t('cathyVoiceRateLimitMessage');
+  }
+  return t('cathyVoiceQuotaExceededMessage');
+}
 
 interface ArtistModeSource {
   name?: string;
@@ -211,21 +247,6 @@ function formatArtistDisplayName(artistName: string | null): string {
   }
 
   return artistName;
-}
-
-function hasVoiceAccess(accountType: string | null | undefined): boolean {
-  if (typeof accountType !== 'string') {
-    return false;
-  }
-
-  const normalized = accountType.trim().toLowerCase().replace(/[\s_-]+/g, '');
-  return (
-    normalized === 'regular' ||
-    normalized === 'premium' ||
-    normalized === 'admin' ||
-    normalized === 'unlimited' ||
-    normalized === 'proartist'
-  );
 }
 
 function speakGreetingWithWebFallback(text: string, language: string): boolean {
@@ -389,50 +410,6 @@ function buildAvailableModesForGreeting(artist: ArtistModeSource): string[] {
   return names.slice(0, 10);
 }
 
-function buildModeNudgeText(language: string, modeNames: string[]): string {
-  const isEnglish = language.toLowerCase().startsWith('en');
-  const shuffled = [...modeNames].sort(() => Math.random() - 0.5);
-  const m1 = shuffled[0] ?? '';
-  const m2 = shuffled[1] ?? '';
-  const hasTwoModeExamples = Boolean(m1 && m2);
-
-  if (isEnglish) {
-    if (!hasTwoModeExamples) {
-      const genericVariants: [string, string, string] = [
-        `[sighs] We've been chatting for a bit. If you want to switch it up, check the modes at the top of the chat. Pick one if it fits your mood, or stay here with me.`,
-        `[laughs] Quick reminder: you can try other modes up there anytime. Scroll up, pick one, or keep going here with me.`,
-        `We can keep this going all day, but there are other modes waiting at the top. Take a look if you feel like changing pace.`
-      ];
-      return genericVariants[Math.floor(Math.random() * genericVariants.length)] ?? genericVariants[0];
-    }
-
-    const variants: [string, string, string] = [
-      `[sighs] Hey, we've been chatting for a bit — if you feel like mixing it up, ${m1} or ${m2} might be your thing. Check the top of the chat, you'll see all the modes. Pick what sounds fun, or we can just keep going here too, no pressure.`,
-      `[laughs] Okay we've been at this a while. Not complaining, but just so you know — there's ${m1}, ${m2} and more up there at the top. Take a look if you're curious. Or stay here, I don't mind either way.`,
-      `Look, we can keep talking all day, but you should know ${m1} and ${m2} are just sitting there waiting. Scroll up, check the modes — pick one or don't, your call.`
-    ];
-
-    return variants[Math.floor(Math.random() * variants.length)] ?? variants[0];
-  }
-
-  if (!hasTwoModeExamples) {
-    const genericVariants: [string, string, string] = [
-      `[sighs] Ça fait un bout qu'on jase. Si t'as envie de changer d'ambiance, regarde les modes en haut du chat. Choisis-en un si ça t'allume, ou on continue ici.`,
-      `[laughs] Petit rappel: t'as d'autres modes en haut quand tu veux. Monte voir ça, ou reste avec moi ici.`,
-      `On peut continuer comme ça toute la journée, mais t'as d'autres modes qui t'attendent en haut. Jette un oeil si t'as envie de varier.`
-    ];
-    return genericVariants[Math.floor(Math.random() * genericVariants.length)] ?? genericVariants[0];
-  }
-
-  const variants: [string, string, string] = [
-    `[sighs] Hey, ça fait quand même un moment qu'on jase — si t'as envie d'essayer de quoi, ${m1} ou ${m2} ça t'tenterait p'être. Regarde en haut du chat, t'as les différents modes là. Choisis c'qui t'intéresse, ou on continue juste à parler ici aussi, c'est correct.`,
-    `[laughs] Bon, on se parle depuis un boutte. Je me plains pas, mais y'a ${m1}, ${m2} pis d'autres modes là-haut. Regarde ça si t'es curieux. Ou reste ici, ça me dérange pas pantoute.`,
-    `Écoute, on peut jaser toute la journée, mais faut que tu saches que ${m1} pis ${m2} t'attendent là-haut. Scroll un peu, check les modes — choisis-en un ou pas, c'est toé qui décides.`
-  ];
-
-  return variants[Math.floor(Math.random() * variants.length)] ?? variants[0];
-}
-
 function parseGreetingTutorialInfo(value: unknown): GreetingTutorialInfo | null {
   if (!value || typeof value !== 'object') {
     return null;
@@ -447,16 +424,11 @@ function parseGreetingTutorialInfo(value: unknown): GreetingTutorialInfo | null 
     typeof raw.connectionLimit === 'number' && Number.isFinite(raw.connectionLimit)
       ? Math.max(1, Math.floor(raw.connectionLimit))
       : DEFAULT_TUTORIAL_CONNECTION_LIMIT;
-  const modeNudgeAfterUserMessages =
-    typeof raw.modeNudgeAfterUserMessages === 'number' && Number.isFinite(raw.modeNudgeAfterUserMessages)
-      ? Math.max(1, Math.floor(raw.modeNudgeAfterUserMessages))
-      : DEFAULT_TUTORIAL_NUDGE_AFTER_MESSAGES;
 
   return {
     active,
     sessionIndex,
-    connectionLimit,
-    modeNudgeAfterUserMessages
+    connectionLimit
   };
 }
 
@@ -823,7 +795,6 @@ export default function ModeSelectHomeScreen() {
   const activeConversationId = useStore((state) => state.activeConversationId);
   const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
-  const voiceAutoPlay = useStore((state) => state.voiceAutoPlay);
   const setVoiceAutoPlay = useStore((state) => state.setVoiceAutoPlay);
   const createConversation = useStore((state) => state.createConversation);
   const setActiveConversation = useStore((state) => state.setActiveConversation);
@@ -838,6 +809,10 @@ export default function ModeSelectHomeScreen() {
     useCallback((state) => state.conversations[artistId] ?? [], [artistId])
   );
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
+  const effectiveAccountType = useMemo(
+    () => resolveEffectiveAccountType(sessionUser?.accountType ?? null, sessionUser?.role ?? null),
+    [sessionUser?.accountType, sessionUser?.role]
+  );
   const preferredName = useMemo(
     () =>
       resolveGreetingPreferredName({
@@ -895,7 +870,6 @@ export default function ModeSelectHomeScreen() {
   const greetingSpeechHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoMicTriggeredGreetingIdsRef = useRef<Set<string>>(new Set());
   const autoMicManualOverrideRef = useRef(false);
-  const modeNudgeShownRef = useRef(false);
   const modeSelectInputOffset = Platform.select({ ios: 108, default: 96 }) ?? 96;
   const {
     messages,
@@ -914,7 +888,7 @@ export default function ModeSelectHomeScreen() {
         conversationModeEnabled &&
           artist?.id &&
           accessToken.trim() &&
-          hasVoiceAccess(sessionUser?.accountType ?? null)
+          hasVoiceAccessForAccountType(effectiveAccountType)
       );
 
       if (shouldUseVoiceFiller && !audioPlayer.isPlaying && !audioPlayer.isLoading && artist?.id) {
@@ -934,7 +908,7 @@ export default function ModeSelectHomeScreen() {
 
       return sendMessage(payload);
     },
-    [accessToken, artist?.id, audioPlayer, conversationModeEnabled, language, sendMessage, sessionUser?.accountType]
+    [accessToken, artist?.id, audioPlayer, conversationModeEnabled, effectiveAccountType, language, sendMessage]
   );
   const {
     isListening,
@@ -975,9 +949,6 @@ export default function ModeSelectHomeScreen() {
   const isGreetingVoicePendingGesture = Boolean(pendingGreetingAudio || pendingGreetingSpeechText);
   const hasVisibleConversationText = messages.some(
     (message) => message.status === 'complete' && message.content.trim().length > 0
-  );
-  const isTutorialConversation = messages.some(
-    (message) => message.role === 'artist' && message.metadata?.tutorialMode === true
   );
   const isEnglishLanguage = language.toLowerCase().startsWith('en');
   const showGreetingBootingIndicator = isValidConversation && messages.length === 0 && isGreetingBooting;
@@ -1128,13 +1099,13 @@ export default function ModeSelectHomeScreen() {
       !conversationModeEnabled ||
       !artist?.id ||
       !accessToken.trim() ||
-      !hasVoiceAccess(sessionUser?.accountType ?? null)
+      !hasVoiceAccessForAccountType(effectiveAccountType)
     ) {
       return;
     }
 
     prewarmVoiceFillers(artist.id, language, accessToken);
-  }, [accessToken, artist?.id, conversationModeEnabled, language, sessionUser?.accountType]);
+  }, [accessToken, artist?.id, conversationModeEnabled, effectiveAccountType, language]);
 
   useEffect(() => {
     if (!modeSelectConversationId || activeConversationId === modeSelectConversationId) {
@@ -1163,7 +1134,6 @@ export default function ModeSelectHomeScreen() {
     setPendingAutoMicGreetingMessageId(null);
     autoMicManualOverrideRef.current = false;
     autoMicTriggeredGreetingIdsRef.current.clear();
-    modeNudgeShownRef.current = false;
   }, [artistId]);
 
   useEffect(() => {
@@ -1224,110 +1194,6 @@ export default function ModeSelectHomeScreen() {
     }
     pauseListening();
   }, [pauseListening, pendingAutoMicGreetingMessageId]);
-
-  useEffect(() => {
-    const hasInjectedModeNudge = messages.some(
-      (message) => message.role === 'artist' && message.metadata?.injectedType === 'mode_nudge'
-    );
-    if (modeNudgeShownRef.current || hasInjectedModeNudge || !modeSelectConversationId || hasStreaming || !artist) {
-      return;
-    }
-
-    const userMessages = messages.filter((message) => message.role === 'user' && message.status === 'complete');
-    const modeNudgeThreshold = isTutorialConversation ? DEFAULT_TUTORIAL_NUDGE_AFTER_MESSAGES : 4;
-    if (userMessages.length < modeNudgeThreshold) {
-      return;
-    }
-
-    modeNudgeShownRef.current = true;
-
-    const modeNames = buildAvailableModesForGreeting(artist).filter((name) => {
-      const normalized = name.trim().toLowerCase();
-      return normalized !== 'on jase' && normalized !== 'chat';
-    });
-
-    const rawNudgeText = buildModeNudgeText(language, modeNames);
-    const nudgeText = stripAudioTags(rawNudgeText, { trim: true });
-    if (!nudgeText) {
-      return;
-    }
-
-    const nudgeMessageId = generateId('msg');
-    addMessage(modeSelectConversationId, {
-      id: nudgeMessageId,
-      conversationId: modeSelectConversationId,
-      role: 'artist',
-      content: nudgeText,
-      status: 'complete',
-      timestamp: new Date().toISOString(),
-      metadata: {
-        injected: true,
-        injectedType: 'mode_nudge'
-      }
-    });
-
-    if (!accessToken.trim() || !rawNudgeText.trim()) {
-      return;
-    }
-
-    updateMessage(modeSelectConversationId, nudgeMessageId, {
-      metadata: {
-        injected: true,
-        injectedType: 'mode_nudge',
-        voiceStatus: 'generating'
-      }
-    });
-
-    void synthesizeVoice(rawNudgeText, artist.id, language, accessToken, { purpose: 'reply' })
-      .then((nudgeVoiceUri) => {
-        if (!nudgeVoiceUri) {
-          updateMessage(modeSelectConversationId, nudgeMessageId, {
-            metadata: {
-              injected: true,
-              injectedType: 'mode_nudge',
-              voiceStatus: undefined
-            }
-          });
-          return;
-        }
-
-        updateMessage(modeSelectConversationId, nudgeMessageId, {
-          metadata: {
-            injected: true,
-            injectedType: 'mode_nudge',
-            voiceUrl: nudgeVoiceUri,
-            voiceQueue: [nudgeVoiceUri],
-            voiceStatus: 'ready'
-          }
-        });
-
-        const latestAudioState = audioStateRef.current;
-        if (voiceAutoPlay && !latestAudioState.isPlaying && !latestAudioState.isLoading) {
-          void audioPlayer.play(nudgeVoiceUri, { messageId: nudgeMessageId });
-        }
-      })
-      .catch(() => {
-        updateMessage(modeSelectConversationId, nudgeMessageId, {
-          metadata: {
-            injected: true,
-            injectedType: 'mode_nudge',
-            voiceStatus: undefined
-          }
-        });
-      });
-  }, [
-    accessToken,
-    addMessage,
-    artist,
-    audioPlayer,
-    hasStreaming,
-    isTutorialConversation,
-    language,
-    messages,
-    modeSelectConversationId,
-    updateMessage,
-    voiceAutoPlay
-  ]);
 
   useEffect(() => {
     if (!showGreetingBootingIndicator || isEnglishLanguage) {
@@ -1540,14 +1406,35 @@ export default function ModeSelectHomeScreen() {
               }
             });
 
-            const status =
-              typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number'
-                ? error.status
-                : null;
-            const isQuotaOrRateError = status === 429 || status === 403;
+            const terminalTtsCode = resolveTerminalTtsCode(error);
+            if (terminalTtsCode) {
+              const latestSessionUser = useStore.getState().session?.user;
+              const latestAccountType = resolveEffectiveAccountType(
+                latestSessionUser?.accountType ?? null,
+                latestSessionUser?.role ?? null
+              );
+              const showUpgradeCta = shouldShowUpgradeForTtsCode(terminalTtsCode) && latestAccountType !== 'admin';
+              const noticeMetadata: NonNullable<Message['metadata']> = {
+                injected: true,
+                errorCode: terminalTtsCode
+              };
+              if (showUpgradeCta) {
+                noticeMetadata.showUpgradeCta = true;
+                noticeMetadata.upgradeFromTier = latestAccountType;
+              }
+              addMessage(introConversation.id, {
+                id: generateId('msg'),
+                conversationId: introConversation.id,
+                role: 'artist',
+                content: buildCathyVoiceNotice(terminalTtsCode),
+                status: 'complete',
+                timestamp: new Date().toISOString(),
+                metadata: noticeMetadata
+              });
+            }
 
             // Keep Cathy identity: do not switch to generic Web Speech when TTS is quota/rate-limited.
-            if (Platform.OS === 'web' && !isQuotaOrRateError) {
+            if (Platform.OS === 'web' && !terminalTtsCode) {
               if (!speakGreetingWithWebFallback(nextGreeting, language)) {
                 setPendingGreetingSpeechText(nextGreeting);
               } else {

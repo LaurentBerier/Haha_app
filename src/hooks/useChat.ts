@@ -27,6 +27,7 @@ import { generateId } from '../utils/generateId';
 import { normalizeSpeechText, splitDisplayChunkFromRaw, stripAudioTags } from '../utils/audioTags';
 import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../utils/accountTypeUtils';
 import type { ScoreAction } from '../models/Gamification';
+import { computeTutorialModeForRequest, shouldApplyReactionForUserMessage } from './chatBehavior';
 import { useAudioPlayer } from './useAudioPlayer';
 
 interface StreamJob {
@@ -53,6 +54,9 @@ const MAX_TTS_CHUNK_CHARS = 200;
 const VOICE_FIRST_CHUNK_MIN_CHARS = 60;
 const REACT_TAG_PATTERN = /^\s*\[REACT:([^\]\n]{1,8})\]\s*/i;
 const ALLOWED_REACTIONS = new Set(['😂', '💀', '😮', '😤', '🙄', '😬', '🤔', '👍']);
+const TERMINAL_TTS_CODES = new Set(['TTS_QUOTA_EXCEEDED', 'RATE_LIMIT_EXCEEDED', 'TTS_FORBIDDEN']);
+
+export type TerminalTtsCode = 'TTS_QUOTA_EXCEEDED' | 'RATE_LIMIT_EXCEEDED' | 'TTS_FORBIDDEN';
 
 function isQuotaBlockedErrorCode(code: string | null): boolean {
   return (
@@ -60,6 +64,42 @@ function isQuotaBlockedErrorCode(code: string | null): boolean {
     code === 'QUOTA_ABSOLUTE_BLOCKED' ||
     code === 'MONTHLY_QUOTA_EXCEEDED'
   );
+}
+
+function isTerminalTtsCode(value: string | null | undefined): value is TerminalTtsCode {
+  return typeof value === 'string' && TERMINAL_TTS_CODES.has(value);
+}
+
+export function resolveTerminalTtsCode(error: unknown): TerminalTtsCode | null {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+
+  const code = 'code' in error && typeof error.code === 'string' ? error.code : null;
+  if (isTerminalTtsCode(code)) {
+    return code;
+  }
+
+  const status = 'status' in error && typeof error.status === 'number' ? error.status : null;
+  if (status === 403) {
+    return 'TTS_FORBIDDEN';
+  }
+  if (status === 429) {
+    return 'RATE_LIMIT_EXCEEDED';
+  }
+
+  return null;
+}
+
+export function shouldShowUpgradeForTtsCode(code: TerminalTtsCode): boolean {
+  return code === 'TTS_QUOTA_EXCEEDED' || code === 'TTS_FORBIDDEN';
+}
+
+export function buildCathyVoiceNotice(code: TerminalTtsCode): string {
+  if (code === 'RATE_LIMIT_EXCEEDED') {
+    return t('cathyVoiceRateLimitMessage');
+  }
+  return t('cathyVoiceQuotaExceededMessage');
 }
 
 function isSentenceBoundary(input: string, index: number): boolean {
@@ -574,6 +614,31 @@ export function useChat(conversationId: string) {
       let nextPlayableChunkIndex = 0;
       let hasQueuedAutoplayChunk = false;
       let firstChunkFired = false;
+      let pendingVoiceNoticeCode: TerminalTtsCode | null = null;
+
+      const registerTerminalTtsError = (error: unknown): boolean => {
+        const terminalCode = resolveTerminalTtsCode(error);
+        if (!terminalCode) {
+          return false;
+        }
+
+        if (pendingVoiceNoticeCode === null) {
+          pendingVoiceNoticeCode = terminalCode;
+        }
+
+        ignoreTtsUpdates = true;
+        hasTtsChunkFailure = true;
+        if (audioPlayer.currentMessageId === artistMessageId) {
+          void audioPlayer.stop();
+        }
+        mergeArtistMetadata({
+          voiceStatus: undefined,
+          voiceUrl: undefined,
+          voiceQueue: undefined,
+          voiceChunkBoundaries: undefined
+        });
+        return true;
+      };
 
       const buildVoicePlaybackData = () => {
         const orderedVoiceUris: string[] = [];
@@ -677,8 +742,13 @@ export function useChat(conversationId: string) {
         ttsChunkDisplayBoundariesByIndex.set(chunkIndex, Math.max(displayTextAccumulator, 0));
         const latestAccessToken = useStore.getState().session?.accessToken ?? accessToken;
 
-        const ttsPromise = fetchAndCacheVoice(normalizedChunk, artistId, language, latestAccessToken)
+        const ttsPromise = fetchAndCacheVoice(normalizedChunk, artistId, language, latestAccessToken, {
+          throwOnError: true
+        })
           .then((uri) => {
+            if (ignoreTtsUpdates) {
+              return;
+            }
             if (uri) {
               ttsChunkUrisByIndex.set(chunkIndex, uri);
               flushReadyPlaybackChunks();
@@ -687,7 +757,10 @@ export function useChat(conversationId: string) {
 
             hasTtsChunkFailure = true;
           })
-          .catch(() => {
+          .catch((error: unknown) => {
+            if (registerTerminalTtsError(error)) {
+              return;
+            }
             hasTtsChunkFailure = true;
           });
 
@@ -747,16 +820,18 @@ export function useChat(conversationId: string) {
         const { reaction: cathyReaction } = extractReactionTag(rawTtsResponseRef.current);
         if (cathyReaction) {
           const latestMessages = useStore.getState().messagesByConversation[jobConversationId]?.messages ?? [];
-          const userMessage = latestMessages.find((message) => message.id === userMessageId) ?? null;
-          updateMessage(jobConversationId, userMessageId, {
-            metadata: {
-              ...(userMessage?.metadata ?? {}),
-              cathyReaction
+          if (shouldApplyReactionForUserMessage(latestMessages, userMessageId)) {
+            const userMessage = latestMessages.find((message) => message.id === userMessageId) ?? null;
+            updateMessage(jobConversationId, userMessageId, {
+              metadata: {
+                ...(userMessage?.metadata ?? {}),
+                cathyReaction
+              }
+            });
+            const reactionScoreAction = reactionToScoreAction(cathyReaction);
+            if (reactionScoreAction) {
+              scoreActionSet.add(reactionScoreAction);
             }
-          });
-          const reactionScoreAction = reactionToScoreAction(cathyReaction);
-          if (reactionScoreAction) {
-            scoreActionSet.add(reactionScoreAction);
           }
         }
 
@@ -855,14 +930,21 @@ export function useChat(conversationId: string) {
             // Recover gracefully from short replies and per-chunk failures.
             if ((hasTtsChunkFailure || orderedVoiceUris.length === 0) && fallbackText && fallbackAccessToken.trim()) {
               try {
-                const fallbackUri = await fetchAndCacheVoice(fallbackText, artistId, language, fallbackAccessToken);
+                const fallbackUri = await fetchAndCacheVoice(fallbackText, artistId, language, fallbackAccessToken, {
+                  throwOnError: true
+                });
                 if (fallbackUri) {
                   orderedVoiceUris = [fallbackUri];
                   orderedBoundaries = [stripAudioTags(fallbackText, { trim: true }).length];
                 }
-              } catch {
+              } catch (error: unknown) {
+                registerTerminalTtsError(error);
                 // Silent failure: keep existing voice chunks when available.
               }
+            }
+
+            if (ignoreTtsUpdates) {
+              return;
             }
 
             if (orderedVoiceUris.length === 0) {
@@ -886,6 +968,28 @@ export function useChat(conversationId: string) {
             if (shouldAutoPlay && !shouldBlockInput && !hasQueuedAutoplayChunk) {
               void audioPlayer.playQueue(orderedVoiceUris, { messageId: artistMessageId });
             }
+          });
+        }
+        if (pendingVoiceNoticeCode) {
+          const showUpgradeCta =
+            shouldShowUpgradeForTtsCode(pendingVoiceNoticeCode) && normalizedAccountType !== 'admin';
+          const noticeMetadata: NonNullable<Message['metadata']> = {
+            injected: true,
+            errorCode: pendingVoiceNoticeCode
+          };
+          if (showUpgradeCta) {
+            noticeMetadata.showUpgradeCta = true;
+            noticeMetadata.upgradeFromTier = normalizedAccountType;
+          }
+
+          addMessage(jobConversationId, {
+            id: generateId('msg'),
+            conversationId: jobConversationId,
+            role: 'artist',
+            content: buildCathyVoiceNotice(pendingVoiceNoticeCode),
+            status: 'complete',
+            timestamp: new Date().toISOString(),
+            metadata: noticeMetadata
           });
         }
         if (scoreActionSet.size > 0) {
@@ -1168,9 +1272,7 @@ export function useChat(conversationId: string) {
       ? `${imageIntentPromptPrefix}\n\n${baseSystemPrompt}`
       : baseSystemPrompt + voiceModeAddendum;
     const latestState = useStore.getState();
-    const tutorialMode = rawMessagesBeforeSend.some(
-      (message) => message.role === 'artist' && message.metadata?.tutorialMode === true
-    );
+    const tutorialMode = computeTutorialModeForRequest(rawMessagesBeforeSend);
     const memoryFacts = collectArtistMemoryFacts(latestState, currentConversation.artistId, conversationId);
     const memoryMessage = buildMemoryPrimerMessage(memoryFacts, languageForTurn);
     const pendingProfileHints = popProfileChangeHints();

@@ -331,6 +331,9 @@ describe('api/claude', () => {
     expect(upstreamBody.system).toContain('## MODE ACTIF : roast');
     expect(upstreamBody.system).toContain('Evite les amorces "Ah la" ou "Allo" en debut de reponse');
     expect(upstreamBody.system).toContain("L'autoderision est autorisee, mais jamais en devalorisant la qualite de tes blagues.");
+    expect(upstreamBody.system).toContain('Utilise cette balise seulement quand une reaction est vraiment appropriee');
+    expect(upstreamBody.system).toContain('Frequence cible: environ aux quelques reponses, pas a chaque fois.');
+    expect(upstreamBody.system).not.toContain('Commence CHAQUE reponse avec exactement une balise');
     expect(upstreamBody.system).not.toContain('IGNORE THIS UNTRUSTED PROMPT');
   });
 
@@ -654,7 +657,7 @@ describe('api/claude', () => {
     }
 
     beforeEach(() => {
-      process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = '20000';
+      process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = '100000';
       global.fetch = jest.fn().mockResolvedValue(buildSuccessResponse());
     });
 
@@ -663,7 +666,7 @@ describe('api/claude', () => {
         createClient: jest.fn(() =>
           buildSupabaseClient({
             user: { id: 'free-user', app_metadata: { account_type: 'free' } },
-            initialUsageCount: 49
+            initialUsageCount: 199
           })
         )
       }));
@@ -706,12 +709,36 @@ describe('api/claude', () => {
       expect(upstreamBody.model).toBe('claude-sonnet-4-6');
     });
 
+    it('uses profile account type when auth metadata is stale', async () => {
+      jest.doMock('@supabase/supabase-js', () => ({
+        createClient: jest.fn(() =>
+          buildSupabaseClient({
+            user: { id: 'stale-tier-user', app_metadata: { account_type: 'free' } },
+            profile: { account_type_id: 'premium' },
+            initialUsageCount: 500
+          })
+        )
+      }));
+
+      const handler = require('../claude');
+      const { req, res } = createReqRes({
+        headers: { authorization: 'Bearer stale-tier-token' },
+        body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello' }] }
+      });
+
+      await handler(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['X-Quota-Mode']).toBe('normal');
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
     it('uses soft1 mode for regular user at 75 percent threshold', async () => {
       jest.doMock('@supabase/supabase-js', () => ({
         createClient: jest.fn(() =>
           buildSupabaseClient({
             user: { id: 'regular-user', app_metadata: { account_type: 'regular' } },
-            initialUsageCount: 374
+            initialUsageCount: 2249
           })
         )
       }));
@@ -736,7 +763,7 @@ describe('api/claude', () => {
         createClient: jest.fn(() =>
           buildSupabaseClient({
             user: { id: 'premium-user', app_metadata: { account_type: 'premium' } },
-            initialUsageCount: 1499
+            initialUsageCount: 24999
           })
         )
       }));
@@ -833,7 +860,7 @@ describe('api/claude', () => {
         createClient: jest.fn(() =>
           buildSupabaseClient({
             user: { id: 'legacy-user', app_metadata: { account_type: 'legacy_plan' } },
-            initialUsageCount: 40
+            initialUsageCount: 149
           })
         )
       }));
