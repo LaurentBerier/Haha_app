@@ -1,6 +1,6 @@
 # Phase 3 Status (Voice + Prompt Intelligence)
 
-Last updated: **2026-03-17**
+Last updated: **2026-03-20**
 
 ## Scope
 
@@ -14,7 +14,7 @@ Phase 3 focuses on two tracks:
 - ElevenLabs TTS pipeline is live end-to-end in app code:
   - `/api/tts` requests are routed by Vercel to `api/claude.js?__proxy=tts`
   - proxy dispatches to server handler: `src/server/ttsHandler.js`
-  - paid tier gate (`regular`, `premium`, `admin`) + usage/rate checks on `usage_events`
+  - tier-aware voice access (`free`, `regular`, `premium`, `admin`) + usage/rate checks on `usage_events`
   - provider output served as `audio/mpeg` with normalized error codes
 - Voice selection is env-driven and swappable without code changes:
   - `EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC`
@@ -75,9 +75,9 @@ Phase 3 focuses on two tracks:
 
 - Phase 3 is complete for the current execution scope (`web + API + iOS`).
 - Phase 4 status and QA are tracked separately in [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md).
-- Voice production path is validated in production with authenticated paid-tier smoke (`/api/tts -> 200`).
+- Voice production path is validated in production with authenticated tier-aware smoke (`/api/tts -> 200` under cap, `429` on cap/rate-limit).
 - Android manual voice QA is intentionally deferred for now.
-- Full code review snapshot published in [`docs/code-review-2026-03-15.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-15.md).
+- Latest cross-phase code review snapshot: [`docs/code-review-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-20.md).
 
 ## Explicitly Out of Scope (Current Execution)
 

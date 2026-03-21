@@ -87,7 +87,7 @@ Store-level account isolation:
 - `artistPromptRegistry.ts`: artist-aware blueprint/mode prompt resolution (Cathy + fallback artists)
 - `subscriptionService.ts`: Stripe checkout launcher (regular/premium), subscription summary fetch, and cancel-at-period-end action
 - `persistenceService.ts`: local cache persistence (conversations/messages/ui selections)
-- `ttsService.ts`: multi-endpoint TTS fetch/cache (`same-origin /api/tts` first on web, timeout + failover across candidates)
+- `ttsService.ts`: multi-endpoint TTS fetch/cache (`same-origin /api/tts` first on web, timeout + failover across candidates, with no failover on terminal `401/403/429`)
 - `voiceEngine.ts`: session-based STT engine abstraction (web/native), restart handling, stale-session isolation
 
 ### Mode Selection UX
@@ -128,7 +128,7 @@ Store-level account isolation:
   - no route push to `/chat/[conversationId]` when user replies in mode-select
   - navigation to a new mode/chat happens only when user chooses a mode
   - on iOS/Android, overlay top is measured from compact category-grid bottom so conversation takes maximum vertical space up to top controls
-  - after several user turns, Cathy injects a one-time in-character mode-discovery nudge with optional voice playback
+  - conversation keeps flowing naturally in place (no forced mode-discovery nudge injection)
 - Greeting behavior:
   - once per artist per app session (`uiSlice.greetedArtistIds`, memory-only)
   - greeting message is inserted as an artist message in a fresh `on-jase` conversation
@@ -148,7 +148,7 @@ Store-level account isolation:
 
 ### Voice Rendering and Sync
 
-- Paid-tier TTS uses ElevenLabs v3 by default (`src/server/ttsHandler.js`), with env override still supported (`ELEVENLABS_MODEL_ID`).
+- Tier-aware TTS (Free/Regular/Premium/Admin) uses ElevenLabs v3 by default (`src/server/ttsHandler.js`), with env override still supported (`ELEVENLABS_MODEL_ID`).
 - Audio-expression tags are injected in Cathy prompts and preserved for TTS text.
 - Display text and spoken text share the same normalization rules through `src/utils/audioTags.ts`:
   - `stripAudioTags(...)` for visible bubble text
@@ -194,10 +194,11 @@ Store-level account isolation:
 - server-side per-user rate limiting backed by `public.usage_events`
 - optional single-RPC limits path (`public.enforce_claude_limits`) via `CLAUDE_LIMITS_RPC=true`
 - short-lived monthly quota cache + graceful in-memory rate-limit fallback when DB usage store is unavailable
-- soft-cap/economy degradation:
-  - at soft cap (~80%): fallback model (`claude-haiku-4-5-20251001`) + reduced `max_tokens`
-  - in economy mode (cap reached): reduced context window + lower token budget, while still returning responses
-- `X-Quota-Mode` response header (`normal`, `soft-cap`, `economy`)
+- multi-threshold degradation:
+  - soft1 (`>=75%`): reduced token/context budget while staying on primary model
+  - soft2 (`>=90%`): fallback model (`claude-haiku-4-5-20251001`) + tighter token/context budget
+  - economy (`>=100%`): reduced context window + lower token budget, while still returning responses before hard-block threshold
+- `X-Quota-Mode` response header (`normal`, `soft1`, `soft2`, `economy`, `blocked`)
 - payload validation
 - forwards request to Anthropic API
 - upstream timeout protection with `AbortController`
@@ -335,7 +336,7 @@ Built-in tiers:
 
 ## Billing and Voice Strategy
 
-- Paid tiers (`regular`, `premium`) currently target an ElevenLabs voice path.
+- Voice is enabled across all shipped tiers (`free`, `regular`, `premium`, `admin`) with tier-specific monthly caps and rate limits.
 - Stripe checkout is configured with per-plan links (`regular`, `premium`) in client env vars.
 - Subscription UX is plan-first (`Gratuit`, `Régulier`, `Premium`) with factual perk summaries and direct plan CTAs.
 - Artist pool share is modeled at a fixed `15%` across paid tiers.

@@ -14,9 +14,9 @@ caps as (
   select *
   from (
     values
-      ('free'::text, 50::int),
-      ('regular'::text, 500::int),
-      ('premium'::text, 1500::int),
+      ('free'::text, 200::int),
+      ('regular'::text, 3000::int),
+      ('premium'::text, 25000::int),
       ('admin'::text, null::int)
   ) as t(account_type_id, messages_cap)
 ),
@@ -74,7 +74,9 @@ select
   used_percent,
   case
     when messages_cap is null then 'unlimited'
-    when used_effective >= messages_cap then 'hard-cap (>=100%)'
+    when account_type_id = 'free' and used_effective >= messages_cap then 'blocked (free >=100%)'
+    when account_type_id <> 'free' and used_effective >= ceil(messages_cap * 1.50) then 'blocked (paid >=150%)'
+    when used_effective >= messages_cap then 'economy (>=100%)'
     when used_effective >= ceil(messages_cap * 0.90) then 'soft2 (>=90%)'
     when used_effective >= ceil(messages_cap * 0.75) then 'soft1 (>=75%)'
     else 'normal'

@@ -1,6 +1,6 @@
 # Unit Economics (Current Strategy)
 
-Last updated: **2026-03-13**
+Last updated: **2026-03-20**
 
 ## Scope
 
@@ -8,12 +8,12 @@ This document tracks the current pricing/usage strategy implemented in the app a
 
 ## Current Plans
 
-| Tier | Price | Monthly cap (`messagesCap`) | Quota behavior |
-| --- | ---: | ---: | --- |
-| free | $0.00 | 40 | soft-cap + economy mode |
-| regular | $8.99 | 300 | soft-cap + economy mode |
-| premium | $19.99 | 600 | soft-cap + economy mode |
-| admin | n/a | unlimited | no quota cap |
+| Tier | Price | Text cap (`messagesCap`) | Voice cap (`tts/month`) | Voice rate-limit |
+| --- | ---: | ---: | ---: | --- |
+| free | $0.00 | 200 | 80 | 20 req/min |
+| regular | $8.99 | 3000 | 2000 | 60 req/min |
+| premium | $19.99 | 25000 | 20000 | 180 req/min |
+| admin | n/a | unlimited | unlimited (configurable) | higher internal ceiling |
 
 Artist pool share:
 
@@ -21,27 +21,41 @@ Artist pool share:
 
 ## Degradation Strategy (Implemented)
 
-The backend no longer hard-stops chat at cap. It degrades quality/cost instead.
+The backend uses multi-threshold degradation before hard block.
 
 API behavior in [`api/claude.js`](/Users/laurentbernier/Documents/HAHA_app/api/claude.js):
 
-1. `normal` mode (`<80%`)
+1. `normal` mode (`<75%`)
 - primary model: `claude-sonnet-4-6`
 - tier max tokens: `free=150`, `regular=200`, `premium=300`
 - context window by tier: `free=5`, `regular=15`, `premium=20`, `admin=20`
 
-2. `soft-cap` mode (`>=80%`)
-- model fallback: `claude-haiku-4-5-20251001`
-- max tokens clamped to `150`
+2. `soft1` mode (`>=75%`)
+- model: keeps `claude-sonnet-4-6`
+- reduced max tokens:
+  - `free=120`, `regular=180`, `premium=280`
+- reduced context window:
+  - `free=5`, `regular=12`, `premium=20`
 
-3. `economy` mode (`>=100%`)
+3. `soft2` mode (`>=90%`)
+- model fallback: `claude-haiku-4-5-20251001`
+- reduced max tokens:
+  - `free=80`, `regular=130`, `premium=200`
+- reduced context window:
+  - `free=3`, `regular=7`, `premium=12`
+
+4. `economy` mode (`>=100%`)
 - model stays on Haiku
 - max tokens clamped to `100`
-- context window reduced to `5`
+- context window reduced to `3`
+
+5. Hard block behavior
+- `free`: blocked at `>=100%` usage ratio
+- `regular`/`premium`: blocked at `>=150%` usage ratio (`absolute` threshold)
 
 Response header exposes the active mode:
 
-- `X-Quota-Mode: normal | soft-cap | economy`
+- `X-Quota-Mode: normal | soft1 | soft2 | economy | blocked`
 
 ## Revenue Baseline (Paid Tiers)
 
@@ -58,7 +72,7 @@ Estimated net (before infra/model/voice costs):
 
 ## Cost-Control Notes
 
-- The graceful degradation path protects UX (no hard chat block) but requires cost monitoring.
+- The graceful degradation path protects UX before block thresholds, but still requires cost monitoring.
 - Voice and media features can dominate cost depending on usage mix.
 - `impro-themes` currently allows generation even when monthly chat cap is exceeded; this is a deliberate UX choice but should be tracked as an overage vector.
 

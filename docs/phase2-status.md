@@ -48,7 +48,7 @@ Core targets:
   - cancellation at period end for active Stripe subscriptions
   - sign out
   - delete account
-- paid-tier voice direction set to ElevenLabs (strategy-level decision)
+- tier-aware voice direction set to ElevenLabs (Free/Regular/Premium/Admin with caps/rate limits)
 - deployment topology now split cleanly:
   - landing website in separate repo/project (`ha-ha-ai`) on `https://ha-ha.ai`
   - app web + API in this repo/project (`haha-app`) on `https://app.ha-ha.ai`
@@ -149,7 +149,7 @@ Core targets:
 - Phase 2 is complete for the current execution scope (`web + API + iOS`).
 - Android validation is intentionally deferred for now (explicit decision).
 - PayPal/Apple checkout end-to-end remains out of scope for this execution window.
-- Full code review snapshot published in [`docs/code-review-2026-03-15.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-15.md).
+- Latest cross-phase code review snapshot: [`docs/code-review-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-20.md).
 
 ## Planned Next
 

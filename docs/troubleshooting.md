@@ -787,13 +787,35 @@ Checks:
 1. Inspect `/api/tts` calls in network tab:
    - `200` => audio should be available
    - `403`/`429` => tier/quota/rate limit may block voice output
-2. Confirm account tier (`regular`, `premium`, or `admin`) and valid session token.
+2. Confirm account tier (`free`, `regular`, `premium`, or `admin`) and valid session token.
 3. Verify `ELEVENLABS_API_KEY` is configured in Vercel project `haha-app`.
 4. On web, verify autoplay restriction path:
    - greeting audio may require first user gesture before playback
    - replay button should still appear once voice metadata reaches `ready`
 
-## 34) Mic pause does not persist (auto-resumes unexpectedly)
+## 34) Voice quota/rate notices feel out of sync with the conversation
+
+Symptoms:
+
+- Quota/rate notice bubble appears while Cathy is still speaking previous reply.
+- Notice appears too aggressively and feels like it interrupts flow.
+
+Current expected behavior:
+
+- Post-reply voice notices are queued and injected only after the current reply audio settles.
+- Only one terminal-voice notice is emitted per reply turn (anti-spam).
+- Text reply is preserved even when TTS fails on that turn.
+
+Checks:
+
+1. Confirm build includes deferred notice injection in `useChat` (`waitForReplyAudioToSettle` + post-reply queue).
+2. Inspect network for repeated `POST /api/tts` on the same reply:
+   - terminal `401/403/429` should stop endpoint failover (no multi-endpoint cascade).
+3. Verify notice type:
+   - quota/forbidden: upgrade CTA can appear
+   - temporary rate-limit: informational notice, CTA not forced
+
+## 35) Mic pause does not persist (auto-resumes unexpectedly)
 
 Symptoms:
 

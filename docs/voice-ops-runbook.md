@@ -33,6 +33,10 @@ Recommended optional tuning:
 - `ELEVENLABS_FETCH_TIMEOUT_MS`
 - `TTS_RATE_LIMIT_WINDOW_MS`
 - `TTS_RATE_LIMIT_MAX_REQUESTS`
+- `TTS_RATE_LIMIT_MAX_REQUESTS_FREE`
+- `TTS_RATE_LIMIT_MAX_REQUESTS_REGULAR`
+- `TTS_RATE_LIMIT_MAX_REQUESTS_PREMIUM`
+- `TTS_MONTHLY_CAP_FREE`
 - `TTS_MONTHLY_CAP_REGULAR`
 - `TTS_MONTHLY_CAP_PREMIUM`
 
@@ -54,6 +58,7 @@ Notes:
 
 - each candidate uses an `AbortController` timeout (`10s`) before failing over
 - partial candidate failures (timeout/CORS/network) do not stop fallback sequence
+- terminal API statuses (`401/403/429`) stop failover and return structured error codes immediately
 
 ## 3) CORS Allowlist Baseline
 
@@ -128,7 +133,7 @@ npm run smoke:voice
 
 ### Symptom: play button missing
 
-1. Confirm user tier is paid (`regular`, `premium`, or `admin`).
+1. Confirm user tier has voice entitlement (`free`, `regular`, `premium`, or `admin`) and that the tier is under monthly voice cap.
 2. Check `/api/tts` authenticated smoke (`SMOKE_AUTH_TOKEN=...`).
 3. If API fails, inspect Vercel logs for `api/claude` and `api/tts` proxy path.
 4. In chat metadata, confirm `voiceStatus` reaches `ready` (not stuck at `generating`).
@@ -143,13 +148,17 @@ npm run smoke:voice
 
 1. Check network for `/api/tts` status:
    - `429` / `403` can produce text-only replies when voice fallback also fails.
-2. Verify premium/regular/admin tier and `ELEVENLABS_API_KEY`.
+2. Verify user tier (`free`, `regular`, `premium`, or `admin`) and `ELEVENLABS_API_KEY`.
 3. Confirm client has valid bearer token (expired auth token can silently drop TTS eligibility).
 
 ### Symptom: frequent `TTS_QUOTA_EXCEEDED`
 
 1. Verify tier and monthly usage in `usage_events` where `endpoint='tts'`.
-2. Adjust caps via env if needed (`TTS_MONTHLY_CAP_REGULAR`, `TTS_MONTHLY_CAP_PREMIUM`).
+2. Check default caps:
+   - free: `80/month`
+   - regular: `2000/month`
+   - premium: `20000/month`
+3. Adjust caps via env if needed (`TTS_MONTHLY_CAP_FREE`, `TTS_MONTHLY_CAP_REGULAR`, `TTS_MONTHLY_CAP_PREMIUM`).
 
 ### Symptom: mic appears on but stops capturing after repeated turns
 

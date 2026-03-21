@@ -1,6 +1,6 @@
 # Phase 4 Status (Conversation Naturelle)
 
-Last updated: **2026-03-19**
+Last updated: **2026-03-20**
 
 ## Scope
 
@@ -44,6 +44,15 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
   - one-time mic auto-arm after greeting/tutorial message visibility (`messageId` guard)
   - strict manual override: user pause cancels auto-start for that greeting
   - mobile compact layout expansion: conversation overlay top anchored to compact category-grid bottom
+- Forced mode nudges removed:
+  - no automatic `mode_nudge` injection after N user replies
+  - mode-select conversation now keeps natural flow without forced "try modes" interjections
+- Tutorial-mode bound to first completed user turn only:
+  - first user turn after tutorial greeting => `tutorialMode=true`
+  - all following turns => `tutorialMode=false` (weather/news context allowed again)
+- Cathy reaction calibration:
+  - prompt now makes `[REACT:emoji]` optional and context-appropriate (not every reply)
+  - client guard prevents consecutive reaction badges on back-to-back user turns
 - Replay/resume reliability:
   - `useAutoReplayLastArtistMessage` replays latest replayable Cathy message on:
     - first render after hydration
@@ -53,9 +62,14 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
 - TTS reliability hardening:
   - same-origin web candidate priority for `/api/tts` before cross-origin fallbacks
   - per-endpoint timeout with `AbortController` and failover
+  - terminal statuses (`401/403/429`) stop endpoint failover and return structured error codes
   - chunk pipeline keeps successful chunks on partial failures
   - final full-text fallback synthesis when no usable chunk set remains
   - stable metadata transitions (`voiceStatus: generating -> ready` or explicit clear)
+  - per-reply terminal TTS notices are deduplicated and queued after current voice settles (non-intrusive insertion)
+- Typed-first-reply mic recovery fix:
+  - typing while mic is active no longer leaves conversation mode stuck
+  - resume intent can be queued and replayed once blocking conditions clear
 - Text/voice consistency:
   - shared normalization rules in `src/utils/audioTags.ts`
   - supported emotional audio tags preserved for TTS and stripped from display text
@@ -70,22 +84,24 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
 
 ## QA Status
 
-Validated on **2026-03-19**:
+Validated on **2026-03-20** (focused pass):
 
 - `npm run typecheck` -> PASS
 - `npm run lint` -> PASS
 - `npm run verify:profile-prompt` -> PASS
-- `npm run test:unit` -> PASS (28 suites, 168 tests)
+- `npm run test:unit` -> PASS (29 suites, 183 tests)
 - `npm run smoke:auth` -> PASS
-- `npm run smoke:voice` -> PASS (authenticated case skipped without `SMOKE_AUTH_TOKEN`)
-- `npm run export:web` -> PASS
-- `npm run check:mobile-env` -> PASS with warnings (`Java runtime`, `adb`, `emulator`)
+- `npm run smoke:voice` -> PASS (`tts with auth -> 200`)
+- `npm run export:web` -> not rerun in this pass (last validated 2026-03-19)
+- `npm run check:mobile-env` -> not rerun in this pass (last validated 2026-03-19)
 
 Detailed run logs:
 
+- [`docs/qa-run-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-20.md)
 - [`docs/qa-run-2026-03-19.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-19.md)
 - [`docs/qa-run-2026-03-18.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-18.md)
 - [`docs/qa-run-2026-03-17.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-17.md)
+- Latest code review snapshot: [`docs/code-review-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-20.md)
 
 ## Completion Status
 

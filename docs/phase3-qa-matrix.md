@@ -1,6 +1,6 @@
 # Phase 3 QA Matrix (Voice + Prompt)
 
-Last updated: **2026-03-14**
+Last updated: **2026-03-20**
 
 ## Scope
 
@@ -26,13 +26,18 @@ Optional authenticated probe:
 SMOKE_AUTH_EMAIL=<email> SMOKE_AUTH_PASSWORD=<password> npm run smoke:voice
 ```
 
-Expected for paid voice probe: `tts with auth -> 200`
+Expected for authenticated voice probe:
+
+- under cap: `tts with auth -> 200`
+- over cap or rate-limit: `tts with auth -> 429` + structured error code
 
 ## Web Matrix
 
 1. Free account
-- Send a Cathy message
-- Expectation: no voice play button after response completion
+- Send a Cathy message under quota
+- Expectation: voice spinner then play button
+- Exhaust voice quota
+- Expectation: clear quota notice + text reply preserved
 
 2. Regular account
 - Send a Cathy message
@@ -42,7 +47,7 @@ Expected for paid voice probe: `tts with auth -> 200`
 
 3. Premium account
 - Same as regular
-- Expectation: voice request returns `200` in network tab
+- Expectation: voice request returns `200` in network tab under cap
 
 4. Autoplay disabled
 - Ensure setting is off
@@ -64,7 +69,7 @@ Expected for paid voice probe: `tts with auth -> 200`
 
 ## iOS Matrix
 
-1. Regular/Premium voice playback
+1. Free/Regular/Premium voice playback
 - Generate response, tap play
 - Expectation: audible playback via `expo-av`
 
@@ -78,7 +83,7 @@ Expected for paid voice probe: `tts with auth -> 200`
 
 ## Android Matrix
 
-1. Regular/Premium voice playback
+1. Free/Regular/Premium voice playback
 - Generate response, tap play
 - Expectation: audible playback
 
@@ -108,5 +113,5 @@ Expected for paid voice probe: `tts with auth -> 200`
 
 - All automated checks pass (`qa:phase23`)
 - Web free/regular/premium scenarios validated
-- At least one iOS and one Android paid-tier playback validated
+- At least one iOS and one Android tier-aware playback path validated (including Free under cap)
 - No `/api/tts` CORS errors in production logs/console

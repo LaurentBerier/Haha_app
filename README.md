@@ -25,7 +25,7 @@ Implemented in this repository:
   - `Jeux`
   - `Profil`
 - Artist selection now distinguishes available vs upcoming artists with a clear CTA for available artists and "Disponible bientôt" cards for locked artists.
-- Paid-tier voice strategy is on ElevenLabs v3 with emotional audio tags support and display-safe tag stripping.
+- Tier-aware voice strategy is on ElevenLabs v3 (Free/Regular/Premium/Admin) with emotional audio tags support and display-safe tag stripping.
 - Conversation naturelle (Phase 4) is integrated across chat and mode-select:
   - default-on conversation mode with shared composer UX and explicit mic states (`off`, `starting`, `listening`, `assistant_busy`, `paused_manual`, `recovering`, `paused_recovery`, `unsupported`, `error`)
   - STT silence auto-send (`1800ms` default) and strict STT/TTS mutual exclusion
@@ -45,7 +45,7 @@ Implemented in this repository:
 - Account deletion endpoint (`api/delete-account.js`).
 - Usage summary endpoint (`api/usage-summary.js`) for monthly quota hydration.
 - Score endpoint (`api/score.js`) for gamification actions and stats hydration.
-- TTS endpoint (`api/tts.js`) for ElevenLabs voice generation (tier-gated, CORS protected).
+- TTS endpoint (`api/tts.js`) for ElevenLabs voice generation (tier-aware caps/rate-limits, CORS protected).
 - Payment webhooks:
   - RevenueCat (`api/payment-webhook.js`)
   - Stripe (`api/stripe-webhook.js`)
@@ -61,8 +61,8 @@ Implemented in this repository:
 - [`docs/phase2-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase2-status.md)
 - [`docs/phase3-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase3-status.md)
 - [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
-- Latest QA run: [`docs/qa-run-2026-03-19.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-19.md)
-- Latest code-review snapshot: [`docs/code-review-2026-03-17.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-17.md)
+- Latest QA run: [`docs/qa-run-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-20.md)
+- Latest code-review snapshot: [`docs/code-review-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-20.md)
 
 ## Repos and Vercel Projects
 
@@ -175,10 +175,17 @@ Notes:
 - `CLAUDE_RATE_LIMIT_MAX_REQUESTS` (optional, default `30`, per user)
 - `CLAUDE_RATE_LIMIT_WINDOW_MS` (optional, default `60000`)
 - `ANTHROPIC_FETCH_TIMEOUT_MS` (optional, default `25000`)
-- `CLAUDE_MONTHLY_CAP_FREE` (optional, default `40`)
-- `CLAUDE_MONTHLY_CAP_REGULAR` (optional, default `300`)
-- `CLAUDE_MONTHLY_CAP_PREMIUM` (optional, default `600`)
+- `CLAUDE_MONTHLY_CAP_FREE` (optional, default `200`)
+- `CLAUDE_MONTHLY_CAP_REGULAR` (optional, default `3000`)
+- `CLAUDE_MONTHLY_CAP_PREMIUM` (optional, default `25000`)
 - `CLAUDE_LIMITS_RPC` (optional, set `true` after SQL migration to use `public.enforce_claude_limits(...)`)
+- `TTS_MONTHLY_CAP_FREE` (optional, default `80`)
+- `TTS_MONTHLY_CAP_REGULAR` (optional, default `2000`)
+- `TTS_MONTHLY_CAP_PREMIUM` (optional, default `20000`)
+- `TTS_RATE_LIMIT_MAX_REQUESTS_FREE` (optional, default `20`/min)
+- `TTS_RATE_LIMIT_MAX_REQUESTS_REGULAR` (optional, default `60`/min)
+- `TTS_RATE_LIMIT_MAX_REQUESTS_PREMIUM` (optional, default `180`/min)
+- `TTS_RATE_LIMIT_MAX_REQUESTS` (optional shared fallback when tier-specific values are not set)
 - `ENABLE_ADMIN_TIER_GRANTS` (optional, default disabled; required to allow `accountTypeId='admin'` through admin endpoint)
 
 ## Supabase Setup
@@ -292,9 +299,10 @@ Security:
 - Enforces server-side model whitelist (only approved models are accepted)
 - Enforces server-side monthly message quota by tier (`free`, `regular`, `premium`; `admin` unlimited)
 - Enforces server-side per-user rate limit using `public.usage_events`
-- Applies graceful quota degradation:
-  - soft cap (`80%`): switches from Sonnet to Haiku and reduces token budget
-  - economy mode (`100%+`): keeps responding with reduced context/token budget (no hard chat block)
+- Applies multi-threshold quota degradation:
+  - `soft1` (`>=75%`): reduced token/context budget while staying on primary model
+  - `soft2` (`>=90%`): switches from Sonnet to Haiku with tighter token/context budgets
+  - `economy` (`>=100%`): still responds with reduced context/token budget before hard-block threshold
 - Supports optional one-call limits path through Supabase RPC (`CLAUDE_LIMITS_RPC=true`)
 - Includes in-memory limiter fallback when DB usage store is temporarily unavailable
 - Browser-origin requests are fail-closed when `ALLOWED_ORIGINS` is missing or origin is not allowlisted
@@ -494,9 +502,11 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/qa-run-2026-03-17.md`
 - `docs/qa-run-2026-03-18.md`
 - `docs/qa-run-2026-03-19.md`
+- `docs/qa-run-2026-03-20.md`
 - `docs/code-review-2026-03-15.md`
 - `docs/code-review-2026-03-16.md`
 - `docs/code-review-2026-03-17.md`
+- `docs/code-review-2026-03-20.md`
 - `docs/voice-ops-runbook.md`
 - `docs/troubleshooting.md`
 - `ha-ha-ai-build-prompt.improved.md`
