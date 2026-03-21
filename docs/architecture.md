@@ -19,12 +19,14 @@ Supabase is the source of truth for:
 
 - Root layout (`_layout.tsx`): hydration, error boundary, auth/onboarding gate
 - Root layout also owns the global app top bar (brand logo left, screen title center, hamburger menu right) and account menu overlay for authenticated users.
+- Root layout is the only place that runs auth bootstrap (`useAuth({ bootstrap: true })`) to avoid route-level loading loops.
 - Root layout adds web hover affordances on interactive controls (subtle glow/brightness feedback).
 - Root layout supports an E2E-only auth bypass gate via `EXPO_PUBLIC_E2E_AUTH_BYPASS=true`.
 - Home route (`/`) intentionally uses an empty center title for a cleaner artist-selection header.
 - Chat route dynamically sets the center title to active mode (`emoji + mode name`).
-- Universal `BackButton` is used on secondary routes (`mode-select`, `history`, `chat`, `settings`, `edit-profile`, `subscription`).
+- Universal `BackButton` is used on secondary routes (`mode-select`, `history`, `chat`, `settings`, `edit-profile`, `subscription`, `admin`).
 - Header logo always routes to `/` (artist selection); back navigation remains a separate action.
+- Admin routes are grouped under `src/app/admin` and gate access in `admin/_layout.tsx` (`isAdmin` check + redirect to `/settings`).
 - Auth routes:
   - `/(auth)/login`
   - `/(auth)/signup`
@@ -43,6 +45,8 @@ Supabase is the source of truth for:
   - `/settings`
   - `/settings/edit-profile`
   - `/settings/subscription`
+  - `/admin` (admin-only)
+  - `/admin/users` (admin-only)
 
 ### State (`src/store`)
 
@@ -86,6 +90,7 @@ Store-level account isolation:
 - `personalityEngineService.ts`: prompt generation + profile personalization
 - `artistPromptRegistry.ts`: artist-aware blueprint/mode prompt resolution (Cathy + fallback artists)
 - `subscriptionService.ts`: Stripe checkout launcher (regular/premium), subscription summary fetch, and cancel-at-period-end action
+- `adminService.ts`: admin stats/users/quota/account-type requests with normalized backend base URL resolution
 - `persistenceService.ts`: local cache persistence (conversations/messages/ui selections)
 - `ttsService.ts`: multi-endpoint TTS fetch/cache (`same-origin /api/tts` first on web, timeout + failover across candidates, with no failover on terminal `401/403/429`)
 - `voiceEngine.ts`: session-based STT engine abstraction (web/native), restart handling, stale-session isolation
@@ -177,7 +182,7 @@ Store-level account isolation:
 
 ### Hooks (`src/hooks`)
 
-- `useAuth`: bootstraps stored session, hydrates usage quota from `/api/usage-summary`, hydrates gamification stats from `/api/score`, and subscribes to Supabase auth changes
+- `useAuth`: optional bootstrap path (enabled in root layout only), usage/gamification hydration, and Supabase auth-change synchronization
 - `useChat`: queue-driven streaming orchestration, retry support, image-intent routing, mode-based score triggers, and route-safe stream cleanup
 - `useStorePersistence`: hydration/debounced persistence
 
@@ -213,6 +218,29 @@ Store-level account isolation:
 - syncs `auth.users.app_metadata.account_type` while preserving existing metadata fields
 - `accountTypeId='admin'` is blocked unless `ENABLE_ADMIN_TIER_GRANTS=true`
 - writes best-effort audit row (`audit_logs`) for account-type changes
+- shared CORS/auth/error/request-id utilities
+
+### `GET /api/admin-stats` (`api/admin-stats.js`)
+
+- admin-only bearer token check (`app_metadata.role='admin'` or `app_metadata.account_type='admin'`)
+- period support: `7d`, `30d`, `mtd`
+- reads `admin_daily_usage` and `admin_revenue_summary` views
+- computes estimated cost from token/tts aggregates and returns revenue + margin inputs
+- shared CORS/auth/error/request-id utilities
+
+### `GET /api/admin-users` (`api/admin-users.js`)
+
+- admin-only bearer token check
+- paginated user list via `auth.admin.listUsers(...)`
+- merges auth users with `admin_user_list` view data (tier, usage counts, last active, overrides)
+- supports `page`, `limit`, `search`, `tier` query params
+- shared CORS/auth/error/request-id utilities
+
+### `POST /api/admin-quota-override` (`api/admin-quota-override.js`)
+
+- admin-only bearer token check
+- updates `profiles.monthly_cap_override` (set or clear with `null`)
+- writes best-effort audit row (`audit_logs`) for override changes
 - shared CORS/auth/error/request-id utilities
 
 ### `POST /api/delete-account` (`api/delete-account.js`)

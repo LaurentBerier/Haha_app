@@ -1,6 +1,6 @@
 # Phase 2 Status (Mobile + API)
 
-Last updated: **2026-03-15**
+Last updated: **2026-03-21**
 
 ## Scope
 
@@ -48,6 +48,13 @@ Core targets:
   - cancellation at period end for active Stripe subscriptions
   - sign out
   - delete account
+- admin console flows:
+  - admin-only dashboard route (`/admin`) and users route (`/admin/users`)
+  - admin entry exposed in both settings and header account menu for admin sessions
+  - dedicated admin API clients for stats/users/quota/account-type actions
+- auth-bootstrap loop prevention:
+  - `useAuth` bootstrap is now root-owned only (`useAuth({ bootstrap: true })`)
+  - secondary screens use read-only auth state access to avoid route-level loading loops
 - tier-aware voice direction set to ElevenLabs (Free/Regular/Premium/Admin with caps/rate limits)
 - deployment topology now split cleanly:
   - landing website in separate repo/project (`ha-ha-ai`) on `https://ha-ha.ai`
@@ -128,6 +135,9 @@ Core targets:
   - persisted snapshot now stores `ownerUserId`
   - local conversations/messages are cleared automatically when auth user changes
   - prevents cross-account conversation bleed on shared browsers/devices
+- admin dashboard resilience:
+  - admin API client now normalizes backend base URL and avoids duplicated `/api/api/*` paths
+  - dashboard/users screens harden response-shape handling to fail gracefully on malformed payloads
 - unit test baseline:
   - `npm run test:unit`
   - added tests for subscription sync/checkout URL shaping and for artist-aware prompt builder
@@ -150,6 +160,7 @@ Core targets:
 - Android validation is intentionally deferred for now (explicit decision).
 - PayPal/Apple checkout end-to-end remains out of scope for this execution window.
 - Latest cross-phase code review snapshot: [`docs/code-review-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-20.md).
+- Latest targeted admin fix QA run: [`docs/qa-run-2026-03-21.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-21.md).
 
 ## Planned Next
 

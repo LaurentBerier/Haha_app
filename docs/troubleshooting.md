@@ -240,6 +240,53 @@ Requirements:
 
 If user was just promoted, sign out/in to refresh token claims.
 
+## 10a) Admin user cannot see dashboard entry in menu
+
+Symptoms:
+
+- Logged-in admin can open `/settings` but does not see `Admin Dashboard` in account menu.
+
+Checks:
+
+1. Confirm JWT claim is admin (`app_metadata.role='admin'` or `app_metadata.account_type='admin'`).
+2. Confirm app build includes latest root-layout menu logic (admin menu item is injected at runtime when `isAdmin=true`).
+3. Hard refresh web bundle or reinstall/rebuild native dev build if running an older bundle.
+
+Quick validation:
+
+- Admin shortcut should appear in both:
+  - Settings screen (`/settings`)
+  - Header hamburger account menu
+
+## 10b) Admin dashboard opens then loops on loading
+
+Symptoms:
+
+- Opening `/admin` shows endless loading or repeatedly returns to loading state.
+
+Root causes addressed in current code:
+
+1. auth bootstrap ran from multiple screens/layouts and repeatedly reset `authStatus='loading'`.
+2. stale client builds could call admin endpoints with duplicated path (`/api/api/...`) and receive HTML fallback payloads.
+
+Current expected behavior:
+
+- `useAuth` bootstrap runs only in root layout (`useAuth({ bootstrap: true })`).
+- admin service resolves backend base URL once, then calls `/admin-*` paths (`/admin-stats`, `/admin-users`, `/admin-quota-override`, `/admin-account-type`).
+
+If seen again:
+
+1. Verify app env values:
+   - `EXPO_PUBLIC_API_BASE_URL=https://app.ha-ha.ai/api`
+   - `EXPO_PUBLIC_CLAUDE_PROXY_URL=https://app.ha-ha.ai/api/claude`
+2. Hard refresh or reinstall app build to pick up latest bundle.
+3. Confirm admin endpoint contract with token:
+
+```bash
+curl -i "https://app.ha-ha.ai/api/admin-stats?period=mtd" \
+  -H "Authorization: Bearer <access_token>"
+```
+
 ## 11) Promote first admin user
 
 ```sql

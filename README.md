@@ -10,6 +10,7 @@ Implemented in this repository:
 - Supabase auth integration (email/password + Apple Sign-In).
 - Auth gate and onboarding flow in app routing.
 - Settings flow (profile edit, language preferences, motion preferences, subscription plan management, sign out, account deletion).
+- Admin console flow (dashboard + user management) gated to admin sessions.
 - Unified app-style top bar (logo left, center title, hamburger right) across authenticated mobile/web app screens.
 - Universal back button on secondary routes (chat, mode selection, history, settings subpages).
 - Header logo remains a home shortcut to artist selection (`/`) and never replaces back behavior.
@@ -42,6 +43,10 @@ Implemented in this repository:
 - Gamification layer (score, titles, streak, mode-driven scoring) persisted in Zustand and synced with Supabase.
 - Claude proxy (`api/claude.js`) with JWT validation via Supabase service role.
 - Admin endpoint (`api/admin-account-type.js`) for account type assignment.
+- Admin analytics and operations endpoints:
+  - `GET /api/admin-stats`
+  - `GET /api/admin-users`
+  - `POST /api/admin-quota-override`
 - Account deletion endpoint (`api/delete-account.js`).
 - Usage summary endpoint (`api/usage-summary.js`) for monthly quota hydration.
 - Score endpoint (`api/score.js`) for gamification actions and stats hydration.
@@ -61,7 +66,7 @@ Implemented in this repository:
 - [`docs/phase2-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase2-status.md)
 - [`docs/phase3-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase3-status.md)
 - [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
-- Latest QA run: [`docs/qa-run-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-20.md)
+- Latest QA run: [`docs/qa-run-2026-03-21.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-21.md)
 - Latest code-review snapshot: [`docs/code-review-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-20.md)
 
 ## Repos and Vercel Projects
@@ -145,6 +150,7 @@ Notes:
 - These are public client vars; they are not server secrets.
 - `EXPO_PUBLIC_USE_MOCK_LLM` defaults to `false` and should stay disabled in production.
 - Current default Claude model: `claude-sonnet-4-6`.
+- For this app, keep `EXPO_PUBLIC_API_BASE_URL` at API root (`.../api`, not `.../api/claude`).
 - Production app-web values should typically be:
   - `EXPO_PUBLIC_API_BASE_URL=https://app.ha-ha.ai/api`
   - `EXPO_PUBLIC_CLAUDE_PROXY_URL=https://app.ha-ha.ai/api/claude`
@@ -230,6 +236,8 @@ Routes:
 - `/settings/edit-profile`
 - `/settings/subscription`
 - `/stats`
+- `/admin` (admin-only)
+- `/admin/users` (admin-only)
 
 Behavior:
 
@@ -243,6 +251,7 @@ Behavior:
 - E2E-only bypass exists via `EXPO_PUBLIC_E2E_AUTH_BYPASS=true` (used in Detox scripts; keep disabled outside tests).
 - `Paramètres` (`/settings`) stays reachable from authenticated screens via header shortcut.
 - Header logo returns to artist selection (`/`) and hamburger menu includes account routes plus auth action (sign in/sign up/sign out depending on state).
+- Admin users now see `Admin Dashboard` in both settings and hamburger account menu.
 - Account-scoped local chat state is cleared automatically when session user changes, preventing cross-account conversation mixing on shared devices.
 - Web controls now include subtle mouse-hover feedback (glow/brightness) on interactive buttons for clearer affordance.
 
@@ -269,6 +278,17 @@ Admin endpoint:
 
 - `POST /api/admin-account-type`
 - File: `api/admin-account-type.js`
+
+Admin app routes:
+
+- `/admin` (dashboard UI)
+- `/admin/users` (user operations UI)
+
+Admin dashboard API endpoints:
+
+- `GET /api/admin-stats`
+- `GET /api/admin-users`
+- `POST /api/admin-quota-override`
 
 Auth requirements:
 
@@ -503,6 +523,7 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/qa-run-2026-03-18.md`
 - `docs/qa-run-2026-03-19.md`
 - `docs/qa-run-2026-03-20.md`
+- `docs/qa-run-2026-03-21.md`
 - `docs/code-review-2026-03-15.md`
 - `docs/code-review-2026-03-16.md`
 - `docs/code-review-2026-03-17.md`
