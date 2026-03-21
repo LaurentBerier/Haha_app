@@ -5,6 +5,7 @@ import { BackButton } from '../../components/common/BackButton';
 import { useToast } from '../../components/common/ToastProvider';
 import { SettingsRow } from '../../components/common/SettingsRow';
 import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
+import { useAuth } from '../../hooks/useAuth';
 import { t } from '../../i18n';
 import { deleteAccount, signOut } from '../../services/authService';
 import type { AppLanguage, ReduceMotionPreference } from '../../store/slices/uiSlice';
@@ -40,6 +41,7 @@ function initialsFromIdentity(value: string | null | undefined): string {
 
 export default function SettingsScreen() {
   const headerHorizontalInset = useHeaderHorizontalInset();
+  const { isAdmin } = useAuth();
   const session = useStore((state) => state.session);
   const user = session?.user ?? null;
   const clearSession = useStore((state) => state.clearSession);
@@ -220,6 +222,19 @@ export default function SettingsScreen() {
           />
         </View>
       </View>
+
+      {isAdmin ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Administration</Text>
+          <View style={styles.group}>
+            <SettingsRow
+              label="Admin Dashboard"
+              onPress={() => router.push('/admin' as never)}
+              testID="settings-admin-dashboard"
+            />
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t('settingsDanger')}</Text>

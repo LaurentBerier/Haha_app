@@ -323,7 +323,7 @@ function getTtsRateLimitMaxRequests(accountType) {
   return DEFAULT_TTS_RATE_LIMIT_MAX_REQUESTS_BY_TIER[normalized] ?? DEFAULT_TTS_RATE_LIMIT_MAX_REQUESTS;
 }
 
-async function enforceUserRateLimit(supabaseAdmin, userId, accountType, requestId) {
+async function enforceUserRateLimit(supabaseAdmin, userId, accountType, requestId, ttsCharacters) {
   const nowMs = Date.now();
   const windowMs = parsePositiveInt(process.env.TTS_RATE_LIMIT_WINDOW_MS, DEFAULT_TTS_RATE_LIMIT_WINDOW_MS);
   const maxRequests = getTtsRateLimitMaxRequests(accountType);
@@ -361,7 +361,8 @@ async function enforceUserRateLimit(supabaseAdmin, userId, accountType, requestI
     user_id: userId,
     endpoint: 'tts',
     request_id: requestId,
-    created_at: nowIso
+    created_at: nowIso,
+    ...(typeof ttsCharacters === 'number' && { tts_characters: ttsCharacters })
   };
 
   let { error: insertError } = await supabaseAdmin.from('usage_events').insert(insertPayload);
@@ -460,7 +461,8 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const rateLimit = await enforceUserRateLimit(supabaseAdmin, auth.userId, normalizedAccountType, requestId);
+  const ttsCharacters = typeof payload.providerText === 'string' ? payload.providerText.length : undefined;
+  const rateLimit = await enforceUserRateLimit(supabaseAdmin, auth.userId, normalizedAccountType, requestId, ttsCharacters);
   if (!rateLimit.ok) {
     if (rateLimit.status === 429 && typeof rateLimit.retryAfterSeconds === 'number') {
       res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));

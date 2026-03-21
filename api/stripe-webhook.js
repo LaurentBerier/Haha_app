@@ -326,7 +326,8 @@ function extractCheckoutSessionData(event, linkMap) {
     stripeCustomerId: typeof session.customer === 'string' ? session.customer : '',
     stripeSubscriptionId: typeof session.subscription === 'string' ? session.subscription : '',
     accountTypeId: accountTypeFromCheckoutSession(session, linkMap),
-    productId: typeof session.payment_link === 'string' ? session.payment_link : 'unknown'
+    productId: typeof session.payment_link === 'string' ? session.payment_link : 'unknown',
+    amountCents: typeof session.amount_total === 'number' ? session.amount_total : null
   };
 }
 
@@ -347,7 +348,8 @@ function extractSubscriptionData(event, priceMap) {
     stripeCustomerId: typeof subscription.customer === 'string' ? subscription.customer : '',
     stripeSubscriptionId: typeof subscription.id === 'string' ? subscription.id : '',
     accountTypeId,
-    productId
+    productId,
+    amountCents: null
   };
 }
 
@@ -540,6 +542,7 @@ module.exports = async function handler(req, res) {
       event_type: stripeEvent.eventType,
       product_id: stripeEvent.productId,
       account_type_id: stripeEvent.accountTypeId,
+      amount_cents: stripeEvent.amountCents ?? null,
       raw_payload: {
         ...event,
         _provider_event_id: providerEventId || null

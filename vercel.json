@@ -17,6 +17,15 @@
     },
     "api/stripe-webhook.js": {
       "maxDuration": 60
+    },
+    "api/admin-stats.js": {
+      "maxDuration": 30
+    },
+    "api/admin-users.js": {
+      "maxDuration": 30
+    },
+    "api/admin-quota-override.js": {
+      "maxDuration": 10
     }
   },
   "routes": [

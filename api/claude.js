@@ -2,6 +2,7 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
 const { normalizeAccountType, resolveEffectiveAccountType } = require('./_account-tier');
+const { updateUsageEventTokens } = require('./_quota-utils');
 const ttsHandler = require('../src/server/ttsHandler');
 const DEFAULT_MAX_TOKENS = 300;
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
@@ -2417,6 +2418,21 @@ module.exports = async function handler(req, res) {
     console.error(`[api/claude][${requestId}] Invalid upstream JSON`, error);
     sendError(res, 502, 'Invalid JSON from Anthropic API.', { code: 'UPSTREAM_INVALID_JSON', requestId });
     return;
+  }
+
+  // Fire-and-forget: back-fill token counts on the pre-inserted usage_events row.
+  if (supabaseAdmin && responseBody && typeof responseBody.usage === 'object' && responseBody.usage !== null) {
+    const inputTokens = typeof responseBody.usage.input_tokens === 'number' ? responseBody.usage.input_tokens : undefined;
+    const outputTokens = typeof responseBody.usage.output_tokens === 'number' ? responseBody.usage.output_tokens : undefined;
+    if (inputTokens !== undefined || outputTokens !== undefined) {
+      updateUsageEventTokens({
+        supabaseAdmin,
+        requestId,
+        inputTokens,
+        outputTokens,
+        logPrefix: 'api/claude'
+      }).catch(() => {});
+    }
   }
 
   res.status(200).json(responseBody);

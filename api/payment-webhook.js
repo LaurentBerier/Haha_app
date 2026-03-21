@@ -266,6 +266,10 @@ module.exports = async function handler(req, res) {
   const userId = getUserId(req.body);
   const productId = getProductId(req.body);
   const accountTypeId = mapProductToAccountType(productId, eventType);
+  const rawPrice = isRecord(req.body.event) && typeof req.body.event.price_in_purchased_currency === 'number'
+    ? req.body.event.price_in_purchased_currency
+    : null;
+  const amountCents = rawPrice !== null ? Math.round(rawPrice * 100) : null;
 
   if (!userId) {
     sendError(res, 400, 'Webhook payload missing app_user_id.', { code: 'INVALID_REQUEST', requestId });
@@ -280,6 +284,7 @@ module.exports = async function handler(req, res) {
       event_type: eventType,
       product_id: productId || 'unknown',
       account_type_id: accountTypeId,
+      amount_cents: amountCents,
       raw_payload: {
         ...req.body,
         _provider_event_id: providerEventId || null

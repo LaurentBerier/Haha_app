@@ -128,8 +128,25 @@ async function enforceMonthlyQuota({
     return { ok: true, source: 'admin', monthStartIso: getMonthStartIso(), used: 0 };
   }
 
-  const effectiveCap = getMonthlyCap(normalizedAccountType);
   const monthStartIso = getMonthStartIso();
+
+  // Check for per-user cap override before falling back to tier default.
+  let effectiveCap;
+  {
+    const { data: profileOverride } = await supabaseAdmin
+      .from('profiles')
+      .select('monthly_cap_override')
+      .eq('id', userId)
+      .maybeSingle()
+      .catch(() => ({ data: null }));
+
+    const override =
+      profileOverride && typeof profileOverride.monthly_cap_override === 'number' && Number.isFinite(profileOverride.monthly_cap_override)
+        ? profileOverride.monthly_cap_override
+        : null;
+
+    effectiveCap = override !== null ? override : getMonthlyCap(normalizedAccountType);
+  }
 
   const profileCounter = await readProfileMonthlyCounter(supabaseAdmin, userId, requestId, logPrefix);
   if (!profileCounter.ok) {
@@ -188,13 +205,16 @@ async function enforceMonthlyQuota({
   return { ok: true, source: 'usage_events', monthStartIso, used: count ?? 0 };
 }
 
-async function recordUsageEvent({ supabaseAdmin, userId, endpoint, requestId }) {
+async function recordUsageEvent({ supabaseAdmin, userId, endpoint, requestId, inputTokens, outputTokens, ttsCharacters }) {
   const nowIso = new Date().toISOString();
   const insertPayload = {
     user_id: userId,
     endpoint,
     request_id: requestId,
-    created_at: nowIso
+    created_at: nowIso,
+    ...(typeof inputTokens === 'number' && { input_tokens: inputTokens }),
+    ...(typeof outputTokens === 'number' && { output_tokens: outputTokens }),
+    ...(typeof ttsCharacters === 'number' && { tts_characters: ttsCharacters })
   };
 
   let { error } = await supabaseAdmin.from('usage_events').insert(insertPayload);
@@ -214,10 +234,34 @@ async function recordUsageEvent({ supabaseAdmin, userId, endpoint, requestId }) 
   return { ok: true };
 }
 
+async function updateUsageEventTokens({ supabaseAdmin, requestId, inputTokens, outputTokens, logPrefix }) {
+  if (!requestId || (typeof inputTokens !== 'number' && typeof outputTokens !== 'number')) {
+    return;
+  }
+
+  const updates = {};
+  if (typeof inputTokens === 'number') {
+    updates.input_tokens = inputTokens;
+  }
+  if (typeof outputTokens === 'number') {
+    updates.output_tokens = outputTokens;
+  }
+
+  const { error } = await supabaseAdmin
+    .from('usage_events')
+    .update(updates)
+    .eq('request_id', requestId);
+
+  if (error) {
+    console.error(`[${logPrefix ?? 'quota-utils'}] Failed to update token counts for request ${requestId}`, error);
+  }
+}
+
 module.exports = {
   enforceMonthlyQuota,
   getRetryAfterUntilNextMonthSeconds,
   parsePositiveInt,
   recordUsageEvent,
+  updateUsageEventTokens,
   writeProfileMonthlyCounter
 };
