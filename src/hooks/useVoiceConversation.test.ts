@@ -17,6 +17,7 @@ import {
   getVoiceConversationHint,
   getVoiceRecoveryPlan,
   getVoiceRecoveryDelayMs,
+  shouldResumeMicAfterTypedDraft,
   shouldAttemptAutoListen,
   shouldConsumeVoiceRecoveryBudget
 } from './useVoiceConversation';
@@ -100,6 +101,42 @@ describe('useVoiceConversation helpers', () => {
         isPlaying: false,
         hasTypedDraft: false,
         status: 'off'
+      })
+    ).toBe(false);
+  });
+
+  it('flags draft interruptions that should auto-resume listening', () => {
+    expect(
+      shouldResumeMicAfterTypedDraft({
+        hasTypedDraft: true,
+        status: 'listening',
+        hasActiveSession: true
+      })
+    ).toBe(true);
+
+    expect(
+      shouldResumeMicAfterTypedDraft({
+        hasTypedDraft: true,
+        status: 'assistant_busy',
+        hasActiveSession: false
+      })
+    ).toBe(true);
+  });
+
+  it('does not auto-resume from draft when status is locked or no draft exists', () => {
+    expect(
+      shouldResumeMicAfterTypedDraft({
+        hasTypedDraft: false,
+        status: 'listening',
+        hasActiveSession: true
+      })
+    ).toBe(false);
+
+    expect(
+      shouldResumeMicAfterTypedDraft({
+        hasTypedDraft: true,
+        status: 'paused_manual',
+        hasActiveSession: true
       })
     ).toBe(false);
   });

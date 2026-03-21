@@ -66,6 +66,12 @@ interface VoiceConversationState {
   recoveryAttempt: number;
 }
 
+interface DraftResumeState {
+  hasTypedDraft: boolean;
+  status: VoiceConversationStatus;
+  hasActiveSession: boolean;
+}
+
 type VoiceConversationAction =
   | { type: 'set_off' }
   | { type: 'starting' }
@@ -247,6 +253,20 @@ export function shouldAttemptAutoListen(state: AutoListenState): boolean {
   );
 }
 
+export function shouldResumeMicAfterTypedDraft(state: DraftResumeState): boolean {
+  if (!state.hasTypedDraft || isLockedMicStatus(state.status)) {
+    return false;
+  }
+
+  return (
+    state.hasActiveSession ||
+    state.status === 'starting' ||
+    state.status === 'listening' ||
+    state.status === 'recovering' ||
+    state.status === 'assistant_busy'
+  );
+}
+
 export function useVoiceConversation({
   enabled,
   disabled,
@@ -265,6 +285,8 @@ export function useVoiceConversation({
   const startInFlightRef = useRef(false);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resumeAfterTypedDraftRef = useRef(false);
+  const pendingManualResumeRef = useRef(false);
   const hasUserActivatedListeningRef = useRef(Platform.OS !== 'web');
   const startListeningFlowRef = useRef<((origin: 'auto' | 'recovery' | 'resume' | 'interrupt') => Promise<void>) | null>(null);
   const enabledRef = useRef(enabled);
@@ -591,6 +613,8 @@ export function useVoiceConversation({
 
   useEffect(() => {
     if (!enabled || disabled) {
+      resumeAfterTypedDraftRef.current = false;
+      pendingManualResumeRef.current = false;
       clearRecoveryTimer();
       clearSilenceTimer();
       stopActiveSession();
@@ -604,6 +628,12 @@ export function useVoiceConversation({
     }
 
     if (hasTypedDraft) {
+      resumeAfterTypedDraftRef.current = shouldResumeMicAfterTypedDraft({
+        hasTypedDraft: true,
+        status: stateRef.current.status,
+        hasActiveSession: Boolean(activeSessionRef.current)
+      });
+      pendingManualResumeRef.current = false;
       clearRecoveryTimer();
       clearSilenceTimer();
       stopActiveSession();
@@ -612,6 +642,37 @@ export function useVoiceConversation({
       } else {
         dispatch({ type: 'set_off' });
       }
+      return;
+    }
+
+    if (pendingManualResumeRef.current) {
+      if (isPlaying || startInFlightRef.current || activeSessionRef.current || recoveryTimerRef.current) {
+        return;
+      }
+
+      pendingManualResumeRef.current = false;
+      resumeAfterTypedDraftRef.current = false;
+      const fromStatus = stateRef.current.status;
+      hasUserActivatedListeningRef.current = true;
+      logVoiceDebug('manual_resume_flushed', { fromStatus });
+      dispatch({ type: 'set_off' });
+      dispatch({ type: 'starting' });
+      void startListeningFlow('resume');
+      return;
+    }
+
+    if (resumeAfterTypedDraftRef.current) {
+      if (isPlaying || startInFlightRef.current || activeSessionRef.current || recoveryTimerRef.current) {
+        return;
+      }
+
+      resumeAfterTypedDraftRef.current = false;
+      const fromStatus = stateRef.current.status;
+      hasUserActivatedListeningRef.current = true;
+      logVoiceDebug('typed_draft_resume', { fromStatus });
+      dispatch({ type: 'set_off' });
+      dispatch({ type: 'starting' });
+      void startListeningFlow('resume');
       return;
     }
 
@@ -633,6 +694,7 @@ export function useVoiceConversation({
     disabled,
     enabled,
     isPlaying,
+    startListeningFlow,
     stopActiveSession
   ]);
 
@@ -660,6 +722,8 @@ export function useVoiceConversation({
 
   const pauseListening = useCallback(() => {
     logVoiceDebug('manual_pause');
+    pendingManualResumeRef.current = false;
+    resumeAfterTypedDraftRef.current = false;
     clearRecoveryTimer();
     clearSilenceTimer();
     stopActiveSession();
@@ -667,10 +731,23 @@ export function useVoiceConversation({
   }, [clearRecoveryTimer, clearSilenceTimer, stopActiveSession]);
 
   const resumeListening = useCallback(() => {
-    if (!enabledRef.current || disabledRef.current || hasTypedDraftRef.current || isPlayingRef.current) {
+    if (!enabledRef.current || disabledRef.current) {
+      pendingManualResumeRef.current = false;
       return;
     }
 
+    if (hasTypedDraftRef.current || isPlayingRef.current) {
+      pendingManualResumeRef.current = true;
+      logVoiceDebug('manual_resume_queued', {
+        hasTypedDraft: hasTypedDraftRef.current,
+        isPlaying: isPlayingRef.current,
+        fromStatus: stateRef.current.status
+      });
+      return;
+    }
+
+    pendingManualResumeRef.current = false;
+    resumeAfterTypedDraftRef.current = false;
     const fromStatus = stateRef.current.status;
     hasUserActivatedListeningRef.current = true;
     stateRef.current = {
@@ -688,6 +765,8 @@ export function useVoiceConversation({
 
   const interruptAndListen = useCallback(() => {
     logVoiceDebug('interrupt_and_listen', { fromStatus: stateRef.current.status });
+    pendingManualResumeRef.current = false;
+    resumeAfterTypedDraftRef.current = false;
     clearRecoveryTimer();
     clearSilenceTimer();
     onStopAudioRef.current();
