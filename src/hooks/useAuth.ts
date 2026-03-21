@@ -6,7 +6,12 @@ import { useStore } from '../store/useStore';
 import { resolveEffectiveAccountType } from '../utils/accountTypeUtils';
 import { EMPTY_GAMIFICATION_STATS } from '../models/Gamification';
 
-export function useAuth() {
+interface UseAuthOptions {
+  bootstrap?: boolean;
+}
+
+export function useAuth(options: UseAuthOptions = {}) {
+  const { bootstrap = false } = options;
   const session = useStore((state) => state.session);
   const authStatus = useStore((state) => state.authStatus);
   const userProfile = useStore((state) => state.userProfile);
@@ -24,6 +29,10 @@ export function useAuth() {
   const sessionSyncRunIdRef = useRef(0);
 
   useEffect(() => {
+    if (!bootstrap) {
+      return;
+    }
+
     let isMounted = true;
     const nextRunId = () => {
       sessionSyncRunIdRef.current += 1;
@@ -31,7 +40,7 @@ export function useAuth() {
     };
     const isRunCurrent = (runId: number) => isMounted && runId === sessionSyncRunIdRef.current;
 
-    const bootstrap = async () => {
+    const runBootstrap = async () => {
       const runId = nextRunId();
       setAuthStatus('loading');
       try {
@@ -100,7 +109,7 @@ export function useAuth() {
       }
     };
 
-    bootstrap().catch((error) => {
+    runBootstrap().catch((error) => {
       console.error('[useAuth] bootstrap failed', error);
       if (isMounted) {
         clearSession();
@@ -182,6 +191,7 @@ export function useAuth() {
       unsubscribe();
     };
   }, [
+    bootstrap,
     clearAccountScopedState,
     clearSession,
     clearUserProfile,

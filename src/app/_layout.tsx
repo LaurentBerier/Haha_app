@@ -29,7 +29,7 @@ import { E2E_AUTH_BYPASS } from '../config/env';
 import cleanBackground from '../../assets/branding/Clean_BG.jpg';
 import neonTitleMark from '../../assets/branding/logo-neon-Trans.png';
 
-type AccountMenuRoute = '/settings' | '/settings/edit-profile' | '/settings/subscription' | '/stats';
+type AccountMenuRoute = '/settings' | '/settings/edit-profile' | '/settings/subscription' | '/stats' | '/admin';
 const WEB_BACKGROUND_MIN_HEIGHT_VH = 100;
 const WEB_BACKGROUND_MAX_HEIGHT_VH = 170;
 
@@ -63,7 +63,7 @@ export default function RootLayout() {
   const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
   const clearSession = useStore((state) => state.clearSession);
-  const { authStatus, isAuthenticated, userProfile } = useAuth();
+  const { authStatus, isAuthenticated, isAdmin, userProfile } = useAuth({ bootstrap: true });
   const segments = useSegments();
   const segmentList = segments as readonly string[];
   const pathname = usePathname();
@@ -92,12 +92,15 @@ export default function RootLayout() {
   const targetArtistId = routeArtistId ?? selectedArtistId;
   const globalInputDisabled = !showGlobalChatInput || !targetArtistId;
 
-  const accountMenuItems = [
+  const accountMenuItems: Array<{ label: string; route: AccountMenuRoute }> = [
     { label: t('settingsEditProfile'), route: '/settings/edit-profile' as const },
     { label: t('settingsStats'), route: '/stats' as const },
     { label: t('settingsTitle'), route: '/settings' as const },
     { label: t('settingsSubscription'), route: '/settings/subscription' as const }
   ];
+  if (isAdmin) {
+    accountMenuItems.unshift({ label: 'Admin Dashboard', route: '/admin' });
+  }
   const authMenuLabel = isAuthenticated
     ? t('settingsLogout')
     : segmentList[1] === 'login'

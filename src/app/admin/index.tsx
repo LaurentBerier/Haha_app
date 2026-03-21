@@ -101,28 +101,25 @@ export default function AdminDashboardScreen() {
     void load(period);
   }, [load, period]);
 
-  const totalMessages = useMemo(() => sumField(stats?.dailyUsage ?? [], 'requests'), [stats]);
+  const dailyUsage = useMemo(() => (Array.isArray(stats?.dailyUsage) ? stats.dailyUsage : []), [stats?.dailyUsage]);
+  const revenueRows = useMemo(() => (Array.isArray(stats?.revenue) ? stats.revenue : []), [stats?.revenue]);
+
+  const totalMessages = useMemo(() => sumField(dailyUsage, 'requests'), [dailyUsage]);
   const totalDAU = useMemo(() => {
-    if (!stats) {
+    if (dailyUsage.length === 0) {
       return 0;
     }
-    const uniquePerDay = new Map<string, Set<string>>();
-    for (const row of stats.dailyUsage) {
-      if (!uniquePerDay.has(row.day)) {
-        uniquePerDay.set(row.day, new Set());
-      }
-    }
-    return stats.dailyUsage.reduce((max, row) => Math.max(max, row.uniqueUsers), 0);
-  }, [stats]);
-  const totalTtsChars = useMemo(() => sumField(stats?.dailyUsage ?? [], 'ttsChars'), [stats]);
-  const totalRevenueCents = useMemo(() => sumRevenue(stats?.revenue ?? []), [stats]);
+    return dailyUsage.reduce((max, row) => Math.max(max, row.uniqueUsers), 0);
+  }, [dailyUsage]);
+  const totalTtsChars = useMemo(() => sumField(dailyUsage, 'ttsChars'), [dailyUsage]);
+  const totalRevenueCents = useMemo(() => sumRevenue(revenueRows), [revenueRows]);
 
   const tierMessageCounts = useMemo(() => {
     return TIERS.map((tier) => ({
       tier,
-      count: sumField(getTierRows(stats?.dailyUsage ?? [], tier), 'requests')
+      count: sumField(getTierRows(dailyUsage, tier), 'requests')
     }));
-  }, [stats]);
+  }, [dailyUsage]);
   const maxTierCount = useMemo(
     () => Math.max(1, ...tierMessageCounts.map((t) => t.count)),
     [tierMessageCounts]
@@ -189,7 +186,7 @@ export default function AdminDashboardScreen() {
               />
               <StatCard
                 label="Est. cost"
-                value={formatCad(stats.estimatedCostCents)}
+                value={formatCad(stats.estimatedCostCents ?? 0)}
                 sub="Claude tokens"
               />
             </View>
@@ -207,7 +204,7 @@ export default function AdminDashboardScreen() {
                 <View style={styles.costRevenueRow}>
                   <Text style={styles.costRevenueLabel}>Est. cost</Text>
                   <Text style={[styles.costRevenueAmount, styles.amountRed]}>
-                    {formatCad(stats.estimatedCostCents)}
+                    {formatCad(stats.estimatedCostCents ?? 0)}
                   </Text>
                 </View>
                 <View style={styles.divider} />
@@ -217,12 +214,12 @@ export default function AdminDashboardScreen() {
                     style={[
                       styles.costRevenueAmount,
                       styles.amountBold,
-                      totalRevenueCents - stats.estimatedCostCents >= 0
+                      totalRevenueCents - (stats.estimatedCostCents ?? 0) >= 0
                         ? styles.amountGreen
                         : styles.amountRed
                     ]}
                   >
-                    {formatCad(totalRevenueCents - stats.estimatedCostCents)}
+                    {formatCad(totalRevenueCents - (stats.estimatedCostCents ?? 0))}
                   </Text>
                 </View>
               </View>
@@ -239,11 +236,11 @@ export default function AdminDashboardScreen() {
             </View>
 
             {/* Revenue breakdown */}
-            {stats.revenue.length > 0 ? (
+            {revenueRows.length > 0 ? (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Revenue events</Text>
                 <View style={styles.card}>
-                  {stats.revenue.map((row, idx) => (
+                  {revenueRows.map((row, idx) => (
                     <View key={idx} style={styles.revenueRow}>
                       <View style={styles.revenueLeft}>
                         <Text style={styles.revenueTier}>{row.tier}</Text>

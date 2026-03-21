@@ -1,4 +1,4 @@
-import { API_BASE_URL } from '../config/env';
+import { API_BASE_URL, CLAUDE_PROXY_URL } from '../config/env';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -60,12 +60,38 @@ export interface AdminUsersQuery {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getApiBase(): string {
-  return (API_BASE_URL ?? '').replace(/\/+$/, '');
+function toBackendBaseUrl(): string {
+  const explicitBase = API_BASE_URL.trim().replace(/\/+$/, '');
+  if (explicitBase) {
+    return explicitBase;
+  }
+
+  const proxyUrl = CLAUDE_PROXY_URL.trim();
+  if (!proxyUrl) {
+    return '';
+  }
+
+  if (proxyUrl.startsWith('/')) {
+    return proxyUrl.replace(/\/claude\/?$/, '');
+  }
+
+  try {
+    const parsed = new URL(proxyUrl);
+    const normalizedPathname = parsed.pathname.replace(/\/+$/, '');
+    const basePath = normalizedPathname.replace(/\/claude\/?$/, '');
+    return `${parsed.protocol}//${parsed.host}${basePath}`;
+  } catch {
+    return '';
+  }
 }
 
 async function apiFetch<T>(path: string, token: string, options: RequestInit = {}): Promise<T> {
-  const url = `${getApiBase()}${path}`;
+  const baseUrl = toBackendBaseUrl();
+  if (!baseUrl) {
+    throw new Error('Missing backend API base URL. Set EXPO_PUBLIC_API_BASE_URL or EXPO_PUBLIC_CLAUDE_PROXY_URL.');
+  }
+
+  const url = `${baseUrl}${path}`;
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -75,14 +101,24 @@ async function apiFetch<T>(path: string, token: string, options: RequestInit = {
     }
   });
 
-  const json = await response.json().catch(() => ({}));
+  const json = await response.json().catch(() => null);
 
   if (!response.ok) {
     const message =
-      typeof json?.error?.message === 'string'
+      json &&
+      typeof json === 'object' &&
+      'error' in json &&
+      json.error &&
+      typeof json.error === 'object' &&
+      'message' in json.error &&
+      typeof json.error.message === 'string'
         ? json.error.message
         : `Request failed with status ${response.status}`;
     throw new Error(message);
+  }
+
+  if (!json || typeof json !== 'object') {
+    throw new Error('Invalid server response.');
   }
 
   return json as T;
@@ -91,7 +127,7 @@ async function apiFetch<T>(path: string, token: string, options: RequestInit = {
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function getAdminStats(token: string, period: AdminStatsPeriod = 'mtd'): Promise<AdminStats> {
-  return apiFetch<AdminStats>(`/api/admin-stats?period=${encodeURIComponent(period)}`, token);
+  return apiFetch<AdminStats>(`/admin-stats?period=${encodeURIComponent(period)}`, token);
 }
 
 export async function getAdminUsers(token: string, query: AdminUsersQuery = {}): Promise<AdminUsersPage> {
@@ -110,7 +146,7 @@ export async function getAdminUsers(token: string, query: AdminUsersQuery = {}):
   }
 
   const qs = params.toString();
-  return apiFetch<AdminUsersPage>(`/api/admin-users${qs ? `?${qs}` : ''}`, token);
+  return apiFetch<AdminUsersPage>(`/admin-users${qs ? `?${qs}` : ''}`, token);
 }
 
 export async function setUserQuotaOverride(
@@ -118,7 +154,7 @@ export async function setUserQuotaOverride(
   userId: string,
   monthlyCap: number | null
 ): Promise<void> {
-  await apiFetch<unknown>('/api/admin-quota-override', token, {
+  await apiFetch<unknown>('/admin-quota-override', token, {
     method: 'POST',
     body: JSON.stringify({ userId, monthlyCap })
   });
@@ -129,7 +165,7 @@ export async function setUserAccountType(
   userId: string,
   accountTypeId: string
 ): Promise<void> {
-  await apiFetch<unknown>('/api/admin-account-type', token, {
+  await apiFetch<unknown>('/admin-account-type', token, {
     method: 'POST',
     body: JSON.stringify({ userId, accountTypeId })
   });

@@ -243,7 +243,9 @@ export default function AdminUsersScreen() {
     setPage(0);
   };
 
-  const totalPages = result ? Math.ceil(result.total / PAGE_SIZE) : 0;
+  const users = Array.isArray(result?.users) ? result.users : [];
+  const totalResults = typeof result?.total === 'number' ? result.total : 0;
+  const totalPages = result ? Math.ceil(totalResults / PAGE_SIZE) : 0;
 
   return (
     <View style={styles.root}>
@@ -297,7 +299,7 @@ export default function AdminUsersScreen() {
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        {result?.users.map((user) => (
+        {users.map((user) => (
           <UserRow
             key={user.id}
             user={user}
@@ -306,7 +308,7 @@ export default function AdminUsersScreen() {
           />
         ))}
 
-        {result && result.users.length === 0 && !loading ? (
+        {result && users.length === 0 && !loading ? (
           <Text style={styles.emptyText}>No users found.</Text>
         ) : null}
 
