@@ -759,32 +759,40 @@ export function useChat(conversationId: string) {
         await waitFor(() => !isReplyAudioActive(), NOTICE_AUDIO_SYNC_FINISH_WAIT_MS);
       };
 
-      const enqueuePostReplyNotice = (
-        content: string,
-        metadata: NonNullable<Message['metadata']>,
+      const enqueuePostReplyNotices = (
+        notices: Array<{
+          content: string;
+          metadata: NonNullable<Message['metadata']>;
+        }>,
         options?: {
           spoken?: boolean;
         }
       ) => {
-        const noticeMessageId = generateId('msg');
+        if (notices.length === 0) {
+          return;
+        }
+
         void (async () => {
           await waitForReplyAudioToSettle();
           if (!isMountedRef.current) {
             return;
           }
 
-          addMessage(jobConversationId, {
-            id: noticeMessageId,
-            conversationId: jobConversationId,
-            role: 'artist',
-            content,
-            status: 'complete',
-            timestamp: new Date().toISOString(),
-            metadata
-          });
+          for (const notice of notices) {
+            const noticeMessageId = generateId('msg');
+            addMessage(jobConversationId, {
+              id: noticeMessageId,
+              conversationId: jobConversationId,
+              role: 'artist',
+              content: notice.content,
+              status: 'complete',
+              timestamp: new Date().toISOString(),
+              metadata: notice.metadata
+            });
 
-          if (options?.spoken ?? true) {
-            synthesizeNoticeVoice(noticeMessageId, content);
+            if (options?.spoken ?? true) {
+              synthesizeNoticeVoice(noticeMessageId, notice.content);
+            }
           }
         })();
       };
@@ -1035,12 +1043,10 @@ export function useChat(conversationId: string) {
           latestState.session?.user.accountType ?? currentAccountType,
           latestState.session?.user.role ?? currentRole
         );
-        let postReplyNotice:
-          | {
-              content: string;
-              metadata: NonNullable<Message['metadata']>;
-            }
-          | null = null;
+        const postReplyNotices: Array<{
+          content: string;
+          metadata: NonNullable<Message['metadata']>;
+        }> = [];
         let shouldBlockInput = false;
         if (
           normalizedAccountType !== 'admin' &&
@@ -1073,16 +1079,14 @@ export function useChat(conversationId: string) {
 
           if (thresholdToShow !== null) {
             markThresholdMessageShown(thresholdToShow);
-            if (!postReplyNotice) {
-              postReplyNotice = {
-                content: thresholdMessage,
-                metadata: {
-                  injected: true,
-                  showUpgradeCta: true,
-                  upgradeFromTier: normalizedAccountType
-                }
-              };
-            }
+            postReplyNotices.push({
+              content: thresholdMessage,
+              metadata: {
+                injected: true,
+                showUpgradeCta: true,
+                upgradeFromTier: normalizedAccountType
+              }
+            });
           }
 
           const shouldBlockFree = normalizedAccountType === 'free' && ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO;
@@ -1169,13 +1173,13 @@ export function useChat(conversationId: string) {
             noticeMetadata.upgradeFromTier = normalizedAccountType;
           }
 
-          postReplyNotice = {
+          postReplyNotices.push({
             content: buildCathyVoiceNotice(pendingVoiceNoticeCode),
             metadata: noticeMetadata
-          };
+          });
         }
-        if (postReplyNotice) {
-          enqueuePostReplyNotice(postReplyNotice.content, postReplyNotice.metadata, {
+        if (postReplyNotices.length > 0) {
+          enqueuePostReplyNotices(postReplyNotices, {
             spoken: true
           });
         }
