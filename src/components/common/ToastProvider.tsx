@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../../theme';
 
 type ToastType = 'success' | 'error' | 'info';
@@ -19,6 +19,7 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 let hasWarnedMissingToastProvider = false;
+const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 function getToastBackground(type: ToastType): string {
   if (type === 'success') {
@@ -50,8 +51,8 @@ export function ToastProvider({ children }: ToastProviderProps) {
   const hideToast = useCallback(() => {
     clearTimer();
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: true }),
-      Animated.timing(translateY, { toValue: 20, duration: 180, useNativeDriver: true })
+      Animated.timing(opacity, { toValue: 0, duration: 180, useNativeDriver: USE_NATIVE_DRIVER }),
+      Animated.timing(translateY, { toValue: 20, duration: 180, useNativeDriver: USE_NATIVE_DRIVER })
     ]).start(() => {
       setToast(null);
     });
@@ -80,8 +81,8 @@ export function ToastProvider({ children }: ToastProviderProps) {
     translateY.setValue(26);
     opacity.setValue(0);
     Animated.parallel([
-      Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
-      Animated.spring(translateY, { toValue: 0, useNativeDriver: true, friction: 7, tension: 110 })
+      Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: USE_NATIVE_DRIVER }),
+      Animated.spring(translateY, { toValue: 0, useNativeDriver: USE_NATIVE_DRIVER, friction: 7, tension: 110 })
     ]).start();
 
     timerRef.current = setTimeout(() => {

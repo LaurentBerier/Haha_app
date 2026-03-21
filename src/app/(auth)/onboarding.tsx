@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Animated, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import {
   HOROSCOPE_OPTIONS,
   INTEREST_OPTIONS,
@@ -24,6 +24,7 @@ type OnboardingAnswers = {
 };
 
 const TOTAL_STEPS = 6;
+const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 function normalizePreferredName(value: string): string | null {
   const trimmed = value.trim();
@@ -244,13 +245,13 @@ export default function OnboardingScreen() {
         toValue: 0.985,
         friction: 7,
         tension: 200,
-        useNativeDriver: true
+        useNativeDriver: USE_NATIVE_DRIVER
       }),
       Animated.spring(optionPulse, {
         toValue: 1,
         friction: 7,
         tension: 200,
-        useNativeDriver: true
+        useNativeDriver: USE_NATIVE_DRIVER
       })
     ]).start();
   };

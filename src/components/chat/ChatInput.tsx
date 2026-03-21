@@ -59,6 +59,7 @@ interface ChatImageAttachmentDraft {
 }
 
 const IMAGE_MEDIA_TYPES = new Set<ClaudeImageMediaType>(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 function useVoiceAnimations(isListening: boolean) {
   const pulse = useRef(new Animated.Value(1)).current;
@@ -67,8 +68,8 @@ function useVoiceAnimations(isListening: boolean) {
     if (isListening) {
       const loop = Animated.loop(
         Animated.sequence([
-          Animated.timing(pulse, { toValue: 1.08, duration: 380, useNativeDriver: true }),
-          Animated.timing(pulse, { toValue: 1, duration: 380, useNativeDriver: true })
+          Animated.timing(pulse, { toValue: 1.08, duration: 380, useNativeDriver: USE_NATIVE_DRIVER }),
+          Animated.timing(pulse, { toValue: 1, duration: 380, useNativeDriver: USE_NATIVE_DRIVER })
         ])
       );
       loop.start();
@@ -300,8 +301,8 @@ export function ChatInput({
 
     if (action === 'send') {
       Animated.sequence([
-        Animated.timing(sendScale, { toValue: 0.9, duration: 70, useNativeDriver: true }),
-        Animated.timing(sendScale, { toValue: 1, duration: 110, useNativeDriver: true })
+        Animated.timing(sendScale, { toValue: 0.9, duration: 70, useNativeDriver: USE_NATIVE_DRIVER }),
+        Animated.timing(sendScale, { toValue: 1, duration: 110, useNativeDriver: USE_NATIVE_DRIVER })
       ]).start();
       void handleSend();
       return;

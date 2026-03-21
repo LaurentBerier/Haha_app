@@ -1,10 +1,12 @@
 import { memo, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, Easing, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import { useStore } from '../../store/useStore';
 
 interface AmbientGlowProps {
   variant?: 'home' | 'mode';
 }
+
+const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 function AmbientGlowBase({ variant = 'home' }: AmbientGlowProps) {
   const reduceMotionPreference = useStore((state) => state.reduceMotion);
@@ -54,7 +56,7 @@ function AmbientGlowBase({ variant = 'home' }: AmbientGlowProps) {
           toValue: 1,
           duration: 68000,
           easing: Easing.linear,
-          useNativeDriver: true
+          useNativeDriver: USE_NATIVE_DRIVER
         })
       ),
       Animated.loop(
@@ -62,7 +64,7 @@ function AmbientGlowBase({ variant = 'home' }: AmbientGlowProps) {
           toValue: 1,
           duration: 44000,
           easing: Easing.linear,
-          useNativeDriver: true
+          useNativeDriver: USE_NATIVE_DRIVER
         })
       ),
       Animated.loop(
@@ -70,7 +72,7 @@ function AmbientGlowBase({ variant = 'home' }: AmbientGlowProps) {
           toValue: 1,
           duration: 30000,
           easing: Easing.linear,
-          useNativeDriver: true
+          useNativeDriver: USE_NATIVE_DRIVER
         })
       ),
       Animated.loop(
@@ -79,13 +81,13 @@ function AmbientGlowBase({ variant = 'home' }: AmbientGlowProps) {
             toValue: 1,
             duration: 3600,
             easing: Easing.inOut(Easing.quad),
-            useNativeDriver: true
+            useNativeDriver: USE_NATIVE_DRIVER
           }),
           Animated.timing(glowPulse, {
             toValue: 0,
             duration: 3600,
             easing: Easing.inOut(Easing.quad),
-            useNativeDriver: true
+            useNativeDriver: USE_NATIVE_DRIVER
           })
         ])
       )

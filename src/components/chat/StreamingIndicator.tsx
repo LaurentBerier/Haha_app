@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
 import { t } from '../../i18n';
 import { theme } from '../../theme';
+
+const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 export function StreamingIndicator() {
   const dotA = useRef(new Animated.Value(0.35)).current;
@@ -13,8 +15,8 @@ export function StreamingIndicator() {
       Animated.loop(
         Animated.sequence([
           Animated.delay(delayMs),
-          Animated.timing(value, { toValue: 1, duration: 260, useNativeDriver: true }),
-          Animated.timing(value, { toValue: 0.35, duration: 260, useNativeDriver: true })
+          Animated.timing(value, { toValue: 1, duration: 260, useNativeDriver: USE_NATIVE_DRIVER }),
+          Animated.timing(value, { toValue: 0.35, duration: 260, useNativeDriver: USE_NATIVE_DRIVER })
         ])
       );
 

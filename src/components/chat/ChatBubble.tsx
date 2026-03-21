@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ARTIST_IDS } from '../../config/constants';
 import { t } from '../../i18n';
@@ -22,6 +22,7 @@ interface ChatBubbleProps {
 }
 
 const VOICE_HYDRATION_ATTEMPTS = new Set<string>();
+const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMessage, audioPlayer }: ChatBubbleProps) {
   const router = useRouter();
@@ -158,13 +159,13 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
         toValue: 1,
         duration: 180,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true
+        useNativeDriver: USE_NATIVE_DRIVER
       }),
       Animated.timing(enterTranslateY, {
         toValue: 0,
         duration: 180,
         easing: Easing.out(Easing.cubic),
-        useNativeDriver: true
+        useNativeDriver: USE_NATIVE_DRIVER
       })
     ]).start();
   }, [enterOpacity, enterTranslateY]);
