@@ -51,6 +51,38 @@ function parsePageParams(query) {
   return { page, limit, tier, search };
 }
 
+async function listAllAuthUsers(supabaseAdmin, perPage = MAX_PAGE_LIMIT) {
+  const users = [];
+  let page = 1;
+  let total = null;
+
+  while (true) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+      page,
+      perPage
+    });
+
+    if (error) {
+      return { users: [], total: 0, error };
+    }
+
+    const batch = Array.isArray(data?.users) ? data.users : [];
+    users.push(...batch);
+
+    if (typeof data?.total === 'number') {
+      total = data.total;
+    }
+
+    if (batch.length < perPage || (typeof total === 'number' && users.length >= total)) {
+      break;
+    }
+
+    page += 1;
+  }
+
+  return { users, total: total ?? users.length, error: null };
+}
+
 module.exports = async function handler(req, res) {
   const requestId = attachRequestId(req, res);
   const corsResult = setCorsHeaders(req, res, { methods: 'GET, OPTIONS' });
@@ -95,22 +127,16 @@ module.exports = async function handler(req, res) {
   const { page, limit, tier, search } = parsePageParams(req.query);
 
   try {
-    // Fetch paginated auth users (includes email)
-    const { data: authPage, error: authError } = await supabaseAdmin.auth.admin.listUsers({
-      page: page + 1, // Supabase uses 1-based pages
-      perPage: limit
-    });
-
+    // Fetch all auth users first so search/tier filters work across the full dataset.
+    const { users: allAuthUsers, error: authError } = await listAllAuthUsers(supabaseAdmin);
     if (authError) {
       console.error(`[api/admin-users][${requestId}] Failed to list auth users`, authError);
       sendError(res, 500, authError.message, { code: 'SERVER_ERROR', requestId });
       return;
     }
 
-    let authUsers = authPage?.users ?? [];
-    const total = authPage?.total ?? authUsers.length;
-
     // Apply email search filter client-side (auth.admin.listUsers has no server-side search)
+    let authUsers = allAuthUsers;
     if (search) {
       authUsers = authUsers.filter((u) =>
         (typeof u.email === 'string' && u.email.toLowerCase().includes(search)) ||
@@ -119,7 +145,7 @@ module.exports = async function handler(req, res) {
     }
 
     if (authUsers.length === 0) {
-      res.status(200).json({ ok: true, users: [], total: search ? 0 : total, page, limit });
+      res.status(200).json({ ok: true, users: [], total: 0, page, limit });
       return;
     }
 
@@ -152,7 +178,7 @@ module.exports = async function handler(req, res) {
     }
 
     // Merge auth + profile data, skipping users filtered out by tier
-    const users = authUsers
+    const filteredUsers = authUsers
       .filter((u) => {
         if (!tier) {
           return true;
@@ -177,10 +203,14 @@ module.exports = async function handler(req, res) {
         };
       });
 
+    const total = filteredUsers.length;
+    const start = page * limit;
+    const users = filteredUsers.slice(start, start + limit);
+
     res.status(200).json({
       ok: true,
       users,
-      total: search ? users.length : total,
+      total,
       page,
       limit
     });
