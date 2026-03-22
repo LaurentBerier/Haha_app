@@ -80,7 +80,7 @@ export default function ChatScreen() {
     enabled: conversationModeEnabled && !isQuotaBlocked && isValidConversation,
     disabled: !isValidConversation || isQuotaBlocked,
     hasTypedDraft,
-    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
+    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading,
     onSend: (text) => {
       const normalized = text.trim();
       if (!normalized) {
@@ -221,7 +221,7 @@ export default function ChatScreen() {
             micState: conversationStatus,
             hint: conversationHint,
             onToggle: () => {
-              setConversationModeEnabled(!conversationModeEnabled);
+              setConversationModeEnabled(true);
             },
             onPauseListening: pauseListening,
             onResumeListening: resumeListening,

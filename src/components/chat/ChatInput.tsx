@@ -317,9 +317,7 @@ export function ChatInput({
       onSend: () => {},
       onEnableAndListen: () => {
         conversationMode.onToggle();
-        requestAnimationFrame(() => {
-          conversationMode.onResumeListening?.();
-        });
+        conversationMode.onResumeListening?.();
       },
       onPauseListening: () => {
         conversationMode.onPauseListening?.();

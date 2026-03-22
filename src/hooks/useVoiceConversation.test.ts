@@ -17,6 +17,9 @@ import {
   getVoiceConversationHint,
   getVoiceRecoveryPlan,
   getVoiceRecoveryDelayMs,
+  shouldArmBusyWhileQueuedResume,
+  shouldDeferQueuedManualResume,
+  shouldQueueManualResume,
   shouldResumeMicAfterTypedDraft,
   shouldAttemptAutoListen,
   shouldConsumeVoiceRecoveryBudget
@@ -137,6 +140,86 @@ describe('useVoiceConversation helpers', () => {
         hasTypedDraft: true,
         status: 'paused_manual',
         hasActiveSession: true
+      })
+    ).toBe(false);
+  });
+
+  it('queues manual resume until mode is re-enabled or playback/text locks are cleared', () => {
+    expect(
+      shouldQueueManualResume({
+        enabled: false,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: false
+      })
+    ).toBe(true);
+
+    expect(
+      shouldQueueManualResume({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: true,
+        isPlaying: false
+      })
+    ).toBe(true);
+
+    expect(
+      shouldQueueManualResume({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: true
+      })
+    ).toBe(true);
+  });
+
+  it('does not queue manual resume when conversation is hard-disabled', () => {
+    expect(
+      shouldQueueManualResume({
+        enabled: true,
+        disabled: true,
+        hasTypedDraft: false,
+        isPlaying: false
+      })
+    ).toBe(false);
+  });
+
+  it('arms assistant-busy UI when queued resume is blocked only by audio playback', () => {
+    expect(
+      shouldArmBusyWhileQueuedResume({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: true
+      })
+    ).toBe(true);
+
+    expect(
+      shouldArmBusyWhileQueuedResume({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: true,
+        isPlaying: true
+      })
+    ).toBe(false);
+  });
+
+  it('defer queued resume while blocked, then allows flush once blockers are gone', () => {
+    expect(
+      shouldDeferQueuedManualResume({
+        isPlaying: true,
+        startInFlight: false,
+        hasActiveSession: false,
+        hasRecoveryTimer: false
+      })
+    ).toBe(true);
+
+    expect(
+      shouldDeferQueuedManualResume({
+        isPlaying: false,
+        startInFlight: false,
+        hasActiveSession: false,
+        hasRecoveryTimer: false
       })
     ).toBe(false);
   });

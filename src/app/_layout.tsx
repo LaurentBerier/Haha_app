@@ -527,7 +527,7 @@ export default function RootLayout() {
                         micState: globalConversationStatus,
                         hint: globalConversationHint,
                         onToggle: () => {
-                          setConversationModeEnabled(!conversationModeEnabled);
+                          setConversationModeEnabled(true);
                         },
                         onPauseListening: pauseGlobalConversation,
                         onResumeListening: resumeGlobalConversation,

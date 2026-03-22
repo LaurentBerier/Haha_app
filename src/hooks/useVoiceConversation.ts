@@ -72,6 +72,20 @@ interface DraftResumeState {
   hasActiveSession: boolean;
 }
 
+interface ManualResumeQueueState {
+  enabled: boolean;
+  disabled: boolean;
+  hasTypedDraft: boolean;
+  isPlaying: boolean;
+}
+
+interface PendingManualResumeBlockersState {
+  isPlaying: boolean;
+  startInFlight: boolean;
+  hasActiveSession: boolean;
+  hasRecoveryTimer: boolean;
+}
+
 type VoiceConversationAction =
   | { type: 'set_off' }
   | { type: 'starting' }
@@ -265,6 +279,22 @@ export function shouldResumeMicAfterTypedDraft(state: DraftResumeState): boolean
     state.status === 'recovering' ||
     state.status === 'assistant_busy'
   );
+}
+
+export function shouldQueueManualResume(state: ManualResumeQueueState): boolean {
+  if (state.disabled) {
+    return false;
+  }
+
+  return !state.enabled || state.hasTypedDraft || state.isPlaying;
+}
+
+export function shouldArmBusyWhileQueuedResume(state: ManualResumeQueueState): boolean {
+  return !state.disabled && state.enabled && !state.hasTypedDraft && state.isPlaying;
+}
+
+export function shouldDeferQueuedManualResume(state: PendingManualResumeBlockersState): boolean {
+  return state.isPlaying || state.startInFlight || state.hasActiveSession || state.hasRecoveryTimer;
 }
 
 export function useVoiceConversation({
@@ -614,16 +644,13 @@ export function useVoiceConversation({
   useEffect(() => {
     if (!enabled || disabled) {
       resumeAfterTypedDraftRef.current = false;
-      pendingManualResumeRef.current = false;
+      if (disabled) {
+        pendingManualResumeRef.current = false;
+      }
       clearRecoveryTimer();
       clearSilenceTimer();
       stopActiveSession();
-
-      if (isLockedMicStatus(stateRef.current.status)) {
-        clearTranscript();
-      } else {
-        dispatch({ type: 'set_off' });
-      }
+      dispatch({ type: 'set_off' });
       return;
     }
 
@@ -633,7 +660,6 @@ export function useVoiceConversation({
         status: stateRef.current.status,
         hasActiveSession: Boolean(activeSessionRef.current)
       });
-      pendingManualResumeRef.current = false;
       clearRecoveryTimer();
       clearSilenceTimer();
       stopActiveSession();
@@ -646,7 +672,17 @@ export function useVoiceConversation({
     }
 
     if (pendingManualResumeRef.current) {
-      if (isPlaying || startInFlightRef.current || activeSessionRef.current || recoveryTimerRef.current) {
+      if (
+        shouldDeferQueuedManualResume({
+          isPlaying,
+          startInFlight: startInFlightRef.current,
+          hasActiveSession: Boolean(activeSessionRef.current),
+          hasRecoveryTimer: Boolean(recoveryTimerRef.current)
+        })
+      ) {
+        if (shouldArmBusyWhileQueuedResume({ enabled, disabled, hasTypedDraft, isPlaying })) {
+          dispatch({ type: 'assistant_busy' });
+        }
         return;
       }
 
@@ -731,16 +767,35 @@ export function useVoiceConversation({
   }, [clearRecoveryTimer, clearSilenceTimer, stopActiveSession]);
 
   const resumeListening = useCallback(() => {
-    if (!enabledRef.current || disabledRef.current) {
+    if (disabledRef.current) {
       pendingManualResumeRef.current = false;
       return;
     }
 
-    if (hasTypedDraftRef.current || isPlayingRef.current) {
-      pendingManualResumeRef.current = true;
-      logVoiceDebug('manual_resume_queued', {
+    if (
+      shouldQueueManualResume({
+        enabled: enabledRef.current,
+        disabled: disabledRef.current,
         hasTypedDraft: hasTypedDraftRef.current,
-        isPlaying: isPlayingRef.current,
+        isPlaying: isPlayingRef.current
+      })
+    ) {
+      const queueState = {
+        enabled: enabledRef.current,
+        disabled: disabledRef.current,
+        hasTypedDraft: hasTypedDraftRef.current,
+        isPlaying: isPlayingRef.current
+      };
+      pendingManualResumeRef.current = true;
+      hasUserActivatedListeningRef.current = true;
+      if (shouldArmBusyWhileQueuedResume(queueState)) {
+        dispatch({ type: 'assistant_busy' });
+      }
+      logVoiceDebug('manual_resume_queued', {
+        enabled: queueState.enabled,
+        hasTypedDraft: queueState.hasTypedDraft,
+        isPlaying: queueState.isPlaying,
+        armedBusy: shouldArmBusyWhileQueuedResume(queueState),
         fromStatus: stateRef.current.status
       });
       return;

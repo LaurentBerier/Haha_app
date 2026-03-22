@@ -923,7 +923,7 @@ export default function ModeSelectHomeScreen() {
     enabled: isValidConversation && conversationModeEnabled && !isQuotaBlocked,
     disabled: !isValidConversation || isQuotaBlocked,
     hasTypedDraft,
-    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
+    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading,
     onSend: (text) => {
       const normalized = text.trim();
       if (!normalized) {
@@ -1635,7 +1635,7 @@ export default function ModeSelectHomeScreen() {
                 micState: conversationStatus,
                 hint: conversationHint,
                 onToggle: () => {
-                  setConversationModeEnabled(!conversationModeEnabled);
+                  setConversationModeEnabled(true);
                 },
                 onPauseListening: handlePauseListening,
                 onResumeListening: resumeListening,
