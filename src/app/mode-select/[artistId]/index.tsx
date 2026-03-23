@@ -1233,21 +1233,33 @@ export default function ModeSelectHomeScreen() {
       : 'Cathy parle...';
   const isNativeMobile = Platform.OS === 'ios' || Platform.OS === 'android';
   const fallbackOverlayTop = Math.floor(
-    viewportHeight * (isNativeMobile && shouldCompactModeGrid ? 0.3 : Platform.OS === 'ios' ? 0.58 : 0.54)
+    viewportHeight * (
+      shouldCompactModeGrid
+        ? isNativeMobile
+          ? 0.3
+          : 0.32
+        : Platform.OS === 'ios'
+          ? 0.58
+          : 0.54
+    )
   );
   const measuredOverlayTop =
     typeof categoryGridBottomY === 'number' ? Math.ceil(categoryGridBottomY + theme.spacing.sm) : fallbackOverlayTop;
-  const mobileCompactOverlayMinTop = Math.max(theme.spacing.xl * 2, Math.floor(viewportHeight * 0.18));
-  const minOverlayTop = Math.floor(viewportHeight * 0.46);
+  const compactOverlayMinTop = Math.max(
+    theme.spacing.xl * 2,
+    Math.floor(viewportHeight * (isNativeMobile ? 0.18 : 0.2))
+  );
+  const expandedOverlayMinTop = Math.floor(viewportHeight * 0.46);
+  const minOverlayTop = shouldCompactModeGrid ? compactOverlayMinTop : expandedOverlayMinTop;
   const maxOverlayTop = Math.floor(viewportHeight * 0.75);
-  const conversationOverlayTop =
-    isNativeMobile && shouldCompactModeGrid
-      ? Math.max(measuredOverlayTop, mobileCompactOverlayMinTop)
-      : Math.min(Math.max(measuredOverlayTop, minOverlayTop), maxOverlayTop);
+  const conversationOverlayTop = Math.min(Math.max(measuredOverlayTop, minOverlayTop), maxOverlayTop);
   const chatWindowMaxHeight = Math.max(
     160,
     Math.floor(viewportHeight - modeSelectInputOffset - conversationOverlayTop - theme.spacing.xs)
   );
+  const modeSelectScreenPaddingBottom = shouldCompactModeGrid
+    ? theme.spacing.xl
+    : chatWindowMaxHeight + modeSelectInputOffset + theme.spacing.xl;
 
   const measureCategoryGridBottom = useCallback(() => {
     const rootNode = rootLayoutRef.current;
@@ -2080,10 +2092,11 @@ export default function ModeSelectHomeScreen() {
         <ScrollView
           testID="mode-select-screen"
           style={styles.list}
+          scrollEnabled={!shouldCompactModeGrid}
           contentContainerStyle={[
             styles.content,
             {
-              paddingBottom: chatWindowMaxHeight + modeSelectInputOffset + theme.spacing.xl
+              paddingBottom: modeSelectScreenPaddingBottom
             }
           ]}
         >
