@@ -1,5 +1,6 @@
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
+const { kv } = require('@vercel/kv');
 const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
 const { normalizeAccountType, resolveEffectiveAccountType } = require('./_account-tier');
 const { updateUsageEventTokens } = require('./_quota-utils');
@@ -14,7 +15,6 @@ const MAX_SYSTEM_PROMPT_CHARS = 12000;
 const MAX_IMAGE_BYTES = 3_000_000;
 const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
 const DEFAULT_CONTEXT_FETCH_TIMEOUT_MS = 4_500;
-const CONTEXT_CACHE_TTL_MS = 30 * 60_000;
 const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const IP_API_URL = 'https://ipapi.co';
 const DEFAULT_IP_GEO_TIMEOUT_MS = 3_000;
@@ -28,6 +28,9 @@ const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 30;
 const CLAUDE_LIMITS_RPC_NAME = 'enforce_claude_limits';
 const MONTHLY_QUOTA_CACHE_TTL_MS = 5_000;
+const MONTHLY_QUOTA_CACHE_TTL_SECONDS = Math.max(1, Math.ceil(MONTHLY_QUOTA_CACHE_TTL_MS / 1000));
+const CONTEXT_CACHE_TTL_SECONDS = 30 * 60;
+const RATE_LIMIT_BUCKET_MS = 60_000;
 const DEFAULT_ARTIST_ID = 'cathy-gauthier';
 const DEFAULT_MODE_ID = 'default';
 const DEFAULT_MONTHLY_CAPS = {
@@ -319,9 +322,6 @@ const PROFILE_HOROSCOPE_LABEL_EN = {
   aquarius: 'Aquarius',
   pisces: 'Pisces'
 };
-const monthlyQuotaCache = new Map();
-const inMemoryRateLimitCache = new Map();
-const promptContextCache = new Map();
 let profileSelectSupportsPreferredNameColumn = true;
 
 function isRecord(value) {
@@ -1168,6 +1168,165 @@ function parsePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function isKvEnvironmentConfigured() {
+  const hasConnectionString = typeof process.env.KV_URL === 'string' && process.env.KV_URL.trim().length > 0;
+  const hasRestPair =
+    typeof process.env.KV_REST_API_URL === 'string' &&
+    process.env.KV_REST_API_URL.trim().length > 0 &&
+    typeof process.env.KV_REST_API_TOKEN === 'string' &&
+    process.env.KV_REST_API_TOKEN.trim().length > 0;
+  const hasUpstashPair =
+    typeof process.env.UPSTASH_REDIS_REST_URL === 'string' &&
+    process.env.UPSTASH_REDIS_REST_URL.trim().length > 0 &&
+    typeof process.env.UPSTASH_REDIS_REST_TOKEN === 'string' &&
+    process.env.UPSTASH_REDIS_REST_TOKEN.trim().length > 0;
+  return hasConnectionString || hasRestPair || hasUpstashPair;
+}
+
+function shouldAllowKvFallbackToDatabase() {
+  return process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development';
+}
+
+function parseFiniteNonNegativeInt(value) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function buildPromptContextKvKey(cacheKey) {
+  return `prompt_context:${cacheKey}`;
+}
+
+function buildMonthlyQuotaKvKey(userId, monthStartIso) {
+  return `quota:${userId}:${monthStartIso}`;
+}
+
+function buildRateLimitMinuteKey(userId, minuteBucket) {
+  return `ratelimit:${userId}:${minuteBucket}`;
+}
+
+async function readPromptContextFromKv(cacheKey, requestId) {
+  if (!isKvEnvironmentConfigured()) {
+    return null;
+  }
+
+  try {
+    const cached = await kv.get(buildPromptContextKvKey(cacheKey));
+    if (!isRecord(cached)) {
+      return null;
+    }
+
+    const weather = isRecord(cached.weather) ? cached.weather : null;
+    const headlines = Array.isArray(cached.headlines) ? cached.headlines.filter((item) => typeof item === 'string') : [];
+    return {
+      weather:
+        weather &&
+        typeof weather.temperature === 'number' &&
+        Number.isFinite(weather.temperature) &&
+        typeof weather.description === 'string'
+          ? { temperature: weather.temperature, description: weather.description }
+          : null,
+      headlines: headlines.slice(0, 3)
+    };
+  } catch (error) {
+    console.error(`[api/claude][${requestId}] Prompt context KV read failed`, error);
+    return null;
+  }
+}
+
+async function writePromptContextToKv(cacheKey, value, requestId) {
+  if (!isKvEnvironmentConfigured()) {
+    return;
+  }
+
+  try {
+    await kv.set(buildPromptContextKvKey(cacheKey), value, { ex: CONTEXT_CACHE_TTL_SECONDS });
+  } catch (error) {
+    console.error(`[api/claude][${requestId}] Prompt context KV write failed`, error);
+  }
+}
+
+async function readMonthlyQuotaFromKv(userId, monthStartIso, requestId) {
+  if (!isKvEnvironmentConfigured()) {
+    return null;
+  }
+
+  try {
+    const cached = await kv.get(buildMonthlyQuotaKvKey(userId, monthStartIso));
+    const parsed = parseFiniteNonNegativeInt(cached);
+    return parsed === null ? null : parsed;
+  } catch (error) {
+    console.error(`[api/claude][${requestId}] Monthly quota KV read failed`, error);
+    return null;
+  }
+}
+
+async function writeMonthlyQuotaToKv(userId, monthStartIso, count, requestId) {
+  if (!isKvEnvironmentConfigured()) {
+    return;
+  }
+
+  const normalizedCount = Math.max(0, Number.isFinite(count) ? Math.floor(count) : 0);
+  try {
+    await kv.set(buildMonthlyQuotaKvKey(userId, monthStartIso), normalizedCount, {
+      ex: MONTHLY_QUOTA_CACHE_TTL_SECONDS
+    });
+  } catch (error) {
+    console.error(`[api/claude][${requestId}] Monthly quota KV write failed`, error);
+  }
+}
+
+async function enforceKvRateLimit(userId, nowMs, windowMs, maxRequests, requestId) {
+  if (!isKvEnvironmentConfigured()) {
+    return {
+      ok: false,
+      kvUnavailable: true,
+      status: 500,
+      code: 'SERVER_MISCONFIGURED',
+      message: 'Rate limit store unavailable.'
+    };
+  }
+
+  const safeUserId = typeof userId === 'string' && userId ? userId : 'anonymous';
+  const currentMinute = Math.floor(nowMs / RATE_LIMIT_BUCKET_MS);
+  const minuteProgressRatio = (nowMs % RATE_LIMIT_BUCKET_MS) / RATE_LIMIT_BUCKET_MS;
+  const currentKey = buildRateLimitMinuteKey(safeUserId, currentMinute);
+  const previousKey = buildRateLimitMinuteKey(safeUserId, currentMinute - 1);
+
+  try {
+    const currentCount = await kv.incr(currentKey);
+    if (currentCount === 1) {
+      const ttlSeconds = Math.max(1, Math.ceil(windowMs / 1000) + 30);
+      await kv.expire(currentKey, ttlSeconds);
+    }
+
+    const previousRaw = await kv.get(previousKey);
+    const previousCount = parseFiniteNonNegativeInt(previousRaw) ?? 0;
+    const effectiveCount = currentCount + previousCount * (1 - minuteProgressRatio);
+
+    if (effectiveCount > maxRequests) {
+      return {
+        ok: false,
+        kvUnavailable: false,
+        status: 429,
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Rate limit exceeded.',
+        retryAfterSeconds: Math.max(1, Math.ceil(windowMs / 1000))
+      };
+    }
+
+    return { ok: true, kvUnavailable: false, retryAfterSeconds: 0 };
+  } catch (error) {
+    console.error(`[api/claude][${requestId}] KV rate limit failed`, error);
+    return {
+      ok: false,
+      kvUnavailable: true,
+      status: 500,
+      code: 'SERVER_MISCONFIGURED',
+      message: 'Rate limit store unavailable.'
+    };
+  }
+}
+
 async function fetchJsonWithTimeout(url, timeoutMs) {
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
@@ -1382,12 +1541,11 @@ function getPromptContextCacheKey(language, coords) {
   return `${typeof language === 'string' ? language.toLowerCase() : 'fr-ca'}:${roundedLat}:${roundedLon}`;
 }
 
-async function getContextData(language, coords) {
+async function getContextData(language, coords, requestId) {
   const cacheKey = getPromptContextCacheKey(language, coords);
-  const now = Date.now();
-  const cached = promptContextCache.get(cacheKey);
-  if (cached && now - cached.cachedAt < CONTEXT_CACHE_TTL_MS) {
-    return cached.value;
+  const cached = await readPromptContextFromKv(cacheKey, requestId);
+  if (cached) {
+    return cached;
   }
 
   const timeoutMs = parsePositiveInt(process.env.CLAUDE_CONTEXT_FETCH_TIMEOUT_MS, DEFAULT_CONTEXT_FETCH_TIMEOUT_MS);
@@ -1435,14 +1593,11 @@ async function getContextData(language, coords) {
     weather,
     headlines: headlines.slice(0, 3)
   };
-  promptContextCache.set(cacheKey, {
-    value,
-    cachedAt: now
-  });
+  await writePromptContextToKv(cacheKey, value, requestId);
   return value;
 }
 
-async function buildCurrentContextSection(language, coordsInput) {
+async function buildCurrentContextSection(language, coordsInput, requestId = 'context') {
   if (process.env.CLAUDE_CONTEXT_ENABLED === '0' || process.env.NODE_ENV === 'test') {
     return '';
   }
@@ -1453,7 +1608,7 @@ async function buildCurrentContextSection(language, coordsInput) {
 
   let contextData = { weather: null, headlines: [] };
   try {
-    contextData = await getContextData(language, coords);
+    contextData = await getContextData(language, coords, requestId);
   } catch {
     contextData = { weather: null, headlines: [] };
   }
@@ -1631,39 +1786,12 @@ function isMissingMonthlyCounterColumnError(error) {
   return message.includes('monthly_message_count') || message.includes('monthly_reset_at');
 }
 
-function getMonthlyQuotaCacheKey(userId, monthStartIso) {
-  return `${userId}:${monthStartIso}`;
+async function getMonthlyQuotaFromCache(userId, monthStartIso, requestId) {
+  return readMonthlyQuotaFromKv(userId, monthStartIso, requestId);
 }
 
-function getMonthlyQuotaFromCache(userId, monthStartIso) {
-  const key = getMonthlyQuotaCacheKey(userId, monthStartIso);
-  const cached = monthlyQuotaCache.get(key);
-  if (!cached || Date.now() - cached.updatedAtMs > MONTHLY_QUOTA_CACHE_TTL_MS) {
-    return null;
-  }
-
-  return cached.count;
-}
-
-function setMonthlyQuotaCache(userId, monthStartIso, count) {
-  const key = getMonthlyQuotaCacheKey(userId, monthStartIso);
-  monthlyQuotaCache.set(key, {
-    count: Math.max(0, Number.isFinite(count) ? Math.floor(count) : 0),
-    updatedAtMs: Date.now()
-  });
-}
-
-function incrementMonthlyQuotaCache(userId, monthStartIso) {
-  const key = getMonthlyQuotaCacheKey(userId, monthStartIso);
-  const cached = monthlyQuotaCache.get(key);
-  if (!cached) {
-    return;
-  }
-
-  monthlyQuotaCache.set(key, {
-    count: cached.count + 1,
-    updatedAtMs: Date.now()
-  });
+async function setMonthlyQuotaCache(userId, monthStartIso, count, requestId) {
+  await writeMonthlyQuotaToKv(userId, monthStartIso, count, requestId);
 }
 
 function isMissingUsageEventsRequestIdColumn(error) {
@@ -1674,25 +1802,6 @@ function isMissingUsageEventsRequestIdColumn(error) {
 
   const message = isRecord(error) && typeof error.message === 'string' ? error.message.toLowerCase() : '';
   return message.includes('request_id');
-}
-
-function isRateLimitStoreUnavailableError(error) {
-  if (!isRecord(error)) {
-    return false;
-  }
-
-  const code = typeof error.code === 'string' ? error.code : '';
-  if (code === '42P01' || code === '42703' || code === '42501') {
-    return true;
-  }
-
-  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
-  return (
-    message.includes('usage_events') ||
-    message.includes('request_id') ||
-    message.includes('permission denied') ||
-    message.includes('does not exist')
-  );
 }
 
 function isMissingLimitsRpcError(error) {
@@ -1707,29 +1816,6 @@ function isMissingLimitsRpcError(error) {
 
   const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
   return message.includes(CLAUDE_LIMITS_RPC_NAME) && (message.includes('not found') || message.includes('could not find'));
-}
-
-function enforceInMemoryRateLimit(userId, nowMs, windowMs, maxRequests) {
-  const key = typeof userId === 'string' && userId ? userId : 'anonymous';
-  const previous = inMemoryRateLimitCache.get(key);
-  const safePrevious = Array.isArray(previous) ? previous : [];
-  const windowStartMs = nowMs - windowMs;
-  const recent = safePrevious.filter((ts) => typeof ts === 'number' && ts >= windowStartMs);
-
-  if (recent.length >= maxRequests) {
-    inMemoryRateLimitCache.set(key, recent);
-    return {
-      ok: false,
-      status: 429,
-      code: 'RATE_LIMIT_EXCEEDED',
-      message: 'Rate limit exceeded.',
-      retryAfterSeconds: Math.max(1, Math.ceil(windowMs / 1000))
-    };
-  }
-
-  recent.push(nowMs);
-  inMemoryRateLimitCache.set(key, recent);
-  return { ok: true, retryAfterSeconds: 0 };
 }
 
 async function readProfileMonthlyCounter(supabaseAdmin, userId, requestId) {
@@ -1820,11 +1906,11 @@ async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId
     const monthlyResetMs = Date.parse(profileCounter.monthlyResetAt);
     const isCurrentMonth = Number.isFinite(monthlyResetMs) && monthlyResetMs >= monthStartMs;
     const used = isCurrentMonth ? profileCounter.monthlyMessageCount : 0;
-    setMonthlyQuotaCache(userId, monthStartIso, used);
+    await setMonthlyQuotaCache(userId, monthStartIso, used, requestId);
     return buildResult(used, 'profile');
   }
 
-  const cachedUsage = getMonthlyQuotaFromCache(userId, monthStartIso);
+  const cachedUsage = await getMonthlyQuotaFromCache(userId, monthStartIso, requestId);
   if (cachedUsage !== null) {
     return buildResult(cachedUsage, 'usage_events');
   }
@@ -1846,7 +1932,7 @@ async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId
     };
   }
 
-  setMonthlyQuotaCache(userId, monthStartIso, count ?? 0);
+  await setMonthlyQuotaCache(userId, monthStartIso, count ?? 0, requestId);
 
   return buildResult(count ?? 0, 'usage_events');
 }
@@ -1912,7 +1998,7 @@ async function enforceLimitsViaRpc(supabaseAdmin, options) {
 
   if (row.allowed === true) {
     if (typeof row.monthly_used === 'number' && Number.isFinite(row.monthly_used) && monthlyCap !== null) {
-      setMonthlyQuotaCache(options.userId, monthStartIso, row.monthly_used);
+      await setMonthlyQuotaCache(options.userId, monthStartIso, row.monthly_used, options.requestId);
     }
 
     return {
@@ -1958,9 +2044,12 @@ async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuo
     : getMonthStartIso();
 
   const applyMonthlyCounterUpdate = async () => {
+    const used = monthlyQuota && typeof monthlyQuota.used === 'number' && Number.isFinite(monthlyQuota.used)
+      ? monthlyQuota.used
+      : 0;
+    const nextCount = used + 1;
+
     if (monthlyQuota && monthlyQuota.source === 'profile') {
-      const used = typeof monthlyQuota.used === 'number' && Number.isFinite(monthlyQuota.used) ? monthlyQuota.used : 0;
-      const nextCount = used + 1;
       const writeResult = await writeProfileMonthlyCounter(supabaseAdmin, userId, monthStartIso, nextCount, requestId);
       if (!writeResult.ok) {
         return {
@@ -1970,13 +2059,59 @@ async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuo
           message: 'Usage store unavailable.'
         };
       }
-      setMonthlyQuotaCache(userId, monthStartIso, nextCount);
-    } else {
-      incrementMonthlyQuotaCache(userId, monthStartIso);
     }
 
+    await setMonthlyQuotaCache(userId, monthStartIso, nextCount, requestId);
     return { ok: true, retryAfterSeconds: 0 };
   };
+
+  const writeUsageEvent = async () => {
+    const insertPayload = {
+      user_id: userId,
+      endpoint: 'claude',
+      request_id: requestId,
+      created_at: nowIso
+    };
+
+    let { error: insertError } = await supabaseAdmin.from('usage_events').insert(insertPayload);
+    if (insertError && isMissingUsageEventsRequestIdColumn(insertError)) {
+      const legacyInsertPayload = {
+        user_id: userId,
+        endpoint: 'claude',
+        created_at: nowIso
+      };
+      ({ error: insertError } = await supabaseAdmin.from('usage_events').insert(legacyInsertPayload));
+    }
+
+    if (insertError) {
+      console.error(`[api/claude][${requestId}] Failed to write usage_events`, insertError);
+      return {
+        ok: false,
+        status: 500,
+        code: 'SERVER_MISCONFIGURED',
+        message: 'Rate limit store unavailable.'
+      };
+    }
+
+    return { ok: true };
+  };
+
+  const kvResult = await enforceKvRateLimit(userId, now, windowMs, maxRequests, requestId);
+  if (!kvResult.ok) {
+    if (kvResult.status === 429) {
+      return kvResult;
+    }
+
+    if (!(kvResult.kvUnavailable && shouldAllowKvFallbackToDatabase())) {
+      return kvResult;
+    }
+  } else {
+    const usageWrite = await writeUsageEvent();
+    if (!usageWrite.ok) {
+      return usageWrite;
+    }
+    return applyMonthlyCounterUpdate();
+  }
 
   const usageCountResult =
     options.recentUsageCount && typeof options.recentUsageCount === 'object'
@@ -1985,17 +2120,7 @@ async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuo
 
   const count = typeof usageCountResult.count === 'number' ? usageCountResult.count : 0;
   const countError = usageCountResult.error;
-
   if (countError) {
-    if (isRateLimitStoreUnavailableError(countError)) {
-      console.error(`[api/claude][${requestId}] Falling back to in-memory rate limit (count)`, countError);
-      const fallbackResult = enforceInMemoryRateLimit(userId, now, windowMs, maxRequests);
-      if (!fallbackResult.ok) {
-        return fallbackResult;
-      }
-      return applyMonthlyCounterUpdate();
-    }
-
     console.error(`[api/claude][${requestId}] Failed to read usage_events`, countError);
     return {
       ok: false,
@@ -2015,41 +2140,9 @@ async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuo
     };
   }
 
-  const insertPayload = {
-    user_id: userId,
-    endpoint: 'claude',
-    request_id: requestId,
-    created_at: nowIso
-  };
-
-  let { error: insertError } = await supabaseAdmin.from('usage_events').insert(insertPayload);
-  if (insertError && isMissingUsageEventsRequestIdColumn(insertError)) {
-    const legacyInsertPayload = {
-      user_id: userId,
-      endpoint: 'claude',
-      created_at: nowIso
-    };
-    ({ error: insertError } = await supabaseAdmin.from('usage_events').insert(legacyInsertPayload));
-  }
-
-  if (insertError) {
-    if (isRateLimitStoreUnavailableError(insertError)) {
-      console.error(`[api/claude][${requestId}] Falling back to in-memory rate limit (insert)`, insertError);
-      const fallbackResult = enforceInMemoryRateLimit(userId, now, windowMs, maxRequests);
-      if (!fallbackResult.ok) {
-        return fallbackResult;
-      }
-
-      return applyMonthlyCounterUpdate();
-    }
-
-    console.error(`[api/claude][${requestId}] Failed to write usage_events`, insertError);
-    return {
-      ok: false,
-      status: 500,
-      code: 'SERVER_MISCONFIGURED',
-      message: 'Rate limit store unavailable.'
-    };
+  const usageWrite = await writeUsageEvent();
+  if (!usageWrite.ok) {
+    return usageWrite;
   }
 
   return applyMonthlyCounterUpdate();
@@ -2351,7 +2444,7 @@ module.exports = async function handler(req, res) {
   let currentContextSection = '';
   if (!promptContext.tutorialMode) {
     const resolvedCoords = await resolvePromptContextCoords(req, requestId);
-    currentContextSection = await buildCurrentContextSection(promptContext.language, resolvedCoords);
+    currentContextSection = await buildCurrentContextSection(promptContext.language, resolvedCoords, requestId);
   }
   payload.system = currentContextSection
     ? buildServerSystemPrompt(

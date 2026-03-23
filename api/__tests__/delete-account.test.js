@@ -38,8 +38,10 @@ describe('api/delete-account', () => {
 
   it('rejects requests without bearer token', async () => {
     const getUser = jest.fn();
+    const rpc = jest.fn();
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => ({
+        rpc,
         auth: {
           getUser,
           admin: { deleteUser: jest.fn() }
@@ -61,8 +63,10 @@ describe('api/delete-account', () => {
   });
 
   it('rejects invalid bearer token', async () => {
+    const rpc = jest.fn();
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => ({
+        rpc,
         auth: {
           getUser: jest.fn().mockResolvedValue({
             data: { user: null },
@@ -86,8 +90,10 @@ describe('api/delete-account', () => {
 
   it('deletes user when token is valid', async () => {
     const deleteUser = jest.fn().mockResolvedValue({ error: null });
+    const rpc = jest.fn().mockResolvedValue({ error: null });
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => ({
+        rpc,
         auth: {
           getUser: jest.fn().mockResolvedValue({
             data: { user: { id: 'user-123' } },
@@ -105,15 +111,18 @@ describe('api/delete-account', () => {
 
     await handler(req, res);
 
+    expect(rpc).toHaveBeenCalledWith('delete_account_cascade', expect.objectContaining({ p_user_id: 'user-123' }));
     expect(deleteUser).toHaveBeenCalledWith('user-123');
     expect(res.statusCode).toBe(200);
     expect(res.payload).toEqual({ ok: true, deletedUserId: 'user-123' });
   });
 
-  it('returns 500 when Supabase delete fails', async () => {
-    const deleteUser = jest.fn().mockResolvedValue({ error: { message: 'delete failed' } });
+  it('returns 500 when account cleanup RPC fails', async () => {
+    const deleteUser = jest.fn().mockResolvedValue({ error: null });
+    const rpc = jest.fn().mockResolvedValue({ error: { message: 'cleanup failed' } });
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => ({
+        rpc,
         auth: {
           getUser: jest.fn().mockResolvedValue({
             data: { user: { id: 'user-123' } },
@@ -131,6 +140,36 @@ describe('api/delete-account', () => {
 
     await handler(req, res);
 
+    expect(rpc).toHaveBeenCalledWith('delete_account_cascade', expect.objectContaining({ p_user_id: 'user-123' }));
+    expect(deleteUser).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(500);
+    expect(res.payload.error.code).toBe('SERVER_ERROR');
+  });
+
+  it('returns 500 when Supabase delete fails', async () => {
+    const deleteUser = jest.fn().mockResolvedValue({ error: { message: 'delete failed' } });
+    const rpc = jest.fn().mockResolvedValue({ error: null });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => ({
+        rpc,
+        auth: {
+          getUser: jest.fn().mockResolvedValue({
+            data: { user: { id: 'user-123' } },
+            error: null
+          }),
+          admin: { deleteUser }
+        }
+      }))
+    }));
+
+    const handler = require('../delete-account');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer good-token' }
+    });
+
+    await handler(req, res);
+
+    expect(rpc).toHaveBeenCalledWith('delete_account_cascade', expect.objectContaining({ p_user_id: 'user-123' }));
     expect(deleteUser).toHaveBeenCalledWith('user-123');
     expect(res.statusCode).toBe(500);
     expect(res.payload.error.code).toBe('SERVER_ERROR');

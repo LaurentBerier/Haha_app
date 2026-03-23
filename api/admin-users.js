@@ -46,41 +46,17 @@ function parsePageParams(query) {
     : DEFAULT_PAGE_LIMIT;
 
   const tier = typeof query?.tier === 'string' && query.tier ? query.tier : null;
-  const search = typeof query?.search === 'string' && query.search.trim() ? query.search.trim().toLowerCase() : null;
+  const search = typeof query?.search === 'string' && query.search.trim() ? query.search.trim() : null;
 
   return { page, limit, tier, search };
 }
 
-async function listAllAuthUsers(supabaseAdmin, perPage = MAX_PAGE_LIMIT) {
-  const users = [];
-  let page = 1;
-  let total = null;
-
-  while (true) {
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
-      page,
-      perPage
-    });
-
-    if (error) {
-      return { users: [], total: 0, error };
-    }
-
-    const batch = Array.isArray(data?.users) ? data.users : [];
-    users.push(...batch);
-
-    if (typeof data?.total === 'number') {
-      total = data.total;
-    }
-
-    if (batch.length === 0 || (typeof total === 'number' && users.length >= total)) {
-      break;
-    }
-
-    page += 1;
+function sanitizeSearchTerm(value) {
+  if (typeof value !== 'string') {
+    return '';
   }
 
-  return { users, total: total ?? users.length, error: null };
+  return value.replace(/[,%()']/g, ' ').trim();
 }
 
 module.exports = async function handler(req, res) {
@@ -127,85 +103,49 @@ module.exports = async function handler(req, res) {
   const { page, limit, tier, search } = parsePageParams(req.query);
 
   try {
-    // Fetch all auth users first so search/tier filters work across the full dataset.
-    const { users: allAuthUsers, error: authError } = await listAllAuthUsers(supabaseAdmin);
-    if (authError) {
-      console.error(`[api/admin-users][${requestId}] Failed to list auth users`, authError);
-      sendError(res, 500, authError.message, { code: 'SERVER_ERROR', requestId });
-      return;
-    }
-
-    // Apply email search filter client-side (auth.admin.listUsers has no server-side search)
-    let authUsers = allAuthUsers;
-    if (search) {
-      authUsers = authUsers.filter((u) =>
-        (typeof u.email === 'string' && u.email.toLowerCase().includes(search)) ||
-        u.id.toLowerCase().includes(search)
-      );
-    }
-
-    if (authUsers.length === 0) {
-      res.status(200).json({ ok: true, users: [], total: 0, page, limit });
-      return;
-    }
-
-    const userIds = authUsers.map((u) => u.id);
-
-    // Fetch profile data from the admin_user_list view for these users
-    let profileQuery = supabaseAdmin
+    const from = page * limit;
+    const to = from + limit - 1;
+    let usersQuery = supabaseAdmin
       .from('admin_user_list')
-      .select('*')
-      .in('id', userIds);
+      .select(
+        'id,id_text,email,auth_created_at,tier,messages_this_month,monthly_cap_override,monthly_reset_at,last_active_at,total_events',
+        { count: 'exact' }
+      );
 
     if (tier) {
-      profileQuery = profileQuery.eq('tier', tier);
+      usersQuery = usersQuery.eq('tier', tier);
     }
 
-    const { data: profileRows, error: profileError } = await profileQuery;
+    const safeSearch = sanitizeSearchTerm(search);
+    if (safeSearch) {
+      usersQuery = usersQuery.or(`email.ilike.%${safeSearch}%,id_text.ilike.%${safeSearch}%`);
+    }
 
-    if (profileError) {
-      console.error(`[api/admin-users][${requestId}] Failed to query admin_user_list`, profileError);
-      sendError(res, 500, profileError.message, { code: 'SERVER_ERROR', requestId });
+    usersQuery = usersQuery.order('auth_created_at', { ascending: false, nullsFirst: false }).range(from, to);
+    const { data: rows, error: usersError, count } = await usersQuery;
+    if (usersError) {
+      console.error(`[api/admin-users][${requestId}] Failed to query admin_user_list`, usersError);
+      sendError(res, 500, usersError.message, { code: 'SERVER_ERROR', requestId });
       return;
     }
 
-    // Build a lookup map from profile rows
-    const profileMap = new Map();
-    for (const row of (profileRows ?? [])) {
-      if (isRecord(row) && typeof row.id === 'string') {
-        profileMap.set(row.id, row);
-      }
-    }
+    const users = Array.isArray(rows)
+      ? rows
+          .filter((row) => isRecord(row) && typeof row.id === 'string')
+          .map((row) => ({
+            id: row.id,
+            email: typeof row.email === 'string' ? row.email : null,
+            createdAt: typeof row.auth_created_at === 'string' ? row.auth_created_at : null,
+            tier: typeof row.tier === 'string' ? row.tier : null,
+            messagesThisMonth: Number(row.messages_this_month ?? 0),
+            capOverride: typeof row.monthly_cap_override === 'number' ? row.monthly_cap_override : null,
+            resetAt: typeof row.monthly_reset_at === 'string' ? row.monthly_reset_at : null,
+            lastActiveAt: typeof row.last_active_at === 'string' ? row.last_active_at : null,
+            totalEvents: Number(row.total_events ?? 0)
+          }))
+      : [];
 
-    // Merge auth + profile data, skipping users filtered out by tier
-    const filteredUsers = authUsers
-      .filter((u) => {
-        if (!tier) {
-          return true;
-        }
-        const profile = profileMap.get(u.id);
-        return profile && profile.tier === tier;
-      })
-      .map((u) => {
-        const profile = profileMap.get(u.id);
-        return {
-          id: u.id,
-          email: typeof u.email === 'string' ? u.email : null,
-          createdAt: typeof u.created_at === 'string' ? u.created_at : null,
-          tier: profile ? (profile.tier ?? null) : null,
-          messagesThisMonth: profile ? Number(profile.messages_this_month ?? 0) : 0,
-          capOverride: profile && typeof profile.monthly_cap_override === 'number'
-            ? profile.monthly_cap_override
-            : null,
-          resetAt: profile ? (profile.monthly_reset_at ?? null) : null,
-          lastActiveAt: profile ? (profile.last_active_at ?? null) : null,
-          totalEvents: profile ? Number(profile.total_events ?? 0) : 0
-        };
-      });
-
-    const total = filteredUsers.length;
-    const start = page * limit;
-    const users = filteredUsers.slice(start, start + limit);
+    const total = typeof count === 'number' ? count : users.length;
 
     res.status(200).json({
       ok: true,

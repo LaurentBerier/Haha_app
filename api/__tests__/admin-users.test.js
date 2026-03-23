@@ -1,82 +1,103 @@
 const { createReqRes } = require('./testHelpers');
 
-function buildSupabaseMock({ authPages, profileRows, user } = {}) {
+function buildSupabaseMock({ rows, user } = {}) {
   const adminUser = user ?? { id: 'admin-1', app_metadata: { role: 'admin', account_type: 'admin' } };
-  const pages = authPages ?? [
+  const dataset = rows ?? [
     {
-      users: [
-        { id: 'user-1', email: 'alpha@example.com', created_at: '2026-03-20T00:00:00Z' },
-        { id: 'user-2', email: 'bravo@example.com', created_at: '2026-03-20T00:00:00Z' }
-      ],
-      total: 3
+      id: 'user-1',
+      id_text: 'user-1',
+      email: 'alpha@example.com',
+      auth_created_at: '2026-03-20T00:00:00Z',
+      tier: 'free',
+      messages_this_month: 1,
+      total_events: 1
     },
     {
-      users: [
-        { id: 'user-3', email: 'target@example.com', created_at: '2026-03-20T00:00:00Z' }
-      ],
-      total: 3
+      id: 'user-2',
+      id_text: 'user-2',
+      email: 'bravo@example.com',
+      auth_created_at: '2026-03-20T00:00:00Z',
+      tier: 'premium',
+      messages_this_month: 2,
+      total_events: 2
+    },
+    {
+      id: 'user-3',
+      id_text: 'user-3',
+      email: 'target@example.com',
+      auth_created_at: '2026-03-21T00:00:00Z',
+      tier: 'premium',
+      messages_this_month: 3,
+      total_events: 3
     }
-  ];
-  const rows = profileRows ?? [
-    { id: 'user-1', tier: 'free', messages_this_month: 1, total_events: 1 },
-    { id: 'user-2', tier: 'free', messages_this_month: 2, total_events: 2 },
-    { id: 'user-3', tier: 'premium', messages_this_month: 3, total_events: 3 }
   ];
 
   const getUser = jest.fn().mockResolvedValue({
     data: { user: adminUser },
     error: adminUser ? null : { message: 'invalid jwt' }
   });
-  const listUsers = jest.fn().mockImplementation(({ page }) =>
-    Promise.resolve({
-      data: pages[page - 1] ?? { users: [], total: pages.reduce((sum, entry) => sum + entry.users.length, 0) },
-      error: null
-    })
-  );
 
   const from = jest.fn((table) => {
     if (table !== 'admin_user_list') {
       throw new Error(`Unexpected table: ${table}`);
     }
 
-    const state = { ids: null, tier: null };
-    return {
-      select: () => ({
-        in: (column, ids) => {
-          expect(column).toBe('id');
-          state.ids = ids;
-          return {
-            eq: (eqColumn, value) => {
-              expect(eqColumn).toBe('tier');
-              state.tier = value;
-              return Promise.resolve({
-                data: rows.filter((row) => state.ids.includes(row.id) && row.tier === state.tier),
-                error: null
-              });
-            },
-            then(resolve, reject) {
-              return Promise.resolve({
-                data: rows.filter((row) => state.ids.includes(row.id)),
-                error: null
-              }).then(resolve, reject);
-            }
-          };
+    const state = {
+      tier: null,
+      search: null
+    };
+
+    const query = {
+      eq: (column, value) => {
+        expect(column).toBe('tier');
+        state.tier = value;
+        return query;
+      },
+      or: (value) => {
+        state.search = value;
+        return query;
+      },
+      order: () => query,
+      range: (start, end) => {
+        let filtered = [...dataset];
+        if (state.tier) {
+          filtered = filtered.filter((row) => row.tier === state.tier);
         }
-      })
+
+        if (state.search) {
+          const match = state.search.match(/email\.ilike\.%([^%]+)%/i);
+          const searchTerm = match && typeof match[1] === 'string' ? match[1].toLowerCase() : '';
+          if (searchTerm) {
+            filtered = filtered.filter(
+              (row) =>
+                (typeof row.email === 'string' && row.email.toLowerCase().includes(searchTerm)) ||
+                row.id_text.toLowerCase().includes(searchTerm)
+            );
+          }
+        }
+
+        filtered.sort((left, right) => Date.parse(right.auth_created_at) - Date.parse(left.auth_created_at));
+        return Promise.resolve({
+          data: filtered.slice(start, end + 1),
+          error: null,
+          count: filtered.length
+        });
+      }
+    };
+
+    return {
+      select: () => query
     };
   });
 
   return {
     client: {
       auth: {
-        getUser,
-        admin: {
-          listUsers
-        }
+        getUser
       },
       from
     },
-    spies: { getUser, listUsers, from }
+    spies: { getUser, from }
   };
 }
 
@@ -116,7 +137,7 @@ describe('api/admin-users', () => {
     }
   });
 
-  it('searches across all auth pages before paginating', async () => {
+  it('filters by search server-side and returns matching users', async () => {
     const supabase = buildSupabaseMock();
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => supabase.client)
@@ -139,10 +160,10 @@ describe('api/admin-users', () => {
       tier: 'premium'
     });
     expect(res.payload.total).toBe(1);
-    expect(supabase.spies.listUsers).toHaveBeenCalledTimes(2);
+    expect(supabase.spies.from).toHaveBeenCalledWith('admin_user_list');
   });
 
-  it('applies tier filtering before pagination and reports filtered totals', async () => {
+  it('applies tier filtering with pagination and keeps total count', async () => {
     const supabase = buildSupabaseMock();
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => supabase.client)
@@ -159,8 +180,8 @@ describe('api/admin-users', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.payload.users).toHaveLength(1);
-    expect(res.payload.users[0].id).toBe('user-3');
-    expect(res.payload.total).toBe(1);
+    expect(res.payload.users[0].tier).toBe('premium');
+    expect(res.payload.total).toBe(2);
     expect(res.payload.page).toBe(0);
     expect(res.payload.limit).toBe(1);
   });

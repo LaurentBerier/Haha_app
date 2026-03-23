@@ -1,5 +1,19 @@
 const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
 
+function isMissingDeleteAccountRpc(error) {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const code = typeof error.code === 'string' ? error.code : '';
+  if (code === 'PGRST202' || code === '42883') {
+    return true;
+  }
+
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return message.includes('delete_account_cascade') && (message.includes('not found') || message.includes('could not find'));
+}
+
 module.exports = async function handler(req, res) {
   const requestId = attachRequestId(req, res);
   const supabaseAdmin = getSupabaseAdmin();
@@ -50,6 +64,22 @@ module.exports = async function handler(req, res) {
 
     if (getUserError || !user) {
       sendError(res, 401, 'Unauthorized.', { code: 'UNAUTHORIZED', requestId });
+      return;
+    }
+
+    const { error: cleanupError } = await supabaseAdmin.rpc('delete_account_cascade', {
+      p_user_id: user.id,
+      p_request_id: requestId
+    });
+    if (cleanupError) {
+      if (isMissingDeleteAccountRpc(cleanupError)) {
+        console.error(`[api/delete-account][${requestId}] delete_account_cascade RPC missing`, cleanupError);
+        sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
+        return;
+      }
+
+      console.error(`[api/delete-account][${requestId}] delete_account_cascade failed`, cleanupError);
+      sendError(res, 500, 'Failed to clean account data before auth deletion.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 

@@ -106,7 +106,13 @@ describe('api/claude', () => {
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
     CLAUDE_RATE_LIMIT_MAX_REQUESTS: process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS,
     CLAUDE_MONTHLY_CAP_FREE: process.env.CLAUDE_MONTHLY_CAP_FREE,
-    CLAUDE_LIMITS_RPC: process.env.CLAUDE_LIMITS_RPC
+    CLAUDE_LIMITS_RPC: process.env.CLAUDE_LIMITS_RPC,
+    KV_URL: process.env.KV_URL,
+    KV_REST_API_URL: process.env.KV_REST_API_URL,
+    KV_REST_API_TOKEN: process.env.KV_REST_API_TOKEN,
+    UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
+    UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
+    NODE_ENV: process.env.NODE_ENV
   };
   const originalFetch = global.fetch;
 
@@ -120,6 +126,12 @@ describe('api/claude', () => {
     delete process.env.CLAUDE_MONTHLY_CAP_FREE;
     delete process.env.CLAUDE_LIMITS_RPC;
     delete process.env.ALLOWED_ORIGINS;
+    delete process.env.KV_URL;
+    delete process.env.KV_REST_API_URL;
+    delete process.env.KV_REST_API_TOKEN;
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    process.env.NODE_ENV = 'test';
     global.fetch = jest.fn();
   });
 
@@ -167,6 +179,42 @@ describe('api/claude', () => {
       process.env.CLAUDE_LIMITS_RPC = originalEnv.CLAUDE_LIMITS_RPC;
     } else {
       delete process.env.CLAUDE_LIMITS_RPC;
+    }
+
+    if (typeof originalEnv.KV_URL === 'string') {
+      process.env.KV_URL = originalEnv.KV_URL;
+    } else {
+      delete process.env.KV_URL;
+    }
+
+    if (typeof originalEnv.KV_REST_API_URL === 'string') {
+      process.env.KV_REST_API_URL = originalEnv.KV_REST_API_URL;
+    } else {
+      delete process.env.KV_REST_API_URL;
+    }
+
+    if (typeof originalEnv.KV_REST_API_TOKEN === 'string') {
+      process.env.KV_REST_API_TOKEN = originalEnv.KV_REST_API_TOKEN;
+    } else {
+      delete process.env.KV_REST_API_TOKEN;
+    }
+
+    if (typeof originalEnv.UPSTASH_REDIS_REST_URL === 'string') {
+      process.env.UPSTASH_REDIS_REST_URL = originalEnv.UPSTASH_REDIS_REST_URL;
+    } else {
+      delete process.env.UPSTASH_REDIS_REST_URL;
+    }
+
+    if (typeof originalEnv.UPSTASH_REDIS_REST_TOKEN === 'string') {
+      process.env.UPSTASH_REDIS_REST_TOKEN = originalEnv.UPSTASH_REDIS_REST_TOKEN;
+    } else {
+      delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    }
+
+    if (typeof originalEnv.NODE_ENV === 'string') {
+      process.env.NODE_ENV = originalEnv.NODE_ENV;
+    } else {
+      delete process.env.NODE_ENV;
     }
   });
 
@@ -579,6 +627,79 @@ describe('api/claude', () => {
     expect(second.res.payload.error.code).toBe('RATE_LIMIT_EXCEEDED');
   });
 
+  it('enforces KV minute-bucket rate limiting when KV is configured', async () => {
+    process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = '1';
+    process.env.KV_REST_API_URL = 'https://kv.example.test';
+    process.env.KV_REST_API_TOKEN = 'kv-token';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
+    });
+
+    const kvStore = new Map();
+    jest.doMock('@vercel/kv', () => ({
+      kv: {
+        incr: jest.fn(async (key) => {
+          const next = Number(kvStore.get(key) ?? 0) + 1;
+          kvStore.set(key, next);
+          return next;
+        }),
+        get: jest.fn(async (key) => (kvStore.has(key) ? kvStore.get(key) : null)),
+        expire: jest.fn(async () => 1),
+        set: jest.fn(async (key, value) => {
+          kvStore.set(key, value);
+          return 'OK';
+        })
+      }
+    }));
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../claude');
+    const first = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello' }] }
+    });
+    const second = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello again' }] }
+    });
+
+    await handler(first.req, first.res);
+    await handler(second.req, second.res);
+
+    expect(first.res.statusCode).toBe(200);
+    expect(second.res.statusCode).toBe(429);
+    expect(second.res.payload.error.code).toBe('RATE_LIMIT_EXCEEDED');
+  });
+
+  it('fails closed in production when KV is not configured', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = '1';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello' }] }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.payload.error.code).toBe('SERVER_MISCONFIGURED');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it('accepts request when usage_events insert first fails on request_id and legacy retry succeeds', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
@@ -610,7 +731,7 @@ describe('api/claude', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('falls back to in-memory rate limit when usage_events store is unavailable', async () => {
+  it('returns 500 when usage_events rate-limit store is unavailable (no in-memory bypass)', async () => {
     process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = '1';
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
@@ -643,9 +764,11 @@ describe('api/claude', () => {
     await handler(first.req, first.res);
     await handler(second.req, second.res);
 
-    expect(first.res.statusCode).toBe(200);
-    expect(second.res.statusCode).toBe(429);
-    expect(second.res.payload.error.code).toBe('RATE_LIMIT_EXCEEDED');
+    expect(first.res.statusCode).toBe(500);
+    expect(first.res.payload.error.code).toBe('SERVER_MISCONFIGURED');
+    expect(second.res.statusCode).toBe(500);
+    expect(second.res.payload.error.code).toBe('SERVER_MISCONFIGURED');
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   describe('monthly quota enforcement', () => {
