@@ -6,18 +6,19 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   View,
   type ImageStyle,
   useWindowDimensions
 } from 'react-native';
-import { ChatInput } from '../components/chat/ChatInput';
+import { AccountMenu, type AccountMenuItem } from '../components/layout/AccountMenu';
+import { GlobalChatInput } from '../components/layout/GlobalChatInput';
 import { BrandMark } from '../components/common/BrandMark';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ToastProvider } from '../components/common/ToastProvider';
 import { MODE_IDS } from '../config/constants';
 import { useAuth } from '../hooks/useAuth';
+import { useLayoutAuthGate } from '../hooks/useLayoutAuthGate';
 import { useVoiceConversation } from '../hooks/useVoiceConversation';
 import { useStorePersistence } from '../hooks/useStorePersistence';
 import { t } from '../i18n';
@@ -92,7 +93,7 @@ export default function RootLayout() {
   const targetArtistId = routeArtistId ?? selectedArtistId;
   const globalInputDisabled = !showGlobalChatInput || !targetArtistId;
 
-  const accountMenuItems: Array<{ label: string; route: AccountMenuRoute }> = [
+  const accountMenuItems: AccountMenuItem[] = [
     { label: t('settingsEditProfile'), route: '/settings/edit-profile' as const },
     { label: t('settingsStats'), route: '/stats' as const },
     { label: t('settingsTitle'), route: '/settings' as const },
@@ -270,34 +271,16 @@ export default function RootLayout() {
     language
   });
 
-  useEffect(() => {
-    if (!hasHydrated || authStatus === 'loading') {
-      return;
-    }
-
-    if (!isAuthenticated) {
-      if (E2E_AUTH_BYPASS) {
-        if (inAuthGroup) {
-          router.replace('/');
-        }
-        return;
-      }
-
-      if ((!inAuthGroup && !isAuthCallbackRoute) || isOnboardingRoute) {
-        router.replace('/(auth)/login');
-      }
-      return;
-    }
-
-    if (needsOnboarding && !isOnboardingRoute) {
-      router.replace('/(auth)/onboarding');
-      return;
-    }
-
-    if (!needsOnboarding && inAuthGroup) {
-      router.replace('/');
-    }
-  }, [authStatus, hasHydrated, inAuthGroup, isAuthCallbackRoute, isAuthenticated, isOnboardingRoute, needsOnboarding]);
+  useLayoutAuthGate({
+    hasHydrated,
+    authStatus,
+    isAuthenticated,
+    inAuthGroup,
+    isAuthCallbackRoute,
+    isOnboardingRoute,
+    needsOnboarding,
+    e2eAuthBypass: E2E_AUTH_BYPASS
+  });
 
   useEffect(() => {
     if (!showAccountMenu && isAccountMenuOpen) {
@@ -508,70 +491,37 @@ export default function RootLayout() {
                 <Stack.Screen name="stats/index" options={{ title: t('settingsStats') }} />
                 <Stack.Screen name="admin" options={{ headerShown: false }} />
               </Stack>
-              {showGlobalChatInput ? (
-                <View style={styles.globalInputDock}>
-                  <View style={styles.globalInputContent}>
-                    <ChatInput
-                      onSend={(payload) => {
-                        sendGlobalMessage(payload);
-                        return null;
-                      }}
-                      disabled={globalInputDisabled}
-                      conversationMode={{
-                        enabled: conversationModeEnabled,
-                        isListening: isGlobalConversationListening,
-                        transcript: globalConversationTranscript,
-                        error: globalConversationError,
-                        micState: globalConversationStatus,
-                        hint: globalConversationHint,
-                        onToggle: () => {
-                          setConversationModeEnabled(true);
-                        },
-                        onPauseListening: pauseGlobalConversation,
-                        onResumeListening: resumeGlobalConversation,
-                        onTypingStateChange: setHasTypedGlobalDraft
-                      }}
-                    />
-                  </View>
-                </View>
-              ) : null}
-              {isAccountMenuOpen ? (
-                <View style={styles.menuOverlay}>
-                  <Pressable style={styles.menuBackdrop} onPress={closeAccountMenu} testID="account-menu-backdrop" />
-                  <View style={[styles.menuPanel, Platform.OS === 'web' ? { right: headerHorizontalInset } : null]}>
-                    <Text style={styles.menuTitle}>{t('settingsAccount')}</Text>
-                    {accountMenuItems.map((item) => (
-                      <Pressable
-                        key={item.route}
-                        onPress={() => navigateFromAccountMenu(item.route)}
-                        style={({ pressed }) => [
-                          styles.menuItem,
-                          pressed ? styles.menuItemPressed : null
-                        ]}
-                        accessibilityRole="button"
-                        testID={`account-menu-item-${item.route.replace(/\//g, '-')}`}
-                      >
-                        <Text style={styles.menuItemLabel}>{item.label}</Text>
-                      </Pressable>
-                    ))}
-                    <View style={styles.menuDivider} />
-                    <Pressable
-                      onPress={() => void handleAuthMenuAction()}
-                      style={({ pressed }) => [
-                        styles.menuItem,
-                        pressed ? styles.menuItemPressed : null,
-                        isAuthenticated ? styles.menuItemDestructive : null
-                      ]}
-                      accessibilityRole="button"
-                      testID="account-menu-auth-action"
-                    >
-                      <Text style={[styles.menuItemLabel, isAuthenticated ? styles.menuItemLabelDestructive : null]}>
-                        {authMenuLabel}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ) : null}
+              <GlobalChatInput
+                visible={showGlobalChatInput}
+                disabled={globalInputDisabled}
+                conversationModeEnabled={conversationModeEnabled}
+                isListening={isGlobalConversationListening}
+                transcript={globalConversationTranscript}
+                error={globalConversationError}
+                status={globalConversationStatus}
+                hint={globalConversationHint}
+                onSend={sendGlobalMessage}
+                onEnableConversationMode={() => {
+                  setConversationModeEnabled(true);
+                }}
+                onPauseListening={pauseGlobalConversation}
+                onResumeListening={resumeGlobalConversation}
+                onTypingStateChange={setHasTypedGlobalDraft}
+              />
+              <AccountMenu
+                isOpen={isAccountMenuOpen}
+                isAuthenticated={isAuthenticated}
+                authMenuLabel={authMenuLabel}
+                items={accountMenuItems}
+                headerHorizontalInset={headerHorizontalInset}
+                onClose={closeAccountMenu}
+                onNavigate={(route) => {
+                  navigateFromAccountMenu(route as AccountMenuRoute);
+                }}
+                onAuthAction={() => {
+                  void handleAuthMenuAction();
+                }}
+              />
             </>
           )}
         </View>

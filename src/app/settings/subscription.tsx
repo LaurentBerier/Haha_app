@@ -1,10 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  AppState,
-  type AppStateStatus,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,21 +14,16 @@ import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import { getLanguage, t } from '../../i18n';
 import {
   cancelSubscription,
-  fetchSubscriptionSummary,
   isCheckoutConfigured,
-  syncSubscriptionState,
   startSubscriptionCheckout,
-  type SubscriptionPlanId,
-  type SubscriptionSummary
+  type SubscriptionPlanId
 } from '../../services/subscriptionService';
 import { impactLight, notifySuccess, notifyWarning } from '../../services/hapticsService';
-import { fetchAccountType } from '../../services/profileService';
+import { useSubscriptionSync } from '../../hooks/useSubscriptionSync';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 
 type PlanId = 'free' | 'regular' | 'premium';
-const MAX_CHECKOUT_SYNC_ATTEMPTS = 8;
-const CHECKOUT_SYNC_RETRY_DELAY_MS = 3000;
 
 function getAccountTypeLabel(accountType: string | null | undefined): string {
   if (accountType === 'regular') {
@@ -79,62 +71,14 @@ export default function SubscriptionScreen() {
   const session = useStore((state) => state.session);
   const user = session?.user ?? null;
 
-  const [summary, setSummary] = useState<SubscriptionSummary | null>(null);
-  const [isLoadingSummary, setIsLoadingSummary] = useState(false);
   const [activeActionKey, setActiveActionKey] = useState<string | null>(null);
-  const pendingCheckoutPlanRef = useRef<PlanId | null>(null);
-  const checkoutSyncAttemptsRef = useRef(0);
-  const checkoutSyncInFlightRef = useRef(false);
-  const checkoutSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toast = useToast();
-
-  const loadSummary = useCallback(async () => {
-    if (!session?.accessToken || !user?.id) {
-      setSummary(null);
-      return;
-    }
-
-    setIsLoadingSummary(true);
-    try {
-      const nextSummary = await fetchSubscriptionSummary(session.accessToken);
-      const accountTypeFromProfile = await fetchAccountType(user.id).catch(() => null);
-      setSummary({
-        ...nextSummary,
-        accountType: accountTypeFromProfile ?? nextSummary.accountType
-      });
-    } catch (error) {
-      const accountTypeFromProfile = await fetchAccountType(user.id).catch(() => null);
-      if (accountTypeFromProfile) {
-        setSummary({
-          accountType: accountTypeFromProfile,
-          provider: null,
-          subscriptionStatus: null,
-          nextBillingDate: null,
-          cancelAtPeriodEnd: false,
-          canCancel: false
-        });
-      } else {
-        setSummary(null);
-      }
-      console.error('[subscription] Failed to load summary', error);
-    } finally {
-      setIsLoadingSummary(false);
-    }
-  }, [session?.accessToken, user?.id]);
-
-  useEffect(() => {
-    void loadSummary();
-  }, [loadSummary]);
-
-  const clearPendingCheckoutSync = useCallback(() => {
-    pendingCheckoutPlanRef.current = null;
-    checkoutSyncAttemptsRef.current = 0;
-    checkoutSyncInFlightRef.current = false;
-    if (checkoutSyncTimerRef.current !== null) {
-      clearTimeout(checkoutSyncTimerRef.current);
-      checkoutSyncTimerRef.current = null;
-    }
-  }, []);
+  const { summary, setSummary, isLoadingSummary, clearPendingCheckoutSync, startCheckoutSync } = useSubscriptionSync({
+    accessToken: session?.accessToken ?? null,
+    userId: user?.id ?? null,
+    fallbackAccountType: user?.accountType ?? null,
+    toast
+  });
 
   const effectiveAccountType = summary?.accountType ?? user?.accountType ?? 'free';
   const currentPlanLabel = getAccountTypeLabel(effectiveAccountType);
@@ -142,96 +86,6 @@ export default function SubscriptionScreen() {
   const nextCycleLabel = formatBillingDate(summary?.nextBillingDate ?? null) ?? t('settingsSubscriptionNoCycle');
   const isCancellingAtPeriodEnd = Boolean(summary?.cancelAtPeriodEnd);
   const canCancel = Boolean(summary?.canCancel);
-
-  const syncSubscriptionAfterCheckout = useCallback(async () => {
-    const pendingPlan = pendingCheckoutPlanRef.current;
-    if (!pendingPlan || !session?.accessToken) {
-      return;
-    }
-
-    if (checkoutSyncInFlightRef.current) {
-      return;
-    }
-
-    if (checkoutSyncAttemptsRef.current >= MAX_CHECKOUT_SYNC_ATTEMPTS) {
-      clearPendingCheckoutSync();
-      toast.info(t('settingsSubscriptionSyncPending'));
-      return;
-    }
-
-    checkoutSyncAttemptsRef.current += 1;
-    checkoutSyncInFlightRef.current = true;
-
-    try {
-      await syncSubscriptionState();
-      const latestAccessToken = useStore.getState().session?.accessToken ?? session.accessToken;
-      const refreshedSummary = await fetchSubscriptionSummary(latestAccessToken);
-      setSummary(refreshedSummary);
-
-      const refreshedPlan = toKnownPlanId(refreshedSummary.accountType);
-      if (refreshedPlan === pendingPlan || refreshedSummary.accountType === 'admin') {
-        clearPendingCheckoutSync();
-        toast.success(t('settingsSubscriptionSyncSuccess'));
-        return;
-      }
-
-      if (checkoutSyncAttemptsRef.current < MAX_CHECKOUT_SYNC_ATTEMPTS) {
-        checkoutSyncTimerRef.current = setTimeout(() => {
-          void syncSubscriptionAfterCheckout();
-        }, CHECKOUT_SYNC_RETRY_DELAY_MS);
-      }
-    } catch {
-      if (checkoutSyncAttemptsRef.current >= MAX_CHECKOUT_SYNC_ATTEMPTS) {
-        clearPendingCheckoutSync();
-      } else {
-        checkoutSyncTimerRef.current = setTimeout(() => {
-          void syncSubscriptionAfterCheckout();
-        }, CHECKOUT_SYNC_RETRY_DELAY_MS);
-      }
-    } finally {
-      checkoutSyncInFlightRef.current = false;
-    }
-  }, [clearPendingCheckoutSync, session?.accessToken, toast]);
-
-  useEffect(() => {
-    const handleAppStateChange = (nextState: AppStateStatus) => {
-      if (nextState === 'active') {
-        void loadSummary();
-        void syncSubscriptionAfterCheckout();
-      }
-    };
-
-    const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
-
-    const handleWindowFocus = () => {
-      void loadSummary();
-      void syncSubscriptionAfterCheckout();
-    };
-
-    const handleVisibilityChange = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        void loadSummary();
-        void syncSubscriptionAfterCheckout();
-      }
-    };
-
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
-      window.addEventListener('focus', handleWindowFocus);
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-    }
-
-    return () => {
-      appStateSubscription.remove();
-      if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
-        window.removeEventListener('focus', handleWindowFocus);
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-      }
-      if (checkoutSyncTimerRef.current !== null) {
-        clearTimeout(checkoutSyncTimerRef.current);
-        checkoutSyncTimerRef.current = null;
-      }
-    };
-  }, [loadSummary, syncSubscriptionAfterCheckout]);
 
   const plans: {
     id: PlanId;
@@ -337,11 +191,7 @@ export default function SubscriptionScreen() {
         void notifyWarning();
         toast.error(t('settingsSubscriptionCheckoutErrorBody'));
       } else {
-        pendingCheckoutPlanRef.current = planId;
-        checkoutSyncAttemptsRef.current = 0;
-        checkoutSyncTimerRef.current = setTimeout(() => {
-          void syncSubscriptionAfterCheckout();
-        }, 1500);
+        startCheckoutSync(planId);
         void impactLight();
       }
     } catch {
