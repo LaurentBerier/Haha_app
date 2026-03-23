@@ -1,15 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ARTIST_IDS, MAX_MESSAGE_LENGTH, MODE_IDS } from '../config/constants';
-import { resolveModeIdCompat } from '../config/modeCompat';
-import {
-  QUOTA_THRESHOLD_ABSOLUTE_PAID_RATIO,
-  QUOTA_THRESHOLD_HARD_FREE_RATIO,
-  QUOTA_THRESHOLD_SOFT_1_RATIO,
-  QUOTA_THRESHOLD_SOFT_2_RATIO
-} from '../config/quotaThresholds';
 import { USE_MOCK_LLM } from '../config/env';
 import { getAllCathyFewShots, getCathyModeFewShots } from '../data/cathy-gauthier/modeFewShots';
-import { getLanguage, setLanguage, t } from '../i18n';
+import { getLanguage, setLanguage } from '../i18n';
 import type { ChatError } from '../models/ChatError';
 import type { ChatSendPayload } from '../models/ChatSendPayload';
 import type { Conversation } from '../models/Conversation';
@@ -31,6 +24,22 @@ import type { ScoreAction } from '../models/Gamification';
 import { computeTutorialModeForRequest, shouldApplyReactionForUserMessage } from './chatBehavior';
 import { resolveChatSendContextFromState, type ChatSendContextBlockReason } from './chatSendContext';
 import { useAudioPlayer } from './useAudioPlayer';
+import { useGamificationReactions } from './useGamificationReactions';
+import { useQuotaGuard } from './useQuotaGuard';
+import {
+  buildCathyVoiceNotice,
+  MIN_TTS_CHUNK_CHARS,
+  NOTICE_AUDIO_SYNC_FINISH_WAIT_MS,
+  NOTICE_AUDIO_SYNC_POLL_MS,
+  NOTICE_AUDIO_SYNC_START_WAIT_MS,
+  resolveTerminalTtsCode,
+  shouldShowUpgradeForTtsCode,
+  sleep,
+  useTtsPlayback,
+  VOICE_FIRST_CHUNK_MIN_CHARS,
+  type TerminalTtsCode,
+  type VoiceErrorCode
+} from './useTtsPlayback';
 
 interface StreamJob {
   conversationId: string;
@@ -52,215 +61,14 @@ const EMPTY_MESSAGES: Message[] = [];
 const MAX_CLAUDE_HISTORY_MESSAGES = 39;
 const VOICE_MAX_CLAUDE_HISTORY_MESSAGES = 8;
 const MAX_MEMORY_FACTS = 6;
-const MIN_TTS_CHUNK_CHARS = 80;
-const MAX_TTS_CHUNK_CHARS = 360;
-const VOICE_FIRST_CHUNK_MIN_CHARS = 140;
-const NOTICE_AUDIO_SYNC_START_WAIT_MS = 1_500;
-const NOTICE_AUDIO_SYNC_FINISH_WAIT_MS = 15_000;
-const NOTICE_AUDIO_SYNC_POLL_MS = 120;
-const REACT_TAG_PATTERN = /^\s*\[REACT:([^\]\n]{1,8})\]\s*/i;
-const ALLOWED_REACTIONS = new Set(['😂', '💀', '😮', '😤', '🙄', '😬', '🤔', '👍']);
-const TERMINAL_TTS_CODES = new Set(['TTS_QUOTA_EXCEEDED', 'RATE_LIMIT_EXCEEDED', 'TTS_FORBIDDEN']);
 
-export type TerminalTtsCode = 'TTS_QUOTA_EXCEEDED' | 'RATE_LIMIT_EXCEEDED' | 'TTS_FORBIDDEN';
-export type VoiceErrorCode =
-  | TerminalTtsCode
-  | 'UNAUTHORIZED'
-  | 'TTS_PROVIDER_ERROR'
-  | 'UNKNOWN';
-
-function isQuotaBlockedErrorCode(code: string | null): boolean {
-  return (
-    code === 'QUOTA_EXCEEDED_BLOCKED' ||
-    code === 'QUOTA_ABSOLUTE_BLOCKED' ||
-    code === 'MONTHLY_QUOTA_EXCEEDED'
-  );
-}
-
-function isTerminalTtsCode(value: string | null | undefined): value is TerminalTtsCode {
-  return typeof value === 'string' && TERMINAL_TTS_CODES.has(value);
-}
-
-export function resolveTerminalTtsCode(error: unknown): TerminalTtsCode | null {
-  if (!error || typeof error !== 'object') {
-    return null;
-  }
-
-  const code = 'code' in error && typeof error.code === 'string' ? error.code : null;
-  if (isTerminalTtsCode(code)) {
-    return code;
-  }
-
-  const status = 'status' in error && typeof error.status === 'number' ? error.status : null;
-  if (status === 403) {
-    return 'TTS_FORBIDDEN';
-  }
-  if (status === 429) {
-    return 'RATE_LIMIT_EXCEEDED';
-  }
-
-  return null;
-}
-
-export function shouldShowUpgradeForTtsCode(code: TerminalTtsCode): boolean {
-  return code === 'TTS_QUOTA_EXCEEDED' || code === 'TTS_FORBIDDEN';
-}
-
-export function buildCathyVoiceNotice(code: TerminalTtsCode): string {
-  if (code === 'RATE_LIMIT_EXCEEDED') {
-    return t('cathyVoiceRateLimitMessage');
-  }
-  return t('cathyVoiceQuotaExceededMessage');
-}
-
-function resolveVoiceErrorCode(error: unknown): VoiceErrorCode {
-  const terminalCode = resolveTerminalTtsCode(error);
-  if (terminalCode) {
-    return terminalCode;
-  }
-
-  if (error && typeof error === 'object') {
-    const explicitCode = 'code' in error && typeof error.code === 'string' ? error.code.trim() : '';
-    if (explicitCode === 'UNAUTHORIZED' || explicitCode === 'TTS_PROVIDER_ERROR') {
-      return explicitCode;
-    }
-
-    const status = 'status' in error && typeof error.status === 'number' ? error.status : null;
-    if (status === 401) {
-      return 'UNAUTHORIZED';
-    }
-  }
-
-  return 'UNKNOWN';
-}
-
-function isSentenceBoundary(input: string, index: number): boolean {
-  const char = input[index];
-  if (!char) {
-    return false;
-  }
-
-  if (char === '\n') {
-    return true;
-  }
-
-  if (char !== '.' && char !== '!' && char !== '?') {
-    return false;
-  }
-
-  const next = input[index + 1];
-  return next === undefined || /[\s\n]/.test(next);
-}
-
-function normalizeTtsChunk(chunk: string): string {
-  return chunk.replace(/\s+/g, ' ').trim();
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-function extractReactionTag(text: string): { reaction: string | null; cleaned: string } {
-  const source = typeof text === 'string' ? text : '';
-  const match = source.match(REACT_TAG_PATTERN);
-  if (!match) {
-    return {
-      reaction: null,
-      cleaned: source
-    };
-  }
-
-  const reactionCandidate = typeof match[1] === 'string' ? match[1].trim() : '';
-  const reaction = ALLOWED_REACTIONS.has(reactionCandidate) ? reactionCandidate : null;
-
-  return {
-    reaction,
-    cleaned: source.slice(match[0].length).trimStart()
-  };
-}
-
-function reactionToScoreAction(reaction: string): ScoreAction | null {
-  if (reaction === '😂' || reaction === '💀') {
-    return 'joke_landed';
-  }
-  if (reaction === '😮') {
-    return 'cathy_surprised';
-  }
-  if (reaction === '😤') {
-    return 'cathy_triggered';
-  }
-  if (reaction === '🤔') {
-    return 'cathy_intrigued';
-  }
-  if (reaction === '👍') {
-    return 'cathy_approved';
-  }
-  return null;
-}
-
-function extractReadyTtsChunks(buffer: string, flushRemainder: boolean): { chunks: string[]; remainder: string } {
-  let working = buffer;
-  const chunks: string[] = [];
-
-  while (working.length > 0) {
-    const searchUpperBound = Math.min(working.length, MAX_TTS_CHUNK_CHARS);
-    let boundaryIndex = -1;
-
-    for (let index = MIN_TTS_CHUNK_CHARS - 1; index < searchUpperBound; index += 1) {
-      if (isSentenceBoundary(working, index)) {
-        boundaryIndex = index + 1;
-        break;
-      }
-    }
-
-    if (boundaryIndex === -1 && working.length > MAX_TTS_CHUNK_CHARS) {
-      boundaryIndex = MAX_TTS_CHUNK_CHARS;
-    }
-
-    if (boundaryIndex === -1 && flushRemainder && working.length >= MIN_TTS_CHUNK_CHARS) {
-      boundaryIndex = working.length;
-    }
-
-    if (boundaryIndex === -1) {
-      break;
-    }
-
-    const candidate = normalizeTtsChunk(working.slice(0, boundaryIndex));
-    working = working.slice(boundaryIndex);
-
-    if (!candidate) {
-      continue;
-    }
-
-    if (candidate.length < MIN_TTS_CHUNK_CHARS) {
-      if (chunks.length > 0 && chunks[chunks.length - 1]) {
-        const previous = chunks[chunks.length - 1] as string;
-        chunks[chunks.length - 1] = normalizeTtsChunk(`${previous} ${candidate}`);
-      } else {
-        working = `${candidate} ${working}`.trimStart();
-        break;
-      }
-      continue;
-    }
-
-    chunks.push(candidate);
-  }
-
-  if (flushRemainder) {
-    const normalizedRemainder = normalizeTtsChunk(working);
-    if (normalizedRemainder.length >= MIN_TTS_CHUNK_CHARS) {
-      chunks.push(normalizedRemainder);
-      working = '';
-    }
-  }
-
-  return {
-    chunks,
-    remainder: working
-  };
-}
+export {
+  buildCathyVoiceNotice,
+  resolveTerminalTtsCode,
+  shouldShowUpgradeForTtsCode,
+  type TerminalTtsCode,
+  type VoiceErrorCode
+};
 
 function extractMemoryFactsFromText(text: string): string[] {
   const normalized = typeof text === 'string' ? text.replace(/\s+/g, ' ').trim() : '';
@@ -400,51 +208,6 @@ function getImageIntentPromptPrefix(intent: ImageIntent): string {
   }
 }
 
-function detectBattleResult(content: string): 'light' | 'solid' | 'destruction' | null {
-  const normalized = content.toLowerCase();
-  if (normalized.includes('verdict: 💀') || normalized.includes('💀 destruction')) {
-    return 'destruction';
-  }
-  if (normalized.includes('verdict: 🎤') || normalized.includes('🎤 solide')) {
-    return 'solid';
-  }
-  if (normalized.includes('verdict: 🔥') || normalized.includes('🔥 leger')) {
-    return 'light';
-  }
-  return null;
-}
-
-function resolveScoreActions(modeId: string, imageIntent: ImageIntent, battleResult: 'light' | 'solid' | 'destruction' | null): ScoreAction[] {
-  const canonicalModeId = resolveModeIdCompat(modeId);
-  const actions = new Set<ScoreAction>();
-
-  if (canonicalModeId === MODE_IDS.GRILL) {
-    actions.add('roast_generated');
-  }
-
-  if (modeId === MODE_IDS.PHRASE_DU_JOUR || canonicalModeId === MODE_IDS.ON_JASE || modeId === MODE_IDS.VICTIME_DU_JOUR) {
-    actions.add('punchline_created');
-  }
-
-  if (modeId === MODE_IDS.VICTIME_DU_JOUR) {
-    actions.add('daily_participation');
-  }
-
-  if (imageIntent === 'photo-roast') {
-    actions.add('photo_roasted');
-  }
-
-  if (imageIntent === 'meme-generator') {
-    actions.add('meme_generated');
-  }
-
-  if (modeId === MODE_IDS.ROAST_BATTLE && battleResult === 'destruction') {
-    actions.add('battle_win');
-  }
-
-  return [...actions];
-}
-
 function resolveModeFewShotsForConversation(conversation: Conversation): ReturnType<typeof getCathyModeFewShots> {
   if (!conversation.modeId || conversation.artistId !== ARTIST_IDS.CATHY_GAUTHIER) {
     return [];
@@ -473,6 +236,12 @@ export function useChat(conversationId: string) {
   const isQuotaBlocked = useStore((state) => Boolean(state.quota.isBlocked));
   const artists = useStore((state) => state.artists);
   const audioPlayer = useAudioPlayer();
+  const { extractReadyTtsChunks, resolveVoiceErrorCode } = useTtsPlayback();
+  const { detectBattleResult, extractReactionTag, reactionToScoreAction, resolveScoreActions } = useGamificationReactions();
+  const { buildQuotaBlockedMessage, evaluatePostReplyQuota, isQuotaBlockedErrorCode } = useQuotaGuard({
+    markThresholdMessageShown,
+    setBlocked
+  });
 
   const messages = useStore(
     useCallback((state) => state.messagesByConversation[conversationId]?.messages ?? EMPTY_MESSAGES, [conversationId])
@@ -1097,7 +866,8 @@ export function useChat(conversationId: string) {
             rawStreamLength: rawTtsResponseRef.current.length
           });
         }
-        const battleResult = modeId === MODE_IDS.ROAST_BATTLE ? detectBattleResult(resolvedFinalContent) : null;
+        const battleResult =
+          modeId === MODE_IDS.ROAST_BATTLE ? detectBattleResult(resolvedFinalContent) : null;
         const scoreActionSet = new Set<ScoreAction>(resolveScoreActions(modeId, imageIntent, battleResult));
         const { reaction: cathyReaction } = extractReactionTag(rawTtsResponseRef.current);
         if (cathyReaction) {
@@ -1133,60 +903,7 @@ export function useChat(conversationId: string) {
           latestState.session?.user.accountType ?? currentAccountType,
           latestState.session?.user.role ?? currentRole
         );
-        const postReplyNotices: Array<{
-          content: string;
-          metadata: NonNullable<Message['metadata']>;
-        }> = [];
-        let shouldBlockInput = false;
-        if (
-          normalizedAccountType !== 'admin' &&
-          typeof latestQuota.messagesCap === 'number' &&
-          Number.isFinite(latestQuota.messagesCap) &&
-          latestQuota.messagesCap > 0
-        ) {
-          const ratio = latestQuota.messagesUsed / latestQuota.messagesCap;
-          let thresholdToShow: 1 | 2 | 3 | 4 | null = null;
-          let thresholdMessage = '';
-
-          if (
-            ratio >= QUOTA_THRESHOLD_ABSOLUTE_PAID_RATIO &&
-            normalizedAccountType !== 'free' &&
-            !latestQuota.threshold4MessageShown
-          ) {
-            thresholdToShow = 4;
-            thresholdMessage = t('cathyThreshold4PaidMessage');
-          } else if (ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO && !latestQuota.threshold3MessageShown) {
-            thresholdToShow = 3;
-            thresholdMessage =
-              normalizedAccountType === 'free' ? t('cathyThreshold3FreeMessage') : t('cathyThreshold3PaidMessage');
-          } else if (ratio >= QUOTA_THRESHOLD_SOFT_2_RATIO && !latestQuota.threshold2MessageShown) {
-            thresholdToShow = 2;
-            thresholdMessage = t('cathyThreshold2Message');
-          } else if (ratio >= QUOTA_THRESHOLD_SOFT_1_RATIO && !latestQuota.threshold1MessageShown) {
-            thresholdToShow = 1;
-            thresholdMessage = t('cathyThreshold1Message');
-          }
-
-          if (thresholdToShow !== null) {
-            markThresholdMessageShown(thresholdToShow);
-            postReplyNotices.push({
-              content: thresholdMessage,
-              metadata: {
-                injected: true,
-                showUpgradeCta: true,
-                upgradeFromTier: normalizedAccountType
-              }
-            });
-          }
-
-          const shouldBlockFree = normalizedAccountType === 'free' && ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO;
-          const shouldBlockPaidAbsolute =
-            normalizedAccountType !== 'free' && ratio >= QUOTA_THRESHOLD_ABSOLUTE_PAID_RATIO;
-          shouldBlockInput = shouldBlockFree || shouldBlockPaidAbsolute;
-          if (shouldBlockInput) {
-            setBlocked(true);
-          }
-        }
+        const { postReplyNotices, shouldBlockInput } = evaluatePostReplyQuota(latestQuota, normalizedAccountType);
         if (canGenerateVoice && !ignoreTtsUpdates) {
           const fallbackPreviewText = normalizeSpeechText(rawTtsResponseRef.current, { trim: true });
           if (!hasStartedVoiceGeneration && fallbackPreviewText) {
@@ -1353,10 +1070,7 @@ export function useChat(conversationId: string) {
             runNext();
             return;
           }
-          const quotaMessage =
-            latestAccountType === 'free' ? t('cathyThreshold3FreeMessage') : t('cathyThreshold4PaidMessage');
-          markThresholdMessageShown(latestAccountType === 'free' ? 3 : 4);
-          setBlocked(true);
+          const quotaMessage = buildQuotaBlockedMessage(latestAccountType);
           failedJobsRef.current.delete(artistMessageId);
           updateMessage(jobConversationId, artistMessageId, {
             content: quotaMessage,
@@ -1475,11 +1189,18 @@ export function useChat(conversationId: string) {
     appendMessageContent,
     audioPlayer,
     accessToken,
+    buildQuotaBlockedMessage,
     currentAccountType,
     currentRole,
+    detectBattleResult,
+    evaluatePostReplyQuota,
+    extractReactionTag,
+    extractReadyTtsChunks,
     incrementUsage,
-    markThresholdMessageShown,
-    setBlocked,
+    isQuotaBlockedErrorCode,
+    reactionToScoreAction,
+    resolveScoreActions,
+    resolveVoiceErrorCode,
     updateMessage
   ]);
 
@@ -1631,7 +1352,7 @@ export function useChat(conversationId: string) {
         });
       }
     },
-    [accessToken, audioPlayer, currentAccountType, currentRole, updateMessage]
+    [accessToken, audioPlayer, currentAccountType, currentRole, resolveVoiceErrorCode, updateMessage]
   );
 
   const sendMessage = (
