@@ -1,7 +1,11 @@
 const { randomUUID } = require('node:crypto');
 const { createClient } = require('@supabase/supabase-js');
+const { kv } = require('@vercel/kv');
 
 let supabaseAdminCache = undefined;
+const RATE_LIMIT_BUCKET_MS = 60_000;
+const DEFAULT_IP_RATE_LIMIT_WINDOW_MS = 60_000;
+const DEFAULT_IP_RATE_LIMIT_MAX_REQUESTS = 100;
 
 function parseAllowedOrigins() {
   return (process.env.ALLOWED_ORIGINS ?? '')
@@ -251,6 +255,162 @@ function getClientIp(req) {
   return null;
 }
 
+function isKvEnvironmentConfigured() {
+  const hasConnectionString = typeof process.env.KV_URL === 'string' && process.env.KV_URL.trim().length > 0;
+  const hasRestPair =
+    typeof process.env.KV_REST_API_URL === 'string' &&
+    process.env.KV_REST_API_URL.trim().length > 0 &&
+    typeof process.env.KV_REST_API_TOKEN === 'string' &&
+    process.env.KV_REST_API_TOKEN.trim().length > 0;
+  const hasUpstashPair =
+    typeof process.env.UPSTASH_REDIS_REST_URL === 'string' &&
+    process.env.UPSTASH_REDIS_REST_URL.trim().length > 0 &&
+    typeof process.env.UPSTASH_REDIS_REST_TOKEN === 'string' &&
+    process.env.UPSTASH_REDIS_REST_TOKEN.trim().length > 0;
+  return hasConnectionString || hasRestPair || hasUpstashPair;
+}
+
+function shouldBypassIpRateLimitWhenKvUnavailable() {
+  return process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development';
+}
+
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseFiniteNonNegativeInt(value) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function buildIpRateLimitKey(ipAddress, minuteBucket) {
+  return `ip_ratelimit:${ipAddress}:${minuteBucket}`;
+}
+
+function serializeError(error) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    };
+  }
+
+  if (error && typeof error === 'object') {
+    return error;
+  }
+
+  return {
+    message: String(error)
+  };
+}
+
+function log(level, message, context = {}) {
+  const normalizedLevel = level === 'debug' || level === 'info' || level === 'warn' || level === 'error'
+    ? level
+    : 'info';
+  const payload = {
+    ts: new Date().toISOString(),
+    level: normalizedLevel,
+    message,
+    ...(context && typeof context === 'object' ? context : {})
+  };
+
+  if (normalizedLevel === 'error') {
+    console.error(payload);
+    return;
+  }
+
+  if (normalizedLevel === 'warn') {
+    console.warn(payload);
+    return;
+  }
+
+  console.log(payload);
+}
+
+/**
+ * Enforce a cross-instance IP-based sliding-window rate limit using Vercel KV.
+ *
+ * @param {object} req Incoming HTTP request object.
+ * @param {object} options Rate-limit options.
+ * @param {number} [options.maxRequests=100] Maximum allowed requests in the window.
+ * @param {number} [options.windowMs=60000] Sliding window size in milliseconds.
+ * @param {string} [options.requestId='unknown'] Correlation id for logs/errors.
+ * @returns {Promise<{ok: boolean, status?: number, code?: string, message?: string, retryAfterSeconds: number}>}
+ */
+async function checkIpRateLimit(req, options = {}) {
+  const windowMs = parsePositiveInt(options.windowMs, DEFAULT_IP_RATE_LIMIT_WINDOW_MS);
+  const maxRequests = parsePositiveInt(options.maxRequests, DEFAULT_IP_RATE_LIMIT_MAX_REQUESTS);
+  const requestId = typeof options.requestId === 'string' && options.requestId ? options.requestId : 'unknown';
+  const ipAddress = getClientIp(req);
+
+  if (!ipAddress) {
+    return { ok: true, retryAfterSeconds: 0 };
+  }
+
+  if (!isKvEnvironmentConfigured()) {
+    if (shouldBypassIpRateLimitWhenKvUnavailable()) {
+      return { ok: true, retryAfterSeconds: 0 };
+    }
+    return {
+      ok: false,
+      status: 500,
+      code: 'SERVER_MISCONFIGURED',
+      message: 'Rate limit store unavailable.',
+      retryAfterSeconds: 0
+    };
+  }
+
+  const nowMs = Date.now();
+  const currentMinute = Math.floor(nowMs / RATE_LIMIT_BUCKET_MS);
+  const minuteProgressRatio = (nowMs % RATE_LIMIT_BUCKET_MS) / RATE_LIMIT_BUCKET_MS;
+  const currentKey = buildIpRateLimitKey(ipAddress, currentMinute);
+  const previousKey = buildIpRateLimitKey(ipAddress, currentMinute - 1);
+
+  try {
+    const currentCount = await kv.incr(currentKey);
+    if (currentCount === 1) {
+      const ttlSeconds = Math.max(1, Math.ceil(windowMs / 1000) + 30);
+      await kv.expire(currentKey, ttlSeconds);
+    }
+
+    const previousRaw = await kv.get(previousKey);
+    const previousCount = parseFiniteNonNegativeInt(previousRaw) ?? 0;
+    const effectiveCount = currentCount + previousCount * (1 - minuteProgressRatio);
+
+    if (effectiveCount > maxRequests) {
+      return {
+        ok: false,
+        status: 429,
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Rate limit exceeded.',
+        retryAfterSeconds: Math.max(1, Math.ceil(windowMs / 1000))
+      };
+    }
+
+    return { ok: true, retryAfterSeconds: 0 };
+  } catch (error) {
+    log('error', 'IP rate limit check failed', {
+      scope: 'api/rate-limit',
+      requestId,
+      ipAddress,
+      error: serializeError(error)
+    });
+    if (shouldBypassIpRateLimitWhenKvUnavailable()) {
+      return { ok: true, retryAfterSeconds: 0 };
+    }
+    return {
+      ok: false,
+      status: 500,
+      code: 'SERVER_MISCONFIGURED',
+      message: 'Rate limit store unavailable.',
+      retryAfterSeconds: 0
+    };
+  }
+}
+
 async function logAuditEvent(supabaseAdmin, req, entry, requestId) {
   if (!supabaseAdmin || !entry || typeof entry.action !== 'string' || !entry.action) {
     return;
@@ -268,11 +428,19 @@ async function logAuditEvent(supabaseAdmin, req, entry, requestId) {
   try {
     const { error } = await supabaseAdmin.from('audit_logs').insert(payload);
     if (error) {
-      console.error(`[api/audit][${requestId}] Failed to write audit log`, error);
+      log('error', 'Failed to write audit log', {
+        scope: 'api/audit',
+        requestId,
+        error: serializeError(error)
+      });
     }
   } catch (error) {
     // Best-effort: do not break primary request path if audit table isn't available yet.
-    console.error(`[api/audit][${requestId}] Failed to write audit log`, error);
+    log('error', 'Failed to write audit log', {
+      scope: 'api/audit',
+      requestId,
+      error: serializeError(error)
+    });
   }
 }
 
@@ -283,5 +451,8 @@ module.exports = {
   attachRequestId,
   sendError,
   getSupabaseAdmin,
-  logAuditEvent
+  getClientIp,
+  checkIpRateLimit,
+  logAuditEvent,
+  log
 };

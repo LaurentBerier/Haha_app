@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { BackButton } from '../../components/common/BackButton';
 import { useToast } from '../../components/common/ToastProvider';
+import { resolveErrorMessage } from '../../config/errorMessages';
 import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import { getLanguage, t } from '../../i18n';
 import {
@@ -22,21 +23,9 @@ import { impactLight, notifySuccess, notifyWarning } from '../../services/haptic
 import { useSubscriptionSync } from '../../hooks/useSubscriptionSync';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
+import { getAccountTypeLabel } from '../../utils/accountTypeUtils';
 
 type PlanId = 'free' | 'regular' | 'premium';
-
-function getAccountTypeLabel(accountType: string | null | undefined): string {
-  if (accountType === 'regular') {
-    return t('accountTypeRegular');
-  }
-  if (accountType === 'premium') {
-    return t('accountTypePremium');
-  }
-  if (accountType === 'admin') {
-    return t('accountTypeAdmin');
-  }
-  return t('accountTypeFree');
-}
 
 function isPaidPlan(accountType: string | null | undefined): boolean {
   return accountType === 'regular' || accountType === 'premium' || accountType === 'admin';
@@ -137,7 +126,7 @@ export default function SubscriptionScreen() {
       void notifySuccess();
       toast.success(t('settingsSubscriptionCancelSuccessBody'));
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('settingsSubscriptionCancelErrorBody');
+      const message = resolveErrorMessage(error, 'subscriptionCancel');
       void notifyWarning();
       toast.error(message);
     } finally {
@@ -189,7 +178,7 @@ export default function SubscriptionScreen() {
       if (!opened) {
         clearPendingCheckoutSync();
         void notifyWarning();
-        toast.error(t('settingsSubscriptionCheckoutErrorBody'));
+        toast.error(resolveErrorMessage(null, 'subscriptionCheckout'));
       } else {
         startCheckoutSync(planId);
         void impactLight();
@@ -197,7 +186,7 @@ export default function SubscriptionScreen() {
     } catch {
       clearPendingCheckoutSync();
       void notifyWarning();
-      toast.error(t('settingsSubscriptionCheckoutErrorBody'));
+      toast.error(resolveErrorMessage(null, 'subscriptionCheckout'));
     } finally {
       setActiveActionKey(null);
     }

@@ -1,4 +1,12 @@
-const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
+const {
+  attachRequestId,
+  extractBearerToken,
+  getMissingEnv,
+  getSupabaseAdmin,
+  log,
+  sendError,
+  setCorsHeaders
+} = require('./_utils');
 
 function isMissingDeleteAccountRpc(error) {
   if (!error || typeof error !== 'object') {
@@ -44,7 +52,11 @@ module.exports = async function handler(req, res) {
   const missingEnv = getMissingEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
   if (missingEnv.length > 0 || !supabaseAdmin) {
     if (missingEnv.length > 0) {
-      console.error(`[api/delete-account][${requestId}] Missing env vars: ${missingEnv.join(', ')}`);
+      log('error', 'Missing environment variables', {
+        scope: 'api/delete-account',
+        requestId,
+        missingEnv
+      });
     }
     sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
@@ -73,12 +85,20 @@ module.exports = async function handler(req, res) {
     });
     if (cleanupError) {
       if (isMissingDeleteAccountRpc(cleanupError)) {
-        console.error(`[api/delete-account][${requestId}] delete_account_cascade RPC missing`, cleanupError);
+        log('error', 'delete_account_cascade RPC missing', {
+          scope: 'api/delete-account',
+          requestId,
+          error: cleanupError
+        });
         sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
         return;
       }
 
-      console.error(`[api/delete-account][${requestId}] delete_account_cascade failed`, cleanupError);
+      log('error', 'delete_account_cascade RPC failed', {
+        scope: 'api/delete-account',
+        requestId,
+        error: cleanupError
+      });
       sendError(res, 500, 'Failed to clean account data before auth deletion.', { code: 'SERVER_ERROR', requestId });
       return;
     }
@@ -92,7 +112,11 @@ module.exports = async function handler(req, res) {
     res.status(200).json({ ok: true, deletedUserId: user.id });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown server error';
-    console.error(`[api/delete-account][${requestId}] Unhandled error`, error);
+    log('error', 'Unhandled error', {
+      scope: 'api/delete-account',
+      requestId,
+      error
+    });
     sendError(res, 500, message, { code: 'SERVER_ERROR', requestId });
   }
 };

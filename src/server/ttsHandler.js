@@ -1,5 +1,6 @@
 const {
   attachRequestId,
+  checkIpRateLimit,
   extractBearerToken,
   getMissingEnv,
   getSupabaseAdmin,
@@ -418,6 +419,19 @@ module.exports = async function handler(req, res) {
   if (missingEnv.length > 0) {
     console.error(`[api/tts][${requestId}] Missing env vars: ${missingEnv.join(', ')}`);
     sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
+    return;
+  }
+
+  const ipRateLimit = await checkIpRateLimit(req, {
+    requestId,
+    maxRequests: parsePositiveInt(process.env.TTS_IP_RATE_LIMIT_MAX_REQUESTS, 100),
+    windowMs: parsePositiveInt(process.env.TTS_IP_RATE_LIMIT_WINDOW_MS, 60_000)
+  });
+  if (!ipRateLimit.ok) {
+    if (ipRateLimit.retryAfterSeconds > 0) {
+      res.setHeader('Retry-After', String(ipRateLimit.retryAfterSeconds));
+    }
+    sendError(res, ipRateLimit.status, ipRateLimit.message, { code: ipRateLimit.code, requestId });
     return;
   }
 

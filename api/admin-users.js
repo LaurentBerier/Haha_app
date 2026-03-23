@@ -1,4 +1,12 @@
-const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
+const {
+  attachRequestId,
+  extractBearerToken,
+  getMissingEnv,
+  getSupabaseAdmin,
+  log,
+  sendError,
+  setCorsHeaders
+} = require('./_utils');
 
 const MAX_PAGE_LIMIT = 100;
 const DEFAULT_PAGE_LIMIT = 25;
@@ -31,7 +39,11 @@ async function validateAdmin(supabaseAdmin, req, requestId) {
 
     return { ok: true, userId: user.id };
   } catch (err) {
-    console.error(`[api/admin-users][${requestId}] Token validation failed`, err);
+    log('error', 'Token validation failed', {
+      scope: 'api/admin-users',
+      requestId,
+      error: err
+    });
     return { ok: false, error: 'Token validation failed', status: 401 };
   }
 }
@@ -85,7 +97,11 @@ module.exports = async function handler(req, res) {
   const supabaseAdmin = getSupabaseAdmin();
   if (missingEnv.length > 0 || !supabaseAdmin) {
     if (missingEnv.length > 0) {
-      console.error(`[api/admin-users][${requestId}] Missing env vars: ${missingEnv.join(', ')}`);
+      log('error', 'Missing environment variables', {
+        scope: 'api/admin-users',
+        requestId,
+        missingEnv
+      });
     }
     sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
@@ -124,7 +140,11 @@ module.exports = async function handler(req, res) {
     usersQuery = usersQuery.order('auth_created_at', { ascending: false, nullsFirst: false }).range(from, to);
     const { data: rows, error: usersError, count } = await usersQuery;
     if (usersError) {
-      console.error(`[api/admin-users][${requestId}] Failed to query admin_user_list`, usersError);
+      log('error', 'Failed to query admin_user_list', {
+        scope: 'api/admin-users',
+        requestId,
+        error: usersError
+      });
       sendError(res, 500, usersError.message, { code: 'SERVER_ERROR', requestId });
       return;
     }
@@ -156,7 +176,11 @@ module.exports = async function handler(req, res) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown server error';
-    console.error(`[api/admin-users][${requestId}] Unhandled error`, err);
+    log('error', 'Unhandled error', {
+      scope: 'api/admin-users',
+      requestId,
+      error: err
+    });
     sendError(res, 500, message, { code: 'SERVER_ERROR', requestId });
   }
 };

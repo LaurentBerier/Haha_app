@@ -137,6 +137,47 @@ describe('api/admin-users', () => {
     }
   });
 
+  it('returns 401 when bearer token is missing', async () => {
+    const supabase = buildSupabaseMock();
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    process.env.ALLOWED_ORIGINS = 'https://admin.example.com';
+
+    const handler = require('../admin-users');
+    const { req, res } = createReqRes({
+      method: 'GET',
+      headers: { origin: 'https://admin.example.com' }
+    });
+    req.query = { page: '0', limit: '25' };
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.payload.error.code).toBe('UNAUTHORIZED');
+  });
+
+  it('returns 403 for authenticated non-admin users', async () => {
+    const supabase = buildSupabaseMock({
+      user: { id: 'user-1', app_metadata: { role: 'user', account_type: 'regular' } }
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+
+    const handler = require('../admin-users');
+    const { req, res } = createReqRes({
+      method: 'GET',
+      headers: { authorization: 'Bearer user-token' }
+    });
+    req.query = { page: '0', limit: '25' };
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(403);
+    expect(res.payload.error.code).toBe('FORBIDDEN');
+  });
+
   it('filters by search server-side and returns matching users', async () => {
     const supabase = buildSupabaseMock();
     jest.doMock('@supabase/supabase-js', () => ({

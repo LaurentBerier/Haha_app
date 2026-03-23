@@ -1,8 +1,12 @@
 let counter = 0;
 
 export function generateId(prefix = 'id'): string {
-  // Counter resets on app restart. Collision risk remains negligible because a cross-session
-  // collision requires the same millisecond timestamp and counter value.
+  const normalizedPrefix = typeof prefix === 'string' && prefix.trim() ? prefix.trim() : 'id';
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return `${normalizedPrefix}_${globalThis.crypto.randomUUID()}`;
+  }
+
+  // Backward-compatible fallback for runtimes where randomUUID is unavailable.
   counter = (counter + 1) % 1_000_000;
-  return `${prefix}_${Date.now()}_${counter.toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  return `${normalizedPrefix}_${Date.now()}_${counter.toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }

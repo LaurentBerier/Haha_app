@@ -105,6 +105,7 @@ describe('api/claude', () => {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
     CLAUDE_RATE_LIMIT_MAX_REQUESTS: process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS,
+    CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS: process.env.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS,
     CLAUDE_MONTHLY_CAP_FREE: process.env.CLAUDE_MONTHLY_CAP_FREE,
     CLAUDE_LIMITS_RPC: process.env.CLAUDE_LIMITS_RPC,
     KV_URL: process.env.KV_URL,
@@ -123,6 +124,7 @@ describe('api/claude', () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
     process.env.ANTHROPIC_API_KEY = 'anthropic-api-key';
     process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = '30';
+    delete process.env.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS;
     delete process.env.CLAUDE_MONTHLY_CAP_FREE;
     delete process.env.CLAUDE_LIMITS_RPC;
     delete process.env.ALLOWED_ORIGINS;
@@ -167,6 +169,12 @@ describe('api/claude', () => {
       process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = originalEnv.CLAUDE_RATE_LIMIT_MAX_REQUESTS;
     } else {
       delete process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS;
+    }
+
+    if (typeof originalEnv.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS === 'string') {
+      process.env.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS = originalEnv.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS;
+    } else {
+      delete process.env.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS;
     }
 
     if (typeof originalEnv.CLAUDE_MONTHLY_CAP_FREE === 'string') {
@@ -664,6 +672,55 @@ describe('api/claude', () => {
     });
     const second = createReqRes({
       headers: { authorization: 'Bearer valid-token' },
+      body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello again' }] }
+    });
+
+    await handler(first.req, first.res);
+    await handler(second.req, second.res);
+
+    expect(first.res.statusCode).toBe(200);
+    expect(second.res.statusCode).toBe(429);
+    expect(second.res.payload.error.code).toBe('RATE_LIMIT_EXCEEDED');
+  });
+
+  it('enforces per-IP rate limiting via KV when configured', async () => {
+    process.env.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS = '1';
+    process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = '100';
+    process.env.KV_REST_API_URL = 'https://kv.example.test';
+    process.env.KV_REST_API_TOKEN = 'kv-token';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
+    });
+
+    const kvStore = new Map();
+    jest.doMock('@vercel/kv', () => ({
+      kv: {
+        incr: jest.fn(async (key) => {
+          const next = Number(kvStore.get(key) ?? 0) + 1;
+          kvStore.set(key, next);
+          return next;
+        }),
+        get: jest.fn(async (key) => (kvStore.has(key) ? kvStore.get(key) : null)),
+        expire: jest.fn(async () => 1),
+        set: jest.fn(async (key, value) => {
+          kvStore.set(key, value);
+          return 'OK';
+        })
+      }
+    }));
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../claude');
+    const first = createReqRes({
+      headers: { authorization: 'Bearer valid-token', 'x-forwarded-for': '198.51.100.22' },
+      body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello' }] }
+    });
+    const second = createReqRes({
+      headers: { authorization: 'Bearer valid-token', 'x-forwarded-for': '198.51.100.22' },
       body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello again' }] }
     });
 

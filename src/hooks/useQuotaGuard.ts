@@ -27,6 +27,12 @@ interface UseQuotaGuardOptions {
   setBlocked: (blocked: boolean) => void;
 }
 
+/**
+ * Identify server-side quota error codes that represent a hard chat block.
+ *
+ * @param {string | null} code Backend error code, when available.
+ * @returns {boolean} True when the code indicates a quota hard-stop state.
+ */
 function isQuotaBlockedErrorCode(code: string | null): boolean {
   return (
     code === 'QUOTA_EXCEEDED_BLOCKED' ||

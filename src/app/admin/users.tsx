@@ -11,11 +11,13 @@ import {
 } from 'react-native';
 import { BackButton } from '../../components/common/BackButton';
 import { useToast } from '../../components/common/ToastProvider';
+import { resolveErrorMessage } from '../../config/errorMessages';
 import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import type { AdminUser, AdminUsersPage } from '../../services/adminService';
 import { getAdminUsers, setUserAccountType, setUserQuotaOverride } from '../../services/adminService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
+import { getAccountTypeLabel } from '../../utils/accountTypeUtils';
 
 type TierFilter = 'all' | 'free' | 'regular' | 'premium' | 'admin';
 const TIER_FILTERS: TierFilter[] = ['all', 'free', 'regular', 'premium', 'admin'];
@@ -33,7 +35,7 @@ function TierBadge({ tier }: { tier: string | null }) {
   const color = tier ? (TIER_COLORS[tier] ?? theme.colors.textMuted) : theme.colors.textMuted;
   return (
     <View style={[styles.tierBadge, { borderColor: color }]}>
-      <Text style={[styles.tierBadgeLabel, { color }]}>{tier ?? '—'}</Text>
+      <Text style={[styles.tierBadgeLabel, { color }]}>{tier ? getAccountTypeLabel(tier) : '—'}</Text>
     </View>
   );
 }
@@ -64,7 +66,7 @@ function UserRow({
       toast.success(`Tier updated to ${accountTypeId}`);
       onUpdated();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update tier');
+      toast.error(resolveErrorMessage(err, 'generic'));
     } finally {
       setSaving(false);
     }
@@ -83,7 +85,7 @@ function UserRow({
       toast.success(monthlyCap === null ? 'Quota override cleared' : `Quota set to ${monthlyCap}`);
       onUpdated();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update quota');
+      toast.error(resolveErrorMessage(err, 'generic'));
     } finally {
       setSaving(false);
     }
@@ -134,7 +136,7 @@ function UserRow({
                     user.tier === t ? styles.tierChipLabelActive : null
                   ]}
                 >
-                  {t}
+                  {getAccountTypeLabel(t)}
                 </Text>
               </Pressable>
             ))}
@@ -211,7 +213,7 @@ export default function AdminUsersScreen() {
         });
         setResult(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load users');
+        setError(resolveErrorMessage(err, 'generic'));
       } finally {
         setLoading(false);
       }

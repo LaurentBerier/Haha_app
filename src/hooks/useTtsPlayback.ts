@@ -21,6 +21,12 @@ function isTerminalTtsCode(value: string | null | undefined): value is TerminalT
   return typeof value === 'string' && TERMINAL_TTS_CODES.has(value);
 }
 
+/**
+ * Resolve a transport/provider error to a terminal TTS code when retrying is not useful.
+ *
+ * @param {unknown} error Error thrown by TTS transport/provider requests.
+ * @returns {TerminalTtsCode | null} A normalized terminal code or null if non-terminal.
+ */
 export function resolveTerminalTtsCode(error: unknown): TerminalTtsCode | null {
   if (!error || typeof error !== 'object') {
     return null;

@@ -1,7 +1,15 @@
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 const { kv } = require('@vercel/kv');
-const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
+const {
+  attachRequestId,
+  checkIpRateLimit,
+  extractBearerToken,
+  getMissingEnv,
+  getSupabaseAdmin,
+  sendError,
+  setCorsHeaders
+} = require('./_utils');
 const { normalizeAccountType, resolveEffectiveAccountType } = require('./_account-tier');
 const { updateUsageEventTokens } = require('./_quota-utils');
 const ttsHandler = require('../src/server/ttsHandler');
@@ -837,6 +845,16 @@ Pour Cathy, vise 0-1 marqueur par réponse (max 2 seulement en vrai pic) :
 Ne pose pas un marqueur au début de chaque phrase. Varie leur position.`;
 }
 
+/**
+ * Build the final server-side system prompt from mode context, profile hints and optional live context.
+ *
+ * @param {object} context Prompt context payload normalized from request body.
+ * @param {object | null} profile Normalized user profile fields for personalization.
+ * @param {ClaudeMessage[]} rawMessages Raw user/assistant messages from the request.
+ * @param {string | null} [preferredName=null] Preferred display name override from auth metadata.
+ * @param {string} [currentContextSection=''] Optional weather/news/live context section.
+ * @returns {string} System prompt string sent to Claude.
+ */
 function buildServerSystemPrompt(context, profile, rawMessages, preferredName = null, currentContextSection = '') {
   const promptLanguage = resolvePromptLanguage(context.language);
   const artistId = typeof context.artistId === 'string' ? context.artistId : DEFAULT_ARTIST_ID;
@@ -1870,6 +1888,15 @@ async function writeProfileMonthlyCounter(supabaseAdmin, userId, monthStartIso, 
   return { ok: true, unsupported: false };
 }
 
+/**
+ * Enforce the monthly message quota for a user and return normalized quota state.
+ *
+ * @param {import('@supabase/supabase-js').SupabaseClient} supabaseAdmin Supabase admin client.
+ * @param {string} userId Authenticated user id.
+ * @param {string | null} accountType Effective account tier.
+ * @param {string} requestId Request correlation id.
+ * @returns {Promise<{ok: boolean, status?: number, code?: string, message?: string, used?: number, effectiveCap?: number|null, source?: string}>}
+ */
 async function enforceMonthlyQuota(supabaseAdmin, userId, accountType, requestId) {
   const normalizedAccountType = normalizeAccountType(accountType);
   const effectiveCap = normalizedAccountType === 'admin' ? null : getMonthlyCap(normalizedAccountType);
@@ -2306,6 +2333,19 @@ module.exports = async function handler(req, res) {
   if (missingEnv.length > 0) {
     console.error(`[api/claude][${requestId}] Missing env vars: ${missingEnv.join(', ')}`);
     sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
+    return;
+  }
+
+  const ipRateLimit = await checkIpRateLimit(req, {
+    requestId,
+    maxRequests: parsePositiveInt(process.env.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS, 100),
+    windowMs: parsePositiveInt(process.env.CLAUDE_IP_RATE_LIMIT_WINDOW_MS, 60_000)
+  });
+  if (!ipRateLimit.ok) {
+    if (ipRateLimit.retryAfterSeconds > 0) {
+      res.setHeader('Retry-After', String(ipRateLimit.retryAfterSeconds));
+    }
+    sendError(res, ipRateLimit.status, ipRateLimit.message, { code: ipRateLimit.code, requestId });
     return;
   }
 

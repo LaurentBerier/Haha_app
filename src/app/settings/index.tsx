@@ -7,23 +7,12 @@ import { SettingsRow } from '../../components/common/SettingsRow';
 import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import { useAuth } from '../../hooks/useAuth';
 import { t } from '../../i18n';
+import { resolveErrorMessage } from '../../config/errorMessages';
 import { deleteAccount, signOut } from '../../services/authService';
 import type { AppLanguage, ReduceMotionPreference } from '../../store/slices/uiSlice';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
-
-function getAccountTypeLabel(accountType: string | null | undefined): string {
-  if (accountType === 'regular') {
-    return t('accountTypeRegular');
-  }
-  if (accountType === 'premium') {
-    return t('accountTypePremium');
-  }
-  if (accountType === 'admin') {
-    return t('accountTypeAdmin');
-  }
-  return t('accountTypeFree');
-}
+import { getAccountTypeLabel } from '../../utils/accountTypeUtils';
 
 function initialsFromIdentity(value: string | null | undefined): string {
   const input = (value ?? '').trim();
@@ -83,7 +72,7 @@ export default function SettingsScreen() {
       clearSession();
       router.replace('/(auth)/login');
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('settingsGenericError');
+      const message = resolveErrorMessage(error, 'generic');
       setErrorMessage(message);
       toast.error(message);
     } finally {
@@ -100,7 +89,7 @@ export default function SettingsScreen() {
 
   const doDeleteAccount = async () => {
     if (!session?.accessToken) {
-      setErrorMessage(t('settingsGenericError'));
+      setErrorMessage(resolveErrorMessage(null, 'generic'));
       return;
     }
 
@@ -111,7 +100,7 @@ export default function SettingsScreen() {
       clearSession();
       router.replace('/(auth)/login');
     } catch (error) {
-      const message = error instanceof Error ? error.message : t('settingsDeleteError');
+      const message = resolveErrorMessage(error, 'deleteAccount');
       setErrorMessage(message);
       toast.error(message);
     } finally {
