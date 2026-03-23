@@ -102,23 +102,23 @@ $$;
 create or replace view public.admin_user_list as
 select
   p.id,
-  p.id::text as id_text,
-  u.email,
-  u.created_at as auth_created_at,
   p.account_type_id as tier,
   coalesce(p.monthly_message_count, 0) as messages_this_month,
   p.monthly_cap_override,
   p.monthly_reset_at,
   max(ue.created_at) as last_active_at,
-  count(ue.id) as total_events
+  count(ue.id) as total_events,
+  p.id::text as id_text,
+  u.email,
+  u.created_at as auth_created_at
 from public.profiles p
 left join auth.users u on u.id = p.id
 left join public.usage_events ue on ue.user_id = p.id
 group by
   p.id,
-  u.email,
-  u.created_at,
   p.account_type_id,
   p.monthly_message_count,
   p.monthly_cap_override,
-  p.monthly_reset_at;
+  p.monthly_reset_at,
+  u.email,
+  u.created_at;
