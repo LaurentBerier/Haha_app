@@ -218,6 +218,22 @@ Fix order:
 2. backfill existing users if needed
 3. run [`docs/supabase-account-types.sql`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-account-types.sql)
 
+## 8a) Extra scrollbar appears on far-right in mode-select conversation (web)
+
+Symptom:
+
+- In `/mode-select/[artistId]` with compact category grid + active conversation, a second scrollbar appears at the extreme right edge of the page.
+
+Cause:
+
+- Background screen `ScrollView` remains scrollable with a large bottom spacer while the overlay chat list is also scrollable.
+
+Fix (already applied in `src/app/mode-select/[artistId]/index.tsx`):
+
+- Disable background `ScrollView` scroll when compact conversation mode is active.
+- Use compact-only bottom padding instead of chat-height-derived spacer.
+- Keep the overlay message `FlatList` scroll enabled (single intended scrollbar).
+
 ## 9) SQL error `relation "account_types" does not exist`
 
 Fix:

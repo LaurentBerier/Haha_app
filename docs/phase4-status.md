@@ -1,6 +1,6 @@
 # Phase 4 Status (Conversation Naturelle)
 
-Last updated: **2026-03-20**
+Last updated: **2026-03-23**
 
 ## Scope
 
@@ -43,7 +43,8 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
   - greeting/tutorial message injection marked by `injectedType`
   - one-time mic auto-arm after greeting/tutorial message visibility (`messageId` guard)
   - strict manual override: user pause cancels auto-start for that greeting
-  - mobile compact layout expansion: conversation overlay top anchored to compact category-grid bottom
+  - compact layout expansion: conversation overlay top anchored to compact category-grid bottom (mobile + web fallback tuning)
+  - compact mode now locks background `ScrollView` and shrinks bottom spacer to avoid duplicate page-level scrollbar on web while preserving chat-list scrolling
 - Forced mode nudges removed:
   - no automatic `mode_nudge` injection after N user replies
   - mode-select conversation now keeps natural flow without forced "try modes" interjections
@@ -84,19 +85,24 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
 
 ## QA Status
 
-Validated on **2026-03-20** (focused pass):
+Validated on **2026-03-23** (targeted mode-select layout pass):
 
 - `npm run typecheck` -> PASS
+- `npx eslint src/app/mode-select/[artistId]/index.tsx` -> PASS
+
+Prior broad validation baseline remains available from **2026-03-20**:
+
 - `npm run lint` -> PASS
 - `npm run verify:profile-prompt` -> PASS
 - `npm run test:unit` -> PASS (29 suites, 183 tests)
 - `npm run smoke:auth` -> PASS
 - `npm run smoke:voice` -> PASS (`tts with auth -> 200`)
-- `npm run export:web` -> not rerun in this pass (last validated 2026-03-19)
-- `npm run check:mobile-env` -> not rerun in this pass (last validated 2026-03-19)
+- `npm run export:web` -> not rerun in 2026-03-20 pass (last validated 2026-03-19)
+- `npm run check:mobile-env` -> not rerun in 2026-03-20 pass (last validated 2026-03-19)
 
 Detailed run logs:
 
+- [`docs/qa-run-2026-03-23.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-23.md)
 - [`docs/qa-run-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-20.md)
 - [`docs/qa-run-2026-03-19.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-19.md)
 - [`docs/qa-run-2026-03-18.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-18.md)

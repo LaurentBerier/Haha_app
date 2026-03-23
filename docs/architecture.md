@@ -133,7 +133,8 @@ Store-level account isolation:
   - bubbles are anchored above the bottom composer
   - no route push to `/chat/[conversationId]` when user replies in mode-select
   - navigation to a new mode/chat happens only when user chooses a mode
-  - on iOS/Android, overlay top is measured from compact category-grid bottom so conversation takes maximum vertical space up to top controls
+  - in compact layout, overlay top is measured from category-grid bottom so conversation takes maximum vertical space up to top controls
+  - compact mode disables background page scrolling (`ScrollView`) and reduces artificial bottom spacer to avoid duplicate page-level scrollbar on web while the conversation list remains scrollable
   - conversation keeps flowing naturally in place (no forced mode-discovery nudge injection)
 - Greeting behavior:
   - once per artist per app session (`uiSlice.greetedArtistIds`, memory-only)

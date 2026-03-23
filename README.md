@@ -37,7 +37,8 @@ Implemented in this repository:
   - first-session greeting with weather/news signal context
   - auto-replay of latest replayable Cathy message when app/window returns to active (current conversation only, once per message id)
   - chunk-synced text/voice playback keyed by `message.id` with animated waveform replay control (`loading`, `playing`, `idle/play`)
-  - mobile mode-select conversation overlay expands up to compact top controls (instead of fixed half-screen clamp)
+  - mode-select conversation overlay expands up to compact top controls (instead of fixed half-screen clamp)
+  - compact mode-select now disables background page scrolling to prevent the duplicate right-edge scrollbar on web while keeping message-list scroll active
 - Subscription screen includes current plan, next billing cycle, and cancel-at-period-end for Stripe subscriptions.
 - User profile model and profile personalization injection in system prompts.
 - Gamification layer (score, titles, streak, mode-driven scoring) persisted in Zustand and synced with Supabase.
@@ -67,7 +68,7 @@ Implemented in this repository:
 - [`docs/phase3-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase3-status.md)
 - [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
 - Admin dashboard status: [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md)
-- Latest QA run: [`docs/qa-run-2026-03-22.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-22.md)
+- Latest QA run: [`docs/qa-run-2026-03-23.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-23.md)
 - Latest code-review snapshot: [`docs/code-review-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-20.md)
 
 ## Repos and Vercel Projects
