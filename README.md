@@ -66,7 +66,8 @@ Implemented in this repository:
 - [`docs/phase2-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase2-status.md)
 - [`docs/phase3-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase3-status.md)
 - [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
-- Latest QA run: [`docs/qa-run-2026-03-21.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-21.md)
+- Admin dashboard status: [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md)
+- Latest QA run: [`docs/qa-run-2026-03-22.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-22.md)
 - Latest code-review snapshot: [`docs/code-review-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-20.md)
 
 ## Repos and Vercel Projects
@@ -290,6 +291,10 @@ Admin dashboard API endpoints:
 - `GET /api/admin-users`
 - `POST /api/admin-quota-override`
 
+Current dashboard state snapshot:
+
+- [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md)
+
 Auth requirements:
 
 - Bearer JWT from Supabase user with `app_metadata.role='admin'` or `app_metadata.account_type='admin'`
@@ -512,6 +517,7 @@ Use this checklist before shipping subscription changes (test or live):
 ## Additional Docs
 
 - `docs/architecture.md`
+- `docs/admin-dashboard-status.md`
 - `docs/repo-topology.md`
 - `docs/economics.md`
 - `docs/phase1-status.md`
@@ -524,6 +530,7 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/qa-run-2026-03-19.md`
 - `docs/qa-run-2026-03-20.md`
 - `docs/qa-run-2026-03-21.md`
+- `docs/qa-run-2026-03-22.md`
 - `docs/code-review-2026-03-15.md`
 - `docs/code-review-2026-03-16.md`
 - `docs/code-review-2026-03-17.md`

@@ -257,6 +257,8 @@ Quick validation:
 - Admin shortcut should appear in both:
   - Settings screen (`/settings`)
   - Header hamburger account menu
+- For full expected behavior/state, see:
+  - [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md)
 
 ## 10b) Admin dashboard opens then loops on loading
 

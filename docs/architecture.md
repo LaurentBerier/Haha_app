@@ -27,6 +27,7 @@ Supabase is the source of truth for:
 - Universal `BackButton` is used on secondary routes (`mode-select`, `history`, `chat`, `settings`, `edit-profile`, `subscription`, `admin`).
 - Header logo always routes to `/` (artist selection); back navigation remains a separate action.
 - Admin routes are grouped under `src/app/admin` and gate access in `admin/_layout.tsx` (`isAdmin` check + redirect to `/settings`).
+- Current operational/admin UX state is tracked in [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md).
 - Auth routes:
   - `/(auth)/login`
   - `/(auth)/signup`
@@ -242,6 +243,10 @@ Store-level account isolation:
 - updates `profiles.monthly_cap_override` (set or clear with `null`)
 - writes best-effort audit row (`audit_logs`) for override changes
 - shared CORS/auth/error/request-id utilities
+
+Admin dashboard current-state tracker:
+
+- [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md)
 
 ### `POST /api/delete-account` (`api/delete-account.js`)
 
