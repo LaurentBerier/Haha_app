@@ -391,7 +391,6 @@ export default function RootLayout() {
             <>
               <StatusBar style="light" />
               <Stack
-                key={language}
                 screenOptions={{
                   headerStyle: {
                     backgroundColor: theme.colors.background
@@ -507,8 +506,7 @@ export default function RootLayout() {
                 <Stack.Screen name="settings/edit-profile" options={{ title: t('settingsEditProfile') }} />
                 <Stack.Screen name="settings/subscription" options={{ title: t('settingsSubscription') }} />
                 <Stack.Screen name="stats/index" options={{ title: t('settingsStats') }} />
-                <Stack.Screen name="admin/index" options={{ title: 'Admin Dashboard', headerShown: false }} />
-                <Stack.Screen name="admin/users" options={{ title: 'Users', headerShown: false }} />
+                <Stack.Screen name="admin" options={{ headerShown: false }} />
               </Stack>
               {showGlobalChatInput ? (
                 <View style={styles.globalInputDock}>

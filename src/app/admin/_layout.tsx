@@ -18,5 +18,10 @@ export default function AdminLayout() {
     return null;
   }
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="index" options={{ title: 'Admin Dashboard' }} />
+      <Stack.Screen name="users" options={{ title: 'Users' }} />
+    </Stack>
+  );
 }

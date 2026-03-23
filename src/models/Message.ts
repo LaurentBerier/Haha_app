@@ -6,7 +6,8 @@ export interface MessageMetadata {
   voiceUrl?: string;
   voiceQueue?: string[];
   voiceChunkBoundaries?: number[];
-  voiceStatus?: 'generating' | 'ready';
+  voiceStatus?: 'generating' | 'ready' | 'unavailable';
+  voiceErrorCode?: string;
   cathyReaction?: string;
   tutorialMode?: boolean;
   injectedType?: 'greeting' | 'tutorial_greeting' | 'mode_nudge';

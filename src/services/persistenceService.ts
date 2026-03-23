@@ -58,7 +58,12 @@ function isValidMessageMetadata(value: unknown): boolean {
     value.voiceChunkBoundaries === undefined ||
     (Array.isArray(value.voiceChunkBoundaries) &&
       value.voiceChunkBoundaries.every((entry) => typeof entry === 'number' && Number.isFinite(entry) && entry >= 0));
-  const voiceStatusValid = value.voiceStatus === undefined || value.voiceStatus === 'generating' || value.voiceStatus === 'ready';
+  const voiceStatusValid =
+    value.voiceStatus === undefined ||
+    value.voiceStatus === 'generating' ||
+    value.voiceStatus === 'ready' ||
+    value.voiceStatus === 'unavailable';
+  const voiceErrorCodeValid = value.voiceErrorCode === undefined || typeof value.voiceErrorCode === 'string';
   const cathyReactionValid = value.cathyReaction === undefined || typeof value.cathyReaction === 'string';
   const tutorialModeValid = value.tutorialMode === undefined || typeof value.tutorialMode === 'boolean';
   const injectedTypeValid =
@@ -84,6 +89,7 @@ function isValidMessageMetadata(value: unknown): boolean {
     voiceQueueValid &&
     voiceChunkBoundariesValid &&
     voiceStatusValid &&
+    voiceErrorCodeValid &&
     cathyReactionValid &&
     tutorialModeValid &&
     injectedTypeValid &&

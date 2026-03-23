@@ -64,7 +64,18 @@ export default function ChatScreen() {
   const currentConversation = useStore(
     useCallback((state) => findConversationById(state.conversations, conversationId), [conversationId])
   );
-  const { messages, sendMessage, retryMessage, hasStreaming, currentArtistName, isQuotaBlocked, audioPlayer } = useChat(conversationId);
+  const {
+    messages,
+    sendMessage,
+    retryMessage,
+    retryVoiceForMessage,
+    hasStreaming,
+    currentArtistName,
+    isQuotaBlocked,
+    isSendContextReady,
+    audioPlayer
+  } = useChat(conversationId);
+  const isChatComposerDisabled = !isValidConversation || isQuotaBlocked || !isSendContextReady;
   const sendWithFillerRef = useRef<(payload: ChatSendPayload) => unknown>(() => null);
 
   const {
@@ -77,8 +88,8 @@ export default function ChatScreen() {
     resumeListening
   } =
     useVoiceConversation({
-    enabled: conversationModeEnabled && !isQuotaBlocked && isValidConversation,
-    disabled: !isValidConversation || isQuotaBlocked,
+    enabled: conversationModeEnabled && !isChatComposerDisabled,
+    disabled: isChatComposerDisabled,
     hasTypedDraft,
     isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading,
     onSend: (text) => {
@@ -202,6 +213,7 @@ export default function ChatScreen() {
             userDisplayName={userDisplayName}
             artistDisplayName={artistDisplayName}
             onRetryMessage={retryMessage}
+            onRetryVoice={retryVoiceForMessage}
             audioPlayer={audioPlayer}
           />
         ) : (
@@ -212,7 +224,7 @@ export default function ChatScreen() {
         {isValidConversation && hasStreaming ? <StreamingIndicator /> : null}
         <ChatInput
           onSend={sendWithFiller}
-          disabled={!isValidConversation || isQuotaBlocked}
+          disabled={isChatComposerDisabled}
           conversationMode={{
             enabled: conversationModeEnabled,
             isListening,

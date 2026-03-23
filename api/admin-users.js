@@ -73,7 +73,7 @@ async function listAllAuthUsers(supabaseAdmin, perPage = MAX_PAGE_LIMIT) {
       total = data.total;
     }
 
-    if (batch.length < perPage || (typeof total === 'number' && users.length >= total)) {
+    if (batch.length === 0 || (typeof total === 'number' && users.length >= total)) {
       break;
     }
 

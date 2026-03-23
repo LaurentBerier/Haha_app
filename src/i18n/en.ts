@@ -235,6 +235,11 @@ export const en = {
     "I can keep chatting by text, but voice credits are exhausted on your current plan. Upgrade and we'll continue in voice.",
   cathyVoiceRateLimitMessage:
     "I can keep chatting by text for now: we hit a temporary voice rate limit. Try again in a minute.",
+  voiceUnavailableRateLimit: 'Voice temporarily rate-limited. Try again in a minute.',
+  voiceUnavailableQuota: 'Voice unavailable: quota reached for this plan.',
+  voiceUnavailableForbidden: 'Voice is not allowed for this account.',
+  voiceUnavailableGeneric: 'Voice unavailable for this message.',
+  voiceRetryLabel: 'Retry voice',
   messageTooLong: 'Message is too long',
   newConversation: 'New conversation',
   noMessages: 'Start the conversation',

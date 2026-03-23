@@ -235,6 +235,11 @@ export const fr = {
     "Je continue en texte, mais ma voix est à sec pour ton forfait actuel. Passe au plan supérieur et on repart en vocal.",
   cathyVoiceRateLimitMessage:
     "Je continue en texte pour l'instant: on a frappé la limite voix temporaire. Réessaie dans une minute et on reprend.",
+  voiceUnavailableRateLimit: "Voix temporairement limitée. Réessaie dans une minute.",
+  voiceUnavailableQuota: "Voix indisponible: quota atteint pour ce forfait.",
+  voiceUnavailableForbidden: "Voix non autorisée pour ce compte.",
+  voiceUnavailableGeneric: 'Voix indisponible pour ce message.',
+  voiceRetryLabel: 'Réessayer la voix',
   messageTooLong: 'Message trop long',
   newConversation: 'Nouvelle conversation',
   noMessages: 'Commence la conversation',

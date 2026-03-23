@@ -12,6 +12,7 @@ import { getAllCathyFewShots, getCathyModeFewShots } from '../data/cathy-gauthie
 import { getLanguage, setLanguage, t } from '../i18n';
 import type { ChatError } from '../models/ChatError';
 import type { ChatSendPayload } from '../models/ChatSendPayload';
+import type { Conversation } from '../models/Conversation';
 import type { Message } from '../models/Message';
 import type { ClaudeContentBlock, ClaudeMessage } from '../services/claudeApiService';
 import { streamClaudeResponse } from '../services/claudeApiService';
@@ -28,9 +29,11 @@ import { normalizeSpeechText, splitDisplayChunkFromRaw, stripAudioTags } from '.
 import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../utils/accountTypeUtils';
 import type { ScoreAction } from '../models/Gamification';
 import { computeTutorialModeForRequest, shouldApplyReactionForUserMessage } from './chatBehavior';
+import { resolveChatSendContextFromState, type ChatSendContextBlockReason } from './chatSendContext';
 import { useAudioPlayer } from './useAudioPlayer';
 
 interface StreamJob {
+  conversationId: string;
   artistMessageId: string;
   userMessageId: string;
   artistId: string;
@@ -49,9 +52,9 @@ const EMPTY_MESSAGES: Message[] = [];
 const MAX_CLAUDE_HISTORY_MESSAGES = 39;
 const VOICE_MAX_CLAUDE_HISTORY_MESSAGES = 8;
 const MAX_MEMORY_FACTS = 6;
-const MIN_TTS_CHUNK_CHARS = 20;
-const MAX_TTS_CHUNK_CHARS = 200;
-const VOICE_FIRST_CHUNK_MIN_CHARS = 60;
+const MIN_TTS_CHUNK_CHARS = 80;
+const MAX_TTS_CHUNK_CHARS = 360;
+const VOICE_FIRST_CHUNK_MIN_CHARS = 140;
 const NOTICE_AUDIO_SYNC_START_WAIT_MS = 1_500;
 const NOTICE_AUDIO_SYNC_FINISH_WAIT_MS = 15_000;
 const NOTICE_AUDIO_SYNC_POLL_MS = 120;
@@ -60,6 +63,11 @@ const ALLOWED_REACTIONS = new Set(['😂', '💀', '😮', '😤', '🙄', '😬
 const TERMINAL_TTS_CODES = new Set(['TTS_QUOTA_EXCEEDED', 'RATE_LIMIT_EXCEEDED', 'TTS_FORBIDDEN']);
 
 export type TerminalTtsCode = 'TTS_QUOTA_EXCEEDED' | 'RATE_LIMIT_EXCEEDED' | 'TTS_FORBIDDEN';
+export type VoiceErrorCode =
+  | TerminalTtsCode
+  | 'UNAUTHORIZED'
+  | 'TTS_PROVIDER_ERROR'
+  | 'UNKNOWN';
 
 function isQuotaBlockedErrorCode(code: string | null): boolean {
   return (
@@ -103,6 +111,27 @@ export function buildCathyVoiceNotice(code: TerminalTtsCode): string {
     return t('cathyVoiceRateLimitMessage');
   }
   return t('cathyVoiceQuotaExceededMessage');
+}
+
+function resolveVoiceErrorCode(error: unknown): VoiceErrorCode {
+  const terminalCode = resolveTerminalTtsCode(error);
+  if (terminalCode) {
+    return terminalCode;
+  }
+
+  if (error && typeof error === 'object') {
+    const explicitCode = 'code' in error && typeof error.code === 'string' ? error.code.trim() : '';
+    if (explicitCode === 'UNAUTHORIZED' || explicitCode === 'TTS_PROVIDER_ERROR') {
+      return explicitCode;
+    }
+
+    const status = 'status' in error && typeof error.status === 'number' ? error.status : null;
+    if (status === 401) {
+      return 'UNAUTHORIZED';
+    }
+  }
+
+  return 'UNKNOWN';
 }
 
 function isSentenceBoundary(input: string, index: number): boolean {
@@ -416,6 +445,15 @@ function resolveScoreActions(modeId: string, imageIntent: ImageIntent, battleRes
   return [...actions];
 }
 
+function resolveModeFewShotsForConversation(conversation: Conversation): ReturnType<typeof getCathyModeFewShots> {
+  if (!conversation.modeId || conversation.artistId !== ARTIST_IDS.CATHY_GAUTHIER) {
+    return [];
+  }
+
+  const dedicated = getCathyModeFewShots(conversation.modeId);
+  return dedicated.length > 0 ? dedicated : getAllCathyFewShots();
+}
+
 export function useChat(conversationId: string) {
   const addMessage = useStore((state) => state.addMessage);
   const updateMessage = useStore((state) => state.updateMessage);
@@ -449,15 +487,6 @@ export function useChat(conversationId: string) {
     [artists, currentConversation?.artistId]
   );
 
-  const modeFewShots = useMemo(() => {
-    if (!currentConversation?.modeId || currentConversation.artistId !== ARTIST_IDS.CATHY_GAUTHIER) {
-      return [];
-    }
-
-    const dedicated = getCathyModeFewShots(currentConversation.modeId);
-    return dedicated.length > 0 ? dedicated : getAllCathyFewShots();
-  }, [currentConversation?.artistId, currentConversation?.modeId]);
-
   const queueRef = useRef<StreamJob[]>([]);
   const isStreamingRef = useRef(false);
   const runNextLockRef = useRef(false);
@@ -473,11 +502,28 @@ export function useChat(conversationId: string) {
   const flushFrameRef = useRef<number | null>(null);
   const displayPendingTagRef = useRef('');
   const rawTtsResponseRef = useRef('');
+  const conversationIdRef = useRef(conversationId);
+  conversationIdRef.current = conversationId;
   const audioPlaybackStateRef = useRef({
     isPlaying: audioPlayer.isPlaying,
     isLoading: audioPlayer.isLoading,
     currentMessageId: audioPlayer.currentMessageId
   });
+
+  const sendContextBlockReason = useMemo<ChatSendContextBlockReason | null>(() => {
+    if (!conversationId.trim()) {
+      return 'missing_conversation_id';
+    }
+    if (!currentConversation) {
+      return 'missing_conversation';
+    }
+    if (!currentArtist) {
+      return 'missing_artist';
+    }
+    return null;
+  }, [conversationId, currentArtist, currentConversation]);
+
+  const isSendContextReady = sendContextBlockReason === null;
 
   useEffect(() => {
     audioPlaybackStateRef.current = {
@@ -488,7 +534,7 @@ export function useChat(conversationId: string) {
   }, [audioPlayer.currentMessageId, audioPlayer.isLoading, audioPlayer.isPlaying]);
 
   const runNext = useCallback(() => {
-    if (!conversationId || runNextLockRef.current || !isMountedRef.current) {
+    if (runNextLockRef.current || !isMountedRef.current) {
       return;
     }
 
@@ -505,6 +551,7 @@ export function useChat(conversationId: string) {
       }
 
       const {
+        conversationId: queuedConversationId,
         artistMessageId,
         userMessageId,
         artistId,
@@ -518,7 +565,10 @@ export function useChat(conversationId: string) {
         imageIntent,
         tutorialMode
       } = nextJob;
-      const jobConversationId = conversationId;
+      const jobConversationId = queuedConversationId.trim();
+      if (!jobConversationId) {
+        return;
+      }
       const conversationModeEnabledForJob = useStore.getState().conversationModeEnabled;
       const voiceModeAddendum = conversationModeEnabledForJob
         ? '\n\n## VOICE MODE\nKeep this answer to 1-2 sentences maximum. You are live. No lists, no long explanations.'
@@ -630,6 +680,7 @@ export function useChat(conversationId: string) {
       };
 
       const latestSessionUser = useStore.getState().session?.user;
+      const latestAccessTokenForJob = useStore.getState().session?.accessToken ?? accessToken;
       const latestAccountType = resolveEffectiveAccountType(
         latestSessionUser?.accountType ?? currentAccountType,
         latestSessionUser?.role ?? currentRole
@@ -637,7 +688,17 @@ export function useChat(conversationId: string) {
       const canGenerateVoice =
         artistId === ARTIST_IDS.CATHY_GAUTHIER &&
         hasVoiceAccessForAccountType(latestAccountType) &&
-        Boolean(accessToken.trim());
+        Boolean(latestAccessTokenForJob.trim());
+      const shouldUseChunkedTts = conversationModeEnabledForJob;
+      const markMessageVoiceUnavailable = (messageId: string, code: VoiceErrorCode) => {
+        mergeMessageMetadata(messageId, {
+          voiceStatus: 'unavailable',
+          voiceErrorCode: code,
+          voiceUrl: undefined,
+          voiceQueue: undefined,
+          voiceChunkBoundaries: undefined
+        });
+      };
       const synthesizeNoticeVoice = (
         messageId: string,
         content: string,
@@ -662,6 +723,7 @@ export function useChat(conversationId: string) {
 
         mergeMessageMetadata(messageId, {
           voiceStatus: 'generating',
+          voiceErrorCode: undefined,
           voiceUrl: undefined,
           voiceQueue: undefined,
           voiceChunkBoundaries: undefined
@@ -673,18 +735,14 @@ export function useChat(conversationId: string) {
         })
           .then((uri) => {
             if (!uri) {
-              mergeMessageMetadata(messageId, {
-                voiceStatus: undefined,
-                voiceUrl: undefined,
-                voiceQueue: undefined,
-                voiceChunkBoundaries: undefined
-              });
+              markMessageVoiceUnavailable(messageId, 'TTS_PROVIDER_ERROR');
               return;
             }
 
             const boundary = stripAudioTags(normalizedNotice, { trim: true }).length;
             mergeMessageMetadata(messageId, {
               voiceStatus: 'ready',
+              voiceErrorCode: undefined,
               voiceUrl: uri,
               voiceQueue: [uri],
               voiceChunkBoundaries: [boundary]
@@ -702,13 +760,8 @@ export function useChat(conversationId: string) {
               }
             }
           })
-          .catch(() => {
-            mergeMessageMetadata(messageId, {
-              voiceStatus: undefined,
-              voiceUrl: undefined,
-              voiceQueue: undefined,
-              voiceChunkBoundaries: undefined
-            });
+          .catch((error: unknown) => {
+            markMessageVoiceUnavailable(messageId, resolveVoiceErrorCode(error));
           });
       };
       const waitForReplyAudioToSettle = async (): Promise<void> => {
@@ -810,6 +863,38 @@ export function useChat(conversationId: string) {
       let hasQueuedAutoplayChunk = false;
       let firstChunkFired = false;
       let pendingVoiceNoticeCode: TerminalTtsCode | null = null;
+      let pendingVoiceErrorCode: VoiceErrorCode | null = null;
+
+      const markArtistVoiceGenerating = () => {
+        mergeArtistMetadata({
+          voiceStatus: 'generating',
+          voiceErrorCode: undefined,
+          voiceUrl: undefined,
+          voiceQueue: undefined,
+          voiceChunkBoundaries: undefined
+        });
+      };
+
+      const markArtistVoiceReady = (uri: string, queue: string[], boundaries: number[]) => {
+        mergeArtistMetadata({
+          voiceStatus: 'ready',
+          voiceErrorCode: undefined,
+          voiceUrl: uri,
+          voiceQueue: queue,
+          voiceChunkBoundaries: boundaries
+        });
+      };
+
+      const markArtistVoiceUnavailable = (code: VoiceErrorCode) => {
+        pendingVoiceErrorCode = code;
+        mergeArtistMetadata({
+          voiceStatus: 'unavailable',
+          voiceErrorCode: code,
+          voiceUrl: undefined,
+          voiceQueue: undefined,
+          voiceChunkBoundaries: undefined
+        });
+      };
 
       const registerTerminalTtsError = (error: unknown): boolean => {
         const terminalCode = resolveTerminalTtsCode(error);
@@ -823,12 +908,7 @@ export function useChat(conversationId: string) {
 
         ignoreTtsUpdates = true;
         hasTtsChunkFailure = true;
-        mergeArtistMetadata({
-          voiceStatus: undefined,
-          voiceUrl: undefined,
-          voiceQueue: undefined,
-          voiceChunkBoundaries: undefined
-        });
+        markArtistVoiceUnavailable(terminalCode);
         return true;
       };
 
@@ -886,16 +966,12 @@ export function useChat(conversationId: string) {
         }
 
         const { orderedVoiceUris, orderedBoundaries } = buildVoicePlaybackData();
-        if (orderedVoiceUris.length === 0) {
+        const firstVoiceUri = orderedVoiceUris[0];
+        if (!firstVoiceUri) {
           return;
         }
 
-        mergeArtistMetadata({
-          voiceUrl: orderedVoiceUris[0],
-          voiceQueue: orderedVoiceUris,
-          voiceChunkBoundaries: orderedBoundaries,
-          voiceStatus: 'ready'
-        });
+        markArtistVoiceReady(firstVoiceUri, orderedVoiceUris, orderedBoundaries);
       };
 
       const queueTtsChunk = (chunk: string) => {
@@ -910,12 +986,7 @@ export function useChat(conversationId: string) {
 
         if (!hasStartedVoiceGeneration) {
           hasStartedVoiceGeneration = true;
-          mergeArtistMetadata({
-            voiceStatus: 'generating',
-            voiceUrl: undefined,
-            voiceQueue: undefined,
-            voiceChunkBoundaries: undefined
-          });
+          markArtistVoiceGenerating();
         }
 
         const chunkIndex = ttsChunkCount;
@@ -978,8 +1049,10 @@ export function useChat(conversationId: string) {
         bufferedTokensRef.current += token;
         rawTtsResponseRef.current += token;
         if (canGenerateVoice) {
-          ttsBuffer += token;
-          if (conversationModeEnabledForJob && !firstChunkFired) {
+          if (shouldUseChunkedTts) {
+            ttsBuffer += token;
+          }
+          if (shouldUseChunkedTts && !firstChunkFired) {
             const lastOpenBracketIndex = ttsBuffer.lastIndexOf('[');
             const lastCloseBracketIndex = ttsBuffer.lastIndexOf(']');
             const hasUnclosedBracketTag = lastOpenBracketIndex > lastCloseBracketIndex;
@@ -989,7 +1062,9 @@ export function useChat(conversationId: string) {
               ttsBuffer = '';
             }
           }
-          flushTtsChunks(false);
+          if (shouldUseChunkedTts) {
+            flushTtsChunks(false);
+          }
         }
         scheduleFlush();
       };
@@ -998,16 +1073,31 @@ export function useChat(conversationId: string) {
         if (!isCurrentStream()) {
           return;
         }
-        flushTtsChunks(true);
+        if (shouldUseChunkedTts) {
+          flushTtsChunks(true);
+        }
         const latestArtistMessage = getLatestArtistMessage();
         const rawFinalContent = latestArtistMessage?.content ?? '';
         const finalContent = stripAudioTags(rawFinalContent);
-        if (finalContent !== rawFinalContent) {
+        const fallbackContentFromStream = stripAudioTags(rawTtsResponseRef.current);
+        const resolvedFinalContent =
+          finalContent.trim().length > 0 || fallbackContentFromStream.trim().length === 0
+            ? finalContent
+            : fallbackContentFromStream;
+        if (resolvedFinalContent !== rawFinalContent) {
           updateMessage(jobConversationId, artistMessageId, {
-            content: finalContent
+            content: resolvedFinalContent
           });
         }
-        const battleResult = modeId === MODE_IDS.ROAST_BATTLE ? detectBattleResult(finalContent) : null;
+        if (__DEV__ && resolvedFinalContent.trim().length === 0) {
+          console.warn('[useChat] artist_empty_content_after_complete', {
+            conversationId: jobConversationId,
+            artistMessageId,
+            rawMessageLength: rawFinalContent.length,
+            rawStreamLength: rawTtsResponseRef.current.length
+          });
+        }
+        const battleResult = modeId === MODE_IDS.ROAST_BATTLE ? detectBattleResult(resolvedFinalContent) : null;
         const scoreActionSet = new Set<ScoreAction>(resolveScoreActions(modeId, imageIntent, battleResult));
         const { reaction: cathyReaction } = extractReactionTag(rawTtsResponseRef.current);
         if (cathyReaction) {
@@ -1101,65 +1191,96 @@ export function useChat(conversationId: string) {
           const fallbackPreviewText = normalizeSpeechText(rawTtsResponseRef.current, { trim: true });
           if (!hasStartedVoiceGeneration && fallbackPreviewText) {
             hasStartedVoiceGeneration = true;
-            mergeArtistMetadata({
-              voiceStatus: 'generating',
-              voiceUrl: undefined,
-              voiceQueue: undefined,
-              voiceChunkBoundaries: undefined
-            });
+            markArtistVoiceGenerating();
           }
 
-          void Promise.allSettled(ttsPendingPromises).then(async () => {
-            if (!isCurrentStream() || ignoreTtsUpdates) {
-              return;
-            }
+          if (!shouldUseChunkedTts) {
+            void (async () => {
+              if (!fallbackPreviewText) {
+                markArtistVoiceUnavailable('TTS_PROVIDER_ERROR');
+                return;
+              }
 
-            let { orderedVoiceUris, orderedBoundaries } = buildVoicePlaybackData();
-            const fallbackText = normalizeSpeechText(rawTtsResponseRef.current, { trim: true });
-            const fallbackAccessToken = useStore.getState().session?.accessToken ?? accessToken;
+              const fallbackAccessToken = useStore.getState().session?.accessToken ?? accessToken;
+              if (!fallbackAccessToken.trim()) {
+                markArtistVoiceUnavailable('UNAUTHORIZED');
+                return;
+              }
 
-            // Recover gracefully from short replies and per-chunk failures.
-            if ((hasTtsChunkFailure || orderedVoiceUris.length === 0) && fallbackText && fallbackAccessToken.trim()) {
               try {
-                const fallbackUri = await fetchAndCacheVoice(fallbackText, artistId, language, fallbackAccessToken, {
+                const uri = await fetchAndCacheVoice(fallbackPreviewText, artistId, language, fallbackAccessToken, {
                   throwOnError: true
                 });
-                if (fallbackUri) {
-                  orderedVoiceUris = [fallbackUri];
-                  orderedBoundaries = [stripAudioTags(fallbackText, { trim: true }).length];
+                if (!isCurrentStream()) {
+                  return;
+                }
+                if (!uri) {
+                  markArtistVoiceUnavailable('TTS_PROVIDER_ERROR');
+                  return;
+                }
+
+                const normalizedTextLength = stripAudioTags(fallbackPreviewText, { trim: true }).length;
+                markArtistVoiceReady(uri, [uri], [normalizedTextLength]);
+
+                const shouldAutoPlay = Boolean(useStore.getState().voiceAutoPlay);
+                if (shouldAutoPlay && !shouldBlockInput) {
+                  void audioPlayer.playQueue([uri], { messageId: artistMessageId });
                 }
               } catch (error: unknown) {
-                registerTerminalTtsError(error);
-                // Silent failure: keep existing voice chunks when available.
+                if (registerTerminalTtsError(error)) {
+                  return;
+                }
+                markArtistVoiceUnavailable(resolveVoiceErrorCode(error));
               }
-            }
+            })();
+          } else {
+            void Promise.allSettled(ttsPendingPromises).then(async () => {
+              if (!isCurrentStream() || ignoreTtsUpdates) {
+                return;
+              }
 
-            if (ignoreTtsUpdates) {
-              return;
-            }
+              let { orderedVoiceUris, orderedBoundaries } = buildVoicePlaybackData();
+              const fallbackText = normalizeSpeechText(rawTtsResponseRef.current, { trim: true });
+              const fallbackAccessToken = useStore.getState().session?.accessToken ?? accessToken;
 
-            if (orderedVoiceUris.length === 0) {
-              mergeArtistMetadata({
-                voiceStatus: undefined,
-                voiceUrl: undefined,
-                voiceQueue: undefined,
-                voiceChunkBoundaries: undefined
-              });
-              return;
-            }
+              // Recover gracefully from short replies and per-chunk failures.
+              if ((hasTtsChunkFailure || orderedVoiceUris.length === 0) && fallbackText && fallbackAccessToken.trim()) {
+                try {
+                  const fallbackUri = await fetchAndCacheVoice(fallbackText, artistId, language, fallbackAccessToken, {
+                    throwOnError: true
+                  });
+                  if (fallbackUri) {
+                    orderedVoiceUris = [fallbackUri];
+                    orderedBoundaries = [stripAudioTags(fallbackText, { trim: true }).length];
+                  }
+                } catch (error: unknown) {
+                  registerTerminalTtsError(error);
+                  // Silent failure: keep existing voice chunks when available.
+                }
+              }
 
-            mergeArtistMetadata({
-              voiceUrl: orderedVoiceUris[0],
-              voiceQueue: orderedVoiceUris,
-              voiceChunkBoundaries: orderedBoundaries,
-              voiceStatus: 'ready'
+              if (ignoreTtsUpdates) {
+                return;
+              }
+
+              if (orderedVoiceUris.length === 0) {
+                markArtistVoiceUnavailable(pendingVoiceErrorCode ?? 'TTS_PROVIDER_ERROR');
+                return;
+              }
+
+              const firstVoiceUri = orderedVoiceUris[0];
+              if (!firstVoiceUri) {
+                markArtistVoiceUnavailable(pendingVoiceErrorCode ?? 'TTS_PROVIDER_ERROR');
+                return;
+              }
+              markArtistVoiceReady(firstVoiceUri, orderedVoiceUris, orderedBoundaries);
+
+              const shouldAutoPlay = Boolean(useStore.getState().voiceAutoPlay);
+              if (shouldAutoPlay && !shouldBlockInput && !hasQueuedAutoplayChunk) {
+                void audioPlayer.playQueue(orderedVoiceUris, { messageId: artistMessageId });
+              }
             });
-
-            const shouldAutoPlay = Boolean(useStore.getState().voiceAutoPlay);
-            if (shouldAutoPlay && !shouldBlockInput && !hasQueuedAutoplayChunk) {
-              void audioPlayer.playQueue(orderedVoiceUris, { messageId: artistMessageId });
-            }
-          });
+          }
         }
         if (pendingVoiceNoticeCode) {
           const showUpgradeCta =
@@ -1353,7 +1474,6 @@ export function useChat(conversationId: string) {
     applyLocalScoreAction,
     appendMessageContent,
     audioPlayer,
-    conversationId,
     accessToken,
     currentAccountType,
     currentRole,
@@ -1373,9 +1493,13 @@ export function useChat(conversationId: string) {
       if (!failedJob) {
         return;
       }
+      const targetConversationId = failedJob.conversationId.trim();
+      if (!targetConversationId) {
+        return;
+      }
 
       failedJobsRef.current.delete(artistMessageId);
-      updateMessage(conversationId, artistMessageId, {
+      updateMessage(targetConversationId, artistMessageId, {
         content: '',
         status: 'pending',
         metadata: undefined
@@ -1383,18 +1507,153 @@ export function useChat(conversationId: string) {
       queueRef.current.unshift(failedJob);
       runNext();
     },
-    [conversationId, runNext, updateMessage]
+    [runNext, updateMessage]
   );
 
-  const sendMessage = (payload: ChatSendPayload): ChatError | null => {
+  const retryVoiceForMessage = useCallback(
+    async (artistMessageId: string): Promise<void> => {
+      const targetConversationId = conversationIdRef.current.trim();
+      if (!artistMessageId || !targetConversationId) {
+        return;
+      }
+
+      const latestState = useStore.getState();
+      const sendContext = resolveChatSendContextFromState(latestState, targetConversationId);
+      if (!sendContext.conversation || !sendContext.artist || sendContext.reason !== null) {
+        return;
+      }
+
+      if (sendContext.conversation.artistId !== ARTIST_IDS.CATHY_GAUTHIER) {
+        return;
+      }
+
+      const latestSessionUser = latestState.session?.user;
+      const latestAccessToken = latestState.session?.accessToken ?? accessToken;
+      const latestAccountType = resolveEffectiveAccountType(
+        latestSessionUser?.accountType ?? currentAccountType,
+        latestSessionUser?.role ?? currentRole
+      );
+
+      const latestMessage =
+        latestState.messagesByConversation[targetConversationId]?.messages.find((message) => message.id === artistMessageId) ??
+        null;
+      const normalizedContent = normalizeSpeechText(latestMessage?.content ?? '', { trim: true });
+      if (!latestMessage || latestMessage.role !== 'artist' || latestMessage.status !== 'complete' || !normalizedContent) {
+        return;
+      }
+
+      if (!hasVoiceAccessForAccountType(latestAccountType) || !latestAccessToken.trim()) {
+        updateMessage(targetConversationId, artistMessageId, {
+          metadata: {
+            ...(latestMessage.metadata ?? {}),
+            voiceStatus: 'unavailable',
+            voiceErrorCode: 'UNAUTHORIZED',
+            voiceUrl: undefined,
+            voiceQueue: undefined,
+            voiceChunkBoundaries: undefined
+          }
+        });
+        return;
+      }
+
+      updateMessage(targetConversationId, artistMessageId, {
+        metadata: {
+          ...(latestMessage.metadata ?? {}),
+          voiceStatus: 'generating',
+          voiceErrorCode: undefined,
+          voiceUrl: undefined,
+          voiceQueue: undefined,
+          voiceChunkBoundaries: undefined
+        }
+      });
+
+      try {
+        const uri = await fetchAndCacheVoice(
+          normalizedContent,
+          sendContext.conversation.artistId,
+          sendContext.conversation.language || getLanguage(),
+          latestAccessToken,
+          {
+            throwOnError: true
+          }
+        );
+
+        const refreshedMessage =
+          useStore
+            .getState()
+            .messagesByConversation[targetConversationId]
+            ?.messages.find((message) => message.id === artistMessageId) ?? latestMessage;
+
+        if (!uri) {
+          updateMessage(targetConversationId, artistMessageId, {
+            metadata: {
+              ...(refreshedMessage?.metadata ?? {}),
+              voiceStatus: 'unavailable',
+              voiceErrorCode: 'TTS_PROVIDER_ERROR',
+              voiceUrl: undefined,
+              voiceQueue: undefined,
+              voiceChunkBoundaries: undefined
+            }
+          });
+          return;
+        }
+
+        const boundary = stripAudioTags(normalizedContent, { trim: true }).length;
+        updateMessage(targetConversationId, artistMessageId, {
+          metadata: {
+            ...(refreshedMessage?.metadata ?? {}),
+            voiceStatus: 'ready',
+            voiceErrorCode: undefined,
+            voiceUrl: uri,
+            voiceQueue: [uri],
+            voiceChunkBoundaries: [boundary]
+          }
+        });
+
+        if (useStore.getState().voiceAutoPlay) {
+          void audioPlayer.playQueue([uri], { messageId: artistMessageId });
+        }
+      } catch (error: unknown) {
+        const latestMessageAfterFailure =
+          useStore
+            .getState()
+            .messagesByConversation[targetConversationId]
+            ?.messages.find((message) => message.id === artistMessageId) ?? latestMessage;
+        updateMessage(targetConversationId, artistMessageId, {
+          metadata: {
+            ...(latestMessageAfterFailure?.metadata ?? {}),
+            voiceStatus: 'unavailable',
+            voiceErrorCode: resolveVoiceErrorCode(error),
+            voiceUrl: undefined,
+            voiceQueue: undefined,
+            voiceChunkBoundaries: undefined
+          }
+        });
+      }
+    },
+    [accessToken, audioPlayer, currentAccountType, currentRole, updateMessage]
+  );
+
+  const sendMessage = (
+    payload: ChatSendPayload,
+    options?: {
+      conversationId?: string;
+    }
+  ): ChatError | null => {
     const trimmed = payload.text.trim();
     const hasImage = Boolean(payload.image);
 
     if (isQuotaBlocked) {
+      if (__DEV__) {
+        console.warn('[useChat] send_blocked', {
+          reason: 'quota_blocked',
+          conversationId: conversationIdRef.current.trim()
+        });
+      }
       return null;
     }
 
-    if ((!trimmed && !hasImage) || !conversationId || !currentConversation || !currentArtist) {
+    if (!trimmed && !hasImage) {
       return null;
     }
 
@@ -1402,7 +1661,24 @@ export function useChat(conversationId: string) {
       return { code: 'messageTooLong', maxLength: MAX_MESSAGE_LENGTH };
     }
 
-    const preferredLanguage = currentConversation.language || getLanguage();
+    const latestStateForSend = useStore.getState();
+    const requestedConversationId = options?.conversationId ?? conversationIdRef.current;
+    const sendContext = resolveChatSendContextFromState(latestStateForSend, requestedConversationId);
+    if (!sendContext.conversation || !sendContext.artist || sendContext.reason !== null) {
+      if (__DEV__) {
+        console.warn('[useChat] send_blocked', {
+          reason: sendContext.reason,
+          conversationId: sendContext.conversationId,
+          requestedConversationId
+        });
+      }
+      return { code: 'invalidConversation' };
+    }
+
+    const targetConversationId = sendContext.conversationId;
+    const targetConversation = sendContext.conversation;
+    const modeFewShotsForTurn = resolveModeFewShotsForConversation(targetConversation);
+    const preferredLanguage = targetConversation.language || getLanguage();
     const shouldSwitchToEnglish = shouldAutoSwitchToEnglish(trimmed, preferredLanguage);
     const languageForTurn = shouldSwitchToEnglish ? 'en-CA' : preferredLanguage;
 
@@ -1411,13 +1687,13 @@ export function useChat(conversationId: string) {
     }
 
     const now = new Date().toISOString();
-    const rawMessagesBeforeSend = getMessages(conversationId);
+    const rawMessagesBeforeSend = getMessages(targetConversationId);
     const historyBeforeSend = formatConversationHistory(rawMessagesBeforeSend);
     const previewText = trimmed || '[Image]';
 
     const userMessage: Message = {
       id: generateId('msg'),
-      conversationId,
+      conversationId: targetConversationId,
       role: 'user',
       content: trimmed,
       status: 'complete',
@@ -1433,23 +1709,23 @@ export function useChat(conversationId: string) {
     const artistMessageId = generateId('msg');
     const placeholder: Message = {
       id: artistMessageId,
-      conversationId,
+      conversationId: targetConversationId,
       role: 'artist',
       content: '',
       status: 'pending',
       timestamp: now
     };
 
-    addMessage(conversationId, userMessage);
-    addMessage(conversationId, placeholder);
+    addMessage(targetConversationId, userMessage);
+    addMessage(targetConversationId, placeholder);
 
-    const modeId = currentConversation.modeId || MODE_IDS.DEFAULT;
+    const modeId = targetConversation.modeId || MODE_IDS.DEFAULT;
     const imageIntent = hasImage ? detectImageIntent(modeId, trimmed.length > 0) : 'default';
     const imageIntentPromptPrefix = getImageIntentPromptPrefix(imageIntent);
-    const latestProfile = useStore.getState().userProfile ?? userProfile;
-    const isVoiceModeTurn = Boolean(useStore.getState().conversationModeEnabled);
+    const latestProfile = latestStateForSend.userProfile ?? userProfile;
+    const isVoiceModeTurn = Boolean(latestStateForSend.conversationModeEnabled);
     const baseSystemPrompt = buildSystemPromptForArtist(
-      currentConversation.artistId,
+      targetConversation.artistId,
       modeId,
       latestProfile,
       languageForTurn,
@@ -1463,9 +1739,8 @@ export function useChat(conversationId: string) {
     const systemPrompt = imageIntentPromptPrefix
       ? `${imageIntentPromptPrefix}\n\n${baseSystemPrompt}`
       : baseSystemPrompt + voiceModeAddendum;
-    const latestState = useStore.getState();
     const tutorialMode = computeTutorialModeForRequest(rawMessagesBeforeSend);
-    const memoryFacts = collectArtistMemoryFacts(latestState, currentConversation.artistId, conversationId);
+    const memoryFacts = collectArtistMemoryFacts(latestStateForSend, targetConversation.artistId, targetConversationId);
     const memoryMessage = buildMemoryPrimerMessage(memoryFacts, languageForTurn);
     const pendingProfileHints = popProfileChangeHints();
     const profileHintHistory: ClaudeMessage[] =
@@ -1499,9 +1774,10 @@ export function useChat(conversationId: string) {
     const historyLimit = isVoiceModeTurn ? VOICE_MAX_CLAUDE_HISTORY_MESSAGES : MAX_CLAUDE_HISTORY_MESSAGES;
 
     queueRef.current.push({
+      conversationId: targetConversationId,
       artistMessageId,
       userMessageId: userMessage.id,
-      artistId: currentConversation.artistId,
+      artistId: targetConversation.artistId,
       mockUserTurn: createMockUserTurn(trimmed, hasImage),
       claudeUserMessage: {
         role: 'user',
@@ -1510,18 +1786,18 @@ export function useChat(conversationId: string) {
       systemPrompt,
       history: historyForRequest.slice(-historyLimit),
       language: languageForTurn,
-      modeFewShots,
+      modeFewShots: modeFewShotsForTurn,
       modeId,
       imageIntent,
       tutorialMode
     });
     runNext();
 
-    updateConversation(conversationId, {
+    updateConversation(targetConversationId, {
       language: languageForTurn,
       lastMessagePreview: previewText,
       title: previewText.slice(0, 30)
-    }, currentConversation.artistId);
+    }, targetConversation.artistId);
 
     return null;
   };
@@ -1542,11 +1818,12 @@ export function useChat(conversationId: string) {
       flushBufferedTokensRef.current = null;
       bufferedTokensRef.current = '';
       if (activeMessageIdRef.current) {
-        updateMessage(capturedId, activeMessageIdRef.current, { status: 'error' });
+        const activeConversationId = streamingConversationIdRef.current ?? capturedId;
+        updateMessage(activeConversationId, activeMessageIdRef.current, { status: 'error' });
         activeMessageIdRef.current = null;
       }
       queueRef.current.forEach((job) => {
-        updateMessage(capturedId, job.artistMessageId, { status: 'error' });
+        updateMessage(job.conversationId, job.artistMessageId, { status: 'error' });
       });
       queueRef.current = [];
       failedJobsRef.current.clear();
@@ -1569,9 +1846,12 @@ export function useChat(conversationId: string) {
     messages,
     hasStreaming,
     isQuotaBlocked,
+    isSendContextReady,
+    sendContextBlockReason,
     currentArtistName: currentArtist?.name ?? null,
     sendMessage,
     retryMessage,
+    retryVoiceForMessage,
     audioPlayer
   };
 }

@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { ARTIST_IDS } from '../../config/constants';
@@ -11,6 +11,10 @@ import { hasVoiceAccessForAccountType } from '../../utils/accountTypeUtils';
 import { stripAudioTags } from '../../utils/audioTags';
 import { findConversationById } from '../../utils/conversationUtils';
 import type { AudioPlayerController } from '../../hooks/useAudioPlayer';
+import {
+  resolveChatBubbleVoiceControlState,
+  resolveVoiceUnavailableTranslationKey
+} from './chatBubbleVoiceState';
 import { WaveformButton } from './WaveformButton';
 
 interface ChatBubbleProps {
@@ -18,13 +22,42 @@ interface ChatBubbleProps {
   userDisplayName: string;
   artistDisplayName: string;
   onRetryMessage?: (messageId: string) => void;
+  onRetryVoice?: (messageId: string) => Promise<void> | void;
   audioPlayer?: AudioPlayerController;
 }
 
 const VOICE_HYDRATION_ATTEMPTS = new Set<string>();
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
-function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMessage, audioPlayer }: ChatBubbleProps) {
+function resolveVoiceErrorCode(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const explicitCode = 'code' in error && typeof error.code === 'string' ? error.code.trim() : '';
+    if (explicitCode) {
+      return explicitCode;
+    }
+    const status = 'status' in error && typeof error.status === 'number' ? error.status : null;
+    if (status === 429) {
+      return 'RATE_LIMIT_EXCEEDED';
+    }
+    if (status === 403) {
+      return 'TTS_FORBIDDEN';
+    }
+    if (status === 401) {
+      return 'UNAUTHORIZED';
+    }
+  }
+
+  return 'TTS_PROVIDER_ERROR';
+}
+
+function ChatBubbleBase({
+  message,
+  userDisplayName,
+  artistDisplayName,
+  onRetryMessage,
+  onRetryVoice,
+  audioPlayer
+}: ChatBubbleProps) {
   const router = useRouter();
   const updateMessage = useStore((state) => state.updateMessage);
   const accessToken = useStore((state) => state.session?.accessToken ?? '');
@@ -32,6 +65,7 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
   const conversation = useStore((state) => findConversationById(state.conversations, message.conversationId));
   const enterOpacity = useRef(new Animated.Value(0)).current;
   const enterTranslateY = useRef(new Animated.Value(6)).current;
+  const [isVoiceRetryInFlight, setIsVoiceRetryInFlight] = useState(false);
   const isUser = message.role === 'user';
   const imageUri = message.metadata?.imageUri;
   const errorMessage =
@@ -57,9 +91,21 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
     ? message.metadata.voiceChunkBoundaries
     : [];
   const voiceStatus = message.metadata?.voiceStatus;
-  const hasVoiceButton = message.role === 'artist' && message.status === 'complete' && !!voiceUrl;
-  const isVoiceGenerating =
-    message.role === 'artist' && message.status === 'complete' && !voiceUrl && voiceStatus === 'generating';
+  const isVoiceEligible =
+    message.role === 'artist' &&
+    message.status === 'complete' &&
+    hasText &&
+    conversation?.artistId === ARTIST_IDS.CATHY_GAUTHIER &&
+    hasVoiceAccessForAccountType(accountType);
+  const voiceControlState = resolveChatBubbleVoiceControlState({
+    isEligible: isVoiceEligible,
+    voiceUrl,
+    voiceStatus
+  });
+  const hasVoiceButton = voiceControlState === 'ready';
+  const isVoiceGenerating = voiceControlState === 'generating' || isVoiceRetryInFlight;
+  const isVoiceUnavailable = voiceControlState === 'unavailable' && !isVoiceRetryInFlight;
+  const voiceUnavailableMessageKey = resolveVoiceUnavailableTranslationKey(message.metadata?.voiceErrorCode);
   const isCurrentVoiceMessage = Boolean(audioPlayer && audioPlayer.currentMessageId === message.id);
   const isVoicePlaying = Boolean(audioPlayer && audioPlayer.isPlaying && isCurrentVoiceMessage);
   const hasSeenInitialSyncedPlaybackRef = useRef(false);
@@ -104,21 +150,19 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
     ? voiceChunkBoundaries[activeChunkIndex] ?? safeMessageContent.length
     : safeMessageContent.length;
   const clampedBoundary = Math.max(0, Math.min(currentBoundary, safeMessageContent.length));
-  const visibleContent = isSyncActive ? safeMessageContent.slice(0, clampedBoundary) : safeMessageContent;
+  const shouldApplyBoundarySync = isSyncActive && clampedBoundary > 0;
+  const visibleContent = shouldApplyBoundarySync ? safeMessageContent.slice(0, clampedBoundary) : safeMessageContent;
   const displayedText = hasText ? visibleContent : '...';
-  const showVoiceControl = isVoiceGenerating || hasVoiceButton;
+  const showVoiceControl = voiceControlState !== 'hidden';
   const isQuotaError =
     message.metadata?.errorCode === 'QUOTA_EXCEEDED_BLOCKED' ||
     message.metadata?.errorCode === 'QUOTA_ABSOLUTE_BLOCKED' ||
     message.metadata?.errorCode === 'MONTHLY_QUOTA_EXCEEDED';
   const shouldHydrateMissingVoice =
-    message.role === 'artist' &&
-    message.status === 'complete' &&
-    hasText &&
+    isVoiceEligible &&
     !voiceUrl &&
     voiceStatus !== 'generating' &&
-    conversation?.artistId === ARTIST_IDS.CATHY_GAUTHIER &&
-    hasVoiceAccessForAccountType(accountType) &&
+    voiceStatus !== 'unavailable' &&
     accessToken.trim().length > 0;
 
   const mergeMetadata = useCallback(
@@ -138,6 +182,75 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
     },
     [message.conversationId, message.id, updateMessage]
   );
+
+  const retryVoiceLocally = useCallback(async () => {
+    if (!conversation || !safeMessageContent.trim() || !accessToken.trim()) {
+      mergeMetadata({
+        voiceStatus: 'unavailable',
+        voiceErrorCode: 'UNAUTHORIZED',
+        voiceUrl: undefined,
+        voiceQueue: undefined,
+        voiceChunkBoundaries: undefined
+      });
+      return;
+    }
+
+    mergeMetadata({
+      voiceStatus: 'generating',
+      voiceErrorCode: undefined,
+      voiceUrl: undefined,
+      voiceQueue: undefined,
+      voiceChunkBoundaries: undefined
+    });
+
+    try {
+      const uri = await fetchAndCacheVoice(
+        safeMessageContent,
+        conversation.artistId,
+        conversation.language || 'fr-CA',
+        accessToken,
+        { throwOnError: true }
+      );
+
+      if (uri) {
+        mergeMetadata({
+          voiceStatus: 'ready',
+          voiceErrorCode: undefined,
+          voiceUrl: uri,
+          voiceQueue: [uri],
+          voiceChunkBoundaries: [stripAudioTags(safeMessageContent, { trim: true }).length]
+        });
+        return;
+      }
+
+      mergeMetadata({
+        voiceStatus: 'unavailable',
+        voiceErrorCode: 'TTS_PROVIDER_ERROR',
+        voiceUrl: undefined,
+        voiceQueue: undefined,
+        voiceChunkBoundaries: undefined
+      });
+    } catch (error: unknown) {
+      mergeMetadata({
+        voiceStatus: 'unavailable',
+        voiceErrorCode: resolveVoiceErrorCode(error),
+        voiceUrl: undefined,
+        voiceQueue: undefined,
+        voiceChunkBoundaries: undefined
+      });
+    }
+  }, [accessToken, conversation, mergeMetadata, safeMessageContent]);
+
+  const handleRetryVoice = useCallback(() => {
+    if (isVoiceRetryInFlight) {
+      return;
+    }
+    setIsVoiceRetryInFlight(true);
+    const retryTask = onRetryVoice ? Promise.resolve(onRetryVoice(message.id)) : retryVoiceLocally();
+    void retryTask.finally(() => {
+      setIsVoiceRetryInFlight(false);
+    });
+  }, [isVoiceRetryInFlight, message.id, onRetryVoice, retryVoiceLocally]);
 
   const handleVoicePress = () => {
     if (!audioPlayer || !hasVoiceButton) {
@@ -182,31 +295,58 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
 
     VOICE_HYDRATION_ATTEMPTS.add(attemptKey);
     let cancelled = false;
-    mergeMetadata({ voiceStatus: 'generating' });
+    mergeMetadata({
+      voiceStatus: 'generating',
+      voiceErrorCode: undefined,
+      voiceUrl: undefined,
+      voiceQueue: undefined,
+      voiceChunkBoundaries: undefined
+    });
 
     void fetchAndCacheVoice(
       safeMessageContent,
       conversation.artistId,
       conversation.language || 'fr-CA',
-      accessToken
-    ).then((uri) => {
-      if (cancelled) {
-        return;
-      }
+      accessToken,
+      { throwOnError: true }
+    )
+      .then((uri) => {
+        if (cancelled) {
+          return;
+        }
 
-      if (uri) {
+        if (uri) {
+          mergeMetadata({
+            voiceUrl: uri,
+            voiceQueue: [uri],
+            voiceChunkBoundaries: [stripAudioTags(safeMessageContent, { trim: true }).length],
+            voiceStatus: 'ready',
+            voiceErrorCode: undefined
+          });
+          return;
+        }
+
         mergeMetadata({
-          voiceUrl: uri,
-          voiceQueue: [uri],
-          voiceStatus: 'ready'
+          voiceStatus: 'unavailable',
+          voiceErrorCode: 'TTS_PROVIDER_ERROR',
+          voiceUrl: undefined,
+          voiceQueue: undefined,
+          voiceChunkBoundaries: undefined
         });
-        return;
-      }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
 
-      mergeMetadata({
-        voiceStatus: undefined
+        mergeMetadata({
+          voiceStatus: 'unavailable',
+          voiceErrorCode: resolveVoiceErrorCode(error),
+          voiceUrl: undefined,
+          voiceQueue: undefined,
+          voiceChunkBoundaries: undefined
+        });
       });
-    });
 
     return () => {
       cancelled = true;
@@ -265,8 +405,28 @@ function ChatBubbleBase({ message, userDisplayName, artistDisplayName, onRetryMe
                 isLoading={isVoiceGenerating}
                 onPress={handleVoicePress}
                 disabled={!hasVoiceButton}
-                testID={isVoiceGenerating ? `chat-bubble-voice-loading-${message.id}` : `chat-bubble-voice-${message.id}`}
+                testID={
+                  isVoiceGenerating
+                    ? `chat-bubble-voice-loading-${message.id}`
+                    : isVoiceUnavailable
+                      ? `chat-bubble-voice-unavailable-${message.id}`
+                      : `chat-bubble-voice-${message.id}`
+                }
               />
+              {isVoiceUnavailable ? (
+                <>
+                  <Text style={styles.voiceUnavailableText} testID={`chat-bubble-voice-unavailable-reason-${message.id}`}>
+                    {t(voiceUnavailableMessageKey)}
+                  </Text>
+                  <Pressable
+                    onPress={handleRetryVoice}
+                    style={styles.voiceRetryButton}
+                    testID={`chat-bubble-voice-retry-${message.id}`}
+                  >
+                    <Text style={styles.voiceRetryLabel}>{t('voiceRetryLabel')}</Text>
+                  </Pressable>
+                </>
+              ) : null}
             </View>
           ) : null}
 
@@ -383,6 +543,26 @@ const styles = StyleSheet.create({
   voiceRow: {
     marginTop: theme.spacing.xs,
     alignSelf: 'flex-start'
+  },
+  voiceUnavailableText: {
+    marginTop: 6,
+    color: theme.colors.textSecondary,
+    fontSize: 11,
+    maxWidth: 220
+  },
+  voiceRetryButton: {
+    marginTop: 6,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 8,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 5
+  },
+  voiceRetryLabel: {
+    color: theme.colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700'
   },
   retryButton: {
     marginTop: theme.spacing.xs,

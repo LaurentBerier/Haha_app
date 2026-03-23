@@ -11,10 +11,18 @@ interface MessageListProps {
   userDisplayName: string;
   artistDisplayName: string;
   onRetryMessage?: (messageId: string) => void;
+  onRetryVoice?: (messageId: string) => Promise<void> | void;
   audioPlayer?: AudioPlayerController;
 }
 
-function MessageListBase({ messages, userDisplayName, artistDisplayName, onRetryMessage, audioPlayer }: MessageListProps) {
+function MessageListBase({
+  messages,
+  userDisplayName,
+  artistDisplayName,
+  onRetryMessage,
+  onRetryVoice,
+  audioPlayer
+}: MessageListProps) {
   const listRef = useRef<FlatList<Message>>(null);
   const isNearBottomRef = useRef(true);
   const hasScrolledInitiallyRef = useRef(false);
@@ -63,10 +71,11 @@ function MessageListBase({ messages, userDisplayName, artistDisplayName, onRetry
         userDisplayName={userDisplayName}
         artistDisplayName={artistDisplayName}
         onRetryMessage={onRetryMessage}
+        onRetryVoice={onRetryVoice}
         audioPlayer={audioPlayer}
       />
     ),
-    [artistDisplayName, audioPlayer, onRetryMessage, userDisplayName]
+    [artistDisplayName, audioPlayer, onRetryMessage, onRetryVoice, userDisplayName]
   );
 
   return (
