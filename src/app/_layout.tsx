@@ -24,6 +24,7 @@ import { useStorePersistence } from '../hooks/useStorePersistence';
 import { t } from '../i18n';
 import type { ChatSendPayload } from '../models/ChatSendPayload';
 import { signOut } from '../services/authService';
+import { initSentry } from '../services/sentry';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme';
 import { E2E_AUTH_BYPASS } from '../config/env';
@@ -270,6 +271,10 @@ export default function RootLayout() {
     onStopAudio: () => {},
     language
   });
+
+  useEffect(() => {
+    initSentry();
+  }, []);
 
   useLayoutAuthGate({
     hasHydrated,

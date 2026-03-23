@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 import { DevSettings, Pressable, StyleSheet, Text, View } from 'react-native';
+import { captureAppException } from '../../services/sentry';
 import { theme } from '../../theme';
 
 interface ErrorBoundaryProps {
@@ -21,6 +22,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
+    captureAppException(error, {
+      message: 'Uncaught render error in ErrorBoundary',
+      scope: 'app/error-boundary',
+      extra: {
+        componentStack: info.componentStack
+      }
+    });
+
     if (__DEV__) {
       console.error('[ErrorBoundary] Uncaught render error:', error, info);
     }

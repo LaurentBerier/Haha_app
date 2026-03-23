@@ -1,6 +1,7 @@
 const { randomUUID } = require('node:crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { kv } = require('@vercel/kv');
+const { captureApiException } = require('./_sentry');
 
 let supabaseAdminCache = undefined;
 const RATE_LIMIT_BUCKET_MS = 60_000;
@@ -243,6 +244,19 @@ function sendError(res, status, message, options = {}) {
     payload.error.requestId = options.requestId;
   }
 
+  if (status >= 500 && options.capture !== false) {
+    const sentryError = Object.prototype.hasOwnProperty.call(options, 'error') ? options.error : message;
+    captureApiException(sentryError, {
+      message,
+      requestId: typeof options.requestId === 'string' ? options.requestId : undefined,
+      scope: typeof options.scope === 'string' && options.scope ? options.scope : 'api/send-error',
+      extra: {
+        code: typeof options.code === 'string' ? options.code : undefined,
+        status
+      }
+    });
+  }
+
   res.status(status).json(payload);
 }
 
@@ -306,7 +320,41 @@ function serializeError(error) {
   };
 }
 
+function normalizeLogContext(context) {
+  if (!context || typeof context !== 'object') {
+    return {};
+  }
+  return context;
+}
+
+function toCaptureErrorCandidate(candidate, fallbackMessage) {
+  if (candidate instanceof Error) {
+    return candidate;
+  }
+
+  if (candidate && typeof candidate === 'object') {
+    const message = typeof candidate.message === 'string' && candidate.message.trim()
+      ? candidate.message
+      : fallbackMessage;
+    const revived = new Error(message);
+    if (typeof candidate.name === 'string' && candidate.name.trim()) {
+      revived.name = candidate.name;
+    }
+    if (typeof candidate.stack === 'string' && candidate.stack.trim()) {
+      revived.stack = candidate.stack;
+    }
+    return revived;
+  }
+
+  if (typeof candidate === 'string' && candidate.trim()) {
+    return new Error(candidate);
+  }
+
+  return new Error(fallbackMessage);
+}
+
 function log(level, message, context = {}) {
+  const normalizedContext = normalizeLogContext(context);
   const normalizedLevel = level === 'debug' || level === 'info' || level === 'warn' || level === 'error'
     ? level
     : 'info';
@@ -314,10 +362,23 @@ function log(level, message, context = {}) {
     ts: new Date().toISOString(),
     level: normalizedLevel,
     message,
-    ...(context && typeof context === 'object' ? context : {})
+    ...normalizedContext
   };
 
   if (normalizedLevel === 'error') {
+    const shouldCapture = normalizedContext.capture !== false;
+    if (shouldCapture) {
+      const fallbackError =
+        Object.prototype.hasOwnProperty.call(normalizedContext, 'error')
+          ? normalizedContext.error
+          : null;
+      captureApiException(toCaptureErrorCandidate(fallbackError, message), {
+        message,
+        requestId: payload.requestId,
+        scope: payload.scope,
+        extra: payload
+      });
+    }
     console.error(payload);
     return;
   }
