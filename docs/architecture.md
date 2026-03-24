@@ -27,6 +27,7 @@ Supabase is the source of truth for:
 - Universal `BackButton` is used on secondary routes (`mode-select`, `history`, `chat`, `settings`, `edit-profile`, `subscription`, `admin`).
 - Header logo always routes to `/` (artist selection); back navigation remains a separate action.
 - Admin routes are grouped under `src/app/admin` and gate access in `admin/_layout.tsx` (`isAdmin` check + redirect to `/settings`).
+- Root stack registers admin as a nested route entry (`name="admin"`), while admin children remain declared in `src/app/admin/_layout.tsx` (`index`, `users`) to match Expo Router nested layout behavior.
 - Current operational/admin UX state is tracked in [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md).
 - Auth routes:
   - `/(auth)/login`
@@ -95,6 +96,7 @@ Store-level account isolation:
 - `persistenceService.ts`: local cache persistence (conversations/messages/ui selections)
 - `ttsService.ts`: multi-endpoint TTS fetch/cache (`same-origin /api/tts` first on web, timeout + failover across candidates, with no failover on terminal `401/403/429`)
 - `voiceEngine.ts`: session-based STT engine abstraction (web/native), restart handling, stale-session isolation
+- `sentry.ts`: app-side Sentry bootstrap/capture wrapper (`EXPO_PUBLIC_SENTRY_DSN`, disabled automatically when DSN is unset)
 
 ### Mode Selection UX
 
@@ -108,6 +110,14 @@ Store-level account isolation:
   - `On Jase?` currently exposes 2 active chat modes: `On jase!` and `Mets-moi sur le grill`
   - legacy mode IDs are server-mapped for compatibility (`relax`, `roast`, `coach-brutal`, etc.)
   - `Profil` category shows profile/history shortcuts instead of chat modes
+- Mode-select conversation binding/recovery (`src/app/mode-select/[artistId]/index.tsx`):
+  - local `boundConversationId` (state + ref) is the single source for inline list rendering and mode-select send targeting
+  - send path validates context from live store state and can recover to latest valid `on-jase` conversation (or create one) before dispatch
+  - explicit DEV traces are available for rebind/send/render flow (`mode_select_rebind`, `send_dispatched`, `send_result`, `messages_rendered`)
+- Inline conversation list rendering is hardened for long web sessions:
+  - list keyed by current bound conversation id
+  - larger render window/batch sizes
+  - clipping/virtualization disabled in this specific overlay context
 
 ### Conversation Mode (Phase 4)
 
@@ -136,6 +146,7 @@ Store-level account isolation:
   - in compact layout, overlay top is measured from category-grid bottom so conversation takes maximum vertical space up to top controls
   - compact mode disables background page scrolling (`ScrollView`) and reduces artificial bottom spacer to avoid duplicate page-level scrollbar on web while the conversation list remains scrollable
   - conversation keeps flowing naturally in place (no forced mode-discovery nudge injection)
+  - transient context mismatches return explicit `invalidConversation` (no silent send no-op) so recovery can be deterministic
 - Greeting behavior:
   - once per artist per app session (`uiSlice.greetedArtistIds`, memory-only)
   - greeting message is inserted as an artist message in a fresh `on-jase` conversation
@@ -165,10 +176,14 @@ Store-level account isolation:
   - appends subsequent chunks in-order without waiting for all chunks
   - keeps successful chunks when some chunk generation fails
   - performs final full-text fallback synthesis only when needed
-  - stabilizes metadata transitions (`voiceStatus: generating -> ready` or explicit clear)
+  - stabilizes metadata transitions (`voiceStatus: generating -> ready|unavailable`)
   - stores `voiceChunkBoundaries` for text/voice synchronization
 - `useAudioPlayer` tracks playback context by `currentMessageId` so sync/playback targets are message-identity based (not URI based).
 - `ChatBubble` progressively reveals text only for the active `currentMessageId`; non-active bubbles render full text.
+- Eligible Cathy bubbles expose explicit voice UI states:
+  - `ready`: replay button enabled
+  - `generating`: loading waveform
+  - `unavailable`: disabled control + reason + retry action
 - `WaveformButton` states:
   - `isPlaying=true` => animated waveform bars
   - `isLoading=true` => pulsing waveform
@@ -189,6 +204,8 @@ Store-level account isolation:
 - `useStorePersistence`: hydration/debounced persistence
 
 ## Backend Endpoints (`api`)
+
+- API error capture wrapper: `api/_sentry.js` (`@sentry/node`), initialized only when `SENTRY_DSN` is configured.
 
 ### `POST /api/claude` (`api/claude.js`)
 

@@ -136,7 +136,11 @@ npm run smoke:voice
 1. Confirm user tier has voice entitlement (`free`, `regular`, `premium`, or `admin`) and that the tier is under monthly voice cap.
 2. Check `/api/tts` authenticated smoke (`SMOKE_AUTH_TOKEN=...`).
 3. If API fails, inspect Vercel logs for `api/claude` and `api/tts` proxy path.
-4. In chat metadata, confirm `voiceStatus` reaches `ready` (not stuck at `generating`).
+4. In message metadata, inspect `voiceStatus`:
+   - `ready`: replay should be enabled
+   - `generating`: loading waveform is expected
+   - `unavailable`: disabled control + reason + retry action should appear
+5. If control is `unavailable`, trigger retry from bubble CTA and verify transition `unavailable -> generating -> ready`.
 
 ### Symptom: play button visible but no sound
 
@@ -149,7 +153,12 @@ npm run smoke:voice
 1. Check network for `/api/tts` status:
    - `429` / `403` can produce text-only replies when voice fallback also fails.
 2. Verify user tier (`free`, `regular`, `premium`, or `admin`) and `ELEVENLABS_API_KEY`.
-3. Confirm client has valid bearer token (expired auth token can silently drop TTS eligibility).
+3. Confirm client has valid bearer token (expired auth token can make voice status become `unavailable` with auth-related code).
+4. Validate `voiceErrorCode` on affected message metadata to distinguish:
+   - rate limit
+   - quota exceeded
+   - forbidden/auth
+   - generic provider failure
 
 ### Symptom: frequent `TTS_QUOTA_EXCEEDED`
 

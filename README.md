@@ -39,6 +39,10 @@ Implemented in this repository:
   - chunk-synced text/voice playback keyed by `message.id` with animated waveform replay control (`loading`, `playing`, `idle/play`)
   - mode-select conversation overlay expands up to compact top controls (instead of fixed half-screen clamp)
   - compact mode-select now disables background page scrolling to prevent the duplicate right-edge scrollbar on web while keeping message-list scroll active
+  - mode-select conversation binding is stabilized with explicit `boundConversationId` ownership, send-time target recovery, and no silent send drops on transient context mismatch
+  - mode-select web message list rendering is hardened for longer sessions (wider render window + no clipping/virtualization in inline overlay)
+  - Cathy voice controls now use explicit states (`ready`, `generating`, `unavailable`) with inline retry instead of silent playback-button disappearance
+- Root stack now registers `admin` as nested entry only (child admin screens stay in `src/app/admin/_layout.tsx`) to avoid `No route named "admin/index"` console warnings.
 - Subscription screen includes current plan, next billing cycle, and cancel-at-period-end for Stripe subscriptions.
 - User profile model and profile personalization injection in system prompts.
 - Gamification layer (score, titles, streak, mode-driven scoring) persisted in Zustand and synced with Supabase.
@@ -55,6 +59,7 @@ Implemented in this repository:
 - Payment webhooks:
   - RevenueCat (`api/payment-webhook.js`)
   - Stripe (`api/stripe-webhook.js`)
+- Sentry exception capture is integrated on app and API runtimes (DSN-driven, disabled when unset).
 - Shared API utilities (`api/_utils.js`) for CORS, bearer token extraction, request IDs, env checks, and standardized errors.
 - Extensible account type model (`free`, `regular`, `premium`, `admin`, plus custom).
 - Unit test baseline (Jest) for API security contracts and core store slices.
@@ -68,7 +73,7 @@ Implemented in this repository:
 - [`docs/phase3-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase3-status.md)
 - [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
 - Admin dashboard status: [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md)
-- Latest QA run: [`docs/qa-run-2026-03-23.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-23.md)
+- Latest QA run: [`docs/qa-run-2026-03-24.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-24.md)
 - Latest code-review snapshot: [`docs/code-review-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-20.md)
 
 ## Repos and Vercel Projects
@@ -145,6 +150,7 @@ cp .env.example .env
 - `EXPO_PUBLIC_E2E_AUTH_BYPASS` (test-only; used by Detox scripts)
 - `EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC` (optional; defaults to ElevenLabs built-in voice ID)
 - `EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY` (optional; when set, premium voice swaps without code changes)
+- `EXPO_PUBLIC_SENTRY_DSN` (optional; enables app-side exception capture)
 
 Notes:
 
@@ -195,6 +201,7 @@ Notes:
 - `TTS_RATE_LIMIT_MAX_REQUESTS_PREMIUM` (optional, default `180`/min)
 - `TTS_RATE_LIMIT_MAX_REQUESTS` (optional shared fallback when tier-specific values are not set)
 - `ENABLE_ADMIN_TIER_GRANTS` (optional, default disabled; required to allow `accountTypeId='admin'` through admin endpoint)
+- `SENTRY_DSN` (optional; enables API-side exception capture)
 
 ## Supabase Setup
 
@@ -532,6 +539,8 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/qa-run-2026-03-20.md`
 - `docs/qa-run-2026-03-21.md`
 - `docs/qa-run-2026-03-22.md`
+- `docs/qa-run-2026-03-23.md`
+- `docs/qa-run-2026-03-24.md`
 - `docs/code-review-2026-03-15.md`
 - `docs/code-review-2026-03-16.md`
 - `docs/code-review-2026-03-17.md`

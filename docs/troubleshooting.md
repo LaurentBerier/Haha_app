@@ -899,3 +899,59 @@ Checks:
    - chat screen
    - mode-select conversation
    - global dock input
+
+## 36) Mode-select stops showing new bubbles after ~4-6 turns (audio may continue)
+
+Symptoms:
+
+- User + Cathy turns continue to be sent/played, but new text bubbles do not appear in `/mode-select/[artistId]`.
+
+Current expected behavior:
+
+- Every send appends user + artist turns to the inline mode-select list without disappearing after several exchanges.
+- Mode-select no longer relies on aggressive list virtualization in this overlay context.
+
+Checks:
+
+1. Restart on a fresh dev bundle:
+
+```bash
+cd /Users/laurentbernier/Documents/HAHA_app
+npx expo start -c
+```
+
+2. Enable mode-select traces in browser console:
+   - type `allow pasting` in DevTools console (Chrome safeguard), press Enter once
+   - run:
+
+```js
+window.__HAHA_MODE_SELECT_DEBUG__ = true;
+localStorage.setItem('HAHA_MODE_SELECT_DEBUG', '1');
+```
+
+3. Reproduce and filter logs by `mode-select` + `trace`. Expect progression events:
+   - `send_dispatched`
+   - `send_result`
+   - `messages_rendered`
+4. If `send_result` is `null` (success) but UI still looks frozen, capture the latest `messages_rendered` entries (message count + latest id/status) and compare with visible bubble count.
+
+Implementation note (current build):
+
+- Mode-select list is keyed by bound conversation id with larger render windows and virtualization/clipping disabled for this route.
+
+## 37) Browser console shows `A listener indicated an asynchronous response...`
+
+Symptoms:
+
+- Console error:
+  - `Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received`
+
+Scope:
+
+- This is typically emitted by a browser extension/runtime message listener, not by app business logic.
+
+Checks:
+
+1. Re-test in a clean profile/incognito window with extensions disabled.
+2. If error disappears with extensions off, treat it as external noise (non-blocking for app debugging).
+3. Keep focus on app-owned traces (`[mode-select] trace`, `[useVoiceConversation]`, network `/api/*`).

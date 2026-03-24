@@ -1,6 +1,6 @@
 # Phase 4 Status (Conversation Naturelle)
 
-Last updated: **2026-03-23**
+Last updated: **2026-03-24**
 
 ## Scope
 
@@ -45,6 +45,19 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
   - strict manual override: user pause cancels auto-start for that greeting
   - compact layout expansion: conversation overlay top anchored to compact category-grid bottom (mobile + web fallback tuning)
   - compact mode now locks background `ScrollView` and shrinks bottom spacer to avoid duplicate page-level scrollbar on web while preserving chat-list scrolling
+  - deterministic binding/send targeting:
+    - single `boundConversationId` drives inline mode-select render/send context
+    - send-time target resolution validates live context from store, with fallback recovery to latest valid `on-jase` conversation
+    - transient context mismatch returns explicit `invalidConversation` (no silent send drop)
+  - render hardening for long web conversations:
+    - `FlatList` keyed by bound conversation id
+    - larger render window/batch sizing
+    - clipping/virtualization disabled in inline overlay context
+  - targeted DEV observability events for mode-select:
+    - `mode_select_rebind`
+    - `send_dispatched`
+    - `send_result`
+    - `messages_rendered`
 - Forced mode nudges removed:
   - no automatic `mode_nudge` injection after N user replies
   - mode-select conversation now keeps natural flow without forced "try modes" interjections
@@ -66,8 +79,9 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
   - terminal statuses (`401/403/429`) stop endpoint failover and return structured error codes
   - chunk pipeline keeps successful chunks on partial failures
   - final full-text fallback synthesis when no usable chunk set remains
-  - stable metadata transitions (`voiceStatus: generating -> ready` or explicit clear)
+  - stable metadata transitions (`voiceStatus: generating -> ready|unavailable`)
   - per-reply terminal TTS notices are deduplicated and queued after current voice settles (non-intrusive insertion)
+  - unavailable voice now remains explicit in message metadata (`voiceStatus='unavailable'` + `voiceErrorCode`) with retry path
 - Typed-first-reply mic recovery fix:
   - typing while mic is active no longer leaves conversation mode stuck
   - resume intent can be queued and replayed once blocking conditions clear
@@ -85,23 +99,20 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
 
 ## QA Status
 
-Validated on **2026-03-23** (targeted mode-select layout pass):
+Validated on **2026-03-24** (mode-select stabilization + full regression pass):
+
+- `npm run typecheck` -> PASS
+- `npm run lint` -> PASS
+- `npm run test:unit` -> PASS (`42` suites, `234` tests)
+
+Prior targeted mode-select layout baseline remains available from **2026-03-23**:
 
 - `npm run typecheck` -> PASS
 - `npx eslint src/app/mode-select/[artistId]/index.tsx` -> PASS
 
-Prior broad validation baseline remains available from **2026-03-20**:
-
-- `npm run lint` -> PASS
-- `npm run verify:profile-prompt` -> PASS
-- `npm run test:unit` -> PASS (29 suites, 183 tests)
-- `npm run smoke:auth` -> PASS
-- `npm run smoke:voice` -> PASS (`tts with auth -> 200`)
-- `npm run export:web` -> not rerun in 2026-03-20 pass (last validated 2026-03-19)
-- `npm run check:mobile-env` -> not rerun in 2026-03-20 pass (last validated 2026-03-19)
-
 Detailed run logs:
 
+- [`docs/qa-run-2026-03-24.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-24.md)
 - [`docs/qa-run-2026-03-23.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-23.md)
 - [`docs/qa-run-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-20.md)
 - [`docs/qa-run-2026-03-19.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-19.md)
