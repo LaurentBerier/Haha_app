@@ -981,7 +981,6 @@ export default function ModeSelectHomeScreen() {
   const [boundConversationId, setBoundConversationId] = useState('');
   const boundConversationIdRef = useRef('');
   const lastBoundArtistIdRef = useRef<string | null>(null);
-  const pendingRecoveredSendRef = useRef<ChatSendPayload | null>(null);
   const resolvedBoundConversation = useMemo(
     () =>
       resolveModeSelectBoundConversationId({
@@ -1008,6 +1007,7 @@ export default function ModeSelectHomeScreen() {
   const isConversationDragActiveRef = useRef(false);
   const isConversationMomentumActiveRef = useRef(false);
   const lastMessageCountRef = useRef(0);
+  const lastLoggedRenderedMessageCountRef = useRef(0);
   const hasScrolledInitiallyRef = useRef(false);
   const greetingPlaybackCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingGestureRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1102,14 +1102,15 @@ export default function ModeSelectHomeScreen() {
   const isValidConversation = modeSelectConversationId.length > 0;
   const isModeSelectComposerDisabled = !isValidConversation || isQuotaBlocked || !isSendContextReady;
   const sendFromModeSelectCurrentBinding = useCallback(
-    (payload: ChatSendPayload): ChatError | null => {
+    (payload: ChatSendPayload, targetConversationId: string): ChatError | null => {
       const liveState = useStore.getState();
-      const liveConversationId = boundConversationIdRef.current.trim();
-      const liveSendContext = resolveChatSendContextFromState(liveState, liveConversationId);
+      const normalizedTargetConversationId = targetConversationId.trim();
+      const liveSendContext = resolveChatSendContextFromState(liveState, normalizedTargetConversationId);
       if (!liveSendContext.conversation || !liveSendContext.artist || liveSendContext.reason !== null) {
         logModeSelectDebugTrace('send_blocked', {
           reason: liveSendContext.reason,
-          liveConversationId: liveConversationId || null,
+          liveConversationId: normalizedTargetConversationId || null,
+          uiConversationId: modeSelectConversationId || null,
           artistId
         });
         return { code: 'invalidConversation' as const };
@@ -1139,37 +1140,106 @@ export default function ModeSelectHomeScreen() {
 
       shouldFollowConversationTailRef.current = true;
       logModeSelectDebugTrace('send_dispatched', {
-        conversationId: liveConversationId,
+        conversationId: normalizedTargetConversationId,
+        uiConversationId: modeSelectConversationId || null,
+        boundConversationId: boundConversationIdRef.current.trim() || null,
         hasImage: Boolean(payload.image),
         textLength: payload.text.length
       });
-      return sendMessage(payload, {
-        conversationId: liveConversationId
+      const sendError = sendMessage(payload, {
+        conversationId: normalizedTargetConversationId
       });
+      logModeSelectDebugTrace('send_result', {
+        conversationId: normalizedTargetConversationId,
+        code: sendError?.code ?? null
+      });
+      return sendError;
     },
-    [accessToken, audioPlayer, conversationModeEnabled, effectiveAccountType, language, sendMessage]
+    [accessToken, artistId, audioPlayer, conversationModeEnabled, effectiveAccountType, language, modeSelectConversationId, sendMessage]
   );
+  const resolveModeSelectSendTargetConversationId = useCallback((): string | null => {
+    if (!artist?.id) {
+      return null;
+    }
+
+    const liveState = useStore.getState();
+    const uiConversationId = modeSelectConversationId.trim();
+    const boundRefConversationId = boundConversationIdRef.current.trim();
+    const isValidTarget = (candidateConversationId: string): boolean => {
+      if (!candidateConversationId) {
+        return false;
+      }
+      const sendContext = resolveChatSendContextFromState(liveState, candidateConversationId);
+      if (!sendContext.conversation || !sendContext.artist || sendContext.reason !== null) {
+        return false;
+      }
+      if (sendContext.conversation.artistId !== artist.id) {
+        return false;
+      }
+      const modeId = sendContext.conversation.modeId ?? MODE_IDS.ON_JASE;
+      return modeId === MODE_IDS.ON_JASE;
+    };
+
+    if (isValidTarget(uiConversationId)) {
+      return uiConversationId;
+    }
+    if (isValidTarget(boundRefConversationId)) {
+      return boundRefConversationId;
+    }
+
+    return recoverModeSelectBoundConversation('send_recovery');
+  }, [artist?.id, modeSelectConversationId, recoverModeSelectBoundConversation]);
   const sendFromModeSelect = useCallback(
     (payload: ChatSendPayload): ChatError | null => {
-      const recoveredConversationId = recoverModeSelectBoundConversation('send_recovery');
-      if (!recoveredConversationId) {
+      const targetConversationId = resolveModeSelectSendTargetConversationId();
+      if (!targetConversationId) {
+        logModeSelectDebugTrace('send_blocked', {
+          reason: 'missing_target_conversation',
+          uiConversationId: modeSelectConversationId || null,
+          boundConversationId: boundConversationIdRef.current.trim() || null
+        });
         return { code: 'invalidConversation' as const };
       }
 
-      if (recoveredConversationId !== modeSelectConversationId) {
-        logModeSelectDebugTrace('send_deferred_until_rebind', {
+      if (targetConversationId !== modeSelectConversationId) {
+        logModeSelectDebugTrace('send_target_rebind', {
           from: modeSelectConversationId || null,
-          to: recoveredConversationId,
+          to: targetConversationId,
           hasImage: Boolean(payload.image),
           textLength: payload.text.length
         });
-        pendingRecoveredSendRef.current = payload;
-        return null;
+        commitBoundConversationId(targetConversationId, 'send_recovery');
+        if (activeConversationId !== targetConversationId) {
+          setActiveConversation(targetConversationId);
+        }
       }
 
-      return sendFromModeSelectCurrentBinding(payload);
+      let sendError = sendFromModeSelectCurrentBinding(payload, targetConversationId);
+      if (sendError?.code === 'invalidConversation') {
+        const recoveredConversationId = recoverModeSelectBoundConversation('send_recovery');
+        if (!recoveredConversationId) {
+          return sendError;
+        }
+        if (recoveredConversationId !== modeSelectConversationId) {
+          commitBoundConversationId(recoveredConversationId, 'send_recovery');
+          if (activeConversationId !== recoveredConversationId) {
+            setActiveConversation(recoveredConversationId);
+          }
+        }
+        sendError = sendFromModeSelectCurrentBinding(payload, recoveredConversationId);
+      }
+
+      return sendError;
     },
-    [modeSelectConversationId, recoverModeSelectBoundConversation, sendFromModeSelectCurrentBinding]
+    [
+      activeConversationId,
+      commitBoundConversationId,
+      modeSelectConversationId,
+      recoverModeSelectBoundConversation,
+      resolveModeSelectSendTargetConversationId,
+      sendFromModeSelectCurrentBinding,
+      setActiveConversation
+    ]
   );
   const {
     isListening,
@@ -1486,7 +1556,6 @@ export default function ModeSelectHomeScreen() {
     }
 
     lastBoundArtistIdRef.current = artistId;
-    pendingRecoveredSendRef.current = null;
     commitBoundConversationId('', 'artist_changed');
   }, [artistId, commitBoundConversationId]);
 
@@ -1514,22 +1583,6 @@ export default function ModeSelectHomeScreen() {
     }
     setActiveConversation(modeSelectConversationId);
   }, [activeConversationId, modeSelectConversationId, setActiveConversation]);
-
-  useEffect(() => {
-    const pendingPayload = pendingRecoveredSendRef.current;
-    if (!pendingPayload || !isValidConversation || !isSendContextReady) {
-      return;
-    }
-
-    pendingRecoveredSendRef.current = null;
-    const sendError = sendFromModeSelectCurrentBinding(pendingPayload);
-    if (sendError?.code === 'invalidConversation') {
-      logModeSelectDebugTrace('send_retry_context_still_invalid', {
-        conversationId: boundConversationIdRef.current.trim() || null
-      });
-      pendingRecoveredSendRef.current = pendingPayload;
-    }
-  }, [isSendContextReady, isValidConversation, sendFromModeSelectCurrentBinding]);
 
   useEffect(() => {
     if (isSendContextReady) {
@@ -1578,6 +1631,28 @@ export default function ModeSelectHomeScreen() {
     const shouldAnimate = nextMessageCount > previousMessageCount;
     scrollToLatest(shouldAnimate);
   }, [messages, scrollToLatest]);
+
+  useEffect(() => {
+    if (!isModeSelectDebugLoggingEnabled()) {
+      return;
+    }
+
+    const nextCount = messages.length;
+    if (nextCount === lastLoggedRenderedMessageCountRef.current) {
+      return;
+    }
+    lastLoggedRenderedMessageCountRef.current = nextCount;
+
+    const latestMessage = nextCount > 0 ? messages[nextCount - 1] : null;
+    logModeSelectDebugTrace('messages_rendered', {
+      conversationId: modeSelectConversationId || null,
+      messageCount: nextCount,
+      latestMessageId: latestMessage?.id ?? null,
+      latestRole: latestMessage?.role ?? null,
+      latestStatus: latestMessage?.status ?? null,
+      latestContentLength: latestMessage?.content.length ?? 0
+    });
+  }, [messages, modeSelectConversationId]);
 
   useAutoReplayLastArtistMessage({
     messages,
@@ -2153,13 +2228,17 @@ export default function ModeSelectHomeScreen() {
               <FlatList
                 ref={messageListRef}
                 testID="mode-select-message-list"
+                key={modeSelectConversationId}
                 style={styles.conversationList}
                 contentContainerStyle={styles.conversationListContent}
                 data={messages}
                 keyExtractor={(item) => item.id}
                 renderItem={renderMessage}
-                windowSize={8}
-                initialNumToRender={10}
+                windowSize={24}
+                initialNumToRender={48}
+                maxToRenderPerBatch={48}
+                removeClippedSubviews={false}
+                disableVirtualization
                 onContentSizeChange={handleConversationContentSizeChange}
                 onScroll={handleConversationScroll}
                 onScrollBeginDrag={handleConversationScrollBeginDrag}
