@@ -9,13 +9,19 @@ interface UseAutoReplayLastArtistMessageParams {
   audioPlayer: AudioPlayerController;
   enabled: boolean;
   hasStreaming: boolean;
+  replayOnFocus?: boolean;
+}
+
+export function shouldReplayOnFocusLifecycle(enabled: boolean, replayOnFocus: boolean): boolean {
+  return enabled && replayOnFocus;
 }
 
 export function useAutoReplayLastArtistMessage({
   messages,
   audioPlayer,
   enabled,
-  hasStreaming
+  hasStreaming,
+  replayOnFocus = true
 }: UseAutoReplayLastArtistMessageParams): void {
   const hasRunInitialReplayRef = useRef(false);
   const lastReplayedMessageIdRef = useRef<string | null>(null);
@@ -58,7 +64,7 @@ export function useAutoReplayLastArtistMessage({
   }, [attemptReplay, enabled, messages]);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!shouldReplayOnFocusLifecycle(enabled, replayOnFocus)) {
       return;
     }
 
@@ -90,5 +96,5 @@ export function useAutoReplayLastArtistMessage({
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       }
     };
-  }, [attemptReplay, enabled]);
+  }, [attemptReplay, enabled, replayOnFocus]);
 }

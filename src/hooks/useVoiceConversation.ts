@@ -57,6 +57,7 @@ export interface AutoListenState {
   isPlaying: boolean;
   hasTypedDraft: boolean;
   status: VoiceConversationStatus;
+  webTabActive?: boolean;
 }
 
 interface VoiceConversationState {
@@ -86,6 +87,30 @@ interface PendingManualResumeBlockersState {
   hasRecoveryTimer: boolean;
 }
 
+interface WebFocusSuspendState {
+  enabled: boolean;
+  disabled: boolean;
+  hasTypedDraft: boolean;
+  isPlaying: boolean;
+  status: VoiceConversationStatus;
+  hasActiveSession: boolean;
+  hasRecoveryTimer: boolean;
+}
+
+interface WebFocusResumeState {
+  shouldResume: boolean;
+  webTabActive: boolean;
+  enabled: boolean;
+  disabled: boolean;
+  hasTypedDraft: boolean;
+  isPlaying: boolean;
+  hasUserActivation: boolean;
+  status: VoiceConversationStatus;
+  hasActiveSession: boolean;
+  hasRecoveryTimer: boolean;
+  startInFlight: boolean;
+}
+
 type VoiceConversationAction =
   | { type: 'set_off' }
   | { type: 'starting' }
@@ -108,6 +133,55 @@ const INITIAL_STATE: VoiceConversationState = {
 
 function isLockedMicStatus(status: VoiceConversationStatus): boolean {
   return status === 'paused_manual' || status === 'paused_recovery' || status === 'unsupported' || status === 'error';
+}
+
+function isWebTabActive(): boolean {
+  if (Platform.OS !== 'web') {
+    return true;
+  }
+
+  if (typeof document === 'undefined') {
+    return true;
+  }
+
+  const visible = document.visibilityState !== 'hidden';
+  const focused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+  return visible && focused;
+}
+
+export function shouldSuspendMicForWebFocusLoss(state: WebFocusSuspendState): boolean {
+  if (!state.enabled || state.disabled || state.hasTypedDraft || state.isPlaying) {
+    return false;
+  }
+
+  if (isLockedMicStatus(state.status)) {
+    return false;
+  }
+
+  return (
+    state.hasActiveSession ||
+    state.hasRecoveryTimer ||
+    state.status === 'starting' ||
+    state.status === 'listening' ||
+    state.status === 'recovering' ||
+    state.status === 'assistant_busy'
+  );
+}
+
+export function shouldResumeMicAfterWebFocusGain(state: WebFocusResumeState): boolean {
+  if (!state.shouldResume || !state.webTabActive || !state.hasUserActivation) {
+    return false;
+  }
+
+  if (!state.enabled || state.disabled || state.hasTypedDraft || state.isPlaying) {
+    return false;
+  }
+
+  if (isLockedMicStatus(state.status)) {
+    return false;
+  }
+
+  return !state.hasActiveSession && !state.hasRecoveryTimer && !state.startInFlight;
 }
 
 function isRecoverableEndReason(reason: VoiceSessionEndReason): boolean {
@@ -256,8 +330,10 @@ export function getVoiceConversationHint(status: VoiceConversationStatus): strin
 }
 
 export function shouldAttemptAutoListen(state: AutoListenState): boolean {
+  const webTabActive = state.webTabActive ?? true;
   return (
     state.shouldAutoListen &&
+    webTabActive &&
     state.hasUserActivation &&
     state.enabled &&
     !state.disabled &&
@@ -318,6 +394,8 @@ export function useVoiceConversation({
   const resumeAfterTypedDraftRef = useRef(false);
   const pendingManualResumeRef = useRef(false);
   const hasUserActivatedListeningRef = useRef(Platform.OS !== 'web');
+  const webTabActiveRef = useRef(isWebTabActive());
+  const shouldResumeAfterWebFocusLossRef = useRef(false);
   const startListeningFlowRef = useRef<((origin: 'auto' | 'recovery' | 'resume' | 'interrupt') => Promise<void>) | null>(null);
   const enabledRef = useRef(enabled);
   const disabledRef = useRef(disabled);
@@ -387,6 +465,73 @@ export function useVoiceConversation({
   const clearTranscript = useCallback(() => {
     dispatch({ type: 'clear_transcript' });
   }, []);
+
+  const suspendMicForWebFocusLoss = useCallback(
+    (reason: 'hidden' | 'blur') => {
+      if (Platform.OS !== 'web') {
+        return;
+      }
+
+      webTabActiveRef.current = false;
+      const shouldSuspend = shouldSuspendMicForWebFocusLoss({
+        enabled: enabledRef.current,
+        disabled: disabledRef.current,
+        hasTypedDraft: hasTypedDraftRef.current,
+        isPlaying: isPlayingRef.current,
+        status: stateRef.current.status,
+        hasActiveSession: Boolean(activeSessionRef.current),
+        hasRecoveryTimer: Boolean(recoveryTimerRef.current)
+      });
+      if (!shouldSuspend) {
+        return;
+      }
+
+      shouldResumeAfterWebFocusLossRef.current = true;
+      logVoiceDebug('web_focus_loss_suspend', { reason, status: stateRef.current.status });
+      clearRecoveryTimer();
+      clearSilenceTimer();
+      stopActiveSession();
+      if (isLockedMicStatus(stateRef.current.status)) {
+        clearTranscript();
+      } else {
+        dispatch({ type: 'set_off' });
+      }
+    },
+    [clearRecoveryTimer, clearSilenceTimer, clearTranscript, stopActiveSession]
+  );
+
+  const resumeMicAfterWebFocusGain = useCallback(
+    (reason: 'visible' | 'focus') => {
+      if (Platform.OS !== 'web') {
+        return;
+      }
+
+      webTabActiveRef.current = isWebTabActive();
+      const shouldResume = shouldResumeMicAfterWebFocusGain({
+        shouldResume: shouldResumeAfterWebFocusLossRef.current,
+        webTabActive: webTabActiveRef.current,
+        enabled: enabledRef.current,
+        disabled: disabledRef.current,
+        hasTypedDraft: hasTypedDraftRef.current,
+        isPlaying: isPlayingRef.current,
+        hasUserActivation: hasUserActivatedListeningRef.current,
+        status: stateRef.current.status,
+        hasActiveSession: Boolean(activeSessionRef.current),
+        hasRecoveryTimer: Boolean(recoveryTimerRef.current),
+        startInFlight: startInFlightRef.current
+      });
+      if (!shouldResume) {
+        return;
+      }
+
+      shouldResumeAfterWebFocusLossRef.current = false;
+      logVoiceDebug('web_focus_gain_resume', { reason, status: stateRef.current.status });
+      dispatch({ type: 'set_off' });
+      dispatch({ type: 'starting' });
+      void startListeningFlowRef.current?.('resume');
+    },
+    []
+  );
 
   const scheduleSilenceTimeout = useCallback(() => {
     clearSilenceTimer();
@@ -487,6 +632,7 @@ export function useVoiceConversation({
             !isMountedRef.current ||
             !shouldAttemptAutoListen({
               shouldAutoListen,
+              webTabActive: webTabActiveRef.current,
               hasUserActivation: hasUserActivatedListeningRef.current,
               enabled: enabledRef.current,
               disabled: disabledRef.current,
@@ -540,6 +686,7 @@ export function useVoiceConversation({
         origin === 'auto' || origin === 'recovery'
           ? shouldAttemptAutoListen({
               shouldAutoListen,
+              webTabActive: webTabActiveRef.current,
               hasUserActivation: hasUserActivatedListeningRef.current,
               enabled: enabledRef.current,
               disabled: disabledRef.current,
@@ -550,7 +697,8 @@ export function useVoiceConversation({
           : enabledRef.current &&
             !disabledRef.current &&
             !hasTypedDraftRef.current &&
-            !isPlayingRef.current;
+            !isPlayingRef.current &&
+            webTabActiveRef.current;
 
       if (!canStart) {
         return;
@@ -584,6 +732,7 @@ export function useVoiceConversation({
           origin === 'auto' || origin === 'recovery'
           ? shouldAttemptAutoListen({
               shouldAutoListen,
+              webTabActive: webTabActiveRef.current,
               hasUserActivation: hasUserActivatedListeningRef.current,
               enabled: enabledRef.current,
               disabled: disabledRef.current,
@@ -594,7 +743,8 @@ export function useVoiceConversation({
             : enabledRef.current &&
               !disabledRef.current &&
               !hasTypedDraftRef.current &&
-              !isPlayingRef.current;
+              !isPlayingRef.current &&
+              webTabActiveRef.current;
 
         if (!stillAllowed) {
           dispatch({ type: 'set_off' });
@@ -642,7 +792,49 @@ export function useVoiceConversation({
   }, [startListeningFlow]);
 
   useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') {
+      return;
+    }
+
+    webTabActiveRef.current = isWebTabActive();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        suspendMicForWebFocusLoss('hidden');
+        return;
+      }
+
+      resumeMicAfterWebFocusGain('visible');
+    };
+
+    const handleWindowBlur = () => {
+      suspendMicForWebFocusLoss('blur');
+    };
+
+    const handleWindowFocus = () => {
+      resumeMicAfterWebFocusGain('focus');
+    };
+
+    const handlePageHide = () => {
+      suspendMicForWebFocusLoss('hidden');
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [resumeMicAfterWebFocusGain, suspendMicForWebFocusLoss]);
+
+  useEffect(() => {
     if (!enabled || disabled) {
+      shouldResumeAfterWebFocusLossRef.current = false;
       resumeAfterTypedDraftRef.current = false;
       if (disabled) {
         pendingManualResumeRef.current = false;
@@ -655,6 +847,7 @@ export function useVoiceConversation({
     }
 
     if (hasTypedDraft) {
+      shouldResumeAfterWebFocusLossRef.current = false;
       resumeAfterTypedDraftRef.current = shouldResumeMicAfterTypedDraft({
         hasTypedDraft: true,
         status: stateRef.current.status,
@@ -738,6 +931,7 @@ export function useVoiceConversation({
     if (
       !shouldAttemptAutoListen({
         shouldAutoListen,
+        webTabActive: webTabActiveRef.current,
         hasUserActivation: hasUserActivatedListeningRef.current,
         enabled,
         disabled,
@@ -758,6 +952,7 @@ export function useVoiceConversation({
 
   const pauseListening = useCallback(() => {
     logVoiceDebug('manual_pause');
+    shouldResumeAfterWebFocusLossRef.current = false;
     pendingManualResumeRef.current = false;
     resumeAfterTypedDraftRef.current = false;
     clearRecoveryTimer();
@@ -767,6 +962,7 @@ export function useVoiceConversation({
   }, [clearRecoveryTimer, clearSilenceTimer, stopActiveSession]);
 
   const resumeListening = useCallback(() => {
+    shouldResumeAfterWebFocusLossRef.current = false;
     if (disabledRef.current) {
       pendingManualResumeRef.current = false;
       return;
@@ -820,6 +1016,7 @@ export function useVoiceConversation({
 
   const interruptAndListen = useCallback(() => {
     logVoiceDebug('interrupt_and_listen', { fromStatus: stateRef.current.status });
+    shouldResumeAfterWebFocusLossRef.current = false;
     pendingManualResumeRef.current = false;
     resumeAfterTypedDraftRef.current = false;
     clearRecoveryTimer();
@@ -877,6 +1074,7 @@ export function useVoiceConversation({
     isMountedRef.current = true;
     return () => {
       isMountedRef.current = false;
+      shouldResumeAfterWebFocusLossRef.current = false;
       clearRecoveryTimer();
       clearSilenceTimer();
       stopActiveSession();

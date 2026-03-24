@@ -17,10 +17,12 @@ import {
   getVoiceConversationHint,
   getVoiceRecoveryPlan,
   getVoiceRecoveryDelayMs,
+  shouldResumeMicAfterWebFocusGain,
   shouldArmBusyWhileQueuedResume,
   shouldDeferQueuedManualResume,
   shouldQueueManualResume,
   shouldResumeMicAfterTypedDraft,
+  shouldSuspendMicForWebFocusLoss,
   shouldAttemptAutoListen,
   shouldConsumeVoiceRecoveryBudget
 } from './useVoiceConversation';
@@ -30,6 +32,7 @@ describe('useVoiceConversation helpers', () => {
     expect(
       shouldAttemptAutoListen({
         shouldAutoListen: true,
+        webTabActive: true,
         hasUserActivation: true,
         enabled: true,
         disabled: false,
@@ -44,6 +47,7 @@ describe('useVoiceConversation helpers', () => {
     expect(
       shouldAttemptAutoListen({
         shouldAutoListen: true,
+        webTabActive: true,
         hasUserActivation: true,
         enabled: true,
         disabled: false,
@@ -56,6 +60,7 @@ describe('useVoiceConversation helpers', () => {
     expect(
       shouldAttemptAutoListen({
         shouldAutoListen: true,
+        webTabActive: true,
         hasUserActivation: true,
         enabled: true,
         disabled: false,
@@ -70,6 +75,7 @@ describe('useVoiceConversation helpers', () => {
     expect(
       shouldAttemptAutoListen({
         shouldAutoListen: true,
+        webTabActive: true,
         hasUserActivation: true,
         enabled: true,
         disabled: false,
@@ -98,7 +104,23 @@ describe('useVoiceConversation helpers', () => {
     expect(
       shouldAttemptAutoListen({
         shouldAutoListen: true,
+        webTabActive: true,
         hasUserActivation: false,
+        enabled: true,
+        disabled: false,
+        isPlaying: false,
+        hasTypedDraft: false,
+        status: 'off'
+      })
+    ).toBe(false);
+  });
+
+  it('blocks auto-listen on web when tab is not active', () => {
+    expect(
+      shouldAttemptAutoListen({
+        shouldAutoListen: true,
+        webTabActive: false,
+        hasUserActivation: true,
         enabled: true,
         disabled: false,
         isPlaying: false,
@@ -263,5 +285,65 @@ describe('useVoiceConversation helpers', () => {
     expect(getVoiceConversationHint('paused_recovery')).toBe('micRecoveryPausedHint');
     expect(getVoiceConversationHint('unsupported')).toBe('micUnsupportedHint');
     expect(getVoiceConversationHint('listening')).toBeNull();
+  });
+
+  it('suspends mic on focus loss only when a live/auto-resumable session was active', () => {
+    expect(
+      shouldSuspendMicForWebFocusLoss({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: false,
+        status: 'listening',
+        hasActiveSession: true,
+        hasRecoveryTimer: false
+      })
+    ).toBe(true);
+
+    expect(
+      shouldSuspendMicForWebFocusLoss({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: false,
+        status: 'off',
+        hasActiveSession: false,
+        hasRecoveryTimer: false
+      })
+    ).toBe(false);
+  });
+
+  it('resumes mic after focus gain only when it was active before and conditions still allow it', () => {
+    expect(
+      shouldResumeMicAfterWebFocusGain({
+        shouldResume: true,
+        webTabActive: true,
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: false,
+        hasUserActivation: true,
+        status: 'off',
+        hasActiveSession: false,
+        hasRecoveryTimer: false,
+        startInFlight: false
+      })
+    ).toBe(true);
+
+    expect(
+      shouldResumeMicAfterWebFocusGain({
+        shouldResume: true,
+        webTabActive: true,
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: false,
+        hasUserActivation: true,
+        status: 'paused_manual',
+        hasActiveSession: false,
+        hasRecoveryTimer: false,
+        startInFlight: false
+      })
+    ).toBe(false);
   });
 });

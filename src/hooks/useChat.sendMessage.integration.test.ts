@@ -406,4 +406,74 @@ describe('useChat sendMessage integration', () => {
     expect(artistMessageAfterRetry?.metadata?.voiceUrl).toBe('blob:https://ha-ha.ai/retried.mp3');
     expect(artistMessageAfterRetry?.metadata?.voiceQueue).toEqual(['blob:https://ha-ha.ai/retried.mp3']);
   });
+
+  it('auto-adds a heart reaction on affectionate user turns when model omits [REACT:emoji]', async () => {
+    const conversationId = 'conv-affection-reaction';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const sendResult = chat.sendMessage({ text: "Je t'aime Cathy, t'es incroyable." });
+    expect(sendResult).toBeNull();
+    expect(streamMockParams).toHaveLength(1);
+
+    const stream = streamMockParams[0] as MockStreamParams;
+    stream.onToken("Merci, c'est fin. Je te renvoie le compliment avec plaisir.");
+    stream.onComplete({ tokensUsed: 9 });
+    await flushAsyncWork();
+
+    const userMessage =
+      state.messagesByConversation[conversation.id]?.messages.find((message) => message.role === 'user') ?? null;
+    expect(userMessage).not.toBeNull();
+    expect(userMessage?.metadata?.cathyReaction).toBe('❤️');
+  });
+
+  it('keeps replayable voice queue when first chunk succeeds and a later chunk fails terminally', async () => {
+    const conversationId = 'conv-voice-chunked';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    state.session.accessToken = 'token-voice';
+    state.conversationModeEnabled = true;
+    state.voiceAutoPlay = false;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    mockFetchAndCacheVoice
+      .mockResolvedValueOnce('blob:https://ha-ha.ai/chunk-1.mp3')
+      .mockRejectedValueOnce({
+        status: 429,
+        code: 'RATE_LIMIT_EXCEEDED'
+      });
+
+    const sendResult = chat.sendMessage({ text: 'Donne-moi une version vocale complete.' });
+    expect(sendResult).toBeNull();
+    expect(streamMockParams).toHaveLength(1);
+
+    const stream = streamMockParams[0] as MockStreamParams;
+    stream.onToken(
+      'Cathy donne une premiere phrase bien longue pour garder le flow naturel et eviter les coupures abruptes. ' +
+        'Puis elle ajoute une deuxieme phrase tout aussi complete pour tester une erreur terminale sur le chunk suivant.'
+    );
+    stream.onComplete({ tokensUsed: 18 });
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    const baseArtistMessage =
+      state.messagesByConversation[conversation.id]?.messages.find(
+        (message) => message.role === 'artist' && message.metadata?.injected !== true
+      ) ?? null;
+    expect(baseArtistMessage).not.toBeNull();
+    expect(baseArtistMessage?.status).toBe('complete');
+    expect(baseArtistMessage?.metadata?.voiceStatus).toBe('ready');
+    expect(baseArtistMessage?.metadata?.voiceQueue).toEqual(['blob:https://ha-ha.ai/chunk-1.mp3']);
+    expect(baseArtistMessage?.metadata?.voiceUrl).toBe('blob:https://ha-ha.ai/chunk-1.mp3');
+    expect(baseArtistMessage?.metadata?.voiceErrorCode).toBeUndefined();
+  });
 });

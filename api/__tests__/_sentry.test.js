@@ -10,11 +10,7 @@ function restoreEnv(snapshot) {
 
 describe('api/_sentry', () => {
   const originalEnv = {
-    SENTRY_DSN: process.env.SENTRY_DSN,
-    SENTRY_DSN_API: process.env.SENTRY_DSN_API,
-    SENTRY_ENVIRONMENT: process.env.SENTRY_ENVIRONMENT,
-    SENTRY_RELEASE: process.env.SENTRY_RELEASE,
-    SENTRY_TRACES_SAMPLE_RATE: process.env.SENTRY_TRACES_SAMPLE_RATE
+    SENTRY_DSN: process.env.SENTRY_DSN
   };
 
   afterEach(() => {
@@ -25,7 +21,6 @@ describe('api/_sentry', () => {
 
   it('returns false when no DSN is configured', () => {
     delete process.env.SENTRY_DSN;
-    delete process.env.SENTRY_DSN_API;
 
     const initMock = jest.fn();
     jest.doMock('@sentry/node', () => ({
@@ -44,9 +39,6 @@ describe('api/_sentry', () => {
 
   it('captures exception with request context when DSN is configured', () => {
     process.env.SENTRY_DSN = 'https://public@example.ingest.sentry.io/1';
-    process.env.SENTRY_ENVIRONMENT = 'test';
-    process.env.SENTRY_RELEASE = 'unit-test-release';
-    process.env.SENTRY_TRACES_SAMPLE_RATE = '0.25';
 
     const initMock = jest.fn();
     const setTagMock = jest.fn();
@@ -79,24 +71,5 @@ describe('api/_sentry', () => {
     expect(setTagMock).toHaveBeenCalledWith('scope', 'api/unit-test');
     expect(setContextMock).toHaveBeenCalledWith('extra', { endpoint: '/api/test' });
     expect(captureExceptionMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('prefers SENTRY_DSN_API over SENTRY_DSN when both are present', () => {
-    process.env.SENTRY_DSN = 'https://default@example.ingest.sentry.io/2';
-    process.env.SENTRY_DSN_API = 'https://api@example.ingest.sentry.io/3';
-
-    const initMock = jest.fn();
-    jest.doMock('@sentry/node', () => ({
-      init: initMock,
-      withScope: jest.fn(),
-      captureException: jest.fn()
-    }));
-
-    const { initApiSentry } = require('../_sentry');
-    initApiSentry();
-
-    expect(initMock).toHaveBeenCalledTimes(1);
-    const options = initMock.mock.calls[0][0];
-    expect(options.dsn).toBe('https://api@example.ingest.sentry.io/3');
   });
 });

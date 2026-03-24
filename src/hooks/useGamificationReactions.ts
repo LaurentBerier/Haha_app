@@ -5,7 +5,8 @@ import type { ScoreAction } from '../models/Gamification';
 import type { ImageIntent } from '../services/imageIntentService';
 
 const REACT_TAG_PATTERN = /^\s*\[REACT:([^\]\n]{1,8})\]\s*/i;
-const ALLOWED_REACTIONS = new Set(['😂', '💀', '😮', '😤', '🙄', '😬', '🤔', '👍']);
+const ALLOWED_REACTIONS = new Set(['😂', '💀', '😮', '😤', '🙄', '😬', '🤔', '👍', '❤️', '🩷', '💖', '💕', '🫶', '🥰']);
+const APPROVAL_REACTIONS = new Set(['👍', '❤️', '🩷', '💖', '💕', '🫶', '🥰']);
 
 function detectBattleResult(content: string): 'light' | 'solid' | 'destruction' | null {
   const normalized = content.toLowerCase();
@@ -60,7 +61,7 @@ function resolveScoreActions(
   return [...actions];
 }
 
-function extractReactionTag(text: string): { reaction: string | null; cleaned: string } {
+export function extractReactionTag(text: string): { reaction: string | null; cleaned: string } {
   const source = typeof text === 'string' ? text : '';
   const match = source.match(REACT_TAG_PATTERN);
   if (!match) {
@@ -79,7 +80,7 @@ function extractReactionTag(text: string): { reaction: string | null; cleaned: s
   };
 }
 
-function reactionToScoreAction(reaction: string): ScoreAction | null {
+export function reactionToScoreAction(reaction: string): ScoreAction | null {
   if (reaction === '😂' || reaction === '💀') {
     return 'joke_landed';
   }
@@ -92,7 +93,7 @@ function reactionToScoreAction(reaction: string): ScoreAction | null {
   if (reaction === '🤔') {
     return 'cathy_intrigued';
   }
-  if (reaction === '👍') {
+  if (APPROVAL_REACTIONS.has(reaction)) {
     return 'cathy_approved';
   }
   return null;

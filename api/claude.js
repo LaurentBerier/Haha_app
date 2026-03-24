@@ -32,6 +32,14 @@ const RSS_FEEDS = [
   'https://www.tvanouvelles.ca/rss.xml'
 ];
 const DEFAULT_MONTREAL_COORDS = { lat: 45.5017, lon: -73.5673 };
+const WEATHER_INTENT_PATTERNS = [
+  /\b(weather|forecast|temperature|temp outside|outside weather|how s the weather|weather today)\b/i,
+  /\b(meteo|temperature|quel temps|il fait quoi|dehors|fait beau|fait froid)\b/i
+];
+const NEWS_INTENT_PATTERNS = [
+  /\b(news|headlines|latest news|in the news|current events|what s new)\b/i,
+  /\b(nouvelles|actualites|actualite|manchettes|quoi de neuf|infos)\b/i
+];
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 30;
 const CLAUDE_LIMITS_RPC_NAME = 'enforce_claude_limits';
@@ -463,6 +471,114 @@ function resolvePromptLanguage(language) {
   return 'fr';
 }
 
+function normalizeIntentText(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['’]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractTextFromRawMessageContent(content) {
+  if (typeof content === 'string') {
+    return content.trim();
+  }
+
+  if (!Array.isArray(content)) {
+    return '';
+  }
+
+  return content
+    .map((block) =>
+      isRecord(block) && block.type === 'text' && typeof block.text === 'string' ? block.text.trim() : ''
+    )
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+}
+
+function extractLatestUserTurnText(rawMessages) {
+  if (!Array.isArray(rawMessages)) {
+    return '';
+  }
+
+  for (let index = rawMessages.length - 1; index >= 0; index -= 1) {
+    const entry = rawMessages[index];
+    if (!isRecord(entry) || entry.role !== 'user') {
+      continue;
+    }
+
+    const text = extractTextFromRawMessageContent(entry.content);
+    if (text) {
+      return text;
+    }
+  }
+
+  return '';
+}
+
+function detectCurrentInfoIntent(rawMessages) {
+  const latestUserTurn = extractLatestUserTurnText(rawMessages);
+  const normalized = normalizeIntentText(latestUserTurn);
+  if (!normalized) {
+    return {
+      weather: false,
+      news: false,
+      matched: false
+    };
+  }
+
+  const weather = WEATHER_INTENT_PATTERNS.some((pattern) => pattern.test(normalized));
+  const news = NEWS_INTENT_PATTERNS.some((pattern) => pattern.test(normalized));
+  return {
+    weather,
+    news,
+    matched: weather || news
+  };
+}
+
+function buildCurrentInfoInstructionSection(language, intent) {
+  if (!intent?.matched) {
+    return '';
+  }
+
+  const isEnglish = resolvePromptLanguage(language) === 'en';
+  const requestedTopic =
+    intent.weather && intent.news
+      ? isEnglish
+        ? 'weather and headlines'
+        : 'la meteo et les actualites'
+      : intent.weather
+        ? isEnglish
+          ? 'weather'
+          : 'la meteo'
+        : isEnglish
+          ? 'headlines/news'
+          : "les actualites/manchettes";
+
+  if (isEnglish) {
+    return `
+## MANDATORY CURRENT-INFO RESPONSE
+The user asked about ${requestedTopic}. You must answer this request directly before any joke.
+- Use available current context facts when present.
+- If requested info is unavailable, explicitly say it is unavailable right now.
+- Humor is allowed only after the informative answer.`;
+  }
+
+  return `
+## REPONSE INFO OBLIGATOIRE
+L'utilisateur demande ${requestedTopic}. Tu dois repondre concretement a cette demande avant toute blague.
+- Utilise les infos de contexte actuel quand elles sont disponibles.
+- Si une info demandee est indisponible, dis-le explicitement.
+- L'humour est permis seulement apres la reponse informative.`;
+}
+
 function normalizePreferredName(value) {
   if (typeof value !== 'string') {
     return null;
@@ -853,9 +969,17 @@ Ne pose pas un marqueur au début de chaque phrase. Varie leur position.`;
  * @param {ClaudeMessage[]} rawMessages Raw user/assistant messages from the request.
  * @param {string | null} [preferredName=null] Preferred display name override from auth metadata.
  * @param {string} [currentContextSection=''] Optional weather/news/live context section.
+ * @param {string} [currentInfoInstructionSection=''] Optional mandatory instruction for weather/news answers.
  * @returns {string} System prompt string sent to Claude.
  */
-function buildServerSystemPrompt(context, profile, rawMessages, preferredName = null, currentContextSection = '') {
+function buildServerSystemPrompt(
+  context,
+  profile,
+  rawMessages,
+  preferredName = null,
+  currentContextSection = '',
+  currentInfoInstructionSection = ''
+) {
   const promptLanguage = resolvePromptLanguage(context.language);
   const artistId = typeof context.artistId === 'string' ? context.artistId : DEFAULT_ARTIST_ID;
   const canonicalModeId = resolveCanonicalModeId(context.modeId);
@@ -910,7 +1034,7 @@ Ne commence jamais par un emoji seul.`
 ## USER MESSAGE REACTION TAG
 Use this tag only when a reaction is clearly appropriate:
 [REACT:emoji]
-Allowed emojis: 😂 💀 😮 😤 🙄 😬 🤔 👍
+Allowed emojis: 😂 💀 😮 😤 🙄 😬 🤔 👍 ❤️ 🩷 💖 💕 🫶 🥰
 If used, this tag must be the first element before any other text.
 Frequency target: roughly every few replies, not every reply.
 Skip on neutral/informational turns.`
@@ -918,10 +1042,27 @@ Skip on neutral/informational turns.`
 ## REACTION AU MESSAGE UTILISATEUR
 Utilise cette balise seulement quand une reaction est vraiment appropriee :
 [REACT:emoji]
-Emojis autorises: 😂 💀 😮 😤 🙄 😬 🤔 👍
+Emojis autorises: 😂 💀 😮 😤 🙄 😬 🤔 👍 ❤️ 🩷 💖 💕 🫶 🥰
 Si utilisee, la balise doit etre le tout premier element, avant tout autre texte.
 Frequence cible: environ aux quelques reponses, pas a chaque fois.
 Saute-la sur les tours neutres ou purement informatifs.`
+    : '';
+  const affectionResponseSection = isCathy
+    ? promptLanguage === 'en'
+      ? `
+## AFFECTIVE USER MESSAGES
+If the user expresses affection or compliments (example: "I love you", "you're amazing"):
+- Reply warmly and positively, never reject the affection.
+- Give at least one sincere compliment back to the user.
+- Add a heart reaction tag first: [REACT:❤️] or [REACT:🫶].
+- Add a light joke if it fits, while staying kind.`
+      : `
+## MESSAGES AFFECTIFS
+Si l'utilisateur exprime de l'affection ou des compliments (ex: "je t'aime", "t'es incroyable"):
+- Reponds chaleureusement et positivement, sans rejeter l'affection.
+- Donne au moins un compliment sincere en retour.
+- Ajoute une reaction coeur en premier: [REACT:❤️] ou [REACT:🫶].
+- Ajoute une petite blague si ca fitte, en restant bienveillante.`
     : '';
   const cultureAnchorRules = promptLanguage === 'en'
     ? [
@@ -1115,6 +1256,7 @@ ${modePrompt}
 ${imageIntentPrompt ? `\n## CONTEXTE IMAGE\n${imageIntentPrompt}` : ''}
 ${userProfileSection}
 ${currentContextSection}
+${currentInfoInstructionSection}
 
 ## ANCRAGE CULTUREL ET ACTUALITE
 ${cultureAnchorRules.join('\n')}
@@ -1134,6 +1276,7 @@ ${b.guardrails.softZones.map((zone) => `- ${zone.topic} : ${zone.rule}`).join('\
 ${audioTagsSection}
 ${emojiExpressionSection}
 ${reactionTagSection}
+${affectionResponseSection}
 
 ## REGLES ABSOLUES
 ${absoluteRules.join('\n')}
@@ -2367,6 +2510,8 @@ module.exports = async function handler(req, res) {
     sendError(res, 400, promptContext.error, { code: 'INVALID_REQUEST', requestId });
     return;
   }
+  const currentInfoIntent = detectCurrentInfoIntent(req.body?.messages);
+  const currentInfoInstructionSection = buildCurrentInfoInstructionSection(promptContext.language, currentInfoIntent);
 
   const profileForPromptPromise = fetchUserProfileForPrompt(supabaseAdmin, auth.userId, requestId, auth.preferredName ?? null);
   const monthlyQuota = await enforceMonthlyQuota(supabaseAdmin, auth.userId, effectiveAccountType, requestId);
@@ -2466,7 +2611,8 @@ module.exports = async function handler(req, res) {
     profileForPrompt,
     req.body?.messages,
     auth.preferredName ?? null,
-    ''
+    '',
+    currentInfoInstructionSection
   );
 
   let payload;
@@ -2482,17 +2628,18 @@ module.exports = async function handler(req, res) {
   payload.model = quotaStatus.model;
   payload.max_tokens = Math.max(1, Math.min(payload.max_tokens, quotaStatus.maxTokens));
   let currentContextSection = '';
-  if (!promptContext.tutorialMode) {
+  if (!promptContext.tutorialMode || currentInfoIntent.matched) {
     const resolvedCoords = await resolvePromptContextCoords(req, requestId);
     currentContextSection = await buildCurrentContextSection(promptContext.language, resolvedCoords, requestId);
   }
-  payload.system = currentContextSection
+  payload.system = currentContextSection || currentInfoInstructionSection
     ? buildServerSystemPrompt(
         promptContext,
         profileForPrompt,
         req.body?.messages,
         auth.preferredName ?? null,
-        currentContextSection
+        currentContextSection,
+        currentInfoInstructionSection
       )
     : baseServerSystemPrompt;
 

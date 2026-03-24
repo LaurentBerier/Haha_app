@@ -427,6 +427,73 @@ describe('api/claude', () => {
     expect(upstreamBody.system).toContain("Mode tutorial : n'introduis pas meteo ni actualite");
     expect(upstreamBody.system).not.toContain('## CONTEXTE ACTUEL');
     expect(upstreamBody.system).not.toContain('## CURRENT CONTEXT');
+    expect(upstreamBody.system).not.toContain('## REPONSE INFO OBLIGATOIRE');
+    expect(upstreamBody.system).not.toContain('## MANDATORY CURRENT-INFO RESPONSE');
+  });
+
+  it('injects context + mandatory answer instruction in tutorial mode for vague weather/news requests', async () => {
+    process.env.NODE_ENV = 'development';
+    global.fetch = jest.fn((input) => {
+      const url = String(input ?? '');
+      if (url.startsWith('https://api.open-meteo.com/')) {
+        return Promise.resolve({
+          ok: true,
+          json: jest.fn().mockResolvedValue({
+            current: {
+              temperature_2m: 6,
+              weather_code: 3
+            }
+          })
+        });
+      }
+      if (url.includes('rss')) {
+        return Promise.resolve({
+          ok: true,
+          text: jest.fn().mockResolvedValue(
+            '<rss><channel><item><title>Manchette locale test</title></item></channel></rss>'
+          )
+        });
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
+      });
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'user-1', app_metadata: { account_type: 'free' } }
+        })
+      )
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        modeId: 'on-jase',
+        language: 'fr-CA',
+        tutorialMode: true,
+        coords: { lat: 45.5017, lon: -73.5673 },
+        messages: [{ role: 'user', content: 'La meteo et les nouvelles stp?' }]
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const upstreamFetchCall = global.fetch.mock.calls.find((call) => String(call?.[0] ?? '').includes('/v1/messages'));
+    expect(upstreamFetchCall).toBeTruthy();
+    const upstreamBody = JSON.parse(upstreamFetchCall[1].body);
+    expect(upstreamBody.system).toContain("Mode tutorial : n'introduis pas meteo ni actualite");
+    expect(upstreamBody.system).toContain('## CONTEXTE ACTUEL');
+    expect(upstreamBody.system).toContain('Meteo:');
+    expect(upstreamBody.system).toContain('Manchettes:');
+    expect(upstreamBody.system).toContain('## REPONSE INFO OBLIGATOIRE');
+    expect(upstreamBody.system).toContain("Si une info demandee est indisponible, dis-le explicitement.");
   });
 
   it('keeps user name context from auth metadata when profiles.preferred_name column is missing', async () => {

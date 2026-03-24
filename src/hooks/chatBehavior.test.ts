@@ -1,5 +1,5 @@
 import type { Message } from '../models/Message';
-import { computeTutorialModeForRequest, shouldApplyReactionForUserMessage } from './chatBehavior';
+import { computeTutorialModeForRequest, isAffectionateUserMessage, shouldApplyReactionForUserMessage } from './chatBehavior';
 
 function createMessage(overrides: Partial<Message>): Message {
   return {
@@ -81,6 +81,43 @@ describe('chatBehavior', () => {
       ];
 
       expect(shouldApplyReactionForUserMessage(messages, 'user-2')).toBe(false);
+    });
+
+    it('returns true for affectionate turn even if previous user message already has a reaction', () => {
+      const messages: Message[] = [
+        createMessage({
+          id: 'user-1',
+          role: 'user',
+          content: 'allo',
+          status: 'complete',
+          metadata: { cathyReaction: '❤️' }
+        }),
+        createMessage({ id: 'artist-1', role: 'artist', content: 'yo', status: 'complete' }),
+        createMessage({
+          id: 'user-2',
+          role: 'user',
+          content: "Je t'aime Cathy, t'es incroyable",
+          status: 'complete'
+        })
+      ];
+
+      expect(shouldApplyReactionForUserMessage(messages, 'user-2')).toBe(true);
+    });
+  });
+
+  describe('isAffectionateUserMessage', () => {
+    it('detects affection in French', () => {
+      expect(isAffectionateUserMessage("Je t'aime fort")).toBe(true);
+      expect(isAffectionateUserMessage("T'es incroyable")).toBe(true);
+    });
+
+    it('detects affection in English', () => {
+      expect(isAffectionateUserMessage('I love you, Cathy')).toBe(true);
+      expect(isAffectionateUserMessage("You're amazing")).toBe(true);
+    });
+
+    it('ignores neutral text', () => {
+      expect(isAffectionateUserMessage('Quelle heure est-il?')).toBe(false);
     });
   });
 });

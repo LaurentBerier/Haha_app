@@ -3,7 +3,6 @@ import { t } from '../i18n';
 
 export const MIN_TTS_CHUNK_CHARS = 80;
 export const MAX_TTS_CHUNK_CHARS = 360;
-export const VOICE_FIRST_CHUNK_MIN_CHARS = 140;
 export const NOTICE_AUDIO_SYNC_START_WAIT_MS = 1_500;
 export const NOTICE_AUDIO_SYNC_FINISH_WAIT_MS = 15_000;
 export const NOTICE_AUDIO_SYNC_POLL_MS = 120;
@@ -102,7 +101,10 @@ function normalizeTtsChunk(chunk: string): string {
   return chunk.replace(/\s+/g, ' ').trim();
 }
 
-function extractReadyTtsChunks(buffer: string, flushRemainder: boolean): { chunks: string[]; remainder: string } {
+export function extractReadyTtsChunksFromBuffer(
+  buffer: string,
+  flushRemainder: boolean
+): { chunks: string[]; remainder: string } {
   let working = buffer;
   const chunks: string[] = [];
 
@@ -152,8 +154,13 @@ function extractReadyTtsChunks(buffer: string, flushRemainder: boolean): { chunk
 
   if (flushRemainder) {
     const normalizedRemainder = normalizeTtsChunk(working);
-    if (normalizedRemainder.length >= MIN_TTS_CHUNK_CHARS) {
-      chunks.push(normalizedRemainder);
+    if (normalizedRemainder.length > 0) {
+      if (normalizedRemainder.length < MIN_TTS_CHUNK_CHARS && chunks.length > 0 && chunks[chunks.length - 1]) {
+        const previous = chunks[chunks.length - 1] as string;
+        chunks[chunks.length - 1] = normalizeTtsChunk(`${previous} ${normalizedRemainder}`);
+      } else {
+        chunks.push(normalizedRemainder);
+      }
       working = '';
     }
   }
@@ -173,7 +180,7 @@ export function sleep(ms: number): Promise<void> {
 export function useTtsPlayback() {
   const normalizeChunk = useCallback((chunk: string) => normalizeTtsChunk(chunk), []);
   const extractChunks = useCallback(
-    (buffer: string, flushRemainder: boolean) => extractReadyTtsChunks(buffer, flushRemainder),
+    (buffer: string, flushRemainder: boolean) => extractReadyTtsChunksFromBuffer(buffer, flushRemainder),
     []
   );
 

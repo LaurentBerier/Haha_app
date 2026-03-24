@@ -1658,7 +1658,8 @@ export default function ModeSelectHomeScreen() {
     messages,
     audioPlayer,
     enabled: isValidConversation,
-    hasStreaming
+    hasStreaming,
+    replayOnFocus: false
   });
 
   useEffect(() => {

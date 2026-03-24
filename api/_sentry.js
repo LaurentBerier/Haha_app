@@ -3,19 +3,8 @@ const Sentry = require('@sentry/node');
 let isInitialized = false;
 let isDisabled = false;
 
-function parseSampleRate(value, fallback) {
-  const parsed = Number.parseFloat(String(value ?? ''));
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  if (parsed < 0 || parsed > 1) {
-    return fallback;
-  }
-  return parsed;
-}
-
 function getSentryDsn() {
-  const dsn = process.env.SENTRY_DSN_API || process.env.SENTRY_DSN;
+  const dsn = process.env.SENTRY_DSN;
   return typeof dsn === 'string' && dsn.trim() ? dsn.trim() : '';
 }
 
@@ -37,13 +26,9 @@ function initApiSentry() {
   try {
     Sentry.init({
       dsn,
-      environment:
-        process.env.SENTRY_ENVIRONMENT ||
-        process.env.VERCEL_ENV ||
-        process.env.NODE_ENV ||
-        'production',
-      release: process.env.SENTRY_RELEASE || process.env.VERCEL_GIT_COMMIT_SHA || undefined,
-      tracesSampleRate: parseSampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE, 0.1)
+      environment: process.env.VERCEL_ENV || process.env.NODE_ENV || 'production',
+      release: process.env.VERCEL_GIT_COMMIT_SHA || undefined,
+      tracesSampleRate: 0.1
     });
     isInitialized = true;
     return true;

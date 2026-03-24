@@ -55,6 +55,14 @@ export function useStorePersistence(): void {
     }
 
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const flushSnapshot = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      const snapshot = selectPersistedSnapshot(useStore.getState());
+      void savePersistedSnapshot(snapshot);
+    };
 
     const unsubscribe = useStore.subscribe(() => {
       if (timeoutId) {
@@ -62,15 +70,37 @@ export function useStorePersistence(): void {
       }
 
       timeoutId = setTimeout(() => {
-        const snapshot = selectPersistedSnapshot(useStore.getState());
-        void savePersistedSnapshot(snapshot);
+        flushSnapshot();
       }, SAVE_DEBOUNCE_MS);
     });
+
+    const handleVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        flushSnapshot();
+      }
+    };
+
+    const handlePageHide = () => {
+      flushSnapshot();
+    };
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pagehide', handlePageHide);
+    }
 
     return () => {
       unsubscribe();
       if (timeoutId) {
         clearTimeout(timeoutId);
+      }
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('pagehide', handlePageHide);
       }
     };
   }, [hasHydrated]);

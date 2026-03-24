@@ -1,8 +1,12 @@
 import { fetchAndCacheVoice } from './ttsService';
 
-const CATHY_FILLERS_FR = ['Mmm...', 'Hm.', 'Ah oui?', 'OK pis?', 'Serieusement?', 'Continue.'];
-const CATHY_FILLERS_EN = ['Mmm...', 'Hm.', 'Yeah?', 'Go on.', 'Seriously?', 'OK and?'];
+const CATHY_FILLERS_FR = ['Mmm...', 'Hmm...', 'Mm-hm...', 'Hmmm...', 'Uh-huh...'];
+const CATHY_FILLERS_EN = ['Mmm...', 'Hmm...', 'Mm-hm...', 'Hmmm...', 'Uh-huh...'];
 const PREWARMED_FILLER_KEYS = new Set<string>();
+const LAST_FILLER_AT_BY_SCOPE = new Map<string, number>();
+const parsedFillerCooldownMs = Number.parseInt(process.env.EXPO_PUBLIC_VOICE_FILLER_COOLDOWN_MS ?? '', 10);
+const FILLER_COOLDOWN_MS =
+  Number.isFinite(parsedFillerCooldownMs) && parsedFillerCooldownMs >= 400 ? parsedFillerCooldownMs : 2_500;
 
 function resolveFillers(language: string): string[] {
   return language.toLowerCase().startsWith('en') ? CATHY_FILLERS_EN : CATHY_FILLERS_FR;
@@ -30,12 +34,14 @@ export function prewarmVoiceFillers(artistId: string, language: string, accessTo
   }
   PREWARMED_FILLER_KEYS.add(prewarmKey);
 
-  const filler = pickRandomEntry(resolveFillers(language));
-  if (!filler) {
+  const fillers = resolveFillers(language);
+  if (fillers.length === 0) {
     return;
   }
 
-  void fetchAndCacheVoice(filler, normalizedArtistId, language, normalizedToken, { purpose: 'reply' });
+  fillers.forEach((filler) => {
+    void fetchAndCacheVoice(filler, normalizedArtistId, language, normalizedToken, { purpose: 'reply' });
+  });
 }
 
 export async function getRandomFillerUri(
@@ -49,10 +55,19 @@ export async function getRandomFillerUri(
     return null;
   }
 
+  const normalizedLanguage = language.toLowerCase().startsWith('en') ? 'en' : 'fr';
+  const scopeKey = `${normalizedArtistId}|${normalizedLanguage}`;
+  const now = Date.now();
+  const lastStartedAt = LAST_FILLER_AT_BY_SCOPE.get(scopeKey) ?? 0;
+  if (now - lastStartedAt < FILLER_COOLDOWN_MS) {
+    return null;
+  }
+
   const filler = pickRandomEntry(resolveFillers(language));
   if (!filler) {
     return null;
   }
 
+  LAST_FILLER_AT_BY_SCOPE.set(scopeKey, now);
   return fetchAndCacheVoice(filler, normalizedArtistId, language, normalizedToken, { purpose: 'reply' });
 }

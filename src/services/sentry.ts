@@ -1,11 +1,6 @@
 import * as Sentry from '@sentry/react-native';
 import { Platform } from 'react-native';
-import {
-  SENTRY_DSN,
-  SENTRY_ENVIRONMENT,
-  SENTRY_RELEASE,
-  SENTRY_TRACES_SAMPLE_RATE
-} from '../config/env';
+import { SENTRY_DSN } from '../config/env';
 
 type SentryCaptureContext = {
   capture?: boolean;
@@ -18,17 +13,6 @@ type SentryCaptureContext = {
 
 let isInitialized = false;
 let isDisabled = false;
-
-function parseSampleRate(value: string, fallback: number): number {
-  const parsed = Number.parseFloat(value);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  if (parsed < 0 || parsed > 1) {
-    return fallback;
-  }
-  return parsed;
-}
 
 function normalizeError(error: unknown, fallbackMessage: string): Error {
   if (error instanceof Error) {
@@ -69,9 +53,8 @@ export function initSentry(): boolean {
   try {
     Sentry.init({
       dsn,
-      environment: SENTRY_ENVIRONMENT.trim() || (isDevRuntime ? 'development' : 'production'),
-      release: SENTRY_RELEASE.trim() || undefined,
-      tracesSampleRate: parseSampleRate(SENTRY_TRACES_SAMPLE_RATE, isDevRuntime ? 0.2 : 0.1),
+      environment: isDevRuntime ? 'development' : 'production',
+      tracesSampleRate: isDevRuntime ? 0.2 : 0.1,
       enableNative: Platform.OS !== 'web'
     });
     isInitialized = true;

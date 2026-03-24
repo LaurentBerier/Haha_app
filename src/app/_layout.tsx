@@ -1,5 +1,5 @@
 import { Stack, router, usePathname, useSegments } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
   Image,
@@ -28,6 +28,12 @@ import { initSentry } from '../services/sentry';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme';
 import { E2E_AUTH_BYPASS } from '../config/env';
+import {
+  createPersistedRouteSnapshot,
+  LAST_USEFUL_ROUTE_STORAGE_KEY,
+  resolveRouteToRestoreFromSnapshot,
+  wasWebReloadNavigation
+} from '../utils/routeRestore';
 import cleanBackground from '../../assets/branding/Clean_BG.jpg';
 import neonTitleMark from '../../assets/branding/logo-neon-Trans.png';
 
@@ -72,6 +78,7 @@ export default function RootLayout() {
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [hasTypedGlobalDraft, setHasTypedGlobalDraft] = useState(false);
+  const hasAttemptedWebRouteRestoreRef = useRef(false);
   const inAuthGroup = segmentList[0] === '(auth)';
   const isAuthCallbackRoute = segmentList[0] === 'auth' && segmentList[1] === 'callback';
   const isOnboardingRoute = segmentList[1] === 'onboarding';
@@ -302,6 +309,61 @@ export default function RootLayout() {
       setHasTypedGlobalDraft(false);
     }
   }, [showGlobalChatInput]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') {
+      return;
+    }
+
+    const snapshot = createPersistedRouteSnapshot(pathname, Date.now());
+    if (!snapshot) {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(LAST_USEFUL_ROUTE_STORAGE_KEY, JSON.stringify(snapshot));
+    } catch {
+      // Ignore storage write failures in private browsing or restricted contexts.
+    }
+  }, [pathname]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+      return;
+    }
+    if (hasAttemptedWebRouteRestoreRef.current) {
+      return;
+    }
+    if (!hasHydrated || authStatus === 'loading' || !isAuthenticated) {
+      return;
+    }
+    if (!isHomeArtistPickerRoute || inAuthGroup || isAuthCallbackRoute) {
+      return;
+    }
+
+    hasAttemptedWebRouteRestoreRef.current = true;
+    if (!wasWebReloadNavigation(window.performance)) {
+      return;
+    }
+
+    let rawSnapshot: string | null = null;
+    try {
+      rawSnapshot = window.localStorage.getItem(LAST_USEFUL_ROUTE_STORAGE_KEY);
+    } catch {
+      rawSnapshot = null;
+    }
+
+    const restoredRoute = resolveRouteToRestoreFromSnapshot({
+      currentPathname: pathname,
+      rawSnapshot,
+      nowMs: Date.now()
+    });
+    if (!restoredRoute) {
+      return;
+    }
+
+    router.replace(restoredRoute as never);
+  }, [authStatus, hasHydrated, inAuthGroup, isAuthCallbackRoute, isAuthenticated, isHomeArtistPickerRoute, pathname]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || !webBackgroundUri || typeof document === 'undefined') {

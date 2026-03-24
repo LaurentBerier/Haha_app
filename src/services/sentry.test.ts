@@ -8,10 +8,7 @@ describe('sentry service', () => {
     const initMock = jest.fn();
 
     jest.doMock('../config/env', () => ({
-      SENTRY_DSN: '',
-      SENTRY_ENVIRONMENT: '',
-      SENTRY_RELEASE: '',
-      SENTRY_TRACES_SAMPLE_RATE: ''
+      SENTRY_DSN: ''
     }));
     jest.doMock('react-native', () => ({
       Platform: { OS: 'ios' }
@@ -40,10 +37,7 @@ describe('sentry service', () => {
     const captureExceptionMock = jest.fn();
 
     jest.doMock('../config/env', () => ({
-      SENTRY_DSN: 'https://public@example.ingest.sentry.io/1',
-      SENTRY_ENVIRONMENT: 'test',
-      SENTRY_RELEASE: 'mobile-tests',
-      SENTRY_TRACES_SAMPLE_RATE: '0.35'
+      SENTRY_DSN: 'https://public@example.ingest.sentry.io/1'
     }));
     jest.doMock('react-native', () => ({
       Platform: { OS: 'ios' }

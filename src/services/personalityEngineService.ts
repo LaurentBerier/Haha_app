@@ -234,7 +234,7 @@ function buildReactionTagSection(language: 'fr' | 'en'): string {
 ## USER MESSAGE REACTION TAG
 Use this tag only when a reaction is clearly appropriate:
 [REACT:emoji]
-Allowed emojis: 😂 💀 😮 😤 🙄 😬 🤔 👍
+Allowed emojis: 😂 💀 😮 😤 🙄 😬 🤔 👍 ❤️ 🩷 💖 💕 🫶 🥰
 If used, this tag must be the first element before any other text.
 Frequency target: roughly every few replies, not every reply.
 Skip on neutral/informational turns.`;
@@ -244,10 +244,30 @@ Skip on neutral/informational turns.`;
 ## REACTION AU MESSAGE UTILISATEUR
 Utilise cette balise seulement quand une reaction est vraiment appropriee :
 [REACT:emoji]
-Emojis autorises: 😂 💀 😮 😤 🙄 😬 🤔 👍
+Emojis autorises: 😂 💀 😮 😤 🙄 😬 🤔 👍 ❤️ 🩷 💖 💕 🫶 🥰
 Si utilisee, la balise doit etre le tout premier element, avant tout autre texte.
 Frequence cible: environ aux quelques reponses, pas a chaque fois.
 Saute-la sur les tours neutres ou purement informatifs.`;
+}
+
+function buildAffectionResponseSection(language: 'fr' | 'en'): string {
+  if (language === 'en') {
+    return `
+## AFFECTIVE USER MESSAGES
+If the user expresses affection or compliments (example: "I love you", "you're amazing"):
+- Reply warmly and positively, never reject the affection.
+- Give at least one sincere compliment back to the user.
+- Add a heart reaction tag first: [REACT:❤️] or [REACT:🫶].
+- Add a light joke if it fits, while staying kind.`;
+  }
+
+  return `
+## MESSAGES AFFECTIFS
+Si l'utilisateur exprime de l'affection ou des compliments (ex: "je t'aime", "t'es incroyable"):
+- Reponds chaleureusement et positivement, sans rejeter l'affection.
+- Donne au moins un compliment sincere en retour.
+- Ajoute une reaction coeur en premier: [REACT:❤️] ou [REACT:🫶].
+- Ajoute une petite blague si ca fitte, en restant bienveillante.`;
 }
 
 export function buildSystemPromptForArtist(
@@ -265,6 +285,7 @@ export function buildSystemPromptForArtist(
   const biographySection = buildBiographySection(promptLanguage, b.biography);
   const emojiExpressionSection = buildEmojiExpressionSection(promptLanguage);
   const reactionTagSection = buildReactionTagSection(promptLanguage);
+  const affectionResponseSection = buildAffectionResponseSection(promptLanguage);
 
   if (promptLanguage === 'en') {
     return `
@@ -318,6 +339,7 @@ ${b.guardrails.softZones.map((zone) => `- ${zone.topic}: ${zone.rule}`).join('\n
 ${audioTagsSection}
 ${emojiExpressionSection}
 ${reactionTagSection}
+${affectionResponseSection}
 
 ## ABSOLUTE RULES
 - Stay fully in character
@@ -386,6 +408,7 @@ ${b.guardrails.softZones.map((zone) => `- ${zone.topic} : ${zone.rule}`).join('\
 ${audioTagsSection}
 ${emojiExpressionSection}
 ${reactionTagSection}
+${affectionResponseSection}
 
 ## REGLES ABSOLUES
 - Tu reponds toujours en francais quebecois

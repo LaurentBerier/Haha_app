@@ -193,7 +193,8 @@ export default function ChatScreen() {
     messages,
     audioPlayer,
     enabled: isValidConversation,
-    hasStreaming
+    hasStreaming,
+    replayOnFocus: false
   });
 
   return (
