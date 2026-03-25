@@ -36,6 +36,10 @@ export function isRouteEligibleForPersistence(pathname: string): boolean {
     return false;
   }
 
+  if (normalized.startsWith('/games/')) {
+    return false;
+  }
+
   return true;
 }
 
