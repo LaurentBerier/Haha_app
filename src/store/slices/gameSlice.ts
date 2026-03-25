@@ -5,9 +5,14 @@ import type {
   ImproChainData,
   ImproReward,
   ImproTurn,
+  TarotCathyData,
+  TarotPoolCard,
+  TarotReading,
+  TarotTheme,
   VraiInventeData,
   VraiInventeQuestion
 } from '../../games/types';
+import { TAROT_CARD_POOL } from '../../games/types';
 import { generateId } from '../../utils/generateId';
 import type { StoreState } from '../useStore';
 
@@ -27,6 +32,45 @@ function isImproData(data: Game['gameData']): data is ImproChainData {
 
 function isVraiInventeData(data: Game['gameData']): data is VraiInventeData {
   return data.type === 'vrai-ou-invente';
+}
+
+function isTarotData(data: Game['gameData']): data is TarotCathyData {
+  return data.type === 'tarot-cathy';
+}
+
+function pickRandomCards(pool: TarotPoolCard[], count: number): TarotPoolCard[] {
+  const shuffled = pool.slice();
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const a = shuffled[i];
+    const b = shuffled[j];
+    if (a !== undefined && b !== undefined) {
+      shuffled[i] = b;
+      shuffled[j] = a;
+    }
+  }
+  return shuffled.slice(0, count);
+}
+
+function buildTarotGame(artistId: string): Game {
+  return {
+    id: generateId('game'),
+    gameType: 'tarot-cathy',
+    artistId,
+    status: 'theme-select',
+    gameData: {
+      type: 'tarot-cathy',
+      theme: null,
+      cardPool: [],
+      selectedCardIndices: [],
+      readings: [],
+      grandFinale: null,
+      isLoading: false
+    },
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    error: null
+  };
 }
 
 function withActiveGame(
@@ -115,6 +159,13 @@ export interface GameSlice {
   receiveVraiInventeQuestion: (question: VraiInventeQuestion) => void;
   submitVraiInventeAnswer: (index: number) => void;
   nextVraiInventeQuestion: () => void;
+
+  startTarotGame: (artistId: string) => Game;
+  selectTarotTheme: (theme: TarotTheme) => void;
+  toggleTarotCardSelection: (cardIndex: number) => void;
+  confirmTarotCardSelection: () => void;
+  receiveTarotReadings: (readings: Omit<TarotReading, 'isFlipped'>[], grandFinale: string) => void;
+  flipTarotCard: (index: number) => void;
 
   setGameStatus: (status: GameStatus) => void;
   setGameError: (message: string | null) => void;
@@ -371,6 +422,138 @@ export const createGameSlice: StateCreator<StoreState, [], [], GameSlice> = (set
             isLoading: true
           },
           error: null
+        };
+      })
+    ),
+
+  startTarotGame: (artistId) => {
+    const game = buildTarotGame(artistId);
+    set({ activeGame: game });
+    return game;
+  },
+
+  selectTarotTheme: (theme) =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'tarot-cathy' || !isTarotData(game.gameData)) {
+          return game;
+        }
+
+        return {
+          ...game,
+          status: 'card-select',
+          gameData: {
+            ...game.gameData,
+            theme,
+            cardPool: pickRandomCards(TAROT_CARD_POOL, 5),
+            selectedCardIndices: []
+          },
+          error: null
+        };
+      })
+    ),
+
+  toggleTarotCardSelection: (cardIndex) =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'tarot-cathy' || !isTarotData(game.gameData)) {
+          return game;
+        }
+
+        const { selectedCardIndices, cardPool } = game.gameData;
+        if (cardIndex < 0 || cardIndex >= cardPool.length) {
+          return game;
+        }
+
+        const alreadySelected = selectedCardIndices.includes(cardIndex);
+        let next: number[];
+        if (alreadySelected) {
+          next = selectedCardIndices.filter((i) => i !== cardIndex);
+        } else if (selectedCardIndices.length < 3) {
+          next = [...selectedCardIndices, cardIndex];
+        } else {
+          return game;
+        }
+
+        return {
+          ...game,
+          gameData: {
+            ...game.gameData,
+            selectedCardIndices: next
+          }
+        };
+      })
+    ),
+
+  confirmTarotCardSelection: () =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'tarot-cathy' || !isTarotData(game.gameData)) {
+          return game;
+        }
+        if (game.gameData.selectedCardIndices.length !== 3) {
+          return game;
+        }
+
+        return {
+          ...game,
+          status: 'loading',
+          gameData: {
+            ...game.gameData,
+            isLoading: true
+          },
+          error: null
+        };
+      })
+    ),
+
+  receiveTarotReadings: (readings, grandFinale) =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'tarot-cathy' || !isTarotData(game.gameData)) {
+          return game;
+        }
+
+        return {
+          ...game,
+          status: 'reading',
+          gameData: {
+            ...game.gameData,
+            readings: readings.map((r) => ({ ...r, isFlipped: false })),
+            grandFinale: grandFinale || null,
+            isLoading: false
+          },
+          error: null
+        };
+      })
+    ),
+
+  flipTarotCard: (index) =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'tarot-cathy' || !isTarotData(game.gameData)) {
+          return game;
+        }
+
+        const { readings } = game.gameData;
+        const targetReading = readings[index];
+        if (index < 0 || index >= readings.length || !targetReading || targetReading.isFlipped) {
+          return game;
+        }
+
+        const nextReadings = readings.map((r, i) =>
+          i === index ? { ...r, isFlipped: true } : r
+        );
+        const allFlipped = nextReadings.every((r) => r.isFlipped);
+
+        return {
+          ...game,
+          status: allFlipped ? 'complete' : 'reading',
+          gameData: {
+            ...game.gameData,
+            readings: nextReadings
+          },
+          endedAt: allFlipped ? (game.endedAt ?? new Date().toISOString()) : game.endedAt
         };
       })
     ),

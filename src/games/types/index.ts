@@ -1,8 +1,9 @@
-export type GameType = 'impro-chain' | 'vrai-ou-invente';
+export type GameType = 'impro-chain' | 'vrai-ou-invente' | 'tarot-cathy';
 
 export type ImproStatus = 'active' | 'cathy-ending' | 'complete';
 export type VraiInventeStatus = 'loading' | 'question' | 'revealed' | 'complete';
-export type GameStatus = ImproStatus | VraiInventeStatus | 'abandoned';
+export type TarotCathyStatus = 'theme-select' | 'card-select' | 'loading' | 'reading' | 'complete';
+export type GameStatus = ImproStatus | VraiInventeStatus | TarotCathyStatus | 'abandoned';
 
 export interface ImproTurn {
   role: 'user' | 'artist';
@@ -48,7 +49,35 @@ export interface VraiInventeData {
   isLoading: boolean;
 }
 
-export type GameData = ImproChainData | VraiInventeData;
+export interface TarotTheme {
+  id: 'amour' | 'argent' | 'annee' | 'ex';
+  label: string;
+  emoji: string;
+}
+
+export interface TarotPoolCard {
+  name: string;
+  emoji: string;
+}
+
+export interface TarotReading {
+  cardName: string;
+  emoji: string;
+  interpretation: string;
+  isFlipped: boolean;
+}
+
+export interface TarotCathyData {
+  type: 'tarot-cathy';
+  theme: TarotTheme | null;
+  cardPool: TarotPoolCard[];
+  selectedCardIndices: number[];
+  readings: TarotReading[];
+  grandFinale: string | null;
+  isLoading: boolean;
+}
+
+export type GameData = ImproChainData | VraiInventeData | TarotCathyData;
 
 export interface Game {
   id: string;
@@ -63,8 +92,8 @@ export interface Game {
 
 export interface GameTypeConfig {
   id: GameType;
-  labelKey: 'gameImproTitle' | 'gameVraiInventeTitle';
-  descriptionKey: 'gameImproDescription' | 'gameVraiInventeDescription';
+  labelKey: 'gameImproTitle' | 'gameVraiInventeTitle' | 'gameTarotTitle';
+  descriptionKey: 'gameImproDescription' | 'gameVraiInventeDescription' | 'gameTarotDescription';
   emoji: string;
   available: boolean;
 }
@@ -83,5 +112,37 @@ export const GAME_TYPE_CONFIGS: GameTypeConfig[] = [
     descriptionKey: 'gameVraiInventeDescription',
     emoji: '🎭',
     available: true
+  },
+  {
+    id: 'tarot-cathy',
+    labelKey: 'gameTarotTitle',
+    descriptionKey: 'gameTarotDescription',
+    emoji: '🔮',
+    available: true
   }
+];
+
+export const TAROT_THEMES: TarotTheme[] = [
+  { id: 'amour',  label: 'Mon amour',  emoji: '💕' },
+  { id: 'argent', label: 'Mon argent', emoji: '💸' },
+  { id: 'annee',  label: 'Mon année',  emoji: '✨' },
+  { id: 'ex',     label: 'Mon ex',     emoji: '😬' },
+];
+
+export const TAROT_CARD_POOL: TarotPoolCard[] = [
+  { name: 'Le Fou',             emoji: '🃏' },
+  { name: 'La Mort',            emoji: '💀' },
+  { name: 'Le Soleil',          emoji: '☀️' },
+  { name: 'La Lune',            emoji: '🌙' },
+  { name: 'Le Diable',          emoji: '😈' },
+  { name: 'La Tour',            emoji: '🏚️' },
+  { name: "L'Étoile",           emoji: '⭐' },
+  { name: 'Le Monde',           emoji: '🌍' },
+  { name: 'Le Jugement',        emoji: '📣' },
+  { name: 'La Force',           emoji: '💪' },
+  { name: "L'Amoureux",         emoji: '❤️' },
+  { name: "L'Hermite",          emoji: '🧙' },
+  { name: 'La Roue de Fortune', emoji: '🎡' },
+  { name: 'La Justice',         emoji: '⚖️' },
+  { name: 'Le Bateleur',        emoji: '🎩' },
 ];
