@@ -22,7 +22,7 @@ const populatedProfile: UserProfile = {
   onboardingSkipped: false
 };
 
-const promptWithProfile = buildSystemPrompt('radar-attitude', populatedProfile);
+const promptWithProfile = buildSystemPrompt('radar-attitude', populatedProfile, 'fr-CA');
 assertContains(promptWithProfile, '## PROFIL UTILISATEUR');
 assertContains(promptWithProfile, "- Appelle l'utilisateur par ce prénom : Laurent");
 assertContains(promptWithProfile, '- Âge approximatif : 28 ans');
@@ -43,10 +43,10 @@ const emptyProfile: UserProfile = {
   onboardingSkipped: false
 };
 
-const promptWithEmptyProfile = buildSystemPrompt('radar-attitude', emptyProfile);
+const promptWithEmptyProfile = buildSystemPrompt('radar-attitude', emptyProfile, 'fr-CA');
 assertNotContains(promptWithEmptyProfile, '## PROFIL UTILISATEUR');
 
-const promptWithoutProfile = buildSystemPrompt('radar-attitude', null);
+const promptWithoutProfile = buildSystemPrompt('radar-attitude', null, 'fr-CA');
 assertNotContains(promptWithoutProfile, '## PROFIL UTILISATEUR');
 
 console.log('verify:profile-prompt passed');
