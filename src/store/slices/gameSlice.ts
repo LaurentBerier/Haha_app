@@ -166,6 +166,7 @@ export interface GameSlice {
   confirmTarotCardSelection: () => void;
   receiveTarotReadings: (readings: Omit<TarotReading, 'isFlipped'>[], grandFinale: string) => void;
   flipTarotCard: (index: number) => void;
+  completeTarotReading: () => void;
 
   setGameStatus: (status: GameStatus) => void;
   setGameError: (message: string | null) => void;
@@ -544,16 +545,32 @@ export const createGameSlice: StateCreator<StoreState, [], [], GameSlice> = (set
         const nextReadings = readings.map((r, i) =>
           i === index ? { ...r, isFlipped: true } : r
         );
-        const allFlipped = nextReadings.every((r) => r.isFlipped);
 
         return {
           ...game,
-          status: allFlipped ? 'complete' : 'reading',
+          status: 'reading',
           gameData: {
             ...game.gameData,
             readings: nextReadings
-          },
-          endedAt: allFlipped ? (game.endedAt ?? new Date().toISOString()) : game.endedAt
+          }
+        };
+      })
+    ),
+
+  completeTarotReading: () =>
+    set((state) =>
+      withActiveGame(state, (game) => {
+        if (game.gameType !== 'tarot-cathy' || !isTarotData(game.gameData)) {
+          return game;
+        }
+        if (!game.gameData.readings.every((r) => r.isFlipped)) {
+          return game;
+        }
+
+        return {
+          ...game,
+          status: 'complete',
+          endedAt: game.endedAt ?? new Date().toISOString()
         };
       })
     ),

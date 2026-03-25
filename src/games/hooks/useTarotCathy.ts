@@ -11,11 +11,13 @@ interface UseTarotCathyResult {
   grandFinale: string | null;
   isLoading: boolean;
   isComplete: boolean;
+  allFlipped: boolean;
   startGame: () => void;
   selectTheme: (theme: TarotTheme) => void;
   toggleCardSelection: (cardIndex: number) => void;
   confirmCardSelection: () => Promise<void>;
   flipCard: (index: number) => void;
+  completeReading: () => void;
   abandon: () => void;
   clear: () => void;
 }
@@ -42,6 +44,7 @@ export function useTarotCathy(artistId: string): UseTarotCathyResult {
   const confirmTarotCardSelection = useStore((state) => state.confirmTarotCardSelection);
   const receiveTarotReadings = useStore((state) => state.receiveTarotReadings);
   const flipTarotCard = useStore((state) => state.flipTarotCard);
+  const completeTarotReading = useStore((state) => state.completeTarotReading);
   const setGameError = useStore((state) => state.setGameError);
   const abandonGame = useStore((state) => state.abandonGame);
   const clearGame = useStore((state) => state.clearGame);
@@ -60,6 +63,7 @@ export function useTarotCathy(artistId: string): UseTarotCathyResult {
   const grandFinale = game && game.gameData.type === 'tarot-cathy' ? game.gameData.grandFinale : null;
   const isLoading = Boolean(game && game.status === 'loading');
   const isComplete = game?.status === 'complete';
+  const allFlipped = readings.length === 3 && readings.every((r) => r.isFlipped);
 
   const startGame = useCallback(() => {
     startTarotGame(artistId);
@@ -156,6 +160,10 @@ export function useTarotCathy(artistId: string): UseTarotCathyResult {
     [artistId, flipTarotCard]
   );
 
+  const completeReading = useCallback(() => {
+    completeTarotReading();
+  }, [completeTarotReading]);
+
   const abandon = useCallback(() => {
     abandonGame();
   }, [abandonGame]);
@@ -170,11 +178,13 @@ export function useTarotCathy(artistId: string): UseTarotCathyResult {
     grandFinale,
     isLoading,
     isComplete,
+    allFlipped,
     startGame,
     selectTheme,
     toggleCardSelection,
     confirmCardSelection,
     flipCard,
+    completeReading,
     abandon,
     clear
   };

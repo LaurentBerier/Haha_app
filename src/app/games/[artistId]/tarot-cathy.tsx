@@ -27,11 +27,13 @@ export default function TarotCathyScreen() {
     grandFinale,
     isLoading,
     isComplete,
+    allFlipped,
     startGame,
     selectTheme,
     toggleCardSelection,
     confirmCardSelection,
     flipCard,
+    completeReading,
     abandon,
     clear
   } = useTarotCathy(artistId);
@@ -217,6 +219,16 @@ export default function TarotCathyScreen() {
                 />
               ))}
             </View>
+            {allFlipped ? (
+              <Pressable
+                onPress={completeReading}
+                style={({ pressed }) => [styles.confirmButton, pressed ? styles.buttonPressed : null]}
+                accessibilityRole="button"
+                testID="tarot-see-verdict"
+              >
+                <Text style={styles.confirmLabel}>{t('gameTarotSeeVerdict')}</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
 

@@ -166,6 +166,7 @@ export const en = {
   gameTarotGrandFinale: "Cathy's final verdict:",
   gameTarotReplay: 'New reading',
   gameTarotAllRevealed: 'All cards revealed!',
+  gameTarotSeeVerdict: "See Cathy's verdict",
   gameExit: 'Exit',
   gameAbandon: 'Abandon',
   gameErrorGeneric: 'Something went wrong.',

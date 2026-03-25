@@ -166,6 +166,7 @@ export const fr = {
   gameTarotGrandFinale: 'La sentence finale de Cathy :',
   gameTarotReplay: 'Nouveau tirage',
   gameTarotAllRevealed: 'Toutes les cartes révélées !',
+  gameTarotSeeVerdict: 'Voir le verdict de Cathy',
   gameExit: 'Quitter',
   gameAbandon: 'Abandonner',
   gameErrorGeneric: 'Une erreur est survenue.',
