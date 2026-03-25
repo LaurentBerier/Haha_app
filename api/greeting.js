@@ -14,6 +14,7 @@ const MAX_RSS_ITEMS_PER_FEED = 14;
 const MAX_NEWS_SIGNALS_PER_REGION = 3;
 const TUTORIAL_CONNECTION_LIMIT = 3;
 const TUTORIAL_NUDGE_AFTER_USER_MESSAGES = 2;
+const DEFAULT_HEADLINE_INCLUSION_RATE = 0.3;
 
 const RSS_FEEDS = [
   {
@@ -73,6 +74,19 @@ function parseBooleanEnv(value, fallback = false) {
   }
 
   return fallback;
+}
+
+function parseProbability(value, fallback) {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+
+  const parsed = Number.parseFloat(value.trim());
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    return fallback;
+  }
+
+  return parsed;
 }
 
 async function fetchJsonWithTimeout(url, timeoutMs) {
@@ -1008,46 +1022,46 @@ Regles absolues :
 
   if (isEnglish) {
     return `You are Cathy Gauthier, intense, sarcastic, and funny Quebec comedian.
-Reconnect with the person like a close friend or family member checking in after a few days — natural, warm but sharp, and genuinely funny.
-Greet by first name when available. Be funny your way: play with what you know about them, the weather, an absurd headline, or just your sharp personality.
-If you have recent facts about the person, weave them in naturally — as if you remembered them from a past chat.
-Weather or a headline: use them if they're relevant or genuinely funny — your call, not a requirement.
-End with a lively, open invitation to kick off the conversation.
+Reconnect quickly like a close friend after a few days: warm, sharp, playful.
+Write exactly 2 to 3 short sentences (20 to 45 words total).
 Hard rules:
-- 2 to 4 sentences, natural flow, no imposed structure.
-- Humor is mandatory: playful, sarcastic, self-deprecating allowed — never predictable or scripted.
-- No forced "Cathy's clone" joke — humor comes from context and personality.
+- Greet by first name when available, then move fast.
+- End with one lively invitation to continue.
+- Humor is mandatory: playful, sarcastic, natural, never scripted.
+- Weather is optional: mention it only if it genuinely helps the joke or warmth.
+- Headlines are optional and rare: mention one only if "Headline context available" is "yes" and it is truly relevant/funny.
+- If "Headline context available" is "no", do not mention headlines.
+- If you have recent facts about the person, weave one in naturally.
+- No forced "Cathy's clone" joke.
 - Never write "how are you with Cathy" or similar unnatural phrasing.
 - Avoid opening with "Ah là", "Allô", or equivalent intros; use "Hey", "Hi", or start directly.
 - Self-deprecating humor is allowed, but never imply your jokes are bad, lame, or flat.
-- Warm but incisive — like Cathy with someone she likes but won't sugarcoat things for.
 - Keep spoken-style contractions and lively oral rhythm.
-- Include one brief emotional cue naturally (laugh, excitement, or sarcasm), without overdoing it.
+- One brief emotional cue is enough.
 - No markdown, no bullets, no asterisks, no em dashes.
-- Keep proper punctuation and contractions.
-- 30 to 70 words total.`;
+- Keep proper punctuation and contractions.`;
   }
 
   return `Tu es Cathy Gauthier, humoriste québécoise intense, sarcastique et drôle.
-Reprends contact avec la personne comme une amie proche ou un membre de la famille qui prend des nouvelles après quelques jours — naturel, chaleureux mais incisif, et franchement drôle.
-Salue par son prénom si disponible. Sois drôle à ta façon : joue avec ce que tu sais sur la personne, la météo, une manchette absurde, ou juste ton caractère bien tranché.
-Si tu as des infos récentes sur la personne, amène-les naturellement — comme si tu t'en souvenais d'une conversation passée.
-Météo ou manchette : intègre-les si c'est pertinent ou franchement drôle — c'est ton choix, pas une obligation.
-Termine avec une invitation vivante pour relancer l'échange.
+Reprends contact rapidement comme une proche après quelques jours: chaleureux, incisif, drôle.
+Écris exactement 2 à 3 phrases courtes (20 à 45 mots au total).
 Règles absolues :
-- 2 à 4 phrases, libres, pas de structure imposée.
-- Humour obligatoire : taquin, sarcastique, autodérision permise — jamais prévisible ni scripté.
-- Pas de blague obligatoire sur "le clone de Cathy" — l'humour vient du contexte et de ton caractère.
+- Salue par le prénom si disponible, puis va droit au but.
+- Termine avec une invitation vivante pour relancer l'échange.
+- Humour obligatoire : taquin, sarcastique, naturel, jamais scripté.
+- La météo est optionnelle : utilise-la seulement si ça ajoute vraiment quelque chose.
+- Les manchettes sont optionnelles et rares : n'en parle que si "Contexte manchette disponible" est "oui" et que c'est pertinent/drôle.
+- Si "Contexte manchette disponible" est "non", ne parle pas des nouvelles.
+- Si tu as une info récente sur la personne, glisse-en une naturellement.
+- Pas de blague forcée sur le clone de Cathy.
 - Interdit de dire "comment tu vas avec Cathy" ou une tournure équivalente.
 - Évite d'ouvrir avec "Ah là", "Allô" ou équivalent ; privilégie "Hey", "Salut" ou une entrée directe.
 - L'autodérision est permise, mais jamais en disant ou insinuant que tes blagues sont nulles, plates ou mauvaises.
-- Ton chaleureux mais incisif — comme Cathy avec quelqu'un qu'elle apprécie mais qu'elle ne va pas flatter non plus.
 - Le texte doit être logique, naturel et court en français québécois parlé.
-- Contractions orales québécoises fortes (j'suis, t'es, t'as, y'a, j'peux, j'vais, c'est-tu, han, etc.). Élision obligatoire : "te" → "t'" devant consonne, "tu" → "t'" dans les questions.
-- Un micro-signal d'émotion naturel (rire, sarcasme, excitation).
+- Contractions orales québécoises fortes (j'suis, t'es, t'as, y'a, j'peux, j'vais, c'est-tu, han, etc.). Élision naturelle attendue.
+- Un seul micro-signal d'émotion naturel.
 - Pas de markdown, pas d'astérisque, pas de liste, pas de tiret long.
-- Orthographe et ponctuation impeccables (accents et apostrophes obligatoires).
-- 30 à 70 mots au total.`;
+- Orthographe et ponctuation impeccables (accents et apostrophes obligatoires).`;
 }
 
 function buildGreetingVariationCue(language) {
@@ -1074,6 +1088,7 @@ function buildGreetingUserPrompt(context) {
       `Recent facts about the person: ${context.memoryFacts && context.memoryFacts.length > 0 ? context.memoryFacts.join(' | ') : 'none'}`,
       `Available modes: ${context.availableModes.join(', ') || 'none provided'}`,
       `Variation cue: ${context.variationCue}`,
+      `Headline context available: ${context.headlineContextAvailable ? 'yes' : 'no'}`,
       `Tutorial mode active: ${context.tutorialActive ? 'yes' : 'no'}`,
       `Include voice hint sentence: ${context.includeVoiceHint ? 'yes' : 'no'}`
     ].join('\n');
@@ -1091,6 +1106,7 @@ function buildGreetingUserPrompt(context) {
     `Contexte recents sur la personne: ${context.memoryFacts && context.memoryFacts.length > 0 ? context.memoryFacts.join(' | ') : 'aucun'}`,
     `Modes disponibles: ${context.availableModes.join(', ') || 'aucun fourni'}`,
     `Variation: ${context.variationCue}`,
+    `Contexte manchette disponible: ${context.headlineContextAvailable ? 'oui' : 'non'}`,
     `Tutorial actif: ${context.tutorialActive ? 'oui' : 'non'}`,
     `Inclure phrase micro: ${context.includeVoiceHint ? 'oui' : 'non'}`
   ].join('\n');
@@ -1128,6 +1144,25 @@ function clampToSentenceLimit(text, maxSentences) {
   }
 
   return sentences.slice(0, maxSentences).join(' ');
+}
+
+function clampToWordLimit(text, maxWords) {
+  const normalized = typeof text === 'string' ? text.trim() : '';
+  if (!normalized) {
+    return '';
+  }
+
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length <= maxWords) {
+    return normalized;
+  }
+
+  return words.slice(0, maxWords).join(' ');
+}
+
+function shouldIncludeHeadlineContext() {
+  const inclusionRate = parseProbability(process.env.GREETING_HEADLINE_INCLUSION_RATE, DEFAULT_HEADLINE_INCLUSION_RATE);
+  return Math.random() < inclusionRate;
 }
 
 function buildForcedTutorialGreetingText(language, preferredName, nameStyle = 'normal') {
@@ -1199,7 +1234,7 @@ async function generateGreetingText(context) {
       throw new Error('Greeting response is empty.');
     }
 
-    return clampToSentenceLimit(rawText, 4);
+    return clampToWordLimit(clampToSentenceLimit(rawText, 3), 45);
   } finally {
     clearTimeout(timeoutHandle);
   }
@@ -1287,13 +1322,18 @@ module.exports = async function handler(req, res) {
   }
 
   const tutorialGreetingContextActive = tutorial.active || forcedTutorialGreetingActive;
+  const includeHeadlineContext = !tutorialGreetingContextActive && shouldIncludeHeadlineContext();
   let weather = null;
   let newsSignals = null;
   if (!tutorialGreetingContextActive) {
-    [weather, newsSignals] = await Promise.all([
-      fetchWeatherSummary(coords, input.language, requestId),
-      fetchNewsSignals(requestId)
-    ]);
+    if (includeHeadlineContext) {
+      [weather, newsSignals] = await Promise.all([
+        fetchWeatherSummary(coords, input.language, requestId),
+        fetchNewsSignals(requestId)
+      ]);
+    } else {
+      weather = await fetchWeatherSummary(coords, input.language, requestId);
+    }
   }
 
   const { dateLabel, timeLabel } = formatLocalDateTime(input.language);
@@ -1308,7 +1348,11 @@ module.exports = async function handler(req, res) {
     ? input.language.toLowerCase().startsWith('en')
       ? 'not used during tutorial'
       : 'non utilise pendant le tutorial'
-    : toHeadlineSummaryText(newsSignals, input.language);
+    : includeHeadlineContext
+      ? toHeadlineSummaryText(newsSignals, input.language)
+      : input.language.toLowerCase().startsWith('en')
+        ? 'headline context unavailable for this greeting'
+        : 'contexte manchette indisponible pour ce greeting';
   const includeVoiceHint = tutorialGreetingContextActive;
 
   let greeting;
@@ -1327,6 +1371,7 @@ module.exports = async function handler(req, res) {
           horoscopeSign: userGreetingProfile.horoscopeSign,
           weatherSummary,
           headlineSummary,
+          headlineContextAvailable: includeHeadlineContext,
           variationCue: buildGreetingVariationCue(input.language),
           includeVoiceHint,
           tutorialActive: tutorialGreetingContextActive,
@@ -1342,7 +1387,7 @@ module.exports = async function handler(req, res) {
   }
 
   res.status(200).json({
-    greeting,
+    greeting: clampToWordLimit(clampToSentenceLimit(greeting, 3), 45),
     tutorial: {
       active: tutorial.active,
       sessionIndex: tutorial.sessionIndex,

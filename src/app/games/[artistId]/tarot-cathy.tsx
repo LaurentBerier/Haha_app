@@ -1,12 +1,13 @@
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
-import { useEffect, useMemo } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BackButton } from '../../../components/common/BackButton';
 import { ScoreBar } from '../../../components/chat/ScoreBar';
 import { GameResultPanel } from '../../../components/games/GameResultPanel';
 import { TarotCard } from '../../../components/games/TarotCard';
 import { useTarotCathy } from '../../../games/hooks/useTarotCathy';
 import { getTarotThemeLabelKey, TAROT_THEMES } from '../../../games/types';
+import { useGameExitGuard } from '../../../hooks/useGameExitGuard';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
 import { t } from '../../../i18n';
 import { useStore } from '../../../store/useStore';
@@ -38,31 +39,23 @@ export default function TarotCathyScreen() {
     clear
   } = useTarotCathy(artistId);
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
-      if (!game) {
-        return;
-      }
-      if (game.status === 'complete' || game.status === 'abandoned') {
-        return;
-      }
+  const navigateBackOrGamesHome = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+    router.replace(`/games/${artistId}`);
+  }, [artistId]);
 
-      event.preventDefault();
-      Alert.alert(t('gameAbandon'), t('gameAbandonConfirmBody'), [
-        { text: t('cancel'), style: 'cancel' },
-        {
-          text: t('gameAbandon'),
-          style: 'destructive',
-          onPress: () => {
-            abandon();
-            navigation.dispatch(event.data.action);
-          }
-        }
-      ]);
-    });
-
-    return unsubscribe;
-  }, [abandon, game, navigation]);
+  const { runProtectedNavigation } = useGameExitGuard({
+    navigation,
+    gameStatus: game?.status ?? null,
+    title: t('gameAbandon'),
+    message: t('gameAbandonConfirmBody'),
+    confirmLabel: t('gameAbandon'),
+    cancelLabel: t('cancel'),
+    onAbandon: abandon
+  });
 
   if (!artist) {
     return (
@@ -86,7 +79,12 @@ export default function TarotCathyScreen() {
   return (
     <View style={styles.screen}>
       <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
-        <BackButton testID="tarot-back" />
+        <BackButton
+          testID="tarot-back"
+          onPress={() => {
+            runProtectedNavigation(navigateBackOrGamesHome);
+          }}
+        />
       </View>
       <ScrollView contentContainerStyle={styles.content} style={styles.scroll} testID="tarot-screen">
         <Text style={styles.title}>{t('gameTarotTitle')}</Text>
@@ -258,7 +256,7 @@ export default function TarotCathyScreen() {
               }}
               onExit={() => {
                 clear();
-                router.back();
+                navigateBackOrGamesHome();
               }}
               testID="tarot-result"
             />

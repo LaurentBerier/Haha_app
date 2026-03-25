@@ -136,12 +136,107 @@ function installFetchMock() {
   return fetchMock;
 }
 
+function installFetchMockWithOptions({
+  anthropicText,
+  rssXml = null
+}) {
+  const resolvedAnthropicText =
+    typeof anthropicText === 'string' && anthropicText.trim()
+      ? anthropicText.trim()
+      : "Hey Laurent, ça va? J'suis le clone de Cathy. Le micro en bas c'est pour me parler direct, pis si t'aimes mieux texter, clique dessus.";
+  const fetchMock = jest.fn().mockImplementation((url) => {
+    const target = String(url);
+
+    if (target === ANTHROPIC_API_URL) {
+      return Promise.resolve(
+        createJsonTextResponse(true, {
+          id: 'msg_greeting',
+          content: [
+            {
+              type: 'text',
+              text: resolvedAnthropicText
+            }
+          ]
+        })
+      );
+    }
+
+    if (target.startsWith(OPEN_METEO_FORECAST_URL)) {
+      return Promise.resolve(
+        createJsonTextResponse(true, {
+          current: {
+            temperature_2m: -2,
+            weather_code: 3
+          },
+          daily: {
+            temperature_2m_max: [1],
+            temperature_2m_min: [-5],
+            weather_code: [3]
+          }
+        })
+      );
+    }
+
+    if (target.includes('/rss')) {
+      if (typeof rssXml === 'string' && rssXml.trim()) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: jest.fn().mockResolvedValue({}),
+          text: jest.fn().mockResolvedValue(rssXml)
+        });
+      }
+      return Promise.resolve(createJsonTextResponse(false, {}, ''));
+    }
+
+    if (target.includes('ipapi.co')) {
+      return Promise.resolve(
+        createJsonTextResponse(true, {
+          latitude: 45.5017,
+          longitude: -73.5673,
+          city: 'Montreal',
+          country_code: 'CA'
+        })
+      );
+    }
+
+    return Promise.resolve(createJsonTextResponse(true, {}));
+  });
+
+  global.fetch = fetchMock;
+  return fetchMock;
+}
+
+function countWords(text) {
+  return String(text ?? '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean).length;
+}
+
+function countSentences(text) {
+  return String(text ?? '')
+    .trim()
+    .split(/(?<=[.!?])\s+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean).length;
+}
+
+function extractAnthropicRequestBody(fetchMock) {
+  const call = fetchMock.mock.calls.find((entry) => String(entry[0]) === ANTHROPIC_API_URL);
+  if (!call) {
+    return null;
+  }
+  return JSON.parse(call?.[1]?.body ?? '{}');
+}
+
 describe('api/greeting tutorial behavior', () => {
   const originalEnv = {
     SUPABASE_URL: process.env.SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-    GREETING_FORCE_TUTORIAL: process.env.GREETING_FORCE_TUTORIAL
+    GREETING_FORCE_TUTORIAL: process.env.GREETING_FORCE_TUTORIAL,
+    GREETING_HEADLINE_INCLUSION_RATE: process.env.GREETING_HEADLINE_INCLUSION_RATE
   };
   const originalFetch = global.fetch;
 
@@ -152,6 +247,7 @@ describe('api/greeting tutorial behavior', () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
     process.env.ANTHROPIC_API_KEY = 'anthropic-api-key';
     delete process.env.GREETING_FORCE_TUTORIAL;
+    delete process.env.GREETING_HEADLINE_INCLUSION_RATE;
   });
 
   afterEach(() => {
@@ -177,6 +273,11 @@ describe('api/greeting tutorial behavior', () => {
       process.env.GREETING_FORCE_TUTORIAL = originalEnv.GREETING_FORCE_TUTORIAL;
     } else {
       delete process.env.GREETING_FORCE_TUTORIAL;
+    }
+    if (typeof originalEnv.GREETING_HEADLINE_INCLUSION_RATE === 'string') {
+      process.env.GREETING_HEADLINE_INCLUSION_RATE = originalEnv.GREETING_HEADLINE_INCLUSION_RATE;
+    } else {
+      delete process.env.GREETING_HEADLINE_INCLUSION_RATE;
     }
   });
 
@@ -281,6 +382,124 @@ describe('api/greeting tutorial behavior', () => {
     expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
   });
 
+  it('applies short non-tutorial prompt and clamps reply to 3 sentences / 45 words', async () => {
+    const supabase = buildSupabaseClient({
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 3 }
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    const longText = [
+      "Hey Laurent, je déborde d'énergie aujourd'hui et j'arrive avec une joke beaucoup trop longue juste pour voir si tu suis encore, ce qui est déjà un miracle.",
+      "J'ai vu une manchette absurde, la météo capote, puis ton signe astro me juge silencieusement pendant que j'essaie de rester élégante.",
+      "Bref, écris-moi une ligne et on démarre ça.",
+      "Cette phrase en trop ne devrait jamais survivre au clamp final."
+    ].join(' ');
+    const fetchMock = installFetchMockWithOptions({ anthropicText: longText });
+
+    const handler = require('../greeting');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        language: 'fr-CA',
+        isSessionFirstGreeting: true,
+        availableModes: ['On Jase', 'Jeux'],
+        coords: { lat: 45.5, lon: -73.5 }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.tutorial.active).toBe(false);
+    expect(countSentences(res.payload.greeting)).toBeLessThanOrEqual(3);
+    expect(countWords(res.payload.greeting)).toBeLessThanOrEqual(45);
+    const anthropicBody = extractAnthropicRequestBody(fetchMock);
+    expect(anthropicBody).toBeTruthy();
+    expect(anthropicBody.system).toContain('Écris exactement 2 à 3 phrases courtes (20 à 45 mots au total).');
+  });
+
+  it('skips RSS fetches and marks headline context unavailable when news gate is off', async () => {
+    process.env.GREETING_HEADLINE_INCLUSION_RATE = '0';
+    const supabase = buildSupabaseClient({
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 3 }
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    const fetchMock = installFetchMockWithOptions({
+      anthropicText: "Hey Laurent, ça va? On part ça vite."
+    });
+
+    const handler = require('../greeting');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        language: 'fr-CA',
+        isSessionFirstGreeting: true,
+        availableModes: ['On Jase', 'Jeux'],
+        coords: { lat: 45.5, lon: -73.5 }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const rssCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes('/rss'));
+    expect(rssCalls).toHaveLength(0);
+    const anthropicBody = extractAnthropicRequestBody(fetchMock);
+    expect(anthropicBody).toBeTruthy();
+    expect(anthropicBody.messages?.[0]?.content).toContain('Contexte manchette disponible: non');
+  });
+
+  it('fetches RSS signals and marks headline context available when news gate is on', async () => {
+    process.env.GREETING_HEADLINE_INCLUSION_RATE = '1';
+    const supabase = buildSupabaseClient({
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 3 }
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    const rssXml = `
+      <rss version="2.0">
+        <channel>
+          <item>
+            <title>Québec: Une manchette test</title>
+            <link>https://example.com/quebec</link>
+            <pubDate>Mon, 25 Mar 2024 12:00:00 GMT</pubDate>
+          </item>
+        </channel>
+      </rss>
+    `;
+    const fetchMock = installFetchMockWithOptions({
+      anthropicText: "Hey Laurent, ça va? On part ça vite.",
+      rssXml
+    });
+
+    const handler = require('../greeting');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        language: 'fr-CA',
+        isSessionFirstGreeting: true,
+        availableModes: ['On Jase', 'Jeux'],
+        coords: { lat: 45.5, lon: -73.5 }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const rssCalls = fetchMock.mock.calls.filter((call) => String(call[0]).includes('/rss'));
+    expect(rssCalls.length).toBeGreaterThan(0);
+    const anthropicBody = extractAnthropicRequestBody(fetchMock);
+    expect(anthropicBody).toBeTruthy();
+    expect(anthropicBody.messages?.[0]?.content).toContain('Contexte manchette disponible: oui');
+  });
+
   it('does not increment tutorial counter when isSessionFirstGreeting is false', async () => {
     const supabase = buildSupabaseClient({
       profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 1 }
@@ -369,7 +588,7 @@ describe('api/greeting tutorial behavior', () => {
     expect(res.payload.tutorial.active).toBe(false);
     expect(res.payload.greeting).toContain('Hey xX_DR4G0N');
     expect(res.payload.greeting).toContain("Ton prénom est original, j'aime ça.");
-    expect(res.payload.greeting).toContain('petit micro allumé en bas à droite');
+    expect(res.payload.greeting.toLowerCase()).toContain('micro');
     expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(0);
   });
@@ -400,7 +619,7 @@ describe('api/greeting tutorial behavior', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.payload.tutorial.active).toBe(true);
-    expect(res.payload.greeting).toContain('tu peux simplement parler pour interagir avec moi');
+    expect(res.payload.greeting.toLowerCase()).toContain('micro');
     expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(0);
   });
@@ -432,7 +651,7 @@ describe('api/greeting tutorial behavior', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(200);
-    expect(res.payload.greeting).toContain('clique sur le micro pour le couper');
+    expect(res.payload.greeting.toLowerCase()).toContain('micro');
     expect(fetchMock).toHaveBeenCalledTimes(0);
   });
 });

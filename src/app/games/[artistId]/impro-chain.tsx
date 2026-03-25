@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { BackButton } from '../../../components/common/BackButton';
 import { ScoreBar } from '../../../components/chat/ScoreBar';
@@ -7,6 +7,7 @@ import { GameResultPanel } from '../../../components/games/GameResultPanel';
 import { ImproStory } from '../../../components/games/ImproStory';
 import { useImproChain } from '../../../games/hooks/useImproChain';
 import { ImproThemesService } from '../../../games/services/ImproThemesService';
+import { shouldGuardGameExit, useGameExitGuard } from '../../../hooks/useGameExitGuard';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
 import { t } from '../../../i18n';
 import type { UserProfile } from '../../../models/UserProfile';
@@ -387,31 +388,37 @@ export default function ImproChainScreen() {
   } = useImproChain(artistId);
   const gameStatus = game?.status ?? 'none';
 
-  const handleBack = () => {
-    if (game && game.status !== 'complete' && game.status !== 'abandoned') {
-      abandon();
-    }
-    clear();
+  const navigateBackOrGamesHome = useCallback(() => {
     if (router.canGoBack()) {
       router.back();
       return;
     }
     router.replace(`/games/${artistId}`);
-  };
+  }, [artistId]);
 
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', () => {
-      if (!game) {
-        return;
-      }
-      if (game.status !== 'complete' && game.status !== 'abandoned') {
+  const { runProtectedNavigation } = useGameExitGuard({
+    navigation,
+    gameStatus: game?.status ?? null,
+    title: t('gameAbandon'),
+    message: t('gameAbandonConfirmBody'),
+    confirmLabel: t('gameAbandon'),
+    cancelLabel: t('cancel'),
+    onAbandon: () => {
+      if (game && game.status !== 'complete' && game.status !== 'abandoned') {
         abandon();
       }
       clear();
-    });
+    }
+  });
 
-    return unsubscribe;
-  }, [abandon, clear, game, navigation]);
+  const handleBack = () => {
+    if (shouldGuardGameExit(game?.status ?? null)) {
+      runProtectedNavigation(navigateBackOrGamesHome);
+      return;
+    }
+    clear();
+    navigateBackOrGamesHome();
+  };
 
   useEffect(() => {
     if (gameStatus !== 'none' && gameStatus !== 'abandoned') {
@@ -743,11 +750,7 @@ export default function ImproChainScreen() {
             }}
             onExit={() => {
               clear();
-              if (router.canGoBack()) {
-                router.back();
-                return;
-              }
-              router.replace(`/games/${artistId}`);
+              navigateBackOrGamesHome();
             }}
             testID="impro-result"
           />

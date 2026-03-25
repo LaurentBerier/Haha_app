@@ -1,4 +1,4 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -442,27 +442,27 @@ function buildFallbackGreetingText(
 
   if (isTutorialGreeting) {
     if (isEnglish) {
-      const intro = preferredName ? `Hey ${displayName}, how are you doing?` : 'Hey, how are you doing?';
+      const intro = preferredName ? `Hey ${displayName}, how are you?` : 'Hey, how are you?';
       const nameBeat = shouldAcknowledgeName ? ' Your name is unique and I love it.' : '';
-      return `${intro}${nameBeat} Voice conversation is already active: you can see the small lit mic at the bottom-right, so you can simply speak to interact with me. If you prefer texting, tap the mic to turn it off, then send me your texts.`;
+      return `${intro}${nameBeat} The mic at the bottom is already on, so you can talk to me right now. If you prefer texting, tap the mic off and send one short message.`;
     }
 
     const intro = preferredName ? `Hey ${displayName}, comment tu vas?` : 'Hey, comment tu vas?';
     const nameBeat = shouldAcknowledgeName ? " Ton prénom est original, j'aime ça." : '';
-    return `${intro}${nameBeat} La conversation vocale est déjà active: tu vois le petit micro allumé en bas à droite, donc tu peux simplement parler pour interagir avec moi. Si tu préfères texter, clique sur le micro pour le couper, puis envoie-moi tes textos.`;
+    return `${intro}${nameBeat} Le micro en bas est déjà actif, donc tu peux me parler direct. Si tu préfères texter, coupe le micro et envoie-moi une courte phrase.`;
   }
 
   if (isEnglish) {
     const openingVariants = [
-      `Hey ${displayName}, how are you? It's ${artistName} on the mic, yes, huge surprise, I know.`,
-      `Hi ${displayName}, how's it going? ${artistName} here, same energy, slightly less sleep.`,
-      `Yo ${displayName}, how are you doing? It's ${artistName}, still loud, still helpful.`
+      `Hey ${displayName}, how's it going? It's ${artistName}.`,
+      `Hi ${displayName}, doing okay? ${artistName} here, still caffeinated.`,
+      `Yo ${displayName}, how are you? It's ${artistName}, still loud in a useful way.`
     ];
     const voiceSentenceVariants = ['The mic at the bottom is how you talk to me.'];
     const onboardingVariants = [
-      "No pressure: start with one short line, and I'll guide the rest.",
-      "We'll keep it simple, just tell me your vibe and we'll roll from there.",
-      "Start wherever you want, I'll adapt fast and keep this fun."
+      "Drop one short line and I'll take it from there.",
+      "Keep it simple: tell me your vibe and we'll roll.",
+      "Start anywhere, I'll adapt fast."
     ];
     return [
       openingVariants[variationIndex % openingVariants.length] ?? openingVariants[0],
@@ -475,22 +475,22 @@ function buildFallbackGreetingText(
 
   const openingVariants = isCathyArtist
     ? [
-        `Hey ${displayName}, ça va? J'suis le clone de Cathy: même mordant, un rire de plus, pis juste assez de bugs pour être attachante.`,
-        `Salut ${displayName}, tu vas bien? J'suis le clone de Cathy: copié-colle de la repartie, version un peu trop energique.`,
-        `Yo ${displayName}, comment ça roule? J'suis le clone de Cathy: même sarcasme, même tempo, zéro bouton pause.`,
-        `Salut ${displayName}, pret(e) ou pas? J'suis le clone de Cathy, edition turbo: j'arrive vite, j'parle franc, pis j'ris fort.`,
-        `Bon ${displayName}, on s'le dit? J'suis le clone de Cathy: même queue de comète, juste un p'tit glitch dans l'attitude.`
+        `Hey ${displayName}, ça va? J'suis le clone de Cathy, version nerveuse.`,
+        `Salut ${displayName}, tu vas bien? J'suis le clone de Cathy, même répartie.`,
+        `Yo ${displayName}, comment ça roule? Clone de Cathy au rapport, sarcasme inclus.`,
+        `Salut ${displayName}, prêt(e)? J'suis le clone de Cathy, version turbo.`,
+        `Bon ${displayName}, on part ça? Clone de Cathy, léger glitch d'attitude.`
       ]
     : [
-        `Hey ${displayName}, ça va? J'suis ${artistName} au micro, pis j'arrive avec du jus.`,
-        `Salut ${displayName}, tu vas bien? Moi c'est ${artistName}, pis oui, j'suis deja crinquee.`,
-        `Yo ${displayName}, comment ça roule? C'est ${artistName}, pis on part ça smooth.`
+        `Hey ${displayName}, ça va? J'suis ${artistName}.`,
+        `Salut ${displayName}, tu vas bien? Moi c'est ${artistName}.`,
+        `Yo ${displayName}, comment ça roule? C'est ${artistName}, on part ça.`
       ];
   const voiceSentenceVariants = ["Le micro en bas permet de me parler direct."];
   const onboardingVariants = [
-    "Aucune pression: lance juste une phrase, pis j't'accompagne pour le reste.",
-    "On garde ça simple: dis-moi ton mood, pis j'te guide sans te brusquer.",
-    "Commence où t'veux, j'm'ajuste vite pis on va avoir du fun."
+    "Aucune pression, lance juste une phrase.",
+    "On garde ça simple, dis-moi ton mood.",
+    "Commence où t'veux, j'm'ajuste vite."
   ];
 
   return [
@@ -935,6 +935,7 @@ function CategoryMenuButton({ artistId, id, index, compactProgress, isCompact }:
 export default function ModeSelectHomeScreen() {
   const params = useLocalSearchParams<{ artistId: string }>();
   const artistId = params.artistId ?? '';
+  const navigation = useNavigation();
   const { height: viewportHeight } = useWindowDimensions();
   const headerHorizontalInset = useHeaderHorizontalInset();
   const [greeting, setGreeting] = useState<string | null>(null);
@@ -1108,6 +1109,7 @@ export default function ModeSelectHomeScreen() {
     audioPlayer
   } = useChat(modeSelectConversationId);
   const playGreetingAudio = audioPlayer.play;
+  const stopGreetingAudio = audioPlayer.stop;
   const isValidConversation = modeSelectConversationId.length > 0;
   const isModeSelectComposerDisabled = !isValidConversation || isQuotaBlocked || !isSendContextReady;
   const sendFromModeSelectCurrentBinding = useCallback(
@@ -1491,6 +1493,36 @@ export default function ModeSelectHomeScreen() {
     sendContextRecoveryLockRef.current = false;
   }, []);
 
+  const stopModeSelectVoiceAndMic = useCallback(() => {
+    clearGreetingPlaybackCheck();
+    clearGreetingGestureRetry();
+    clearGreetingSpeechHint();
+    setPendingGreetingAudio(null);
+    setPendingGreetingSpeechText(null);
+    setPendingAutoMicGreetingMessageId(null);
+    autoMicManualOverrideRef.current = false;
+    void stopGreetingAudio();
+    if (Platform.OS === 'web') {
+      const speechScope = globalThis as {
+        speechSynthesis?: {
+          cancel?: () => void;
+        };
+      };
+      speechScope.speechSynthesis?.cancel?.();
+    }
+    pauseListening();
+    if (useStore.getState().conversationModeEnabled) {
+      setConversationModeEnabled(false);
+    }
+  }, [
+    clearGreetingGestureRetry,
+    clearGreetingPlaybackCheck,
+    clearGreetingSpeechHint,
+    pauseListening,
+    setConversationModeEnabled,
+    stopGreetingAudio
+  ]);
+
   const pulseGreetingSpeechHint = useCallback((durationMs: number) => {
     clearGreetingSpeechHint();
     setIsWebSpeechFallbackActive(true);
@@ -1804,6 +1836,14 @@ export default function ModeSelectHomeScreen() {
       clearInterval(intervalId);
     };
   }, [isEnglishLanguage, showGreetingBootingIndicator]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('blur', () => {
+      stopModeSelectVoiceAndMic();
+    });
+
+    return unsubscribe;
+  }, [navigation, stopModeSelectVoiceAndMic]);
 
   useEffect(() => {
     Animated.timing(modeGridCompactProgress, {
@@ -2136,7 +2176,7 @@ export default function ModeSelectHomeScreen() {
       setPendingGreetingSpeechText(null);
 
       if (pendingAudio) {
-        void audioPlayer.play(pendingAudio.uri, { messageId: pendingAudio.messageId });
+        void playGreetingAudio(pendingAudio.uri, { messageId: pendingAudio.messageId });
       }
 
       if (speechText) {
@@ -2158,16 +2198,21 @@ export default function ModeSelectHomeScreen() {
       document.removeEventListener('pointerdown', handleFirstGesture);
       clearGreetingGestureRetry();
     };
-  }, [audioPlayer, clearGreetingGestureRetry, language, pendingGreetingAudio, pendingGreetingSpeechText, pulseGreetingSpeechHint]);
+  }, [
+    clearGreetingGestureRetry,
+    language,
+    pendingGreetingAudio,
+    pendingGreetingSpeechText,
+    playGreetingAudio,
+    pulseGreetingSpeechHint
+  ]);
 
   useEffect(() => {
     return () => {
-      clearGreetingPlaybackCheck();
-      clearGreetingGestureRetry();
-      clearGreetingSpeechHint();
+      stopModeSelectVoiceAndMic();
       clearSendContextRecoveryLock();
     };
-  }, [clearGreetingGestureRetry, clearGreetingPlaybackCheck, clearGreetingSpeechHint, clearSendContextRecoveryLock]);
+  }, [clearSendContextRecoveryLock, stopModeSelectVoiceAndMic]);
 
   if (!artist) {
     return (
