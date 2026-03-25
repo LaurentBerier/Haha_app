@@ -129,6 +129,21 @@ export const TAROT_THEMES: TarotTheme[] = [
   { id: 'ex',     label: 'Mon ex',     emoji: '😬' },
 ];
 
+export function getTarotThemeLabelKey(themeId: TarotTheme['id']): string {
+  switch (themeId) {
+    case 'amour':
+      return 'gameTarotThemeLove';
+    case 'argent':
+      return 'gameTarotThemeMoney';
+    case 'annee':
+      return 'gameTarotThemeYear';
+    case 'ex':
+      return 'gameTarotThemeEx';
+    default:
+      return 'gameTarotTitle';
+  }
+}
+
 export const TAROT_CARD_POOL: TarotPoolCard[] = [
   { name: 'Le Fou',             emoji: '🃏' },
   { name: 'La Mort',            emoji: '💀' },

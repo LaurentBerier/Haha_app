@@ -6,7 +6,7 @@ import { ScoreBar } from '../../../components/chat/ScoreBar';
 import { GameResultPanel } from '../../../components/games/GameResultPanel';
 import { TarotCard } from '../../../components/games/TarotCard';
 import { useTarotCathy } from '../../../games/hooks/useTarotCathy';
-import { TAROT_THEMES } from '../../../games/types';
+import { getTarotThemeLabelKey, TAROT_THEMES } from '../../../games/types';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
 import { t } from '../../../i18n';
 import { useStore } from '../../../store/useStore';
@@ -81,6 +81,7 @@ export default function TarotCathyScreen() {
   const selectedCount = gameData?.selectedCardIndices.length ?? 0;
   const canConfirm = selectedCount === 3;
   const selectedTheme = gameData?.theme ?? null;
+  const selectedThemeLabel = selectedTheme ? t(getTarotThemeLabelKey(selectedTheme.id)) : null;
 
   return (
     <View style={styles.screen}>
@@ -127,13 +128,18 @@ export default function TarotCathyScreen() {
               {TAROT_THEMES.map((theme: TarotTheme) => (
                 <Pressable
                   key={theme.id}
-                  onPress={() => selectTheme(theme)}
+                  onPress={() =>
+                    selectTheme({
+                      ...theme,
+                      label: t(getTarotThemeLabelKey(theme.id))
+                    })
+                  }
                   style={({ pressed }) => [styles.themeButton, pressed ? styles.buttonPressed : null]}
                   accessibilityRole="button"
                   testID={`tarot-theme-${theme.id}`}
                 >
                   <Text style={styles.themeEmoji}>{theme.emoji}</Text>
-                  <Text style={styles.themeLabel}>{theme.label}</Text>
+                  <Text style={styles.themeLabel}>{t(getTarotThemeLabelKey(theme.id))}</Text>
                 </Pressable>
               ))}
             </View>
@@ -146,7 +152,7 @@ export default function TarotCathyScreen() {
             {selectedTheme ? (
               <View style={styles.selectedThemeRow}>
                 <Text style={styles.selectedThemeEmoji}>{selectedTheme.emoji}</Text>
-                <Text style={styles.selectedThemeLabel}>{selectedTheme.label}</Text>
+                <Text style={styles.selectedThemeLabel}>{selectedThemeLabel}</Text>
               </View>
             ) : null}
             <Text style={styles.panelTitle}>{t('gameTarotChooseCards')}</Text>
@@ -201,7 +207,7 @@ export default function TarotCathyScreen() {
             {selectedTheme ? (
               <View style={styles.selectedThemeRow}>
                 <Text style={styles.selectedThemeEmoji}>{selectedTheme.emoji}</Text>
-                <Text style={styles.selectedThemeLabel}>{selectedTheme.label}</Text>
+                <Text style={styles.selectedThemeLabel}>{selectedThemeLabel}</Text>
               </View>
             ) : null}
             <View style={styles.revealList}>
@@ -243,7 +249,7 @@ export default function TarotCathyScreen() {
             ) : null}
             <GameResultPanel
               title={t('gameTarotAllRevealed')}
-              subtitle={selectedTheme ? `${selectedTheme.emoji} ${selectedTheme.label}` : '🔮'}
+              subtitle={selectedThemeLabel ? `${selectedTheme.emoji} ${selectedThemeLabel}` : '🔮'}
               replayLabel={t('gameTarotReplay')}
               exitLabel={t('gameExit')}
               onReplay={() => {
