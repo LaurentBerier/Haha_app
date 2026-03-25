@@ -1,6 +1,6 @@
 # Phase 4 Status (Conversation Naturelle)
 
-Last updated: **2026-03-24**
+Last updated: **2026-03-25**
 
 ## Scope
 
@@ -119,6 +119,39 @@ Detailed run logs:
 - [`docs/qa-run-2026-03-18.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-18.md)
 - [`docs/qa-run-2026-03-17.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-17.md)
 - Latest code review snapshot: [`docs/code-review-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-20.md)
+
+## Games & Prompt Quality (2026-03-25)
+
+### Tirage de Tarot — new game
+
+New game added to the battles section: Cathy Gauthier does a personalized humorous tarot reading.
+
+Game flow:
+- Phase 1: theme selection (💕 Mon amour / 💸 Mon argent / ✨ Mon année / 😬 Mon ex)
+- Phase 2: pick 3 cards from 5 face-down cards (random pool of 15)
+- Phase 3: API generates 3 themed readings + grand finale (single call)
+- Phase 4: tap each card to flip (3D animation), then "Voir le verdict" button
+- Phase 5: grand finale + replay/exit panel
+
+New files: `src/app/games/[artistId]/tarot-cathy.tsx`, `src/games/hooks/useTarotCathy.ts`, `src/games/services/TarotService.ts`, `src/components/games/TarotCard.tsx`, `src/utils/memoryFacts.ts`, `api/tarot-reading.js`
+
+Fixes applied post-launch:
+- Route restore excludes `/games/` routes (no stale-game refresh on reload)
+- Last card no longer auto-completes; added "Voir le verdict de Cathy" button after all 3 cards flipped
+- API retry logic (2 attempts on JSON parse failure) + `max_tokens` 800→600 (conciseness)
+- CI lint fixes: unused imports in `useChat.ts`, redeclared function in `claude.js`
+
+### Prompt quality improvements
+
+Applied to `api/claude.js`, `api/tarot-reading.js`, `src/services/personalityEngineService.ts`:
+- **Quebec anglicisms**: naturalized verb-form anglicisms OK (parké, busté, ghosté), raw English adjectives/nouns replacing French words not OK (big, single, nice)
+- **Partner pronoun inference**: deduce partner gender from conversation context; default to neutral when no cues available
+- **Tarot variety**: no repeated keyword, place name, or cultural reference across 3 readings + grand finale
+
+### QA Status (2026-03-25)
+
+- `npm run typecheck` → PASS
+- `npm run lint` → PASS
 
 ## Completion Status
 

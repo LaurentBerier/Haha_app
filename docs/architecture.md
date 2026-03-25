@@ -44,6 +44,10 @@ Supabase is the source of truth for:
   - `/chat/[conversationId]`
   - `/history/[artistId]`
   - `/stats`
+  - `/games/[artistId]` (game lobby)
+  - `/games/[artistId]/impro-chain`
+  - `/games/[artistId]/vrai-ou-invente`
+  - `/games/[artistId]/tarot-cathy`
   - `/settings`
   - `/settings/edit-profile`
   - `/settings/subscription`
@@ -60,6 +64,7 @@ Active slices:
 - `artistAccessSlice`
 - `authSlice`
 - `conversationSlice`
+- `gameSlice`
 - `messageSlice`
 - `subscriptionSlice`
 - `gamificationSlice`
@@ -191,11 +196,16 @@ Store-level account isolation:
 
 ### Games UX
 
-- Entry point is the history banner (`src/app/history/[artistId].tsx`) -> `/games/[artistId]`
-- Available games in Phase 1:
+- Entry point: mode-select category `Jeux` → `/games/[artistId]` (game lobby)
+- Game state managed by `gameSlice` (`src/store/slices/gameSlice.ts`)
+- Score bar rendered in game screens only.
+- Available games:
   - `Histoire improvisée` (`/games/[artistId]/impro-chain`)
   - `Vrai ou Inventé` (`/games/[artistId]/vrai-ou-invente`)
-- Score bar is intentionally rendered in game screens only.
+  - `Tirage de Tarot` (`/games/[artistId]/tarot-cathy`)
+- `TarotCard` component (`src/components/games/TarotCard.tsx`): 3D flip animation (`rotateY`, `Animated`, useNativeDriver), two modes: `selection` (face-down) and `reveal`.
+- Memory facts utility (`src/utils/memoryFacts.ts`): `collectArtistMemoryFacts` and `extractMemoryFactsFromText`, shared by `useChat.ts` and `useTarotCathy.ts`.
+- Web route restore (`src/utils/routeRestore.ts`) excludes `/games/` routes so page refresh never lands on a game screen.
 
 ### Hooks (`src/hooks`)
 
@@ -311,6 +321,17 @@ Admin dashboard current-state tracker:
 - client fallback path exists (local theme pool) when API generation fails
 - current implementation intentionally allows theme generation to continue even when monthly chat cap is reached (cost-control caveat)
 
+### `POST /api/tarot-reading` (`api/tarot-reading.js`)
+
+- validates bearer token via Supabase admin API
+- accepts `{ artistId, language, theme, cards: [{name, emoji}×3], userProfile, memoryFacts }`
+- generates 3 themed tarot readings + grand finale via Claude (`max_tokens: 600`, `temperature: 0.92`)
+- system prompt enforces: Quebec French tone, 2-sentence max per card, no em dash, authentic Quebec swear usage (punch only), naturalized anglicisms only, partner pronoun inference from context, variety across the 3 readings (no repeated references)
+- retry logic: up to 2 attempts on JSON parse failure before returning 422
+- response: `{ readings: [{cardName, emoji, interpretation}×3], grandFinale }`
+- quota endpoint: `'tarot-reading'`, included in `usageEndpoints: ['claude', 'game-questions', 'game-judge', 'tarot-reading']`
+- shared CORS/auth/error/request-id utilities
+
 ### `GET|POST /api/score` (`api/score.js`)
 
 - validates bearer token via Supabase admin API
@@ -419,6 +440,11 @@ Display mode note:
 `buildSystemPromptForArtist(artistId, modeId, userProfile, language)` appends profile context only when profile data exists and adapts labels to FR/EN.
 
 For image-enabled chats, `imageIntent` (`photo-roast`, `meme-generator`, `screenshot-analyzer`) is passed to the backend so prompt assembly can specialize behavior even when the same mode is reused.
+
+Quebec language rules enforced in all Cathy prompts (`api/claude.js`, `api/tarot-reading.js`, `src/services/personalityEngineService.ts`):
+- Naturalized verb-form anglicisms are welcome (parké, busté, ghosté, checker, rusher); raw English adjectives/nouns replacing French words are not (big, single, nice).
+- Partner pronoun inference: Claude deduces partner gender from contextual cues ("mon chum" → masculine, "ma blonde/copine" → feminine); defaults to neutral ("ton partenaire", "ton ex") with no assumed gender.
+- Tarot variety rule: no keyword, place name, or cultural reference repeated across the 3 card readings and grand finale.
 
 ## Deployment Notes
 
