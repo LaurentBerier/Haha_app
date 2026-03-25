@@ -47,6 +47,12 @@ export default function ModeCategoryScreen() {
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
   const categoryId = isModeCategoryId(categoryIdParam) ? categoryIdParam : null;
 
+  useEffect(() => {
+    if (categoryIdParam === 'profile') {
+      router.replace('/settings');
+    }
+  }, [categoryIdParam]);
+
   const categoryTitle = categoryId ? t(MODE_CATEGORY_META[categoryId].labelKey) : t('modeSelectTitle');
 
   useEffect(() => {

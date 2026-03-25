@@ -57,6 +57,7 @@ export const en = {
   settingsVoiceAutoPlayOff: 'Manual play',
   settingsVoiceAutoPlayOn: 'Auto-play',
   settingsDanger: 'Danger zone',
+  settingsProfile: 'Profile',
   settingsEditProfile: 'Edit profile',
   settingsStats: 'Statistics',
   settingsManageSubscription: 'Manage subscription',

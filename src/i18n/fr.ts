@@ -57,6 +57,7 @@ export const fr = {
   settingsVoiceAutoPlayOff: 'Lecture manuelle',
   settingsVoiceAutoPlayOn: 'Lecture auto',
   settingsDanger: 'Zone danger',
+  settingsProfile: 'Profil',
   settingsEditProfile: 'Modifier mon profil',
   settingsStats: 'Statistiques',
   settingsManageSubscription: 'Gérer mon abonnement',

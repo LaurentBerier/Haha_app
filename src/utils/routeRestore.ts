@@ -28,7 +28,15 @@ export function isRouteEligibleForPersistence(pathname: string): boolean {
     return false;
   }
 
-  return !isAuthRoute(normalized);
+  if (isAuthRoute(normalized)) {
+    return false;
+  }
+
+  if (normalized === '/settings' || normalized.startsWith('/settings/') || normalized === '/stats') {
+    return false;
+  }
+
+  return true;
 }
 
 export function createPersistedRouteSnapshot(pathname: string, nowMs = Date.now()): PersistedRouteSnapshot | null {

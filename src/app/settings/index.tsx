@@ -9,6 +9,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { t } from '../../i18n';
 import { resolveErrorMessage } from '../../config/errorMessages';
 import { deleteAccount, signOut } from '../../services/authService';
+import { getUserTitle } from '../../services/scoreManager';
 import type { AppLanguage, ReduceMotionPreference } from '../../store/slices/uiSlice';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
@@ -50,6 +51,9 @@ export default function SettingsScreen() {
   const identity = user?.displayName ?? email;
   const initials = useMemo(() => initialsFromIdentity(identity), [identity]);
   const accountTypeLabel = getAccountTypeLabel(user?.accountType);
+  const score = useStore((state) => state.score);
+  const dailyStreak = useStore((state) => state.dailyStreak);
+  const userTitle = getUserTitle(score);
   const languageOptions: Array<{ value: AppLanguage; label: string }> = [
     { value: 'fr-CA', label: t('settingsLanguageFr') },
     { value: 'en-CA', label: t('settingsLanguageEn') }
@@ -130,6 +134,25 @@ export default function SettingsScreen() {
           <Text style={styles.badgeLabel}>{accountTypeLabel}</Text>
         </View>
       </View>
+
+      <Pressable
+        onPress={() => router.push('/stats' as never)}
+        style={({ pressed }) => [styles.statsCard, pressed ? styles.statsCardPressed : null]}
+        testID="settings-stats-preview"
+      >
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{`🔥 ${score}`}</Text>
+            <Text style={styles.statLabel}>{userTitle}</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statValue}>{dailyStreak}</Text>
+            <Text style={styles.statLabel}>{t('statsDailyStreak')}</Text>
+          </View>
+        </View>
+        <Text style={styles.statsLink}>{t('settingsStats')} →</Text>
+      </Pressable>
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t('settingsAccount')}</Text>
@@ -360,6 +383,50 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontSize: 12,
     fontWeight: '700'
+  },
+  statsCard: {
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 14,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.md,
+    gap: theme.spacing.sm
+  },
+  statsCardPressed: {
+    opacity: 0.88
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.md
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 2
+  },
+  statValue: {
+    color: theme.colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '700'
+  },
+  statLabel: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    textAlign: 'center'
+  },
+  statDivider: {
+    width: 1,
+    height: 36,
+    backgroundColor: theme.colors.border
+  },
+  statsLink: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'right'
   },
   section: {
     gap: theme.spacing.sm

@@ -37,7 +37,7 @@ import {
 import cleanBackground from '../../assets/branding/Clean_BG.jpg';
 import neonTitleMark from '../../assets/branding/logo-neon-Trans.png';
 
-type AccountMenuRoute = '/settings' | '/settings/edit-profile' | '/settings/subscription' | '/stats' | '/admin';
+type AccountMenuRoute = '/settings' | '/settings/subscription' | '/stats' | '/admin' | `/history/${string}`;
 const WEB_BACKGROUND_MIN_HEIGHT_VH = 100;
 const WEB_BACKGROUND_MAX_HEIGHT_VH = 170;
 
@@ -102,11 +102,13 @@ export default function RootLayout() {
   const globalInputDisabled = !showGlobalChatInput || !targetArtistId;
 
   const accountMenuItems: AccountMenuItem[] = [
-    { label: t('settingsEditProfile'), route: '/settings/edit-profile' as const },
+    { label: t('settingsProfile'), route: '/settings' as const },
     { label: t('settingsStats'), route: '/stats' as const },
-    { label: t('settingsTitle'), route: '/settings' as const },
     { label: t('settingsSubscription'), route: '/settings/subscription' as const }
   ];
+  if (targetArtistId) {
+    accountMenuItems.push({ label: t('historyModeTitle'), route: `/history/${targetArtistId}` });
+  }
   if (isAdmin) {
     accountMenuItems.unshift({ label: 'Admin Dashboard', route: '/admin' });
   }
