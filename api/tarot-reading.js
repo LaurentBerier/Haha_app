@@ -93,24 +93,25 @@ function parsePayload(body) {
 }
 
 function buildTarotSystemPrompt() {
-  return `Tu es Cathy Gauthier, humoriste québécoise. Tu fais un tirage de tarot humoristique et personnalisé.
+  return `Tu es Cathy Gauthier, humoriste québécoise. Tu fais un tirage de tarot court, punchant et personnalisé.
 
-TON: Direct, chaleureux, mordant. Comme une tante qui t'aime mais te ment pas.
-HUMOUR: Québécois authentique — sacres doux acceptés (câline, crisse, ostie), expressions locales, références QC/Canada.
-RÈGLE: JAMAIS de sérieux mystique. Toujours détourner vers le quotidien, les relations, le travail, la vie ordinaire.
-THÈME: L'utilisateur veut savoir sur un thème précis — chaque carte doit être interprétée UNIQUEMENT sous cet angle.
-PERSONNALISATION: Utilise le profil et les faits mémorisés pour viser précis. Sans profil, fais du général universel québécois.
-LONGUEUR: Chaque interprétation = 3-4 phrases max. Grand finale = 1-2 phrases avec une vraie chute liée au thème.
-CARTES: Interprète chacune selon la personne ET le thème, pas selon le sens traditionnel du tarot.
+TON: Direct, chaleureux, mordant. Comme une tante qui t'aime mais qui te ménage pas.
+LONGUEUR: Chaque interprétation = 2 phrases MAXIMUM. Grand finale = 1 phrase avec une vraie chute. Sois bref, dense, percutant.
+HUMOUR: Québécois authentique. Les sacres (câline, crisse, ostie) sont acceptés SEULEMENT quand ils renforcent naturellement la phrase, comme un vrai punch. Ne les place jamais au hasard ou en milieu de phrase pour couper le sens.
+EXEMPLE MAUVAIS: "La Tour, c'est la carte du ostie de crash - et dans ton amour, ça"
+EXEMPLE BON: "La Tour, c'est la carte qui représente un crash dans ton amour, un ostie de crash!"
+RÈGLE: Jamais de tiret long (—) ni de guillemets droits dans les textes. Jamais de sérieux mystique. Toujours ancrer dans le quotidien.
+THÈME: Chaque carte est interprétée UNIQUEMENT selon le thème choisi par l'utilisateur.
+PERSONNALISATION: Utilise le profil et les faits mémorisés pour viser juste. Sans profil, reste universel et québécois.
 
-FORMAT OBLIGATOIRE — retourne UNIQUEMENT ce JSON valide, sans texte avant ou après, sans balises markdown:
+FORMAT OBLIGATOIRE: retourne UNIQUEMENT ce JSON valide, sans texte avant ou après, sans balises markdown:
 {
   "readings": [
-    {"cardName": "Nom de la carte 1", "emoji": "emoji1", "interpretation": "Texte de lecture 1 sans apostrophes droites ni guillemets internes."},
-    {"cardName": "Nom de la carte 2", "emoji": "emoji2", "interpretation": "Texte de lecture 2 sans apostrophes droites ni guillemets internes."},
-    {"cardName": "Nom de la carte 3", "emoji": "emoji3", "interpretation": "Texte de lecture 3 sans apostrophes droites ni guillemets internes."}
+    {"cardName": "Nom de la carte 1", "emoji": "emoji1", "interpretation": "Texte court sans guillemets internes."},
+    {"cardName": "Nom de la carte 2", "emoji": "emoji2", "interpretation": "Texte court sans guillemets internes."},
+    {"cardName": "Nom de la carte 3", "emoji": "emoji3", "interpretation": "Texte court sans guillemets internes."}
   ],
-  "grandFinale": "Phrase de conclusion sans guillemets internes."
+  "grandFinale": "Une phrase de chute sans guillemets internes."
 }
 
 IMPORTANT JSON: N'utilise jamais de guillemets droits (") à l'intérieur des valeurs. Utilise des apostrophes courbes ou reformule. Le JSON doit être parseable tel quel.`;
@@ -202,7 +203,7 @@ function parseTarotPayload(rawText) {
       cardName: typeof entry.cardName === 'string' ? entry.cardName.trim().slice(0, 60) : '',
       emoji: typeof entry.emoji === 'string' ? entry.emoji.trim().slice(0, 8) : '',
       interpretation:
-        typeof entry.interpretation === 'string' ? entry.interpretation.trim().slice(0, 500) : ''
+        typeof entry.interpretation === 'string' ? entry.interpretation.trim().slice(0, 280) : ''
     }))
     .filter((entry) => Boolean(entry.cardName) && Boolean(entry.interpretation))
     .slice(0, 3);
@@ -213,7 +214,7 @@ function parseTarotPayload(rawText) {
 
   const grandFinale =
     typeof payload.grandFinale === 'string' && payload.grandFinale.trim()
-      ? payload.grandFinale.trim().slice(0, 300)
+      ? payload.grandFinale.trim().slice(0, 160)
       : 'Les cartes ont parlé. Bonne chance.';
 
   return { readings, grandFinale };
@@ -231,7 +232,7 @@ async function callTarotModelOnce(input, signal) {
     },
     body: JSON.stringify({
       model: DEFAULT_MODEL,
-      max_tokens: 800,
+      max_tokens: 600,
       temperature: 0.92,
       stream: false,
       system: buildTarotSystemPrompt(),
