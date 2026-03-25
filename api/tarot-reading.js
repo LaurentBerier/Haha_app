@@ -100,18 +100,20 @@ HUMOUR: Québécois authentique — sacres doux acceptés (câline, crisse, osti
 RÈGLE: JAMAIS de sérieux mystique. Toujours détourner vers le quotidien, les relations, le travail, la vie ordinaire.
 THÈME: L'utilisateur veut savoir sur un thème précis — chaque carte doit être interprétée UNIQUEMENT sous cet angle.
 PERSONNALISATION: Utilise le profil et les faits mémorisés pour viser précis. Sans profil, fais du général universel québécois.
-LONGUEUR: Chaque interprétation = 3-4 phrases. Grand finale = 1-2 phrases avec une vraie chute liée au thème.
+LONGUEUR: Chaque interprétation = 3-4 phrases max. Grand finale = 1-2 phrases avec une vraie chute liée au thème.
 CARTES: Interprète chacune selon la personne ET le thème, pas selon le sens traditionnel du tarot.
 
-Retourne UNIQUEMENT ce JSON:
+FORMAT OBLIGATOIRE — retourne UNIQUEMENT ce JSON valide, sans texte avant ou après, sans balises markdown:
 {
   "readings": [
-    {"cardName": "...", "emoji": "...", "interpretation": "..."},
-    {"cardName": "...", "emoji": "...", "interpretation": "..."},
-    {"cardName": "...", "emoji": "...", "interpretation": "..."}
+    {"cardName": "Nom de la carte 1", "emoji": "emoji1", "interpretation": "Texte de lecture 1 sans apostrophes droites ni guillemets internes."},
+    {"cardName": "Nom de la carte 2", "emoji": "emoji2", "interpretation": "Texte de lecture 2 sans apostrophes droites ni guillemets internes."},
+    {"cardName": "Nom de la carte 3", "emoji": "emoji3", "interpretation": "Texte de lecture 3 sans apostrophes droites ni guillemets internes."}
   ],
-  "grandFinale": "..."
-}`;
+  "grandFinale": "Phrase de conclusion sans guillemets internes."
+}
+
+IMPORTANT JSON: N'utilise jamais de guillemets droits (") à l'intérieur des valeurs. Utilise des apostrophes courbes ou reformule. Le JSON doit être parseable tel quel.`;
 }
 
 function buildTarotUserPrompt(input) {
@@ -217,60 +219,92 @@ function parseTarotPayload(rawText) {
   return { readings, grandFinale };
 }
 
-async function callTarotModel(input) {
+async function callTarotModelOnce(input, signal) {
   const apiKey = process.env.ANTHROPIC_API_KEY ?? '';
+
+  const response = await fetch(ANTHROPIC_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': ANTHROPIC_VERSION
+    },
+    body: JSON.stringify({
+      model: DEFAULT_MODEL,
+      max_tokens: 800,
+      temperature: 0.92,
+      stream: false,
+      system: buildTarotSystemPrompt(),
+      messages: [{ role: 'user', content: buildTarotUserPrompt(input) }]
+    }),
+    signal
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message =
+      isRecord(payload) &&
+      isRecord(payload.error) &&
+      typeof payload.error.message === 'string' &&
+      payload.error.message
+        ? payload.error.message
+        : 'Tarot generation failed.';
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+
+  const rawText = extractResponseText(payload);
+  if (!rawText.trim()) {
+    throw new Error('Tarot response is empty.');
+  }
+
+  return parseTarotPayload(rawText);
+}
+
+async function callTarotModel(input) {
   const timeoutMs = parsePositiveInt(process.env.ANTHROPIC_FETCH_TIMEOUT_MS, DEFAULT_FETCH_TIMEOUT_MS);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
+  const MAX_ATTEMPTS = 2;
+  let lastParseError = null;
+
   try {
-    const response = await fetch(ANTHROPIC_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': ANTHROPIC_VERSION
-      },
-      body: JSON.stringify({
-        model: DEFAULT_MODEL,
-        max_tokens: 700,
-        temperature: 0.92,
-        stream: false,
-        system: buildTarotSystemPrompt(),
-        messages: [{ role: 'user', content: buildTarotUserPrompt(input) }]
-      }),
-      signal: controller.signal
-    });
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        return await callTarotModelOnce(input, controller.signal);
+      } catch (error) {
+        const isParseError =
+          error instanceof Error &&
+          (error.message.includes('not valid JSON') ||
+            error.message.includes('invalid shape') ||
+            error.message.includes('exactly 3 readings'));
 
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const message =
-        isRecord(payload) &&
-        isRecord(payload.error) &&
-        typeof payload.error.message === 'string' &&
-        payload.error.message
-          ? payload.error.message
-          : 'Tarot generation failed.';
-      const error = new Error(message);
-      error.status = response.status;
-      throw error;
-    }
+        if (isParseError && attempt < MAX_ATTEMPTS) {
+          lastParseError = error;
+          continue;
+        }
 
-    const rawText = extractResponseText(payload);
-    if (!rawText.trim()) {
-      throw new Error('Tarot response is empty.');
-    }
+        // Non-parse error or last attempt — re-throw as-is (upstream / network errors)
+        if (!isParseError) {
+          throw error;
+        }
 
-    try {
-      return parseTarotPayload(rawText);
-    } catch (error) {
-      const parseError = new Error(error instanceof Error ? error.message : 'Tarot parse failed.');
-      parseError.code = 'TAROT_PARSE_FAILED';
-      throw parseError;
+        // Last attempt and still a parse error
+        const parseError = new Error(error.message);
+        parseError.code = 'TAROT_PARSE_FAILED';
+        throw parseError;
+      }
     }
   } finally {
     clearTimeout(timeout);
   }
+
+  // Should never reach here, but satisfy linter
+  const finalError = new Error(lastParseError?.message ?? 'Tarot parse failed.');
+  finalError.code = 'TAROT_PARSE_FAILED';
+  throw finalError;
 }
 
 module.exports = async function handler(req, res) {
