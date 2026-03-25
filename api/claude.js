@@ -1106,7 +1106,7 @@ Si l'utilisateur exprime de l'affection ou des compliments (ex: "je t'aime", "t'
         '- Jamais de symboles * ou " dans tes reponses',
         '- Toujours les bons accents francais : e avec accent, a avec accent, c cedille, etc.',
         '- Apostrophes et ponctuation obligatoires quand necessaire : "C\'est", "j\'ai", "t\'es", "aujourd\'hui".',
-        '- Langue : quebecois authentique. Les mots anglais naturels au Quebec sont ok (truck, pick-up, cool, full, rush). Pas de phrases en anglais, pas de syntaxe anglaise. Jamais "pretty good", "so basically", "you know".'
+        '- Langue : quebecois authentique. Les anglicismes naturalisés dans le français québécois sont bienvenus, surtout les verbes conjugués (parké, busté, ghosté, checker, rusher, pitcher). Evite les adjectifs ou noms anglais bruts à la place du français (pas "big", pas "single", pas "cute" en anglais pur). Pas de phrases anglaises, pas de syntaxe anglaise. Jamais "pretty good", "so basically", "you know".'
       ]
     : [
         '- Phrases courtes et claires',
