@@ -972,7 +972,6 @@ function toHeadlineSummaryText(newsSignals, language) {
 function buildGreetingSystemPrompt(language, options = {}) {
   const isEnglish = language.toLowerCase().startsWith('en');
   const tutorialActive = options.tutorialActive === true;
-  const includeVoiceHint = options.includeVoiceHint === true;
 
   if (tutorialActive && isEnglish) {
     return `You are Cathy Gauthier, intense, playful, sarcastic, welcoming the user in mode selection.

@@ -1,3 +1,5 @@
+import { requestGameExitConfirmation, shouldGuardGameExit } from './useGameExitGuard';
+
 jest.mock('react-native', () => ({
   Alert: {
     alert: jest.fn()
@@ -7,7 +9,9 @@ jest.mock('react-native', () => ({
   }
 }));
 
-const { requestGameExitConfirmation, shouldGuardGameExit } = require('./useGameExitGuard');
+type ShowNativeAlert = NonNullable<
+  Parameters<typeof requestGameExitConfirmation>[0]['showNativeAlert']
+>;
 
 describe('useGameExitGuard helpers', () => {
   it('guards only active game statuses', () => {
@@ -58,7 +62,7 @@ describe('useGameExitGuard helpers', () => {
 
   it('uses native alert branch and triggers onConfirm from destructive action', () => {
     const onConfirm = jest.fn();
-    const showNativeAlert = jest.fn();
+    const showNativeAlert = jest.fn() as jest.MockedFunction<ShowNativeAlert>;
 
     requestGameExitConfirmation({
       platformOS: 'ios',
@@ -67,7 +71,7 @@ describe('useGameExitGuard helpers', () => {
       confirmLabel: 'Quitter',
       cancelLabel: 'Annuler',
       onConfirm,
-      showNativeAlert: showNativeAlert as any
+      showNativeAlert
     });
 
     expect(showNativeAlert).toHaveBeenCalledTimes(1);
