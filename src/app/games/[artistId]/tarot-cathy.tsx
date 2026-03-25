@@ -247,7 +247,11 @@ export default function TarotCathyScreen() {
             ) : null}
             <GameResultPanel
               title={t('gameTarotAllRevealed')}
-              subtitle={selectedThemeLabel ? `${selectedTheme.emoji} ${selectedThemeLabel}` : '🔮'}
+              subtitle={
+                selectedTheme && selectedThemeLabel
+                  ? `${selectedTheme.emoji} ${selectedThemeLabel}`
+                  : '🔮'
+              }
               replayLabel={t('gameTarotReplay')}
               exitLabel={t('gameExit')}
               onReplay={() => {

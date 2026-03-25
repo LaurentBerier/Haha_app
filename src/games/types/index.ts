@@ -129,7 +129,13 @@ export const TAROT_THEMES: TarotTheme[] = [
   { id: 'ex',     label: 'Mon ex',     emoji: '😬' },
 ];
 
-export function getTarotThemeLabelKey(themeId: TarotTheme['id']): string {
+export type TarotThemeLabelKey =
+  | 'gameTarotThemeLove'
+  | 'gameTarotThemeMoney'
+  | 'gameTarotThemeYear'
+  | 'gameTarotThemeEx';
+
+export function getTarotThemeLabelKey(themeId: TarotTheme['id']): TarotThemeLabelKey {
   switch (themeId) {
     case 'amour':
       return 'gameTarotThemeLove';
@@ -139,8 +145,6 @@ export function getTarotThemeLabelKey(themeId: TarotTheme['id']): string {
       return 'gameTarotThemeYear';
     case 'ex':
       return 'gameTarotThemeEx';
-    default:
-      return 'gameTarotTitle';
   }
 }
 
