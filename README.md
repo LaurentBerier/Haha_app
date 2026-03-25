@@ -29,13 +29,17 @@ Implemented in this repository:
 - Tier-aware voice strategy is on ElevenLabs v3 (Free/Regular/Premium/Admin) with emotional audio tags support and display-safe tag stripping.
 - Conversation naturelle (Phase 4) is integrated across chat and mode-select:
   - default-on conversation mode with shared composer UX and explicit mic states (`off`, `starting`, `listening`, `assistant_busy`, `paused_manual`, `recovering`, `paused_recovery`, `unsupported`, `error`)
+  - conversation language resolution is per-conversation (explicit command first, then auto-detection, then keep current language)
+  - explicit language switches do not change global UI language; they persist on the active conversation only
   - STT silence auto-send (`1800ms` default) and strict STT/TTS mutual exclusion
+  - STT starts with conversation locale and retries once with app locale when startup fails due to locale support
+  - TTS forwards ISO language code when supported and retries once without `language_code` if provider rejects locale
   - session-based STT ownership (stale callbacks are ignored) + bounded recovery policy (`250ms`, `800ms`, `2000ms`, then explicit paused-recovery state)
   - right-mic action model: mode-off => enable+listen, active => pause, paused/recovery => resume, assistant-speaking => pause
   - inline mode-select conversation stack (no forced route switch)
   - mode-select greeting/tutorial auto-arms mic once per injected greeting message, while respecting manual user override
   - first-session greeting with weather/news signal context
-  - auto-replay of latest replayable Cathy message when app/window returns to active (current conversation only, once per message id)
+  - replay remains one-message-at-a-time and current-conversation scoped, but web focus/visibility auto-replay is disabled to avoid surprise replays
   - chunk-synced text/voice playback keyed by `message.id` with animated waveform replay control (`loading`, `playing`, `idle/play`)
   - mode-select conversation overlay expands up to compact top controls (instead of fixed half-screen clamp)
   - compact mode-select now disables background page scrolling to prevent the duplicate right-edge scrollbar on web while keeping message-list scroll active
@@ -55,7 +59,7 @@ Implemented in this repository:
 - Account deletion endpoint (`api/delete-account.js`).
 - Usage summary endpoint (`api/usage-summary.js`) for monthly quota hydration.
 - Score endpoint (`api/score.js`) for gamification actions and stats hydration.
-- TTS endpoint (`api/tts.js`) for ElevenLabs voice generation (tier-aware caps/rate-limits, CORS protected).
+- TTS endpoint (`/api/tts` via `api/claude.js` proxy -> `src/server/ttsHandler.js`) for ElevenLabs voice generation (tier-aware caps/rate-limits, CORS protected).
 - Payment webhooks:
   - RevenueCat (`api/payment-webhook.js`)
   - Stripe (`api/stripe-webhook.js`)
@@ -180,7 +184,7 @@ Notes:
 - `STRIPE_PAYMENT_LINK_ID_REGULAR_TEST` / `STRIPE_PAYMENT_LINK_ID_PREMIUM_TEST` (recommended for sandbox payment links)
 - `STRIPE_PRICE_ID_REGULAR_MONTHLY_TEST` / `STRIPE_PRICE_ID_PREMIUM_MONTHLY_TEST` (recommended for sandbox subscription updates)
 - `ALLOWED_ORIGINS` (required for browser callers that send `Origin`; comma-separated allowlist)
-- `ELEVENLABS_API_KEY` (required for `api/tts.js`; server-only, never `EXPO_PUBLIC_`)
+- `ELEVENLABS_API_KEY` (required for `/api/tts` / `src/server/ttsHandler.js`; server-only, never `EXPO_PUBLIC_`)
 - `ELEVENLABS_MODEL_ID` (optional; supports aliases: `3`, `v3`, `eleven_v3`, `2.5`, `v2.5`, `eleven_turbo_v2_5`)
 - `ELEVENLABS_VOICE_ID_GENERIC` (optional server-side override)
 - `ELEVENLABS_VOICE_ID_CATHY` (optional server-side Cathy override; recommended)

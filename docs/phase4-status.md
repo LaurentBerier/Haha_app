@@ -66,13 +66,27 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
   - all following turns => `tutorialMode=false` (weather/news context allowed again)
 - Cathy reaction calibration:
   - prompt now makes `[REACT:emoji]` optional and context-appropriate (not every reply)
-  - client guard prevents consecutive reaction badges on back-to-back user turns
+  - client guard prevents consecutive reaction badges on neutral turns while allowing affectionate follow-up reactions
 - Replay/resume reliability:
   - `useAutoReplayLastArtistMessage` replays latest replayable Cathy message on:
     - first render after hydration
     - app foreground (`AppState=active`)
-    - web focus/visibility return
+  - web focus/visibility replay is disabled (`replayOnFocus=false`) in chat and mode-select to avoid surprise replay
   - replay is once-per-message-id and current-conversation scoped
+- Multilingual conversation switching:
+  - per-turn resolver in chat uses strict priority:
+    1. explicit switch command (`parle en ...`, `speak in ...`, ISO/BCP-47 codes)
+    2. auto language detection (script + latin heuristics with ambiguity guard)
+    3. keep current conversation language
+  - conversation language persists per conversation and no longer overwrites global app UI language
+  - explicit unknown language switch prompts a short clarification request for language code
+- Prompt language coherence:
+  - server and local fallback prompts now support `fr`, `en`, and `intl` modes
+  - French-only Cathy constraints are applied only when active language is French
+  - non-French languages keep Cathy personality without forced Quebec-French contractions
+- Voice locale alignment:
+  - STT starts with conversation locale and retries once using app locale when startup fails due to locale support
+  - TTS forwards ISO `language_code` when supported and retries once without locale code on provider locale errors
 - TTS reliability hardening:
   - same-origin web candidate priority for `/api/tts` before cross-origin fallbacks
   - per-endpoint timeout with `AbortController` and failover

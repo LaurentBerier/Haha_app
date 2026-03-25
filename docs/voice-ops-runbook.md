@@ -59,6 +59,9 @@ Notes:
 - each candidate uses an `AbortController` timeout (`10s`) before failing over
 - partial candidate failures (timeout/CORS/network) do not stop fallback sequence
 - terminal API statuses (`401/403/429`) stop failover and return structured error codes immediately
+- TTS requests now pass conversation-language hints:
+  - provider receives ISO `language_code` when supported
+  - handler retries once without `language_code` on provider locale-validation failures (`400/422`)
 
 ## 3) CORS Allowlist Baseline
 
@@ -159,6 +162,17 @@ npm run smoke:voice
    - quota exceeded
    - forbidden/auth
    - generic provider failure
+
+### Symptom: Cathy answers in the right language but voice sounds in a different locale
+
+1. Inspect message/conversation language in state:
+   - conversation language is the source of truth for STT/TTS locale routing.
+2. Validate TTS request body in network:
+   - first attempt should include `language_code` when language prefix is supported.
+3. If first attempt returns provider locale error (`400/422`), confirm second upstream call is sent without `language_code`.
+4. For STT startup failures on uncommon locales:
+   - expected behavior is one fallback retry using app locale (`fr-CA`/`en-CA`).
+   - verify this path in logs before assuming microphone entitlement issues.
 
 ### Symptom: frequent `TTS_QUOTA_EXCEEDED`
 

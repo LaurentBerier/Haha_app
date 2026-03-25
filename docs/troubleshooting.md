@@ -939,6 +939,41 @@ Implementation note (current build):
 
 - Mode-select list is keyed by bound conversation id with larger render windows and virtualization/clipping disabled for this route.
 
+## 37) Cathy does not switch language consistently (for example to English)
+
+Symptoms:
+
+- User asks "speak in English" / "parle en anglais" but Cathy stays in current language.
+- Language switch seems to work in one conversation but not in another.
+
+Current expected behavior:
+
+- Language is resolved per turn with strict priority:
+  1. explicit switch command (`parle en ...`, `speak in ...`, ISO/BCP-47 code)
+  2. auto-detection from user text
+  3. keep current conversation language
+- Switch scope is per conversation only (global app UI language is unchanged).
+- If explicit switch target is unknown, Cathy asks for a short language-code clarification.
+
+Checks:
+
+1. Confirm you are testing explicit commands with a recognizable target:
+   - examples: `parle en anglais`, `speak in spanish`, `pt-BR`
+2. Verify active conversation language in store/message context:
+   - switching one conversation should not affect another conversation.
+3. If explicit switch fails, test with a direct code:
+   - `en`, `en-CA`, `es-ES`, `pt-BR`
+4. Inspect prompt payload for `/api/claude`:
+   - `language` should match updated conversation language after switch.
+5. Confirm response follows language-mode rules:
+   - French-only Cathy constraints should appear only when language is French.
+   - EN/intl prompts should not include `Tu reponds toujours en francais quebecois`.
+
+Voice-specific note:
+
+- STT starts with conversation locale and retries once with app locale on startup locale failure.
+- TTS sends `language_code` when supported and retries once without it if provider rejects locale parameter.
+
 ## 37) Browser console shows `A listener indicated an asynchronous response...`
 
 Symptoms:

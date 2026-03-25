@@ -162,7 +162,8 @@ Store-level account isolation:
   - greeting API failures trigger a short client backoff before retrying
 - Auto replay on return:
   - `useAutoReplayLastArtistMessage` replays only the latest replayable artist message in the current conversation
-  - triggers on initial mount, `AppState=active`, web `focus`, and web `visibilitychange`
+  - triggers on initial mount and `AppState=active`
+  - web focus/visibility replay is intentionally disabled in chat and mode-select (`replayOnFocus=false`)
   - guarded once per `messageId` and skipped while streaming/playing/loading
 - Greeting backend (`api/greeting.js`) data sources:
   - weather via Open-Meteo `/v1/forecast` (current + same-day forecast, no API key)
@@ -172,6 +173,9 @@ Store-level account isolation:
 ### Voice Rendering and Sync
 
 - Tier-aware TTS (Free/Regular/Premium/Admin) uses ElevenLabs v3 by default (`src/server/ttsHandler.js`), with env override still supported (`ELEVENLABS_MODEL_ID`).
+- TTS locale handling is best-effort multilingual:
+  - ISO prefix is forwarded as `language_code` when supported by provider
+  - one retry without `language_code` is attempted on provider locale-validation errors
 - Audio-expression tags are injected in Cathy prompts and preserved for TTS text.
 - Display text and spoken text share the same normalization rules through `src/utils/audioTags.ts`:
   - `stripAudioTags(...)` for visible bubble text
@@ -211,6 +215,7 @@ Store-level account isolation:
 
 - `useAuth`: optional bootstrap path (enabled in root layout only), usage/gamification hydration, and Supabase auth-change synchronization
 - `useChat`: queue-driven streaming orchestration, retry support, image-intent routing, mode-based score triggers, and route-safe stream cleanup
+  - per-turn conversation-language resolver (`explicit switch` > `auto-detect` > `keep current`) with language persistence at conversation level
 - `useStorePersistence`: hydration/debounced persistence
 
 ## Backend Endpoints (`api`)
@@ -437,11 +442,16 @@ Display mode note:
 
 ## Prompt Personalization
 
-`buildSystemPromptForArtist(artistId, modeId, userProfile, language)` appends profile context only when profile data exists and adapts labels to FR/EN.
+`buildSystemPromptForArtist(artistId, modeId, userProfile, language)` appends profile context only when profile data exists and adapts behavior for `fr`, `en`, and `intl` language modes.
 
 For image-enabled chats, `imageIntent` (`photo-roast`, `meme-generator`, `screenshot-analyzer`) is passed to the backend so prompt assembly can specialize behavior even when the same mode is reused.
 
-Quebec language rules enforced in all Cathy prompts (`api/claude.js`, `api/tarot-reading.js`, `src/services/personalityEngineService.ts`):
+Conversation language behavior:
+- Conversation language is resolved per turn from user text (explicit switch command first, then auto-detection heuristics, then current conversation language).
+- Global app UI language remains independent (`fr-CA` / `en-CA`) and is not overwritten by chat-language switches.
+- STT and voice fillers use conversation language when available; STT falls back once to app locale if startup fails with the conversation locale.
+
+Quebec language rules are enforced for Cathy when active language is French (`api/claude.js`, `api/tarot-reading.js`, `src/services/personalityEngineService.ts`):
 - Naturalized verb-form anglicisms are welcome (parké, busté, ghosté, checker, rusher); raw English adjectives/nouns replacing French words are not (big, single, nice).
 - Partner pronoun inference: Claude deduces partner gender from contextual cues ("mon chum" → masculine, "ma blonde/copine" → feminine); defaults to neutral ("ton partenaire", "ton ex") with no assumed gender.
 - Tarot variety rule: no keyword, place name, or cultural reference repeated across the 3 card readings and grand finale.
