@@ -18,7 +18,7 @@ import { useStore } from '../store/useStore';
 import { findConversationById } from '../utils/conversationUtils';
 import { shouldAutoSwitchToEnglish } from '../utils/languageDetection';
 import { generateId } from '../utils/generateId';
-import { collectArtistMemoryFacts, extractMemoryFactsFromText, MAX_MEMORY_FACTS } from '../utils/memoryFacts';
+import { collectArtistMemoryFacts } from '../utils/memoryFacts';
 import { normalizeSpeechText, splitDisplayChunkFromRaw, stripAudioTags } from '../utils/audioTags';
 import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../utils/accountTypeUtils';
 import type { ScoreAction } from '../models/Gamification';

@@ -825,7 +825,7 @@ Tu connais cette personne. Utilise ces infos activement :
 ${lines.join('\n')}`;
 }
 
-function extractTextFromRawMessageContent(content) {
+function extractPlainTextFromContent(content) {
   if (typeof content === 'string') {
     return content.trim();
   }
@@ -859,7 +859,7 @@ function collectRecentUserMemoryHints(rawMessages, promptLanguage) {
       continue;
     }
 
-    const text = extractTextFromRawMessageContent(message.content);
+    const text = extractPlainTextFromContent(message.content);
     if (!text) {
       continue;
     }
