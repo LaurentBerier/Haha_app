@@ -91,6 +91,10 @@ export default function VraiOuInventeScreen() {
         <Text style={styles.subtitle}>{artist.name}</Text>
         <ScoreBar />
 
+        {game?.error ? (
+          <Text style={styles.gameError}>{game.error}</Text>
+        ) : null}
+
         {showStart ? (
           <Pressable
             onPress={() => void startGame()}
@@ -295,5 +299,11 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: theme.colors.error
+  },
+  gameError: {
+    color: theme.colors.error,
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center'
   }
 });

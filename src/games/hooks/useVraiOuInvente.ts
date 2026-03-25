@@ -62,7 +62,7 @@ export function useVraiOuInvente(artistId: string): UseVraiOuInventeResult {
   const currentQuestion =
     game && game.gameData.type === 'vrai-ou-invente' ? game.gameData.questions[currentIndex] ?? null : null;
   const score = game && game.gameData.type === 'vrai-ou-invente' ? game.gameData.score : 0;
-  const isLoading = Boolean(game && (game.status === 'loading' || (game.gameData.type === 'vrai-ou-invente' && game.gameData.isLoading)));
+  const isLoading = Boolean(game && game.status === 'loading');
   const isRevealed = game?.status === 'revealed';
   const isComplete = game?.status === 'complete';
 

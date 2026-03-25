@@ -394,6 +394,7 @@ export const createGameSlice: StateCreator<StoreState, [], [], GameSlice> = (set
     set((state) =>
       withActiveGame(state, (game) => ({
         ...game,
+        status: message ? 'abandoned' : game.status,
         error: normalizeText(message ?? '') || null
       }))
     ),
