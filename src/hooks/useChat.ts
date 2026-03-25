@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ARTIST_IDS, MAX_MESSAGE_LENGTH, MODE_IDS } from '../config/constants';
 import { USE_MOCK_LLM } from '../config/env';
 import { getAllCathyFewShots, getCathyModeFewShots } from '../data/cathy-gauthier/modeFewShots';
-import { getLanguage, setLanguage } from '../i18n';
+import { getLanguage } from '../i18n';
 import type { ChatError } from '../models/ChatError';
 import type { ChatSendPayload } from '../models/ChatSendPayload';
 import type { Conversation } from '../models/Conversation';
@@ -15,8 +15,8 @@ import { buildSystemPromptForArtist, formatConversationHistory } from '../servic
 import { addScore } from '../services/scoreManager';
 import { fetchAndCacheVoice } from '../services/ttsService';
 import { useStore } from '../store/useStore';
+import { resolveLanguageForTurn } from '../utils/conversationLanguage';
 import { findConversationById } from '../utils/conversationUtils';
-import { shouldAutoSwitchToEnglish } from '../utils/languageDetection';
 import { generateId } from '../utils/generateId';
 import { collectArtistMemoryFacts } from '../utils/memoryFacts';
 import { normalizeSpeechText, splitDisplayChunkFromRaw, stripAudioTags } from '../utils/audioTags';
@@ -87,6 +87,14 @@ function buildMemoryPrimerMessage(facts: string[], language: string): ClaudeMess
     role: 'assistant',
     content
   };
+}
+
+function buildLanguageSwitchClarificationMessage(language: string): string {
+  if (language.toLowerCase().startsWith('en')) {
+    return 'I can switch languages. Please send the language code (for example: en, es-ES, pt-BR).';
+  }
+
+  return 'Je peux changer de langue. Ecris le code langue (ex: en, es-ES, pt-BR).';
 }
 
 
@@ -1313,12 +1321,9 @@ export function useChat(conversationId: string) {
     const targetConversation = sendContext.conversation;
     const modeFewShotsForTurn = resolveModeFewShotsForConversation(targetConversation);
     const preferredLanguage = targetConversation.language || getLanguage();
-    const shouldSwitchToEnglish = shouldAutoSwitchToEnglish(trimmed, preferredLanguage);
-    const languageForTurn = shouldSwitchToEnglish ? 'en-CA' : preferredLanguage;
-
-    if (shouldSwitchToEnglish) {
-      setLanguage('en-CA');
-    }
+    const languageResolution = resolveLanguageForTurn(trimmed, preferredLanguage);
+    const languageForTurn = languageResolution.language;
+    const shouldAskLanguageClarification = languageResolution.explicitDetected && !languageResolution.explicitRecognized;
 
     const now = new Date().toISOString();
     const rawMessagesBeforeSend = getMessages(targetConversationId);
@@ -1340,6 +1345,34 @@ export function useChat(conversationId: string) {
         : undefined
     };
 
+    addMessage(targetConversationId, userMessage);
+
+    if (shouldAskLanguageClarification) {
+      const clarificationMessage: Message = {
+        id: generateId('msg'),
+        conversationId: targetConversationId,
+        role: 'artist',
+        content: buildLanguageSwitchClarificationMessage(preferredLanguage),
+        status: 'complete',
+        timestamp: now,
+        metadata: {
+          injected: true
+        }
+      };
+
+      addMessage(targetConversationId, clarificationMessage);
+      updateConversation(
+        targetConversationId,
+        {
+          language: preferredLanguage,
+          lastMessagePreview: previewText,
+          title: previewText.slice(0, 30)
+        },
+        targetConversation.artistId
+      );
+      return null;
+    }
+
     const artistMessageId = generateId('msg');
     const placeholder: Message = {
       id: artistMessageId,
@@ -1350,7 +1383,6 @@ export function useChat(conversationId: string) {
       timestamp: now
     };
 
-    addMessage(targetConversationId, userMessage);
     addMessage(targetConversationId, placeholder);
 
     const modeId = targetConversation.modeId || MODE_IDS.DEFAULT;

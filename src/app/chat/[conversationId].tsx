@@ -64,6 +64,7 @@ export default function ChatScreen() {
   const currentConversation = useStore(
     useCallback((state) => findConversationById(state.conversations, conversationId), [conversationId])
   );
+  const conversationLanguage = currentConversation?.language?.trim() ? currentConversation.language : language;
   const {
     messages,
     sendMessage,
@@ -102,7 +103,8 @@ export default function ChatScreen() {
     onStopAudio: () => {
       void audioPlayer.stop();
     },
-    language
+    language: conversationLanguage,
+    fallbackLanguage: language
     });
 
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? '');
@@ -133,7 +135,7 @@ export default function ChatScreen() {
         !audioPlayer.isLoading &&
         currentConversation?.artistId
       ) {
-        void getRandomFillerUri(currentConversation.artistId, language, accessToken)
+        void getRandomFillerUri(currentConversation.artistId, conversationLanguage, accessToken)
           .then((uri) => {
             if (!uri) {
               return;
@@ -149,7 +151,7 @@ export default function ChatScreen() {
 
       return sendMessage(payload);
     },
-    [accessToken, audioPlayer, currentConversation?.artistId, language, sendMessage, shouldUseVoiceFiller]
+    [accessToken, audioPlayer, conversationLanguage, currentConversation?.artistId, sendMessage, shouldUseVoiceFiller]
   );
 
   useEffect(() => {
@@ -170,8 +172,8 @@ export default function ChatScreen() {
     if (!shouldUseVoiceFiller || !currentConversation?.artistId) {
       return;
     }
-    prewarmVoiceFillers(currentConversation.artistId, language, accessToken);
-  }, [accessToken, currentConversation?.artistId, language, shouldUseVoiceFiller]);
+    prewarmVoiceFillers(currentConversation.artistId, conversationLanguage, accessToken);
+  }, [accessToken, conversationLanguage, currentConversation?.artistId, shouldUseVoiceFiller]);
 
   useEffect(() => {
     const queuedNonce = queuedNonceParam?.trim() ?? '';

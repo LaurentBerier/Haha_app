@@ -33,6 +33,7 @@ export interface UseVoiceConversationProps {
   onSend: (text: string) => void;
   onStopAudio: () => void;
   language: string;
+  fallbackLanguage?: string;
   autoStartOnWeb?: boolean;
 }
 
@@ -381,6 +382,7 @@ export function useVoiceConversation({
   onSend,
   onStopAudio,
   language,
+  fallbackLanguage = 'fr-CA',
   autoStartOnWeb = true
 }: UseVoiceConversationProps): UseVoiceConversationReturn {
   const [state, dispatch] = useReducer(voiceConversationReducer, INITIAL_STATE);
@@ -404,6 +406,7 @@ export function useVoiceConversation({
   const onSendRef = useRef(onSend);
   const onStopAudioRef = useRef(onStopAudio);
   const languageRef = useRef(language);
+  const fallbackLanguageRef = useRef(fallbackLanguage);
   const shouldAutoListen = Platform.OS !== 'web' || autoStartOnWeb;
 
   useEffect(() => {
@@ -437,6 +440,10 @@ export function useVoiceConversation({
   useEffect(() => {
     languageRef.current = language;
   }, [language]);
+
+  useEffect(() => {
+    fallbackLanguageRef.current = fallbackLanguage;
+  }, [fallbackLanguage]);
 
   const clearSilenceTimer = useCallback(() => {
     if (!silenceTimerRef.current) {
@@ -759,6 +766,7 @@ export function useVoiceConversation({
 
         const session = startVoiceListeningSession({
           locale: languageRef.current,
+          fallbackLocale: fallbackLanguageRef.current,
           onResult: (event) => {
             handleSessionResult(event.sessionId, event.transcript);
           },

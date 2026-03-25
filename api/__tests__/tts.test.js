@@ -340,6 +340,66 @@ describe('api/tts', () => {
     expect(global.fetch.mock.calls[0][0]).toContain('/premium-voice-id');
   });
 
+  it('forwards ISO language_code derived from conversation language when supported', async () => {
+    const audioBytes = Uint8Array.from([9, 9, 9, 9]).buffer;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      arrayBuffer: jest.fn().mockResolvedValue(audioBytes)
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../../src/server/ttsHandler');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: { text: 'hola que tal', artistId: 'cathy-gauthier', language: 'es-ES' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const requestPayload = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(requestPayload.language_code).toBe('es');
+  });
+
+  it('retries once without language_code when provider rejects locale parameter', async () => {
+    const audioBytes = Uint8Array.from([8, 8, 8, 8]).buffer;
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: jest.fn().mockResolvedValue('invalid language_code')
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        arrayBuffer: jest.fn().mockResolvedValue(audioBytes)
+      });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../../src/server/ttsHandler');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: { text: 'hola retry', artistId: 'cathy-gauthier', language: 'es-ES' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    const firstPayload = JSON.parse(global.fetch.mock.calls[0][1].body);
+    const secondPayload = JSON.parse(global.fetch.mock.calls[1][1].body);
+    expect(firstPayload.language_code).toBe('es');
+    expect(secondPayload.language_code).toBeUndefined();
+  });
+
   it('treats role=admin as unlimited even when account_type is regular', async () => {
     const audioBytes = Uint8Array.from([7, 7, 7, 7]).buffer;
     process.env.TTS_MONTHLY_CAP_REGULAR = '1';

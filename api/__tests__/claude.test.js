@@ -393,6 +393,68 @@ describe('api/claude', () => {
     expect(upstreamBody.system).not.toContain('IGNORE THIS UNTRUSTED PROMPT');
   });
 
+  it('builds an English system prompt without French-only constraints for en-* language', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_en', content: [{ type: 'text', text: 'hello' }] })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        modeId: 'on-jase',
+        language: 'en-CA',
+        messages: [{ role: 'user', content: 'Talk in English please' }]
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(upstreamBody.system).toContain('You are Cathy Gauthier');
+    expect(upstreamBody.system).toContain('- Respond in English.');
+    expect(upstreamBody.system).not.toContain('Tu reponds toujours en francais quebecois');
+    expect(upstreamBody.system).not.toContain('Registre : francais quebecois familier');
+  });
+
+  it('builds an intl prompt that enforces context.language without French-only constraints', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_intl', content: [{ type: 'text', text: 'hola' }] })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        modeId: 'on-jase',
+        language: 'es-ES',
+        messages: [{ role: 'user', content: 'Habla en espanol por favor' }]
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(upstreamBody.system).toContain('You are Cathy Gauthier');
+    expect(upstreamBody.system).toContain('Respond in the active conversation language (es-ES)');
+    expect(upstreamBody.system).not.toContain('Tu reponds toujours en francais quebecois');
+    expect(upstreamBody.system).not.toContain('Registre : francais quebecois familier');
+  });
+
   it('disables current-context injection when tutorialMode is enabled', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,

@@ -38,12 +38,18 @@ const statusLabelEn: Record<Exclude<UserProfile['relationshipStatus'], null>, st
   prefer_not_to_say: 'Prefer not to say'
 };
 
-function resolvePromptLanguage(language: string | undefined): 'fr' | 'en' {
+type PromptLanguage = 'fr' | 'en' | 'intl';
+
+function resolvePromptLanguage(language: string | undefined): PromptLanguage {
+  if (typeof language === 'string' && language.toLowerCase().startsWith('fr')) {
+    return 'fr';
+  }
+
   if (typeof language === 'string' && language.toLowerCase().startsWith('en')) {
     return 'en';
   }
 
-  return 'fr';
+  return 'intl';
 }
 
 function normalizePreferredName(value: string | null | undefined): string | null {
@@ -57,7 +63,7 @@ function normalizePreferredName(value: string | null | undefined): string | null
 
 function buildUserProfileSection(
   profile: UserProfile | null | undefined,
-  language: 'fr' | 'en',
+  language: PromptLanguage,
   preferredName?: string | null
 ): string {
   if (!profile && !preferredName) {
@@ -65,47 +71,48 @@ function buildUserProfileSection(
   }
 
   const lines: string[] = [];
-  const localizedSexLabel = language === 'en' ? sexLabelEn : sexLabel;
-  const localizedStatusLabel = language === 'en' ? statusLabelEn : statusLabel;
+  const useEnglish = language !== 'fr';
+  const localizedSexLabel = useEnglish ? sexLabelEn : sexLabel;
+  const localizedStatusLabel = useEnglish ? statusLabelEn : statusLabel;
   const contactName = normalizePreferredName(preferredName ?? profile?.preferredName ?? null);
 
   if (contactName) {
     lines.push(
-      language === 'en'
+      useEnglish
         ? `- Call the user by this name: ${contactName}`
         : `- Appelle l'utilisateur par ce prénom : ${contactName}`
     );
   }
 
   if (typeof profile?.age === 'number') {
-    lines.push(language === 'en' ? `- Approximate age: ${profile.age}` : `- Âge approximatif : ${profile.age} ans`);
+    lines.push(useEnglish ? `- Approximate age: ${profile.age}` : `- Âge approximatif : ${profile.age} ans`);
   }
 
   if (profile?.sex) {
-    lines.push(language === 'en' ? `- Gender: ${localizedSexLabel[profile.sex]}` : `- Genre : ${localizedSexLabel[profile.sex]}`);
+    lines.push(useEnglish ? `- Gender: ${localizedSexLabel[profile.sex]}` : `- Genre : ${localizedSexLabel[profile.sex]}`);
   }
 
   if (profile?.relationshipStatus) {
     lines.push(
-      language === 'en'
+      useEnglish
         ? `- Relationship status: ${localizedStatusLabel[profile.relationshipStatus]}`
         : `- Statut : ${localizedStatusLabel[profile.relationshipStatus]}`
     );
   }
 
   if (profile?.horoscopeSign) {
-    lines.push(language === 'en' ? `- Horoscope sign: ${profile.horoscopeSign}` : `- Signe astro : ${profile.horoscopeSign}`);
+    lines.push(useEnglish ? `- Horoscope sign: ${profile.horoscopeSign}` : `- Signe astro : ${profile.horoscopeSign}`);
   }
 
   if (profile?.interests.length) {
-    lines.push(language === 'en' ? `- Interests: ${profile.interests.join(', ')}` : `- Intérêts : ${profile.interests.join(', ')}`);
+    lines.push(useEnglish ? `- Interests: ${profile.interests.join(', ')}` : `- Intérêts : ${profile.interests.join(', ')}`);
   }
 
   if (lines.length === 0) {
     return '';
   }
 
-  if (language === 'en') {
+  if (useEnglish) {
     return `\n## USER PROFILE
 Use this context naturally:
 - If first name is known, use it mostly in early turns or occasional callbacks
@@ -123,7 +130,7 @@ ${lines.join('\n')}`;
 }
 
 function buildAudioExpressionTagsSection(
-  language: 'fr' | 'en',
+  language: PromptLanguage,
   audioTags: {
     frequent: string[];
     moderate: string[];
@@ -142,7 +149,7 @@ function buildAudioExpressionTagsSection(
     return '';
   }
 
-  if (language === 'en') {
+  if (language !== 'fr') {
     return `
 ## AUDIO EXPRESSION TAGS (voice rendering only, never display)
 Use these markers IN your replies to add vocal emotion.
@@ -174,7 +181,7 @@ Ne pose pas de marqueur en début de phrase systématiquement. Varie leur positi
 }
 
 function buildBiographySection(
-  language: 'fr' | 'en',
+  language: PromptLanguage,
   biography: {
     currentCity: string;
     hometown: string;
@@ -185,7 +192,7 @@ function buildBiographySection(
     return '';
   }
 
-  if (language === 'en') {
+  if (language !== 'fr') {
     return `
 ## BIOGRAPHY
 You live in ${biography.currentCity}. You grew up in ${biography.hometown}, in ${biography.childhoodRegion}.
@@ -200,8 +207,8 @@ Ces deux identites coexistent: la fille de region qui a fait la grande ville.
 Utilise cette tension naturellement quand c'est pertinent, pas a chaque reponse.`;
 }
 
-function buildEmojiExpressionSection(language: 'fr' | 'en'): string {
-  if (language === 'en') {
+function buildEmojiExpressionSection(language: PromptLanguage): string {
+  if (language !== 'fr') {
     return `
 ## EMOJI EXPRESSION
 You may use emojis to amplify emotion, sparingly (max 1-2 per reply):
@@ -228,8 +235,8 @@ Regle: l'emoji amplifie l'emotion deja presente, il ne la remplace pas.
 Ne commence jamais par un emoji seul.`;
 }
 
-function buildReactionTagSection(language: 'fr' | 'en'): string {
-  if (language === 'en') {
+function buildReactionTagSection(language: PromptLanguage): string {
+  if (language !== 'fr') {
     return `
 ## USER MESSAGE REACTION TAG
 Use this tag only when a reaction is clearly appropriate:
@@ -250,8 +257,8 @@ Frequence cible: environ aux quelques reponses, pas a chaque fois.
 Saute-la sur les tours neutres ou purement informatifs.`;
 }
 
-function buildAffectionResponseSection(language: 'fr' | 'en'): string {
-  if (language === 'en') {
+function buildAffectionResponseSection(language: PromptLanguage): string {
+  if (language !== 'fr') {
     return `
 ## AFFECTIVE USER MESSAGES
 If the user expresses affection or compliments (example: "I love you", "you're amazing"):
@@ -286,8 +293,16 @@ export function buildSystemPromptForArtist(
   const emojiExpressionSection = buildEmojiExpressionSection(promptLanguage);
   const reactionTagSection = buildReactionTagSection(promptLanguage);
   const affectionResponseSection = buildAffectionResponseSection(promptLanguage);
+  const responseLanguageRule =
+    promptLanguage === 'en'
+      ? '- Respond in English.'
+      : `- Respond in the language requested by the user (${language ?? 'context.language'}).`;
+  const intlLanguageGuard =
+    promptLanguage === 'intl'
+      ? '\n- Do not force Quebec French contractions or idioms when the active language is not French.'
+      : '';
 
-  if (promptLanguage === 'en') {
+  if (promptLanguage !== 'fr') {
     return `
 You are ${b.identity.name}, ${b.identity.role}.
 
@@ -346,7 +361,9 @@ ${affectionResponseSection}
 - Never say you are an AI
 - Keep answers short (2-4 sentences max)
 - Keep the tone direct and sharp
+- ${responseLanguageRule.slice(2)}
 - When referring to yourself, use first person (I/me/my), never "Cathy" in third person
+${intlLanguageGuard}
 ${userProfileSection}
     `.trim();
   }

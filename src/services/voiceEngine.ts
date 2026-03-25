@@ -95,9 +95,28 @@ export interface VoiceListeningSession {
 
 export interface StartVoiceListeningSessionOptions {
   locale: string;
+  fallbackLocale?: string;
   onResult: (event: VoiceListeningResultEvent) => void;
   onEnd: (event: VoiceListeningEndEvent) => void;
 }
+
+const DEFAULT_STT_LOCALE = 'fr-CA';
+
+const STT_DEFAULT_LOCALE_BY_PREFIX: Record<string, string> = {
+  ar: 'ar-SA',
+  de: 'de-DE',
+  en: 'en-CA',
+  es: 'es-ES',
+  fr: 'fr-CA',
+  it: 'it-IT',
+  ja: 'ja-JP',
+  ko: 'ko-KR',
+  nl: 'nl-NL',
+  pt: 'pt-BR',
+  ru: 'ru-RU',
+  tr: 'tr-TR',
+  zh: 'zh-CN'
+};
 
 function hasSpeechRecognitionNativeBinding(): boolean {
   if (Platform.OS === 'web') {
@@ -181,6 +200,57 @@ function normalizeVoiceErrorMessage(rawMessage: string | null | undefined): stri
 
   const normalized = rawMessage.trim();
   return normalized ? normalized : null;
+}
+
+function normalizeLocaleCandidate(locale: string | null | undefined): string | null {
+  if (typeof locale !== 'string') {
+    return null;
+  }
+
+  const trimmed = locale.trim().replace(/_/g, '-');
+  if (!trimmed) {
+    return null;
+  }
+
+  const match = trimmed.match(/^([a-zA-Z]{2,3})(?:-([a-zA-Z]{2}|\d{3}|[a-zA-Z]{4}))?(?:-([a-zA-Z]{2}|\d{3}))?/);
+  if (!match) {
+    return null;
+  }
+
+  const language = match[1]?.toLowerCase();
+  if (!language) {
+    return null;
+  }
+
+  const second = match[2] ?? '';
+  const third = match[3] ?? '';
+  const region = /^[a-zA-Z]{2}$/.test(second) || /^[0-9]{3}$/.test(second)
+    ? second.toUpperCase()
+    : /^[a-zA-Z]{2}$/.test(third) || /^[0-9]{3}$/.test(third)
+      ? third.toUpperCase()
+      : null;
+
+  if (region) {
+    return `${language}-${region}`;
+  }
+
+  return STT_DEFAULT_LOCALE_BY_PREFIX[language] ?? language;
+}
+
+function resolveSttLocales(locale: string, fallbackLocale?: string): { primary: string; fallback: string | null } {
+  const normalizedPrimary = normalizeLocaleCandidate(locale) ?? DEFAULT_STT_LOCALE;
+  const normalizedFallback = normalizeLocaleCandidate(fallbackLocale ?? '') ?? DEFAULT_STT_LOCALE;
+  if (normalizedFallback === normalizedPrimary) {
+    return {
+      primary: normalizedPrimary,
+      fallback: null
+    };
+  }
+
+  return {
+    primary: normalizedPrimary,
+    fallback: normalizedFallback
+  };
 }
 
 function scheduleVoiceMicrotask(callback: () => void): void {
@@ -298,6 +368,7 @@ export async function requestVoicePermission(): Promise<boolean> {
 
 export function startVoiceListeningSession({
   locale,
+  fallbackLocale,
   onResult,
   onEnd
 }: StartVoiceListeningSessionOptions): VoiceListeningSession {
@@ -360,6 +431,7 @@ export function startVoiceListeningSession({
 
   cleanupActiveRecognition();
   activeVoiceSessionId = sessionId;
+  const resolvedLocales = resolveSttLocales(locale, fallbackLocale);
 
   if (Platform.OS === 'web') {
     const WebRecognitionCtor = getWebSpeechRecognitionCtor();
@@ -376,7 +448,7 @@ export function startVoiceListeningSession({
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
-    recognition.lang = locale;
+    recognition.lang = resolvedLocales.primary;
 
     recognition.onresult = (event) => {
       const transcript = extractWebTranscript(event);
@@ -430,12 +502,31 @@ export function startVoiceListeningSession({
     try {
       recognition.start();
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : typeof error === 'string' ? error : 'Speech recognition failed';
-      scheduleVoiceMicrotask(() => {
-        emitEnd(classifyStartErrorReason(error), message);
-      });
-      return session;
+      const reason = classifyStartErrorReason(error);
+      if (reason !== 'permission' && resolvedLocales.fallback) {
+        try {
+          recognition.lang = resolvedLocales.fallback;
+          recognition.start();
+        } catch (fallbackError) {
+          const fallbackMessage =
+            fallbackError instanceof Error
+              ? fallbackError.message
+              : typeof fallbackError === 'string'
+                ? fallbackError
+                : 'Speech recognition failed';
+          scheduleVoiceMicrotask(() => {
+            emitEnd(classifyStartErrorReason(fallbackError), fallbackMessage);
+          });
+          return session;
+        }
+      } else {
+        const message =
+          error instanceof Error ? error.message : typeof error === 'string' ? error : 'Speech recognition failed';
+        scheduleVoiceMicrotask(() => {
+          emitEnd(reason, message);
+        });
+        return session;
+      }
     }
 
     return session;
@@ -458,19 +549,43 @@ export function startVoiceListeningSession({
 
     try {
       module.start({
-        lang: locale,
+        lang: resolvedLocales.primary,
         interimResults: true,
         maxAlternatives: 1,
         continuous: true,
         addsPunctuation: true
       });
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : typeof error === 'string' ? error : 'Speech recognition failed';
-      scheduleVoiceMicrotask(() => {
-        emitEnd(classifyStartErrorReason(error), message);
-      });
-      return session;
+      const reason = classifyStartErrorReason(error);
+      if (reason !== 'permission' && resolvedLocales.fallback) {
+        try {
+          module.start({
+            lang: resolvedLocales.fallback,
+            interimResults: true,
+            maxAlternatives: 1,
+            continuous: true,
+            addsPunctuation: true
+          });
+        } catch (fallbackError) {
+          const fallbackMessage =
+            fallbackError instanceof Error
+              ? fallbackError.message
+              : typeof fallbackError === 'string'
+                ? fallbackError
+                : 'Speech recognition failed';
+          scheduleVoiceMicrotask(() => {
+            emitEnd(classifyStartErrorReason(fallbackError), fallbackMessage);
+          });
+          return session;
+        }
+      } else {
+        const message =
+          error instanceof Error ? error.message : typeof error === 'string' ? error : 'Speech recognition failed';
+        scheduleVoiceMicrotask(() => {
+          emitEnd(reason, message);
+        });
+        return session;
+      }
     }
 
     return session;

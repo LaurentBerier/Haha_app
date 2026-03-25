@@ -360,6 +360,52 @@ describe('useChat sendMessage integration', () => {
     );
   });
 
+  it('switches conversation language on explicit command and keeps LLM flow active', () => {
+    const conversationId = 'conv-explicit-switch';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const result = chat.sendMessage({ text: 'Parle en anglais et donne-moi la meteo.' });
+
+    expect(result).toBeNull();
+    expect(state.addMessage).toHaveBeenCalledTimes(2);
+    expect(state.updateConversation).toHaveBeenCalledWith(
+      conversation.id,
+      expect.objectContaining({
+        language: 'en-CA',
+        lastMessagePreview: 'Parle en anglais et donne-moi la meteo.'
+      }),
+      conversation.artistId
+    );
+    expect(mockStreamMockReply).toHaveBeenCalledTimes(1);
+  });
+
+  it('asks for language code when explicit switch request is unrecognized and skips LLM call', () => {
+    const conversationId = 'conv-unknown-switch';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const result = chat.sendMessage({ text: 'Parle en klingon.' });
+
+    expect(result).toBeNull();
+    expect(state.addMessage).toHaveBeenCalledTimes(2);
+    const latestArtistMessage =
+      state.messagesByConversation[conversation.id]?.messages.find((message) => message.role === 'artist') ?? null;
+    expect(latestArtistMessage?.status).toBe('complete');
+    expect(latestArtistMessage?.content).toContain('code langue');
+    expect(mockStreamMockReply).not.toHaveBeenCalled();
+  });
+
   it('marks voice unavailable on TTS failure and recovers to ready on retryVoiceForMessage', async () => {
     const conversationId = 'conv-voice';
     const chat = renderUseChatHook(conversationId);

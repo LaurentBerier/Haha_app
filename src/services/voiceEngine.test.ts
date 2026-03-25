@@ -13,6 +13,7 @@ import { startVoiceListeningSession } from './voiceEngine';
 
 class MockSpeechRecognition {
   static instances: MockSpeechRecognition[] = [];
+  static startPlan: Array<(instance: MockSpeechRecognition) => void> = [];
 
   continuous = false;
   interimResults = false;
@@ -24,7 +25,12 @@ class MockSpeechRecognition {
   }) => void) | null = null;
   onerror: ((event: { error?: string; message?: string }) => void) | null = null;
   onend: (() => void) | null = null;
-  start = jest.fn();
+  start = jest.fn(() => {
+    const step = MockSpeechRecognition.startPlan.shift();
+    if (step) {
+      step(this);
+    }
+  });
   stop = jest.fn();
 
   constructor() {
@@ -35,6 +41,7 @@ class MockSpeechRecognition {
 describe('voiceEngine', () => {
   beforeEach(() => {
     MockSpeechRecognition.instances = [];
+    MockSpeechRecognition.startPlan = [];
     (globalThis as { SpeechRecognition?: typeof MockSpeechRecognition }).SpeechRecognition = MockSpeechRecognition;
   });
 
@@ -79,6 +86,30 @@ describe('voiceEngine', () => {
         reason: 'ended_unexpectedly'
       })
     );
+  });
+
+  it('retries start once with fallback locale when primary locale fails to start', () => {
+    const onEnd = jest.fn();
+    MockSpeechRecognition.startPlan = [
+      () => {
+        throw new Error('unsupported locale');
+      },
+      () => {}
+    ];
+
+    const session = startVoiceListeningSession({
+      locale: 'zz-ZZ',
+      fallbackLocale: 'en-CA',
+      onResult: jest.fn(),
+      onEnd
+    });
+
+    const recognition = MockSpeechRecognition.instances[0];
+
+    expect(session.id).toBeGreaterThan(0);
+    expect(recognition?.start).toHaveBeenCalledTimes(2);
+    expect(recognition?.lang).toBe('en-CA');
+    expect(onEnd).not.toHaveBeenCalled();
   });
 
   it('ignores stale session callbacks after a newer session takes over', () => {

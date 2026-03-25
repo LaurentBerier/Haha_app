@@ -31,6 +31,35 @@ const DEFAULT_TTS_CAPS = {
   premium: 20_000
 };
 
+const ELEVENLABS_LANGUAGE_CODES = new Set([
+  'ar',
+  'cs',
+  'da',
+  'de',
+  'el',
+  'en',
+  'es',
+  'fi',
+  'fr',
+  'hi',
+  'hu',
+  'id',
+  'it',
+  'ja',
+  'ko',
+  'nl',
+  'no',
+  'pl',
+  'pt',
+  'ro',
+  'ru',
+  'sv',
+  'tr',
+  'uk',
+  'vi',
+  'zh'
+]);
+
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
 }
@@ -286,6 +315,38 @@ function parsePayload(body) {
   };
 }
 
+function resolveLanguageCode(language) {
+  if (typeof language !== 'string') {
+    return null;
+  }
+
+  const trimmed = language.trim().toLowerCase().replace(/_/g, '-');
+  if (!trimmed) {
+    return null;
+  }
+
+  const match = trimmed.match(/^([a-z]{2,3})(?:-[a-z0-9]{2,8}){0,2}$/i);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const prefix = match[1].toLowerCase();
+  return ELEVENLABS_LANGUAGE_CODES.has(prefix) ? prefix : null;
+}
+
+function shouldRetryWithoutLanguageCode(status, providerPayload) {
+  if (status !== 400 && status !== 422) {
+    return false;
+  }
+
+  const normalizedPayload = typeof providerPayload === 'string' ? providerPayload.toLowerCase() : '';
+  return (
+    normalizedPayload.includes('language') ||
+    normalizedPayload.includes('language_code') ||
+    normalizedPayload.includes('locale')
+  );
+}
+
 async function getMonthlyTtsUsageCount(supabaseAdmin, userId, requestId) {
   const monthStartIso = getMonthStartIso();
 
@@ -489,29 +550,47 @@ module.exports = async function handler(req, res) {
   const voiceId = resolveVoiceIdForTier(normalizedAccountType);
   const modelId = getModelId();
   const fetchTimeoutMs = parsePositiveInt(process.env.ELEVENLABS_FETCH_TIMEOUT_MS, 20_000);
-  const timeoutController = new AbortController();
-  const timeout = setTimeout(() => timeoutController.abort(), fetchTimeoutMs);
+  const resolvedLanguageCode = resolveLanguageCode(payload.language);
+
+  const buildProviderBody = (includeLanguageCode) => {
+    const body = {
+      text: payload.providerText,
+      model_id: modelId,
+      output_format: 'mp3_44100_128',
+      voice_settings: getVoiceSettings()
+    };
+
+    if (includeLanguageCode && resolvedLanguageCode) {
+      body.language_code = resolvedLanguageCode;
+    }
+
+    return body;
+  };
+
+  const requestUpstream = async (includeLanguageCode) => {
+    const timeoutController = new AbortController();
+    const timeout = setTimeout(() => timeoutController.abort(), fetchTimeoutMs);
+    try {
+      return await fetch(`${ELEVENLABS_API_BASE}/${encodeURIComponent(voiceId)}`, {
+        method: 'POST',
+        headers: {
+          'xi-api-key': elevenLabsApiKey,
+          Accept: 'audio/mpeg',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(buildProviderBody(includeLanguageCode)),
+        signal: timeoutController.signal
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
 
   let upstreamResponse;
+  let providerPayload = '';
   try {
-    upstreamResponse = await fetch(`${ELEVENLABS_API_BASE}/${encodeURIComponent(voiceId)}`, {
-      method: 'POST',
-      headers: {
-        'xi-api-key': elevenLabsApiKey,
-        Accept: 'audio/mpeg',
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        text: payload.providerText,
-        model_id: modelId,
-        output_format: 'mp3_44100_128',
-        voice_settings: getVoiceSettings(),
-        language_code: payload.language.toLowerCase().startsWith('en') ? 'en' : 'fr'
-      }),
-      signal: timeoutController.signal
-    });
+    upstreamResponse = await requestUpstream(true);
   } catch (error) {
-    clearTimeout(timeout);
     if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
       sendError(res, 503, 'TTS provider unavailable.', { code: 'TTS_PROVIDER_ERROR', requestId });
       return;
@@ -520,8 +599,30 @@ module.exports = async function handler(req, res) {
     console.error(`[api/tts][${requestId}] Failed to reach ElevenLabs`, error);
     sendError(res, 503, 'TTS provider unavailable.', { code: 'TTS_PROVIDER_ERROR', requestId });
     return;
-  } finally {
-    clearTimeout(timeout);
+  }
+
+  if (!upstreamResponse.ok && resolvedLanguageCode) {
+    try {
+      providerPayload = await upstreamResponse.text();
+    } catch {
+      providerPayload = '';
+    }
+
+    if (shouldRetryWithoutLanguageCode(upstreamResponse.status, providerPayload)) {
+      try {
+        upstreamResponse = await requestUpstream(false);
+        providerPayload = '';
+      } catch (error) {
+        if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
+          sendError(res, 503, 'TTS provider unavailable.', { code: 'TTS_PROVIDER_ERROR', requestId });
+          return;
+        }
+
+        console.error(`[api/tts][${requestId}] Failed to reach ElevenLabs`, error);
+        sendError(res, 503, 'TTS provider unavailable.', { code: 'TTS_PROVIDER_ERROR', requestId });
+        return;
+      }
+    }
   }
 
   if (!upstreamResponse.ok) {
@@ -530,11 +631,12 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    let providerPayload = '';
-    try {
-      providerPayload = await upstreamResponse.text();
-    } catch {
-      providerPayload = '';
+    if (!providerPayload) {
+      try {
+        providerPayload = await upstreamResponse.text();
+      } catch {
+        providerPayload = '';
+      }
     }
 
     console.error(`[api/tts][${requestId}] ElevenLabs returned ${upstreamResponse.status}`, {

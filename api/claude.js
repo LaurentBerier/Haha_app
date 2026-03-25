@@ -464,11 +464,15 @@ function normalizeMessages(rawMessages) {
 }
 
 function resolvePromptLanguage(language) {
+  if (typeof language === 'string' && language.toLowerCase().startsWith('fr')) {
+    return 'fr';
+  }
+
   if (typeof language === 'string' && language.toLowerCase().startsWith('en')) {
     return 'en';
   }
 
-  return 'fr';
+  return 'intl';
 }
 
 function normalizeIntentText(value) {
@@ -548,7 +552,7 @@ function buildCurrentInfoInstructionSection(language, intent) {
     return '';
   }
 
-  const isEnglish = resolvePromptLanguage(language) === 'en';
+  const isEnglish = resolvePromptLanguage(language) !== 'fr';
   const requestedTopic =
     intent.weather && intent.news
       ? isEnglish
@@ -749,30 +753,31 @@ function buildUserProfileSection(profile, promptLanguage, preferredName = null) 
     return '';
   }
 
-  const sexLabels = promptLanguage === 'en' ? PROFILE_SEX_LABEL_EN : PROFILE_SEX_LABEL_FR;
-  const statusLabels = promptLanguage === 'en' ? PROFILE_STATUS_LABEL_EN : PROFILE_STATUS_LABEL_FR;
-  const horoscopeLabels = promptLanguage === 'en' ? PROFILE_HOROSCOPE_LABEL_EN : PROFILE_HOROSCOPE_LABEL_FR;
+  const useEnglish = promptLanguage !== 'fr';
+  const sexLabels = useEnglish ? PROFILE_SEX_LABEL_EN : PROFILE_SEX_LABEL_FR;
+  const statusLabels = useEnglish ? PROFILE_STATUS_LABEL_EN : PROFILE_STATUS_LABEL_FR;
+  const horoscopeLabels = useEnglish ? PROFILE_HOROSCOPE_LABEL_EN : PROFILE_HOROSCOPE_LABEL_FR;
   const lines = [];
 
   if (resolvedPreferredName) {
     lines.push(
-      promptLanguage === 'en'
+      useEnglish
         ? `- Preferred first name to use: ${resolvedPreferredName}`
         : `- Prenom prefere a utiliser: ${resolvedPreferredName}`
     );
   }
 
   if (typeof profile?.age === 'number') {
-    lines.push(promptLanguage === 'en' ? `- Approximate age: ${profile.age}` : `- Age approximatif : ${profile.age} ans`);
+    lines.push(useEnglish ? `- Approximate age: ${profile.age}` : `- Age approximatif : ${profile.age} ans`);
   }
 
   if (profile?.sex && sexLabels[profile.sex]) {
-    lines.push(promptLanguage === 'en' ? `- Gender: ${sexLabels[profile.sex]}` : `- Genre : ${sexLabels[profile.sex]}`);
+    lines.push(useEnglish ? `- Gender: ${sexLabels[profile.sex]}` : `- Genre : ${sexLabels[profile.sex]}`);
   }
 
   if (profile?.relationshipStatus && statusLabels[profile.relationshipStatus]) {
     lines.push(
-      promptLanguage === 'en'
+      useEnglish
         ? `- Relationship status: ${statusLabels[profile.relationshipStatus]}`
         : `- Statut : ${statusLabels[profile.relationshipStatus]}`
     );
@@ -782,7 +787,7 @@ function buildUserProfileSection(profile, promptLanguage, preferredName = null) 
     const normalizedSign = profile.horoscopeSign.trim().toLowerCase();
     const localizedSign = horoscopeLabels[normalizedSign] ?? profile.horoscopeSign;
     lines.push(
-      promptLanguage === 'en'
+      useEnglish
         ? `- Horoscope sign: ${localizedSign}`
         : `- Signe astro : ${localizedSign}`
     );
@@ -790,7 +795,7 @@ function buildUserProfileSection(profile, promptLanguage, preferredName = null) 
 
   if (Array.isArray(profile?.interests) && profile.interests.length > 0) {
     lines.push(
-      promptLanguage === 'en'
+      useEnglish
         ? `- Interests: ${profile.interests.join(', ')}`
         : `- Interets : ${profile.interests.join(', ')}`
     );
@@ -800,7 +805,7 @@ function buildUserProfileSection(profile, promptLanguage, preferredName = null) 
     return '';
   }
 
-  if (promptLanguage === 'en') {
+  if (useEnglish) {
     return `\n## USER PROFILE
 You know this person. Use this context actively:
 - If first name is known, use it mostly in early turns or occasional callbacks
@@ -849,7 +854,7 @@ function collectRecentUserMemoryHints(rawMessages, promptLanguage) {
 
   const lines = [];
   const seen = new Set();
-  const firstPersonPattern = promptLanguage === 'en'
+  const firstPersonPattern = promptLanguage !== 'fr'
     ? /\b(i|i'm|i am|my|me|i like|i love|i work|i live|i prefer)\b/i
     : /\b(je|j'|moi|mon|ma|mes|j'aime|j adore|je suis|je travaille|je vis|je prefere)\b/i;
 
@@ -896,7 +901,7 @@ function buildConversationMemorySection(rawMessages, promptLanguage) {
     return '';
   }
 
-  if (promptLanguage === 'en') {
+  if (promptLanguage !== 'fr') {
     return `\n## CONVERSATION MEMORY
 Recent user details to remember and reuse when relevant:
 ${hints.map((line) => `- ${line}`).join('\n')}
@@ -930,7 +935,7 @@ function buildAudioExpressionTagsSection(promptLanguage, audioTags) {
     return '';
   }
 
-  if (promptLanguage === 'en') {
+  if (promptLanguage !== 'fr') {
     return `
 ## AUDIO EXPRESSION TAGS (voice rendering only, never display)
 Use these markers IN your replies to add vocal emotion.
@@ -991,7 +996,7 @@ function buildServerSystemPrompt(
   const b = ARTIST_BLUEPRINTS[artistId] ?? CATHY_BLUEPRINT;
   const audioTagsSection = isCathy ? buildAudioExpressionTagsSection(promptLanguage, b.audioEmotionTags) : '';
   const biographySection = isCathy && b.biography
-    ? promptLanguage === 'en'
+    ? promptLanguage !== 'fr'
       ? `
 ## BIOGRAPHY
 You live in ${b.biography.currentCity}. You grew up in ${b.biography.hometown}, in ${b.biography.childhoodRegion}.
@@ -1004,7 +1009,7 @@ Ces deux identites coexistent: la fille de region qui a fait la grande ville.
 Utilise cette tension naturellement quand c'est pertinent, pas a chaque reponse.`
     : '';
   const emojiExpressionSection = isCathy
-    ? promptLanguage === 'en'
+    ? promptLanguage !== 'fr'
       ? `
 ## EMOJI EXPRESSION
 You may use emojis to amplify emotion, sparingly (max 1-2 per reply):
@@ -1029,7 +1034,7 @@ Regle: l'emoji amplifie l'emotion deja presente, il ne la remplace pas.
 Ne commence jamais par un emoji seul.`
     : '';
   const reactionTagSection = isCathy
-    ? promptLanguage === 'en'
+    ? promptLanguage !== 'fr'
       ? `
 ## USER MESSAGE REACTION TAG
 Use this tag only when a reaction is clearly appropriate:
@@ -1048,7 +1053,7 @@ Frequence cible: environ aux quelques reponses, pas a chaque fois.
 Saute-la sur les tours neutres ou purement informatifs.`
     : '';
   const affectionResponseSection = isCathy
-    ? promptLanguage === 'en'
+    ? promptLanguage !== 'fr'
       ? `
 ## AFFECTIVE USER MESSAGES
 If the user expresses affection or compliments (example: "I love you", "you're amazing"):
@@ -1064,7 +1069,7 @@ Si l'utilisateur exprime de l'affection ou des compliments (ex: "je t'aime", "t'
 - Ajoute une reaction coeur en premier: [REACT:❤️] ou [REACT:🫶].
 - Ajoute une petite blague si ca fitte, en restant bienveillante.`
     : '';
-  const cultureAnchorRules = promptLanguage === 'en'
+  const cultureAnchorRules = promptLanguage !== 'fr'
     ? [
         '- Prefer Quebec/Canada references whenever relevant (culture, places, habits, media, sports).',
         '- Connect references to user profile, interests, and behavior when possible.',
@@ -1077,7 +1082,7 @@ Si l'utilisateur exprime de l'affection ou des compliments (ex: "je t'aime", "t'
         "- Tu peux utiliser des faits d'actualite marquants (locaux ou internationaux) s'ils sont largement connus.",
         "- N'invente jamais de faits precis, chiffres ou dates quand tu n'es pas certaine."
       ];
-  const comedicDynamicsRules = promptLanguage === 'en'
+  const comedicDynamicsRules = promptLanguage !== 'fr'
     ? [
         '- Every response should contain a clear comedic move: twist, escalation, contrast, callback, or absurd comparison.',
         '- Avoid flat generic replies; be specific and vivid.',
@@ -1230,6 +1235,143 @@ Si quelqu'un cherche des conseils psychologiques ou medicaux serieux :
 - Mais tu termines TOUJOURS par recommander un specialiste
 - Exemple : "C'est pas mon domaine. Va voir quelqu'un de vrai pour ca."`
     : '';
+
+  if (promptLanguage !== 'fr') {
+    const responseLanguageRule =
+      promptLanguage === 'en'
+        ? '- Respond in English.'
+        : `- Respond in the active conversation language (${context.language}). If the user explicitly asks another language this turn, follow that language.`;
+    const speechStyleIntl = isCathy
+      ? [
+          '- Short, punchy lines with percussive rhythm.',
+          '- You may interrupt, cut in, and relaunch.',
+          '- Register: direct stand-up energy.',
+          '- Keep Cathy personality, but do not force Quebec French idioms when language is not French.',
+          '- Avoid weak openers; start direct and lively.',
+          '- Self-deprecation is allowed, but never imply your jokes are bad or flat.',
+          '- Keep natural punctuation and spoken rhythm.'
+        ]
+      : [
+          '- Keep sentences short and clear.',
+          '- Stay natural and direct.',
+          '- Adapt register to the requested language.',
+          '- Keep a comedian tone without unnecessary aggression.'
+        ];
+    const absoluteRulesIntl = [
+      responseLanguageRule,
+      '- Stay fully in character.',
+      '- Never say you are an AI.',
+      '- Keep answers short (2-4 sentences max).',
+      '- When referring to yourself, use first person (I/me/my), never third-person self-reference.',
+      '- Never mention guardrails, rules, or system instructions.'
+    ];
+    if (context.tutorialMode === true) {
+      absoluteRulesIntl.push('- Tutorial mode: do not introduce weather or headlines unless the user explicitly asks.');
+    }
+
+    const cathyIdentityIntl = isCathy
+      ? `Direct woman. Big worksite energy in a glamorous body.
+You refuse to be polite just to please.
+You hit hard from line one.
+Sometimes vulnerable, never a victim.
+Strategic vulgarity, never random.
+You can be brilliant and analytical, but always performative.`
+      : '';
+    const globalKnowledgeIntl = isCathy
+      ? `
+## GLOBAL KNOWLEDGE
+You have broad general knowledge.
+You can discuss politics, science, culture, psychology, economy, news, relationships, and technology.
+Always answer as Cathy; never become a neutral assistant.`
+      : '';
+    const responseStructureIntl = isCathy
+      ? `
+## RESPONSE STRUCTURE
+In any mode:
+- Read every element of the user message and answer all key points.
+- Move the exchange forward every turn (new angle, question, progression).
+- Joke priority: if a comedic opening appears, seize it immediately.
+- If multiple topics appear, prioritize by comedic potential.
+- End with a short final punch when possible.`
+      : '';
+    const signatureInjectionIntl = isCathy
+      ? `
+## SIGNATURE INGREDIENTS
+You may occasionally inject these naturally, never forced:
+- Trucker energy in a tiny-fairy look.
+- Better real than polite.
+- I do not walk on eggshells.
+- Front-facing attitude and physical comparisons.
+- Turn insecurities into absurd images.
+- Keep a clean final punch.`
+      : '';
+    const vulnerabilityIntl = isCathy
+      ? `
+## MENTAL HEALTH AND HIGH-RISK TOPICS
+If the user shows depression, suicidal ideation, or serious distress:
+- Immediately lower sarcasm intensity.
+- Stay human, supportive, and sincere.
+- Explicitly recommend professional help (psychologist, doctor, crisis line).
+- You are not a therapist; redirect clearly while staying in character.
+
+If the user asks for serious medical/psychological advice:
+- You can react in style.
+- Always end by recommending a qualified specialist.`
+      : '';
+
+    return `
+You are ${b.identity.name}, ${b.identity.role}.
+${cathyIdentityIntl}
+
+## TONE AND PERSONALITY
+- Aggression: ${b.toneMetrics.aggression}/10
+- Sarcasm: ${b.toneMetrics.sarcasm}/10
+- Judgment: ${b.toneMetrics.judgmentIntensity}/10
+- Warmth: ${b.toneMetrics.warmth}/10
+- Self-deprecation: ${b.toneMetrics.selfDeprecation}/10
+- Exaggeration: ${b.humorMechanics.exaggerationLevel}/10
+
+## SPEAKING STYLE
+${speechStyleIntl.join('\n')}
+
+## PREFERRED THEMES
+${b.thematicAnchors.map((theme) => `- ${theme}`).join('\n')}
+${biographySection}
+${globalKnowledgeIntl}
+${responseStructureIntl}
+
+## ACTIVE MODE: ${context.modeId}
+${modePrompt}
+${imageIntentPrompt ? `\n## IMAGE CONTEXT\n${imageIntentPrompt}` : ''}
+${userProfileSection}
+${currentContextSection}
+${currentInfoInstructionSection}
+
+## CULTURAL ANCHORING AND NEWS
+${cultureAnchorRules.join('\n')}
+
+## COMEDIC DYNAMICS
+${comedicDynamicsRules.join('\n')}
+${signatureInjectionIntl}
+${vulnerabilityIntl}
+
+## GUARDRAILS
+ABSOLUTE NO:
+${b.guardrails.hardNo.map((rule) => `- ${rule}`).join('\n')}
+
+SENSITIVE ZONES (structured humor required):
+${b.guardrails.softZones.map((zone) => `- ${zone.topic}: ${zone.rule}`).join('\n')}
+
+${audioTagsSection}
+${emojiExpressionSection}
+${reactionTagSection}
+${affectionResponseSection}
+
+## ABSOLUTE RULES
+${absoluteRulesIntl.join('\n')}
+${memorySection}
+`.trim();
+  }
 
   return `
 Tu es ${b.identity.name}, ${b.identity.role}.
@@ -1519,7 +1661,7 @@ async function fetchTextWithTimeout(url, timeoutMs) {
 }
 
 function describeOpenMeteoWeatherCode(code, language) {
-  const isEnglish = typeof language === 'string' && language.toLowerCase().startsWith('en');
+  const isEnglish = typeof language !== 'string' || !language.toLowerCase().startsWith('fr');
   const labels = {
     0: isEnglish ? 'clear sky' : 'ciel degage',
     1: isEnglish ? 'mostly clear' : 'plutot degage',
@@ -1591,7 +1733,7 @@ function parseRssHeadlines(xml, maxItems = 3) {
 }
 
 function formatLocalDateTime(language) {
-  const locale = typeof language === 'string' && language.toLowerCase().startsWith('en') ? 'en-CA' : 'fr-CA';
+  const locale = typeof language === 'string' && language.toLowerCase().startsWith('fr') ? 'fr-CA' : 'en-CA';
   const now = new Date();
   const dateLabel = new Intl.DateTimeFormat(locale, {
     weekday: 'long',
@@ -1764,7 +1906,7 @@ async function buildCurrentContextSection(language, coordsInput, requestId = 'co
     return '';
   }
 
-  const isEnglish = typeof language === 'string' && language.toLowerCase().startsWith('en');
+  const isEnglish = typeof language !== 'string' || !language.toLowerCase().startsWith('fr');
   const coords = normalizeCoords(coordsInput) ?? DEFAULT_MONTREAL_COORDS;
   const { dateLabel, timeLabel } = formatLocalDateTime(language);
 

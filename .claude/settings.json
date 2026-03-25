@@ -2,7 +2,21 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(find /Users/laurentbernier/Documents/HAHA_app/src -name *vrai* -o -name *invente*)",
+      "Bash(grep -r game-questions /Users/laurentbernier/Documents/HAHA_app/api --include=*.js --include=*.ts)",
+      "Bash(grep -rn \"game-questions\\\\|/game-questions\" /Users/laurentbernier/Documents/HAHA_app/src --include=*.ts --include=*.tsx)",
+      "Bash(grep -n \"isLoading\\\\|isRevealed\\\\|isComplete\" /Users/laurentbernier/Documents/HAHA_app/src/app/games/[artistId]/vrai-ou-invente.tsx)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Bash(grep -n \"create table\\\\|profiles\\\\|messages\\\\|conversations\" /Users/laurentbernier/Documents/HAHA_app/supabase/migrations/*.sql)",
+      "Bash(grep -r 'create table.*profiles' /Users/laurentbernier/Documents/HAHA_app --include=*.sql --include=*.ts)",
+      "Bash(npx tsc:*)",
+      "Bash(gh run:*)",
+      "Bash(npm run:*)",
+      "Bash(grep -E \"\\\\.\\(ts|js\\)$\")"
     ]
   }
 }

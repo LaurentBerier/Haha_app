@@ -36,6 +36,7 @@ import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voice
 import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
 import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../../../utils/accountTypeUtils';
+import { collectArtistMemoryFacts } from '../../../utils/memoryFacts';
 import { stripAudioTags } from '../../../utils/audioTags';
 import { generateId } from '../../../utils/generateId';
 import { resolveModeSelectTailFollowState } from '../../../utils/modeSelectTailFollow';
@@ -716,7 +717,8 @@ async function fetchGreetingFromApi(
   coords: GreetingCoordinates | null,
   availableModes: string[],
   preferredName: string | null,
-  isSessionFirstGreeting: boolean
+  isSessionFirstGreeting: boolean,
+  memoryFacts: string[] = []
 ): Promise<GreetingFetchResult> {
   const token = accessToken.trim();
   if (!token || shouldSkipGreetingApiCall()) {
@@ -732,6 +734,9 @@ async function fetchGreetingFromApi(
     availableModes,
     isSessionFirstGreeting
   };
+  if (memoryFacts.length > 0) {
+    payload.memoryFacts = memoryFacts;
+  }
   if (preferredName) {
     payload.preferredName = preferredName;
   }
@@ -993,6 +998,10 @@ export default function ModeSelectHomeScreen() {
     [activeConversationId, artistId, boundConversationId, conversationsForArtist, isGreetingGateSatisfied]
   );
   const modeSelectConversationId = boundConversationId;
+  const modeSelectConversationLanguage = useMemo(() => {
+    const activeConversation = conversationsForArtist.find((conversation) => conversation.id === modeSelectConversationId);
+    return activeConversation?.language?.trim() ? activeConversation.language : language;
+  }, [conversationsForArtist, language, modeSelectConversationId]);
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? null);
   const artistDisplayName = formatArtistDisplayName(artist?.name ?? null);
   const [pendingGreetingAudio, setPendingGreetingAudio] = useState<PendingGreetingAudio | null>(null);
@@ -1124,7 +1133,9 @@ export default function ModeSelectHomeScreen() {
       );
 
       if (shouldUseVoiceFiller && !audioPlayer.isPlaying && !audioPlayer.isLoading) {
-        void getRandomFillerUri(liveSendContext.conversation.artistId, language, accessToken)
+        const fillerLanguage =
+          liveSendContext.conversation.language?.trim() ? liveSendContext.conversation.language : language;
+        void getRandomFillerUri(liveSendContext.conversation.artistId, fillerLanguage, accessToken)
           .then((uri) => {
             if (!uri) {
               return;
@@ -1155,7 +1166,16 @@ export default function ModeSelectHomeScreen() {
       });
       return sendError;
     },
-    [accessToken, artistId, audioPlayer, conversationModeEnabled, effectiveAccountType, language, modeSelectConversationId, sendMessage]
+    [
+      accessToken,
+      artistId,
+      audioPlayer,
+      conversationModeEnabled,
+      effectiveAccountType,
+      language,
+      modeSelectConversationId,
+      sendMessage
+    ]
   );
   const resolveModeSelectSendTargetConversationId = useCallback((): string | null => {
     if (!artist?.id) {
@@ -1265,7 +1285,8 @@ export default function ModeSelectHomeScreen() {
     onStopAudio: () => {
       void audioPlayer.stop();
     },
-    language
+    language: modeSelectConversationLanguage,
+    fallbackLanguage: language
   });
   const resolvedArtistDisplayName = formatArtistDisplayName(currentArtistName ?? artistDisplayName);
   const audioStateRef = useRef<{
@@ -1547,8 +1568,8 @@ export default function ModeSelectHomeScreen() {
       return;
     }
 
-    prewarmVoiceFillers(artist.id, language, accessToken);
-  }, [accessToken, artist?.id, conversationModeEnabled, effectiveAccountType, language]);
+    prewarmVoiceFillers(artist.id, modeSelectConversationLanguage, accessToken);
+  }, [accessToken, artist?.id, conversationModeEnabled, effectiveAccountType, modeSelectConversationLanguage]);
 
   useEffect(() => {
     if (lastBoundArtistIdRef.current === artistId) {
@@ -1906,6 +1927,7 @@ export default function ModeSelectHomeScreen() {
           return;
         }
 
+        const greetingMemoryFacts = collectArtistMemoryFacts(useStore.getState(), artist.id, introConversation.id);
         const fetchedResult = await fetchGreetingFromApi(
           artist.id,
           language,
@@ -1913,7 +1935,8 @@ export default function ModeSelectHomeScreen() {
           coords,
           availableModes,
           preferredName,
-          isSessionFirstGreeting
+          isSessionFirstGreeting,
+          greetingMemoryFacts
         );
         const fallbackTutorialMode = isSessionFirstGreeting;
         const isTutorialConversationForMetadata = fetchedResult.tutorial?.active ?? fallbackTutorialMode;
