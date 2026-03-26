@@ -18,4 +18,14 @@ describe('root layout route registration', () => {
     expect(layoutSource).not.toContain('<Stack\n                key={language}');
     expect(layoutSource).not.toContain('<Stack key={language}');
   });
+
+  it('uses sessionStorage-backed web resume restore and does not depend on localStorage', () => {
+    const layoutPath = path.resolve(__dirname, '../app/_layout.tsx');
+    const layoutSource = fs.readFileSync(layoutPath, 'utf8');
+
+    expect(layoutSource).toContain('window.sessionStorage');
+    expect(layoutSource).not.toContain('window.localStorage');
+    expect(layoutSource).toContain('WEB_RESUME_ROUTE_RESTORE_FLAG_KEY');
+    expect(layoutSource).toContain('const shouldAttemptResumeRestore');
+  });
 });

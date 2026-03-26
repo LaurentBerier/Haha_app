@@ -32,14 +32,6 @@ export function isRouteEligibleForPersistence(pathname: string): boolean {
     return false;
   }
 
-  if (normalized === '/settings' || normalized.startsWith('/settings/') || normalized === '/stats') {
-    return false;
-  }
-
-  if (normalized.startsWith('/games/')) {
-    return false;
-  }
-
   return true;
 }
 

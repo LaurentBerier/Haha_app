@@ -41,7 +41,6 @@ type AccountMenuRoute = '/settings' | '/settings/subscription' | '/stats' | '/ad
 const WEB_BACKGROUND_MIN_HEIGHT_VH = 100;
 const WEB_BACKGROUND_MAX_HEIGHT_VH = 170;
 const WEB_RESUME_ROUTE_RESTORE_FLAG_KEY = 'ha-ha:web-resume-route-restore:v1';
-const WEB_RESUME_ROUTE_RESTORE_FLAG_MAX_AGE_MS = 10 * 60_000;
 
 function resolveArtistIdFromPath(pathname: string): string | null {
   const match = pathname.match(/^\/(?:mode-select|games|history)\/([^/]+)/);
@@ -319,8 +318,19 @@ export default function RootLayout() {
     latestPathnameRef.current = pathname;
   }, [pathname]);
 
-  const persistWebRouteSnapshot = useCallback((routePathname: string) => {
+  const getWebSessionStorage = useCallback((): Storage | null => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') {
+      return null;
+    }
+    if (typeof window.sessionStorage === 'undefined') {
+      return null;
+    }
+    return window.sessionStorage;
+  }, []);
+
+  const persistWebRouteSnapshot = useCallback((routePathname: string) => {
+    const storage = getWebSessionStorage();
+    if (!storage) {
       return;
     }
 
@@ -330,56 +340,51 @@ export default function RootLayout() {
     }
 
     try {
-      window.localStorage.setItem(LAST_USEFUL_ROUTE_STORAGE_KEY, JSON.stringify(snapshot));
+      storage.setItem(LAST_USEFUL_ROUTE_STORAGE_KEY, JSON.stringify(snapshot));
     } catch {
       // Ignore storage write failures in private browsing or restricted contexts.
     }
-  }, []);
+  }, [getWebSessionStorage]);
 
   const markWebResumeRouteRestorePending = useCallback(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    const storage = getWebSessionStorage();
+    if (!storage) {
       return;
     }
 
     pendingWebResumeRouteRestoreRef.current = true;
     try {
-      window.localStorage.setItem(WEB_RESUME_ROUTE_RESTORE_FLAG_KEY, String(Date.now()));
+      storage.setItem(WEB_RESUME_ROUTE_RESTORE_FLAG_KEY, '1');
     } catch {
       // Ignore storage write failures in private browsing or restricted contexts.
     }
-  }, []);
+  }, [getWebSessionStorage]);
 
   const hasPersistedPendingWebResumeRestore = useCallback((): boolean => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    const storage = getWebSessionStorage();
+    if (!storage) {
       return false;
     }
 
     try {
-      const raw = window.localStorage.getItem(WEB_RESUME_ROUTE_RESTORE_FLAG_KEY);
-      if (!raw) {
-        return false;
-      }
-      const ts = Number.parseInt(raw, 10);
-      if (!Number.isFinite(ts) || ts <= 0) {
-        return false;
-      }
-      return Date.now() - ts <= WEB_RESUME_ROUTE_RESTORE_FLAG_MAX_AGE_MS;
+      return storage.getItem(WEB_RESUME_ROUTE_RESTORE_FLAG_KEY) === '1';
     } catch {
       return false;
     }
-  }, []);
+  }, [getWebSessionStorage]);
 
   const clearPersistedPendingWebResumeRestore = useCallback(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    const storage = getWebSessionStorage();
+    if (!storage) {
       return;
     }
 
     try {
-      window.localStorage.removeItem(WEB_RESUME_ROUTE_RESTORE_FLAG_KEY);
+      storage.removeItem(WEB_RESUME_ROUTE_RESTORE_FLAG_KEY);
     } catch {
       // Ignore storage access failures in private browsing or restricted contexts.
     }
-  }, []);
+  }, [getWebSessionStorage]);
 
   useEffect(() => {
     persistWebRouteSnapshot(pathname);
@@ -426,7 +431,8 @@ export default function RootLayout() {
   }, [markWebResumeRouteRestorePending, persistWebRouteSnapshot]);
 
   useEffect(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+    const storage = getWebSessionStorage();
+    if (!storage) {
       return;
     }
     const shouldAttemptResumeRestore =
@@ -446,7 +452,7 @@ export default function RootLayout() {
 
     let rawSnapshot: string | null = null;
     try {
-      rawSnapshot = window.localStorage.getItem(LAST_USEFUL_ROUTE_STORAGE_KEY);
+      rawSnapshot = storage.getItem(LAST_USEFUL_ROUTE_STORAGE_KEY);
     } catch {
       rawSnapshot = null;
     }
@@ -470,8 +476,21 @@ export default function RootLayout() {
     isAuthCallbackRoute,
     isAuthenticated,
     isHomeArtistPickerRoute,
+    getWebSessionStorage,
     pathname
   ]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      return;
+    }
+    if (pathname === '/') {
+      return;
+    }
+
+    pendingWebResumeRouteRestoreRef.current = false;
+    clearPersistedPendingWebResumeRestore();
+  }, [clearPersistedPendingWebResumeRestore, pathname]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || !webBackgroundUri || typeof document === 'undefined') {

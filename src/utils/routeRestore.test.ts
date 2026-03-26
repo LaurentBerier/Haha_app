@@ -6,10 +6,13 @@ import {
 } from './routeRestore';
 
 describe('routeRestore', () => {
-  it('persists only useful non-home routes', () => {
+  it('persists all app routes except home/auth', () => {
     expect(isRouteEligibleForPersistence('/')).toBe(false);
     expect(isRouteEligibleForPersistence('/(auth)/login')).toBe(false);
     expect(isRouteEligibleForPersistence('/auth/callback')).toBe(false);
+    expect(isRouteEligibleForPersistence('/settings')).toBe(true);
+    expect(isRouteEligibleForPersistence('/games/cathy-gauthier')).toBe(true);
+    expect(isRouteEligibleForPersistence('/mode-select/cathy-gauthier/experiences')).toBe(true);
     expect(isRouteEligibleForPersistence('/chat/conv-1')).toBe(true);
   });
 
@@ -34,6 +37,22 @@ describe('routeRestore', () => {
     });
 
     expect(restored).toBe('/mode-select/cathy-gauthier');
+  });
+
+  it('does not restore when current pathname is not home', () => {
+    const rawSnapshot = JSON.stringify({
+      route: '/mode-select/cathy-gauthier/experiences',
+      ts: 10_000
+    });
+
+    const restored = resolveRouteToRestoreFromSnapshot({
+      currentPathname: '/mode-select/cathy-gauthier/experiences',
+      rawSnapshot,
+      nowMs: 10_200,
+      maxAgeMs: 1_000
+    });
+
+    expect(restored).toBeNull();
   });
 
   it('does not restore when snapshot is stale or auth route', () => {
