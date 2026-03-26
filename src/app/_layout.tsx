@@ -40,6 +40,8 @@ import neonTitleMark from '../../assets/branding/logo-neon-Trans.png';
 type AccountMenuRoute = '/settings' | '/settings/subscription' | '/stats' | '/admin' | `/history/${string}`;
 const WEB_BACKGROUND_MIN_HEIGHT_VH = 100;
 const WEB_BACKGROUND_MAX_HEIGHT_VH = 170;
+const WEB_RESUME_ROUTE_RESTORE_FLAG_KEY = 'ha-ha:web-resume-route-restore:v1';
+const WEB_RESUME_ROUTE_RESTORE_FLAG_MAX_AGE_MS = 10 * 60_000;
 
 function resolveArtistIdFromPath(pathname: string): string | null {
   const match = pathname.match(/^\/(?:mode-select|games|history)\/([^/]+)/);
@@ -78,7 +80,6 @@ export default function RootLayout() {
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [hasTypedGlobalDraft, setHasTypedGlobalDraft] = useState(false);
-  const hasAttemptedWebRouteRestoreRef = useRef(false);
   const pendingWebResumeRouteRestoreRef = useRef(false);
   const latestPathnameRef = useRef(pathname);
   const inAuthGroup = segmentList[0] === '(auth)';
@@ -335,6 +336,51 @@ export default function RootLayout() {
     }
   }, []);
 
+  const markWebResumeRouteRestorePending = useCallback(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+      return;
+    }
+
+    pendingWebResumeRouteRestoreRef.current = true;
+    try {
+      window.localStorage.setItem(WEB_RESUME_ROUTE_RESTORE_FLAG_KEY, String(Date.now()));
+    } catch {
+      // Ignore storage write failures in private browsing or restricted contexts.
+    }
+  }, []);
+
+  const hasPersistedPendingWebResumeRestore = useCallback((): boolean => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+      return false;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(WEB_RESUME_ROUTE_RESTORE_FLAG_KEY);
+      if (!raw) {
+        return false;
+      }
+      const ts = Number.parseInt(raw, 10);
+      if (!Number.isFinite(ts) || ts <= 0) {
+        return false;
+      }
+      return Date.now() - ts <= WEB_RESUME_ROUTE_RESTORE_FLAG_MAX_AGE_MS;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const clearPersistedPendingWebResumeRestore = useCallback(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.removeItem(WEB_RESUME_ROUTE_RESTORE_FLAG_KEY);
+    } catch {
+      // Ignore storage access failures in private browsing or restricted contexts.
+    }
+  }, []);
+
   useEffect(() => {
     persistWebRouteSnapshot(pathname);
   }, [pathname, persistWebRouteSnapshot]);
@@ -346,7 +392,7 @@ export default function RootLayout() {
 
     const markPendingResumeRestore = () => {
       if (isRouteEligibleForPersistence(latestPathnameRef.current)) {
-        pendingWebResumeRouteRestoreRef.current = true;
+        markWebResumeRouteRestorePending();
       }
     };
 
@@ -377,15 +423,15 @@ export default function RootLayout() {
       window.removeEventListener('pagehide', handlePageHide);
       window.removeEventListener('blur', handleWindowBlur);
     };
-  }, [persistWebRouteSnapshot]);
+  }, [markWebResumeRouteRestorePending, persistWebRouteSnapshot]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
       return;
     }
-    const shouldAttemptInitialRestore = !hasAttemptedWebRouteRestoreRef.current;
-    const shouldAttemptResumeRestore = pendingWebResumeRouteRestoreRef.current;
-    if (!shouldAttemptInitialRestore && !shouldAttemptResumeRestore) {
+    const shouldAttemptResumeRestore =
+      pendingWebResumeRouteRestoreRef.current || hasPersistedPendingWebResumeRestore();
+    if (!shouldAttemptResumeRestore) {
       return;
     }
     if (!hasHydrated || authStatus === 'loading' || !isAuthenticated) {
@@ -395,8 +441,8 @@ export default function RootLayout() {
       return;
     }
 
-    hasAttemptedWebRouteRestoreRef.current = true;
     pendingWebResumeRouteRestoreRef.current = false;
+    clearPersistedPendingWebResumeRestore();
 
     let rawSnapshot: string | null = null;
     try {
@@ -415,7 +461,17 @@ export default function RootLayout() {
     }
 
     router.replace(restoredRoute as never);
-  }, [authStatus, hasHydrated, inAuthGroup, isAuthCallbackRoute, isAuthenticated, isHomeArtistPickerRoute, pathname]);
+  }, [
+    authStatus,
+    clearPersistedPendingWebResumeRestore,
+    hasHydrated,
+    hasPersistedPendingWebResumeRestore,
+    inAuthGroup,
+    isAuthCallbackRoute,
+    isAuthenticated,
+    isHomeArtistPickerRoute,
+    pathname
+  ]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || !webBackgroundUri || typeof document === 'undefined') {
