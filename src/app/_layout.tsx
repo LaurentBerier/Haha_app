@@ -440,7 +440,7 @@ export default function RootLayout() {
     if (!shouldAttemptResumeRestore) {
       return;
     }
-    if (!hasHydrated || authStatus === 'loading' || !isAuthenticated) {
+    if (!hasHydrated || authStatus === 'loading') {
       return;
     }
     if (!isHomeArtistPickerRoute || inAuthGroup || isAuthCallbackRoute) {
@@ -474,7 +474,6 @@ export default function RootLayout() {
     hasPersistedPendingWebResumeRestore,
     inAuthGroup,
     isAuthCallbackRoute,
-    isAuthenticated,
     isHomeArtistPickerRoute,
     getWebSessionStorage,
     pathname
