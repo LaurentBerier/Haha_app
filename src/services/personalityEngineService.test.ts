@@ -12,6 +12,23 @@ describe('personalityEngineService', () => {
     expect(prompt).toContain('[laughs]');
   });
 
+  it('builds On Jase prompt as "Dis-moi la verite" without roast framing', () => {
+    const prompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'on-jase', null, 'fr-CA');
+
+    expect(prompt).toContain('## MODE ACTIF : on-jase');
+    expect(prompt).toContain('Ce mode s\'appelle "Dis-moi la verite"');
+    expect(prompt).toContain('Pas en mode roast');
+    expect(prompt).not.toContain("L'utilisateur veut se faire roaster");
+  });
+
+  it('builds screenshot analyzer prompt for screenshot and pasted text input', () => {
+    const prompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'screenshot-analyzer', null, 'fr-CA');
+
+    expect(prompt).toContain('Mode "Jugement de Texto"');
+    expect(prompt).toContain("capture d'ecran OU coller un echange texte");
+    expect(prompt).toContain('UNE replique prete a envoyer');
+  });
+
   it('builds fallback prompt for unknown artist profiles without Cathy mode coupling', () => {
     const prompt = buildSystemPromptForArtist(ARTIST_IDS.MYSTERY_ARTIST_ONE, 'roast', null, 'fr-CA');
 

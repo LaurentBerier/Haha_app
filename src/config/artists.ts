@@ -14,15 +14,13 @@ export const artists: Artist[] = [
       'on-jase',
       'grill',
       'coach-de-vie',
-      'phrase-du-jour',
       'message-personnalise',
       'numero-de-show',
       'horoscope',
       'meteo',
       'meme-generator',
       'screenshot-analyzer',
-      'roast-battle',
-      'victime-du-jour'
+      'roast-battle'
     ],
     isPremium: false,
     voiceEnabled: false,

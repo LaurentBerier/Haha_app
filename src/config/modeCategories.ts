@@ -27,8 +27,6 @@ export const CATEGORY_MODE_IDS: Record<Exclude<ModeCategoryId, 'profile'>, strin
   experiences: [
     MODE_IDS.MEME_GENERATOR,
     MODE_IDS.SCREENSHOT_ANALYZER,
-    MODE_IDS.VICTIME_DU_JOUR,
-    MODE_IDS.PHRASE_DU_JOUR,
     MODE_IDS.NUMERO_DE_SHOW
   ],
   battles: []

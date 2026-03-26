@@ -17,15 +17,13 @@ const MODE_EMOJI_BY_ID: Record<string, string> = {
   [MODE_IDS.COACH_BRUTAL]: '💪',
   [MODE_IDS.JE_CASSE_TOUT]: '💀',
   [MODE_IDS.COACH_DE_VIE]: '🧭',
-  [MODE_IDS.PHRASE_DU_JOUR]: '💬',
   [MODE_IDS.MESSAGE_PERSONNALISE]: '🎁',
   [MODE_IDS.NUMERO_DE_SHOW]: '🎤',
   [MODE_IDS.HOROSCOPE]: '🔮',
   [MODE_IDS.METEO]: '⛅',
   [MODE_IDS.MEME_GENERATOR]: '😂',
   [MODE_IDS.SCREENSHOT_ANALYZER]: '🔍',
-  [MODE_IDS.ROAST_BATTLE]: '⚔️',
-  [MODE_IDS.VICTIME_DU_JOUR]: '📅'
+  [MODE_IDS.ROAST_BATTLE]: '⚔️'
 };
 
 const MODE_EMOJI_FALLBACK_POOL = ['🎭', '🎯', '⚡', '🧨', '🗣️', '🧠', '🎬', '🤹', '🧩', '🎪'];

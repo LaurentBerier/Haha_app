@@ -34,16 +34,8 @@ function resolveScoreActions(
     actions.add('roast_generated');
   }
 
-  if (
-    modeId === MODE_IDS.PHRASE_DU_JOUR ||
-    canonicalModeId === MODE_IDS.ON_JASE ||
-    modeId === MODE_IDS.VICTIME_DU_JOUR
-  ) {
+  if (canonicalModeId === MODE_IDS.ON_JASE) {
     actions.add('punchline_created');
-  }
-
-  if (modeId === MODE_IDS.VICTIME_DU_JOUR) {
-    actions.add('daily_participation');
   }
 
   if (imageIntent === 'photo-roast') {

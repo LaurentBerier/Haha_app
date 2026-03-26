@@ -135,7 +135,7 @@ function getImageIntentPromptPrefix(intent: ImageIntent): string {
     case 'meme-generator':
       return 'INTENT IMAGE: Genere des captions courtes et partageables pour un meme.';
     case 'screenshot-analyzer':
-      return 'INTENT IMAGE: Decode le screenshot, puis donne une lecture + une replique utile.';
+      return 'INTENT IMAGE: Lis le screenshot comme un texto (interet + style), puis donne un verdict et UNE replique utile.';
     default:
       return '';
   }

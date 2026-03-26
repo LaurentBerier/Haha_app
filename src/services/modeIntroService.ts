@@ -1,7 +1,6 @@
 import { MODE_IDS } from '../config/constants';
 import { resolveModeIdCompat } from '../config/modeCompat';
 import type { UserProfile } from '../models/UserProfile';
-import { getDailyTopic } from './dailyTopicService';
 
 function getPreferredName(profile: UserProfile | null | undefined): string | null {
   if (!profile?.preferredName || typeof profile.preferredName !== 'string') {
@@ -19,7 +18,7 @@ export function generateModeIntro(modeId: string, userProfile?: UserProfile | nu
 
   switch (canonicalModeId) {
     case MODE_IDS.ON_JASE:
-      return `${namePrefix}on jase libre. Balance-moi ce que t'as sur le coeur et je m'ajuste au vibe.`;
+      return `${namePrefix}mode Dis-moi la vérité activé. Tu veux du vrai, je te donne du vrai, sans flafla ni excuse.`;
     case MODE_IDS.GRILL:
       return `${namePrefix}mode grill activé. Tu m'as demandé le feu, je vais pas te flatter.`;
     case MODE_IDS.ROAST_BATTLE:
@@ -27,13 +26,7 @@ export function generateModeIntro(modeId: string, userProfile?: UserProfile | nu
     case MODE_IDS.MEME_GENERATOR:
       return `${namePrefix}envoie une image et je te propose des captions qui font rire en une seconde.`;
     case MODE_IDS.SCREENSHOT_ANALYZER:
-      return `${namePrefix}envoie ton screenshot. Je décode le sous-texte et je te donne la meilleure réponse.`;
-    case MODE_IDS.VICTIME_DU_JOUR: {
-      const topic = getDailyTopic();
-      return `${namePrefix}victime du jour: ${topic}. Sers-moi ta meilleure punchline et on la muscle ensemble.`;
-    }
-    case MODE_IDS.PHRASE_DU_JOUR:
-      return `${namePrefix}prêt pour ta phrase du jour? Dis-moi le mood, je te livre une ligne qui marque.`;
+      return `${namePrefix}envoie ton screenshot ou colle le texto. Je juge l'histoire, puis je te donne une réplique utile.`;
     case MODE_IDS.COACH_DE_VIE:
       return `${namePrefix}tu veux du vrai, pas du vernis? Dis-moi la situation et on la règle cash.`;
     default:

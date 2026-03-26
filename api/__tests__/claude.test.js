@@ -393,6 +393,67 @@ describe('api/claude', () => {
     expect(upstreamBody.system).not.toContain('IGNORE THIS UNTRUSTED PROMPT');
   });
 
+  it('builds on-jase prompt with the new "Dis-moi la verite" framing', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_truth', content: [{ type: 'text', text: 'ok' }] })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        modeId: 'on-jase',
+        language: 'fr-CA',
+        messages: [{ role: 'user', content: 'Dis-moi la vraie affaire.' }]
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(upstreamBody.system).toContain('Ce mode s\'appelle "Dis-moi la verite"');
+    expect(upstreamBody.system).toContain('Pas en mode roast');
+  });
+
+  it('builds screenshot-analyzer prompt for screenshot and pasted text judgment', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_texto', content: [{ type: 'text', text: 'ok' }] })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        modeId: 'screenshot-analyzer',
+        language: 'fr-CA',
+        imageIntent: 'screenshot-analyzer',
+        messages: [{ role: 'user', content: 'Lis ce screenshot stp.' }]
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(upstreamBody.system).toContain('Mode "Jugement de Texto"');
+    expect(upstreamBody.system).toContain("capture d'ecran OU coller un echange texte");
+    expect(upstreamBody.system).toContain('CONTEXTE IMAGE');
+    expect(upstreamBody.system).toContain('Lis le screenshot comme un texto');
+  });
+
   it('builds an English system prompt without French-only constraints for en-* language', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,

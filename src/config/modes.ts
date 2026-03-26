@@ -4,8 +4,8 @@ import type { Mode } from '../models/Mode';
 export const modes: Mode[] = [
   {
     "id": "on-jase",
-    "name": "On jase!",
-    "description": "Mode libre: tu parles, Cathy embarque et ajuste le ton selon ce que tu racontes.",
+    "name": "Dis-moi la vérité",
+    "description": "Cathy te dit la vraie affaire: lucide, frontale, sans filtre inutile. Entre coach et claque dans face.",
     "emoji": "🎤",
     "kind": "delire"
   },
@@ -19,14 +19,14 @@ export const modes: Mode[] = [
   {
     "id": "radar-attitude",
     "name": "Radar d’Attitude",
-    "description": "Mode désormais intégré à On jase! pour une conversation libre.",
+    "description": "Mode désormais intégré à Dis-moi la vérité pour une conversation libre.",
     "emoji": "🔥",
     "kind": "chat"
   },
   {
     "id": "relax",
     "name": "Relax",
-    "description": "Mode désormais intégré à On jase! pour une conversation libre.",
+    "description": "Mode désormais intégré à Dis-moi la vérité pour une conversation libre.",
     "emoji": "😌",
     "kind": "delire"
   },
@@ -46,7 +46,7 @@ export const modes: Mode[] = [
   {
     "id": "je-casse-tout",
     "name": "Je casse tout",
-    "description": "Mode désormais intégré à On jase! pour une conversation libre.",
+    "description": "Mode désormais intégré à Dis-moi la vérité pour une conversation libre.",
     "emoji": "💀",
     "kind": "delire"
   },
@@ -54,12 +54,6 @@ export const modes: Mode[] = [
     "id": "coach-de-vie",
     "name": "Coach de vie",
     "description": "Ton amie la plus franche: conseils concrets, vérité qui pique un peu, et zéro bullshit motivant.",
-    "kind": "chat"
-  },
-  {
-    "id": "phrase-du-jour",
-    "name": "Phrase du jour",
-    "description": "Une phrase punchée à envoyer, afficher ou méditer pendant 12 secondes avant de replonger.",
     "kind": "chat"
   },
   {
@@ -95,8 +89,8 @@ export const modes: Mode[] = [
   },
   {
     "id": "screenshot-analyzer",
-    "name": "Analyste de Screenshots",
-    "description": "Capture d'écran à l'appui, Cathy lit entre les lignes et décortique le drama sans anesthésie.",
+    "name": "Jugement de Texto",
+    "description": "Capture ou texte collé: Cathy juge le sous-texte, ton style d’écriture et te donne la réplique à envoyer.",
     "emoji": "🔍",
     "kind": "image"
   },
@@ -106,13 +100,6 @@ export const modes: Mode[] = [
     "description": "Tu lances un roast, Cathy répond et arbitre: léger, solide ou destruction totale.",
     "emoji": "⚔️",
     "kind": "battle"
-  },
-  {
-    "id": "victime-du-jour",
-    "name": "Victime du Jour",
-    "description": "Chaque jour, une cible. Tu balances ta punchline, Cathy juge la frappe.",
-    "emoji": "📅",
-    "kind": "daily"
   }
 ];
 
