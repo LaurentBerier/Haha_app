@@ -30,9 +30,9 @@ import { theme } from '../theme';
 import { E2E_AUTH_BYPASS } from '../config/env';
 import {
   createPersistedRouteSnapshot,
+  isRouteEligibleForPersistence,
   LAST_USEFUL_ROUTE_STORAGE_KEY,
-  resolveRouteToRestoreFromSnapshot,
-  wasWebReloadNavigation
+  resolveRouteToRestoreFromSnapshot
 } from '../utils/routeRestore';
 import cleanBackground from '../../assets/branding/Clean_BG.jpg';
 import neonTitleMark from '../../assets/branding/logo-neon-Trans.png';
@@ -79,6 +79,8 @@ export default function RootLayout() {
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [hasTypedGlobalDraft, setHasTypedGlobalDraft] = useState(false);
   const hasAttemptedWebRouteRestoreRef = useRef(false);
+  const pendingWebResumeRouteRestoreRef = useRef(false);
+  const latestPathnameRef = useRef(pathname);
   const inAuthGroup = segmentList[0] === '(auth)';
   const isAuthCallbackRoute = segmentList[0] === 'auth' && segmentList[1] === 'callback';
   const isOnboardingRoute = segmentList[1] === 'onboarding';
@@ -313,11 +315,15 @@ export default function RootLayout() {
   }, [showGlobalChatInput]);
 
   useEffect(() => {
+    latestPathnameRef.current = pathname;
+  }, [pathname]);
+
+  const persistWebRouteSnapshot = useCallback((routePathname: string) => {
     if (Platform.OS !== 'web' || typeof window === 'undefined') {
       return;
     }
 
-    const snapshot = createPersistedRouteSnapshot(pathname, Date.now());
+    const snapshot = createPersistedRouteSnapshot(routePathname, Date.now());
     if (!snapshot) {
       return;
     }
@@ -327,13 +333,59 @@ export default function RootLayout() {
     } catch {
       // Ignore storage write failures in private browsing or restricted contexts.
     }
-  }, [pathname]);
+  }, []);
+
+  useEffect(() => {
+    persistWebRouteSnapshot(pathname);
+  }, [pathname, persistWebRouteSnapshot]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') {
+      return;
+    }
+
+    const markPendingResumeRestore = () => {
+      if (isRouteEligibleForPersistence(latestPathnameRef.current)) {
+        pendingWebResumeRouteRestoreRef.current = true;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden') {
+        return;
+      }
+      persistWebRouteSnapshot(latestPathnameRef.current);
+      markPendingResumeRestore();
+    };
+
+    const handlePageHide = () => {
+      persistWebRouteSnapshot(latestPathnameRef.current);
+      markPendingResumeRestore();
+    };
+
+    const handleWindowBlur = () => {
+      persistWebRouteSnapshot(latestPathnameRef.current);
+      markPendingResumeRestore();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('blur', handleWindowBlur);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('blur', handleWindowBlur);
+    };
+  }, [persistWebRouteSnapshot]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
       return;
     }
-    if (hasAttemptedWebRouteRestoreRef.current) {
+    const shouldAttemptInitialRestore = !hasAttemptedWebRouteRestoreRef.current;
+    const shouldAttemptResumeRestore = pendingWebResumeRouteRestoreRef.current;
+    if (!shouldAttemptInitialRestore && !shouldAttemptResumeRestore) {
       return;
     }
     if (!hasHydrated || authStatus === 'loading' || !isAuthenticated) {
@@ -344,9 +396,7 @@ export default function RootLayout() {
     }
 
     hasAttemptedWebRouteRestoreRef.current = true;
-    if (!wasWebReloadNavigation(window.performance)) {
-      return;
-    }
+    pendingWebResumeRouteRestoreRef.current = false;
 
     let rawSnapshot: string | null = null;
     try {

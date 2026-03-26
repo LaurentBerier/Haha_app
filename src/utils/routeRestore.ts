@@ -1,5 +1,5 @@
 export const LAST_USEFUL_ROUTE_STORAGE_KEY = 'ha-ha:last-useful-route:v1';
-export const DEFAULT_ROUTE_RESTORE_MAX_AGE_MS = 5 * 60_000;
+export const DEFAULT_ROUTE_RESTORE_MAX_AGE_MS = 24 * 60 * 60_000;
 
 interface PersistedRouteSnapshot {
   route: string;

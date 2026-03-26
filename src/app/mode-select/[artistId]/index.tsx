@@ -1022,6 +1022,7 @@ export default function ModeSelectHomeScreen() {
   const greetingPlaybackCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingGestureRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingSpeechHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const navigationBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendContextRecoveryLockRef = useRef(false);
   const sendContextRecoveryResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLoggedEmptyArtistMessageIdRef = useRef<string | null>(null);
@@ -1485,6 +1486,13 @@ export default function ModeSelectHomeScreen() {
     setIsWebSpeechFallbackActive(false);
   }, []);
 
+  const clearNavigationBlurTimeout = useCallback(() => {
+    if (navigationBlurTimeoutRef.current) {
+      clearTimeout(navigationBlurTimeoutRef.current);
+      navigationBlurTimeoutRef.current = null;
+    }
+  }, []);
+
   const clearSendContextRecoveryLock = useCallback(() => {
     if (sendContextRecoveryResetTimeoutRef.current) {
       clearTimeout(sendContextRecoveryResetTimeoutRef.current);
@@ -1493,7 +1501,7 @@ export default function ModeSelectHomeScreen() {
     sendContextRecoveryLockRef.current = false;
   }, []);
 
-  const stopModeSelectVoiceAndMic = useCallback(() => {
+  const stopModeSelectGreetingPlayback = useCallback(() => {
     clearGreetingPlaybackCheck();
     clearGreetingGestureRetry();
     clearGreetingSpeechHint();
@@ -1510,18 +1518,15 @@ export default function ModeSelectHomeScreen() {
       };
       speechScope.speechSynthesis?.cancel?.();
     }
+  }, [clearGreetingGestureRetry, clearGreetingPlaybackCheck, clearGreetingSpeechHint, stopGreetingAudio]);
+
+  const stopModeSelectVoiceAndMic = useCallback(() => {
+    stopModeSelectGreetingPlayback();
     pauseListening();
     if (useStore.getState().conversationModeEnabled) {
       setConversationModeEnabled(false);
     }
-  }, [
-    clearGreetingGestureRetry,
-    clearGreetingPlaybackCheck,
-    clearGreetingSpeechHint,
-    pauseListening,
-    setConversationModeEnabled,
-    stopGreetingAudio
-  ]);
+  }, [pauseListening, setConversationModeEnabled, stopModeSelectGreetingPlayback]);
 
   const pulseGreetingSpeechHint = useCallback((durationMs: number) => {
     clearGreetingSpeechHint();
@@ -1839,11 +1844,35 @@ export default function ModeSelectHomeScreen() {
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('blur', () => {
-      stopModeSelectVoiceAndMic();
+      if (Platform.OS !== 'web') {
+        stopModeSelectVoiceAndMic();
+        return;
+      }
+
+      clearNavigationBlurTimeout();
+      navigationBlurTimeoutRef.current = setTimeout(() => {
+        navigationBlurTimeoutRef.current = null;
+        if (typeof document === 'undefined') {
+          stopModeSelectVoiceAndMic();
+          return;
+        }
+
+        const isHidden = document.visibilityState === 'hidden';
+        const hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+        if (isHidden || !hasFocus) {
+          stopModeSelectGreetingPlayback();
+          return;
+        }
+
+        stopModeSelectVoiceAndMic();
+      }, 0);
     });
 
-    return unsubscribe;
-  }, [navigation, stopModeSelectVoiceAndMic]);
+    return () => {
+      unsubscribe();
+      clearNavigationBlurTimeout();
+    };
+  }, [clearNavigationBlurTimeout, navigation, stopModeSelectGreetingPlayback, stopModeSelectVoiceAndMic]);
 
   useEffect(() => {
     Animated.timing(modeGridCompactProgress, {
