@@ -60,6 +60,8 @@ GROUP BY 1, 2, 3;
 -- 6. View: admin_user_list
 --    Profile-level user summary for the admin user list
 -- --------------------------------------------------------
+DROP VIEW IF EXISTS public.admin_user_list;
+
 CREATE OR REPLACE VIEW admin_user_list AS
 SELECT
   p.id,
