@@ -1,6 +1,7 @@
 /* eslint-disable-next-line @typescript-eslint/no-require-imports */
 const { create } = require('zustand') as typeof import('zustand');
 import { MODE_IDS } from '../config/constants';
+import { resolveModeIdCompat } from '../config/modeCompat';
 import { setLanguage as setI18nLanguage } from '../i18n';
 import { EMPTY_GAMIFICATION_STATS } from '../models/Gamification';
 import type { Conversation } from '../models/Conversation';
@@ -42,7 +43,7 @@ function normalizeConversations(input: Record<string, Conversation[]>): Record<s
   Object.entries(input).forEach(([artistId, conversations]) => {
     normalized[artistId] = (conversations ?? []).map((conversation) => ({
       ...conversation,
-      modeId: conversation.modeId ?? MODE_IDS.ON_JASE
+      modeId: resolveModeIdCompat(conversation.modeId ?? MODE_IDS.ON_JASE)
     }));
   });
 
