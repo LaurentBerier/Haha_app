@@ -4,6 +4,7 @@ import { getStoredSession, getUsageSummary, onAuthStateChange } from '../service
 import { getUserStats } from '../services/scoreManager';
 import { useStore } from '../store/useStore';
 import { resolveEffectiveAccountType } from '../utils/accountTypeUtils';
+import { areAuthSessionsEquivalent } from '../utils/authSession';
 import { EMPTY_GAMIFICATION_STATS } from '../models/Gamification';
 
 interface UseAuthOptions {
@@ -131,9 +132,14 @@ export function useAuth(options: UseAuthOptions = {}) {
         return;
       }
 
+      const currentSession = useStore.getState().session;
+      if (areAuthSessionsEquivalent(currentSession, nextSession)) {
+        return;
+      }
+
       const syncSession = async () => {
         const runId = nextRunId();
-        const currentSessionUserId = useStore.getState().session?.user.id ?? null;
+        const currentSessionUserId = currentSession?.user.id ?? null;
         await setSession(nextSession);
         if (!isRunCurrent(runId)) {
           return;

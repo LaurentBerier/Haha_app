@@ -3,6 +3,7 @@ import type { AuthSession, AuthUser } from '../../models/AuthUser';
 import type { AccountTypeId } from '../../config/accountTypes';
 import { fetchAccountType, fetchProfile } from '../../services/profileService';
 import { isAdminRole, resolveEffectiveAccountType } from '../../utils/accountTypeUtils';
+import { isSameSessionUser } from '../../utils/authSession';
 import type { StoreState } from '../useStore';
 
 export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
@@ -24,6 +25,14 @@ function toKnownAccountType(value: string | null, fallback: AccountTypeId | null
   return resolveEffectiveAccountType(value ?? fallback, role);
 }
 
+function shouldKeepAuthenticatedDuringSessionRefresh(
+  currentSession: AuthSession,
+  currentAuthStatus: AuthStatus,
+  nextSession: AuthSession
+): boolean {
+  return currentAuthStatus === 'authenticated' && isSameSessionUser(currentSession, nextSession);
+}
+
 export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set, get) => ({
   session: null,
   authStatus: 'loading',
@@ -37,9 +46,13 @@ export const createAuthSlice: StateCreator<StoreState, [], [], AuthSlice> = (set
       return;
     }
 
+    const currentSession = get().session;
+    const currentAuthStatus = get().authStatus;
+    const keepAuthenticated = shouldKeepAuthenticatedDuringSessionRefresh(currentSession, currentAuthStatus, session);
+
     set({
       session,
-      authStatus: 'loading'
+      authStatus: keepAuthenticated ? 'authenticated' : 'loading'
     });
 
     try {
