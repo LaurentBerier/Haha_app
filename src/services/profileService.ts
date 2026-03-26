@@ -8,8 +8,47 @@ interface ProfileRow {
   relationship_status: UserProfile['relationshipStatus'];
   horoscope_sign: UserProfile['horoscopeSign'];
   interests: string[] | null;
+  memory_facts: string[] | null;
   onboarding_completed: boolean | null;
   onboarding_skipped: boolean | null;
+}
+
+const MAX_PERSISTED_MEMORY_FACTS = 30;
+
+function normalizeMemoryFact(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function normalizeMemoryFacts(facts: string[] | null | undefined): string[] {
+  if (!Array.isArray(facts)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const normalizedFacts: string[] = [];
+  for (const candidate of facts) {
+    if (typeof candidate !== 'string') {
+      continue;
+    }
+
+    const normalized = normalizeMemoryFact(candidate);
+    if (!normalized) {
+      continue;
+    }
+
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalizedFacts.push(normalized);
+
+    if (normalizedFacts.length >= MAX_PERSISTED_MEMORY_FACTS) {
+      break;
+    }
+  }
+
+  return normalizedFacts;
 }
 
 function toUserProfile(row: ProfileRow): UserProfile {
@@ -21,6 +60,7 @@ function toUserProfile(row: ProfileRow): UserProfile {
     relationshipStatus: row.relationship_status,
     horoscopeSign: row.horoscope_sign,
     interests: Array.isArray(row.interests) ? row.interests : [],
+    memoryFacts: normalizeMemoryFacts(row.memory_facts),
     onboardingCompleted: row.onboarding_completed ?? false,
     onboardingSkipped: row.onboarding_skipped ?? false
   };
@@ -33,6 +73,7 @@ function toProfilePatch(partial: Partial<UserProfile>): Partial<ProfileRow> {
     relationship_status: partial.relationshipStatus,
     horoscope_sign: partial.horoscopeSign,
     interests: partial.interests,
+    memory_facts: partial.memoryFacts,
     onboarding_completed: partial.onboardingCompleted,
     onboarding_skipped: partial.onboardingSkipped
   };
@@ -50,6 +91,7 @@ function profileSelectColumns(): string {
     'relationship_status',
     'horoscope_sign',
     'interests',
+    'memory_facts',
     'onboarding_completed',
     'onboarding_skipped'
   ].join(', ');
@@ -121,4 +163,24 @@ export async function skipOnboarding(userId: string): Promise<UserProfile | null
     onboardingCompleted: false,
     onboardingSkipped: true
   });
+}
+
+export async function saveMemoryFacts(userId: string, facts: string[]): Promise<void> {
+  assertSupabaseConfigured();
+  const normalizedUserId = userId.trim();
+  if (!normalizedUserId) {
+    return;
+  }
+
+  const normalizedFacts = normalizeMemoryFacts(facts);
+  const { error } = await supabase
+    .from('profiles')
+    .update({
+      memory_facts: normalizedFacts
+    })
+    .eq('id', normalizedUserId);
+
+  if (error) {
+    throw error;
+  }
 }

@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { t } from '../../i18n';
 import { useStore } from '../../store/useStore';
 import { collectArtistMemoryFacts } from '../../utils/memoryFacts';
+import { useGameTts } from './useGameTts';
 import { TarotService } from '../services/TarotService';
 import type { Game, TarotCathyData, TarotReading, TarotTheme } from '../types';
 
@@ -49,6 +50,12 @@ export function useTarotCathy(artistId: string): UseTarotCathyResult {
   const abandonGame = useStore((state) => state.abandonGame);
   const clearGame = useStore((state) => state.clearGame);
   const incrementUsage = useStore((state) => state.incrementUsage);
+  const language = useStore((state) => state.language);
+  const { speak, stop } = useGameTts({
+    artistId,
+    language,
+    contextTag: 'tarot-cathy'
+  });
 
   const requestInFlightRef = useRef(false);
 
@@ -66,9 +73,10 @@ export function useTarotCathy(artistId: string): UseTarotCathyResult {
   const allFlipped = readings.length === 3 && readings.every((r) => r.isFlipped);
 
   const startGame = useCallback(() => {
+    void stop();
     startTarotGame(artistId);
     setGameError(null);
-  }, [artistId, setGameError, startTarotGame]);
+  }, [artistId, setGameError, startTarotGame, stop]);
 
   const selectTheme = useCallback(
     (theme: TarotTheme) => {
@@ -155,22 +163,41 @@ export function useTarotCathy(artistId: string): UseTarotCathyResult {
       if (!isTarotGame(latest, artistId) || latest.status !== 'reading') {
         return;
       }
+      const targetReading = latest.gameData.readings[index];
+      if (!targetReading || targetReading.isFlipped) {
+        return;
+      }
+
       flipTarotCard(index);
+      void speak(targetReading.interpretation, `${latest.id}:reading:${index}`);
     },
-    [artistId, flipTarotCard]
+    [artistId, flipTarotCard, speak]
   );
 
   const completeReading = useCallback(() => {
+    const latest = useStore.getState().activeGame;
+    if (isTarotGame(latest, artistId) && latest.gameData.readings.every((reading) => reading.isFlipped)) {
+      void speak(latest.gameData.grandFinale ?? '', `${latest.id}:finale`);
+    }
     completeTarotReading();
-  }, [completeTarotReading]);
+  }, [artistId, completeTarotReading, speak]);
 
   const abandon = useCallback(() => {
+    void stop();
     abandonGame();
-  }, [abandonGame]);
+  }, [abandonGame, stop]);
 
   const clear = useCallback(() => {
+    void stop();
     clearGame();
-  }, [clearGame]);
+  }, [clearGame, stop]);
+
+  useEffect(
+    () => () => {
+      void stop();
+    },
+    [stop]
+  );
 
   return {
     game,

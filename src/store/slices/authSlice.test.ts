@@ -60,6 +60,7 @@ function buildProfile(overrides: Partial<UserProfile> = {}): UserProfile {
     relationshipStatus: null,
     horoscopeSign: null,
     interests: [],
+    memoryFacts: [],
     onboardingCompleted: true,
     onboardingSkipped: false,
     ...overrides

@@ -1,4 +1,6 @@
-import { ARTIST_IDS } from '../config/constants';
+import { artists } from '../config/artists';
+import { ARTIST_IDS, MODE_IDS } from '../config/constants';
+import { getModeById } from '../config/modes';
 import type { Message } from '../models/Message';
 import type { UserProfile } from '../models/UserProfile';
 import { resolveArtistModePrompt, resolveArtistPromptBlueprint } from './artistPromptRegistry';
@@ -207,6 +209,49 @@ Ces deux identites coexistent: la fille de region qui a fait la grande ville.
 Utilise cette tension naturellement quand c'est pertinent, pas a chaque reponse.`;
 }
 
+function buildAvailableModesSection(artistId: string, language: PromptLanguage): string {
+  const artist = artists.find((entry) => entry.id === artistId);
+  if (!artist) {
+    return '';
+  }
+
+  const modeIds = [MODE_IDS.ON_JASE, ...(artist.supportedModeIds ?? [])];
+  const seen = new Set<string>();
+  const modeNames: string[] = [];
+
+  modeIds.forEach((modeId) => {
+    const modeName = getModeById(modeId)?.name?.trim();
+    if (!modeName) {
+      return;
+    }
+
+    const key = modeName.toLowerCase();
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    modeNames.push(modeName);
+  });
+
+  if (modeNames.length === 0) {
+    return '';
+  }
+
+  if (language !== 'fr') {
+    return `
+## AVAILABLE MODES
+If the user asks what you can do, you can naturally mention these:
+${modeNames.map((name) => `- ${name}`).join('\n')}
+Do not dump the full list unless asked.`;
+  }
+
+  return `
+## MODES DISPONIBLES
+Si l'utilisateur demande ce que tu peux faire, tu peux mentionner naturellement ces modes:
+${modeNames.map((name) => `- ${name}`).join('\n')}
+N'enumeres pas toute la liste sauf si on te le demande.`;
+}
+
 function buildEmojiExpressionSection(language: PromptLanguage): string {
   if (language !== 'fr') {
     return `
@@ -290,6 +335,7 @@ export function buildSystemPromptForArtist(
   const userProfileSection = buildUserProfileSection(userProfile, promptLanguage, preferredName);
   const audioTagsSection = buildAudioExpressionTagsSection(promptLanguage, b.audioEmotionTags);
   const biographySection = buildBiographySection(promptLanguage, b.biography);
+  const availableModesSection = buildAvailableModesSection(artistId, promptLanguage);
   const emojiExpressionSection = buildEmojiExpressionSection(promptLanguage);
   const reactionTagSection = buildReactionTagSection(promptLanguage);
   const affectionResponseSection = buildAffectionResponseSection(promptLanguage);
@@ -327,6 +373,7 @@ ${biographySection}
 
 ## ACTIVE MODE: ${modeId}
 ${modePrompt}
+${availableModesSection}
 
 ## CULTURAL ANCHORING
 - Prefer Quebec/Canada references whenever relevant.
@@ -400,6 +447,7 @@ ${biographySection}
 
 ## MODE ACTIF : ${modeId}
 ${modePrompt}
+${availableModesSection}
 
 ## ANCRAGE CULTUREL
 - Priorise des references Quebec/Canada des que pertinent.

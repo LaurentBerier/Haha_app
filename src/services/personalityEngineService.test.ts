@@ -53,4 +53,24 @@ describe('personalityEngineService', () => {
     expect(prompt).toContain('## ABSOLUTE RULES');
     expect(prompt).not.toContain('Tu reponds toujours en francais quebecois');
   });
+
+  it('includes dedicated prompts for coach-de-vie, meteo and numero-de-show', () => {
+    const coachPrompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'coach-de-vie', null, 'fr-CA');
+    const meteoPrompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'meteo', null, 'fr-CA');
+    const showPrompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'numero-de-show', null, 'fr-CA');
+
+    expect(coachPrompt).toContain("L'utilisateur veut du coaching concret.");
+    expect(meteoPrompt).toContain("L'utilisateur veut la meteo version Cathy.");
+    expect(showPrompt).toContain("L'utilisateur veut un mini numero d'humour.");
+  });
+
+  it('lists available modes for Cathy in the base system prompt', () => {
+    const prompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'on-jase', null, 'fr-CA');
+
+    expect(prompt).toContain('## MODES DISPONIBLES');
+    expect(prompt).toContain('Dis-moi la vérité');
+    expect(prompt).toContain('Coach de vie');
+    expect(prompt).toContain('Meteo');
+    expect(prompt).toContain('Numéro de show');
+  });
 });

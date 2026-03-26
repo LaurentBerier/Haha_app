@@ -18,6 +18,7 @@ const populatedProfile: UserProfile = {
   relationshipStatus: 'single',
   horoscopeSign: 'scorpio',
   interests: ['Humour', 'Musique'],
+  memoryFacts: [],
   onboardingCompleted: true,
   onboardingSkipped: false
 };
@@ -39,6 +40,7 @@ const emptyProfile: UserProfile = {
   relationshipStatus: null,
   horoscopeSign: null,
   interests: [],
+  memoryFacts: [],
   onboardingCompleted: true,
   onboardingSkipped: false
 };

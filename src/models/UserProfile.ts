@@ -29,6 +29,7 @@ export interface UserProfile {
   relationshipStatus: RelationshipStatus | null;
   horoscopeSign: HoroscopeSign | null;
   interests: string[];
+  memoryFacts: string[];
   onboardingCompleted: boolean;
   onboardingSkipped: boolean;
 }

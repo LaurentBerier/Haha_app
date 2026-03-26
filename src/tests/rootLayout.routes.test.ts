@@ -28,4 +28,12 @@ describe('root layout route registration', () => {
     expect(layoutSource).toContain('WEB_RESUME_ROUTE_RESTORE_FLAG_KEY');
     expect(layoutSource).toContain('const shouldAttemptResumeRestore');
   });
+
+  it('hides global chat input on game routes', () => {
+    const layoutPath = path.resolve(__dirname, '../app/_layout.tsx');
+    const layoutSource = fs.readFileSync(layoutPath, 'utf8');
+
+    expect(layoutSource).toContain("const isGameRoute = pathname.startsWith('/games/');");
+    expect(layoutSource).toContain('!isGameRoute &&');
+  });
 });

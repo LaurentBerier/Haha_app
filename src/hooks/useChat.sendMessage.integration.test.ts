@@ -21,6 +21,7 @@ interface MockStoreState {
   userProfile: null;
   session: {
     user: {
+      id: string;
       displayName: string | null;
       accountType: 'free' | 'paid' | 'admin';
       role: string | null;
@@ -52,6 +53,7 @@ interface MockStreamParams {
 const mockStoreRef: { current: MockStoreState | null } = { current: null };
 const streamMockParams: MockStreamParams[] = [];
 const mockFetchAndCacheVoice = jest.fn<Promise<string | null>, unknown[]>();
+const mockSaveMemoryFacts = jest.fn<Promise<void>, [string, string[]]>(async () => undefined);
 const mockStreamMockReply: (...args: unknown[]) => () => void = jest.fn((params: unknown) => {
   if (params && typeof params === 'object') {
     const candidate = params as Partial<MockStreamParams>;
@@ -101,6 +103,10 @@ jest.mock('../services/ttsService', () => ({
 
 jest.mock('../services/scoreManager', () => ({
   addScore: jest.fn(async () => undefined)
+}));
+
+jest.mock('../services/profileService', () => ({
+  saveMemoryFacts: (...args: [string, string[]]) => mockSaveMemoryFacts(...args)
 }));
 
 jest.mock('../store/useStore', () => {
@@ -215,6 +221,7 @@ function createMockStoreState(): MockStoreState {
     userProfile: null,
     session: {
       user: {
+        id: 'user-1',
         displayName: null,
         accountType: 'free',
         role: null
@@ -277,6 +284,7 @@ describe('useChat sendMessage integration', () => {
     jest.clearAllMocks();
     streamMockParams.length = 0;
     mockFetchAndCacheVoice.mockResolvedValue(null);
+    mockSaveMemoryFacts.mockResolvedValue(undefined);
   });
 
   it('adds messages when render-time context is stale but live store context is valid', () => {
@@ -476,6 +484,30 @@ describe('useChat sendMessage integration', () => {
       state.messagesByConversation[conversation.id]?.messages.find((message) => message.role === 'user') ?? null;
     expect(userMessage).not.toBeNull();
     expect(userMessage?.metadata?.cathyReaction).toBe('❤️');
+  });
+
+  it('persists merged memory facts in fire-and-forget mode after successful artist reply', async () => {
+    const conversationId = 'conv-memory-save';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const sendResult = chat.sendMessage({ text: "Je vis a Quebec et j'aime le cafe noir." });
+    expect(sendResult).toBeNull();
+    expect(streamMockParams).toHaveLength(1);
+
+    const stream = streamMockParams[0] as MockStreamParams;
+    stream.onToken('Je retiens ca pour la suite.');
+    stream.onComplete({ tokensUsed: 7 });
+    await flushAsyncWork();
+
+    expect(mockSaveMemoryFacts).toHaveBeenCalledTimes(1);
+    expect(mockSaveMemoryFacts.mock.calls[0]?.[0]).toBe('user-1');
+    expect(mockSaveMemoryFacts.mock.calls[0]?.[1]).toEqual(expect.arrayContaining(["Je vis a Quebec et j'aime le cafe noir"]));
   });
 
   it('keeps replayable voice queue when first chunk succeeds and a later chunk fails terminally', async () => {

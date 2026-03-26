@@ -12,6 +12,7 @@ import { streamClaudeResponse } from '../services/claudeApiService';
 import { detectImageIntent, type ImageIntent } from '../services/imageIntentService';
 import { streamMockReply } from '../services/mockLlmService';
 import { buildSystemPromptForArtist, formatConversationHistory } from '../services/personalityEngineService';
+import { saveMemoryFacts } from '../services/profileService';
 import { addScore } from '../services/scoreManager';
 import { fetchAndCacheVoice } from '../services/ttsService';
 import { useStore } from '../store/useStore';
@@ -818,6 +819,18 @@ export function useChat(conversationId: string) {
           }
         });
         incrementUsage();
+        const latestStateAfterReply = useStore.getState();
+        const latestUserId = latestStateAfterReply.session?.user.id ?? '';
+        if (latestUserId) {
+          const latestMemoryFacts = collectArtistMemoryFacts(latestStateAfterReply, artistId, jobConversationId);
+          if (latestMemoryFacts.length > 0) {
+            void saveMemoryFacts(latestUserId, latestMemoryFacts).catch((error: unknown) => {
+              if (__DEV__) {
+                console.warn('[useChat] saveMemoryFacts failed', error);
+              }
+            });
+          }
+        }
         const latestState = useStore.getState();
         const latestQuota = latestState.quota;
         const normalizedAccountType = resolveEffectiveAccountType(

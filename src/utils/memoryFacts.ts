@@ -1,6 +1,37 @@
 import type { StoreState } from '../store/useStore';
 
-export const MAX_MEMORY_FACTS = 6;
+export const MAX_MEMORY_FACTS = 10;
+
+function normalizeMemoryFact(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function pushUniqueFacts(
+  sourceFacts: string[],
+  seen: Set<string>,
+  target: string[],
+  limit: number
+): boolean {
+  for (const fact of sourceFacts) {
+    const normalizedFact = normalizeMemoryFact(fact);
+    if (!normalizedFact) {
+      continue;
+    }
+
+    const key = normalizedFact.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    target.push(normalizedFact);
+    if (target.length >= limit) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 export function extractMemoryFactsFromText(text: string): string[] {
   const normalized = typeof text === 'string' ? text.replace(/\s+/g, ' ').trim() : '';
@@ -19,13 +50,21 @@ export function extractMemoryFactsFromText(text: string): string[] {
 }
 
 export function collectArtistMemoryFacts(
-  state: ReturnType<() => StoreState>,
+  state: StoreState,
   artistId: string,
   currentConversationId: string
 ): string[] {
   const conversations = state.conversations[artistId] ?? [];
+  const seen = new Set<string>();
+  const facts: string[] = [];
+
+  const persistedFacts = Array.isArray(state.userProfile?.memoryFacts) ? state.userProfile.memoryFacts : [];
+  if (pushUniqueFacts(persistedFacts, seen, facts, MAX_MEMORY_FACTS)) {
+    return facts;
+  }
+
   if (conversations.length === 0) {
-    return [];
+    return facts;
   }
 
   const sortedConversationIds = conversations
@@ -37,12 +76,10 @@ export function collectArtistMemoryFacts(
     })
     .map((conversation) => conversation.id);
 
-  if (!sortedConversationIds.includes(currentConversationId)) {
-    sortedConversationIds.unshift(currentConversationId);
+  const normalizedCurrentConversationId = typeof currentConversationId === 'string' ? currentConversationId.trim() : '';
+  if (normalizedCurrentConversationId && !sortedConversationIds.includes(normalizedCurrentConversationId)) {
+    sortedConversationIds.unshift(normalizedCurrentConversationId);
   }
-
-  const seen = new Set<string>();
-  const facts: string[] = [];
 
   for (const conversationId of sortedConversationIds) {
     const page = state.messagesByConversation[conversationId];
@@ -60,16 +97,8 @@ export function collectArtistMemoryFacts(
       }
 
       const extractedFacts = extractMemoryFactsFromText(message.content);
-      for (const fact of extractedFacts) {
-        const key = fact.toLowerCase();
-        if (seen.has(key)) {
-          continue;
-        }
-        seen.add(key);
-        facts.push(fact);
-        if (facts.length >= MAX_MEMORY_FACTS) {
-          return facts;
-        }
+      if (pushUniqueFacts(extractedFacts, seen, facts, MAX_MEMORY_FACTS)) {
+        return facts;
       }
     }
   }

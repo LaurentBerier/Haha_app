@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { t } from '../../i18n';
 import { addScore } from '../../services/scoreManager';
 import { useStore } from '../../store/useStore';
+import { useGameTts } from './useGameTts';
 import { VraiInventeService } from '../services/VraiInventeService';
 import type { Game, VraiInventeData, VraiInventeQuestion } from '../types';
 
@@ -37,6 +38,12 @@ function isVraiOuInventeGame(game: Game | null, artistId: string): game is VraiO
   );
 }
 
+function toSpokenQuestion(question: VraiInventeQuestion): string {
+  return question.statements
+    .map((statement, index) => `${index + 1}. ${statement.text}`)
+    .join(' ');
+}
+
 export function useVraiOuInvente(artistId: string): UseVraiOuInventeResult {
   const activeGame = useStore((state) => state.activeGame);
   const startVraiInventeGame = useStore((state) => state.startVraiInventeGame);
@@ -47,6 +54,12 @@ export function useVraiOuInvente(artistId: string): UseVraiOuInventeResult {
   const abandonGame = useStore((state) => state.abandonGame);
   const clearGame = useStore((state) => state.clearGame);
   const incrementUsage = useStore((state) => state.incrementUsage);
+  const language = useStore((state) => state.language);
+  const { speak, stop } = useGameTts({
+    artistId,
+    language,
+    contextTag: 'vrai-ou-invente'
+  });
 
   const rewardedGameIdRef = useRef<string | null>(null);
   const requestInFlightRef = useRef(false);
@@ -78,10 +91,12 @@ export function useVraiOuInvente(artistId: string): UseVraiOuInventeResult {
           language: 'fr-CA'
         });
         const latest = useStore.getState().activeGame;
-        if (!latest || latest.id !== gameId || latest.status === 'abandoned') {
+        if (!isVraiOuInventeGame(latest, artistId) || latest.id !== gameId || latest.status === 'abandoned') {
           return;
         }
+        const questionIndex = latest.gameData.currentIndex;
         receiveVraiInventeQuestion(question);
+        void speak(toSpokenQuestion(question), `${gameId}:question:${questionIndex}`);
       } catch (error) {
         console.error('[useVraiOuInvente] Question fetch failed', error);
         setGameError(t('gameErrorGeneric'));
@@ -89,15 +104,16 @@ export function useVraiOuInvente(artistId: string): UseVraiOuInventeResult {
         requestInFlightRef.current = false;
       }
     },
-    [artistId, receiveVraiInventeQuestion, setGameError]
+    [artistId, receiveVraiInventeQuestion, setGameError, speak]
   );
 
   const startGame = useCallback(async () => {
+    void stop();
     const created = startVraiInventeGame(artistId);
     setGameError(null);
     rewardedGameIdRef.current = null;
     await fetchQuestion(created.id);
-  }, [artistId, fetchQuestion, setGameError, startVraiInventeGame]);
+  }, [artistId, fetchQuestion, setGameError, startVraiInventeGame, stop]);
 
   const submitAnswer = useCallback(
     (index: number) => {
@@ -112,8 +128,22 @@ export function useVraiOuInvente(artistId: string): UseVraiOuInventeResult {
 
       submitVraiInventeAnswer(index);
       incrementUsage();
+
+      const refreshed = useStore.getState().activeGame;
+      if (!isVraiOuInventeGame(refreshed, artistId) || refreshed.status !== 'revealed') {
+        return;
+      }
+      const revealedQuestion = refreshed.gameData.questions[refreshed.gameData.currentIndex];
+      if (!revealedQuestion) {
+        return;
+      }
+      const verdict = revealedQuestion.isCorrect ? t('gameVraiInventeCorrect') : t('gameVraiInventeWrong');
+      void speak(
+        `${verdict} ${revealedQuestion.explanation}`,
+        `${refreshed.id}:reveal:${refreshed.gameData.currentIndex}`
+      );
     },
-    [artistId, incrementUsage, submitVraiInventeAnswer]
+    [artistId, incrementUsage, speak, submitVraiInventeAnswer]
   );
 
   const nextQuestion = useCallback(async () => {
@@ -147,12 +177,14 @@ export function useVraiOuInvente(artistId: string): UseVraiOuInventeResult {
   }, [artistId, fetchQuestion, nextVraiInventeQuestion]);
 
   const abandon = useCallback(() => {
+    void stop();
     abandonGame();
-  }, [abandonGame]);
+  }, [abandonGame, stop]);
 
   const clear = useCallback(() => {
+    void stop();
     clearGame();
-  }, [clearGame]);
+  }, [clearGame, stop]);
 
   useEffect(() => {
     if (!game || game.status !== 'complete' || game.gameData.type !== 'vrai-ou-invente') {
@@ -170,6 +202,13 @@ export function useVraiOuInvente(artistId: string): UseVraiOuInventeResult {
         // Best effort for gamification scoring.
       });
   }, [game]);
+
+  useEffect(
+    () => () => {
+      void stop();
+    },
+    [stop]
+  );
 
   return {
     game,

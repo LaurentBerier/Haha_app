@@ -86,6 +86,7 @@ export default function RootLayout() {
   const isOnboardingRoute = segmentList[1] === 'onboarding';
   const isHomeArtistPickerRoute = pathname === '/';
   const isChatRoute = pathname.startsWith('/chat/');
+  const isGameRoute = pathname.startsWith('/games/');
   const isModeSelectContextRoute = isModeSelectRoute(pathname);
   const needsOnboarding =
     isAuthenticated && userProfile ? !userProfile.onboardingCompleted && !userProfile.onboardingSkipped : false;
@@ -98,6 +99,7 @@ export default function RootLayout() {
     !isAuthCallbackRoute &&
     !isHomeArtistPickerRoute &&
     !isModeSelectContextRoute &&
+    !isGameRoute &&
     !isChatRoute;
   const routeArtistId = resolveArtistIdFromPath(pathname);
   const targetArtistId = routeArtistId ?? selectedArtistId;

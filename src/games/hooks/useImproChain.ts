@@ -3,6 +3,7 @@ import { t } from '../../i18n';
 import { addScore } from '../../services/scoreManager';
 import { useStore } from '../../store/useStore';
 import { generateId } from '../../utils/generateId';
+import { useGameTts } from './useGameTts';
 import { GameService } from '../services/GameService';
 import type { Game, ImproChainData, ImproReward, ImproTurn } from '../types';
 
@@ -71,6 +72,11 @@ export function useImproChain(artistId: string): UseImproChainResult {
   const incrementUsage = useStore((state) => state.incrementUsage);
   const userProfile = useStore((state) => state.userProfile);
   const language = useStore((state) => state.language);
+  const { speak, stop } = useGameTts({
+    artistId,
+    language,
+    contextTag: 'impro-chain'
+  });
 
   const cancelStreamRef = useRef<null | (() => void)>(null);
 
@@ -114,6 +120,7 @@ export function useImproChain(artistId: string): UseImproChainResult {
           onComplete: (content, isEnding) => {
             finalizeImproArtistTurn(content, isEnding);
             incrementUsage();
+            void speak(content, `${gameId}:artist-turn:${snapshot.gameData.turns.length}:${isEnding ? 'final' : 'live'}`);
 
             if (isEnding) {
               // Keep a short delay so the last Cathy line is visible before result transition.
@@ -145,11 +152,13 @@ export function useImproChain(artistId: string): UseImproChainResult {
       incrementUsage,
       language,
       setGameError,
-      userProfile
+      userProfile,
+      speak
     ]
   );
 
   const startGame = useCallback(async (themeValue?: string | null) => {
+    void stop();
     cancelActiveStream();
     const created = startImproGame(artistId, {
       theme: typeof themeValue === 'string' ? themeValue.trim() : '',
@@ -160,7 +169,7 @@ export function useImproChain(artistId: string): UseImproChainResult {
     }
     setGameError(null);
     await runCathyTurn(created);
-  }, [artistId, cancelActiveStream, runCathyTurn, setGameError, startImproGame]);
+  }, [artistId, cancelActiveStream, runCathyTurn, setGameError, startImproGame, stop]);
 
   const submitTurn = useCallback(
     async (text: string) => {
@@ -204,19 +213,22 @@ export function useImproChain(artistId: string): UseImproChainResult {
 
   const abandon = useCallback(() => {
     cancelActiveStream();
+    void stop();
     abandonGame();
-  }, [abandonGame, cancelActiveStream]);
+  }, [abandonGame, cancelActiveStream, stop]);
 
   const clear = useCallback(() => {
     cancelActiveStream();
+    void stop();
     clearGame();
-  }, [cancelActiveStream, clearGame]);
+  }, [cancelActiveStream, clearGame, stop]);
 
   useEffect(
     () => () => {
       cancelActiveStream();
+      void stop();
     },
-    [cancelActiveStream]
+    [cancelActiveStream, stop]
   );
 
   return {
