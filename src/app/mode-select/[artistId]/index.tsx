@@ -2,10 +2,7 @@ import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
-  FlatList,
   KeyboardAvoidingView,
-  type NativeScrollEvent,
-  type NativeSyntheticEvent,
   Platform,
   Pressable,
   ScrollView,
@@ -14,8 +11,8 @@ import {
   View,
   useWindowDimensions
 } from 'react-native';
-import { ChatBubble } from '../../../components/chat/ChatBubble';
 import { ChatInput } from '../../../components/chat/ChatInput';
+import { MessageList } from '../../../components/chat/MessageList';
 import { StreamingIndicator } from '../../../components/chat/StreamingIndicator';
 import { AmbientGlow } from '../../../components/common/AmbientGlow';
 import { BackButton } from '../../../components/common/BackButton';
@@ -39,7 +36,6 @@ import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../..
 import { collectArtistMemoryFacts } from '../../../utils/memoryFacts';
 import { stripAudioTags } from '../../../utils/audioTags';
 import { generateId } from '../../../utils/generateId';
-import { resolveModeSelectTailFollowState } from '../../../utils/modeSelectTailFollow';
 import {
   resolveModeSelectConversationRecoveryAction
 } from '../../../utils/modeSelectConversationRecovery';
@@ -105,8 +101,6 @@ const GREETING_API_MAX_ATTEMPTS = 2;
 const GREETING_API_RETRY_DELAY_MS = 850;
 const DEFAULT_TUTORIAL_CONNECTION_LIMIT = 3;
 const GREETING_BOOTING_ROTATION_MS = 1_200;
-const FOLLOW_TAIL_RESTORE_DISTANCE_PX = 96;
-const FOLLOW_TAIL_BREAK_DISTANCE_PX = 220;
 const GREETING_BOOTING_FR_LINES = [
   "Chargement du cerveau de Cathy... attention, y'a du trafic",
   "Calibration du sarcasme... 92%... 104%... ok c'est trop tard",
@@ -1008,17 +1002,11 @@ export default function ModeSelectHomeScreen() {
   const [pendingGreetingAudio, setPendingGreetingAudio] = useState<PendingGreetingAudio | null>(null);
   const [pendingGreetingSpeechText, setPendingGreetingSpeechText] = useState<string | null>(null);
   const [isWebSpeechFallbackActive, setIsWebSpeechFallbackActive] = useState(false);
+  const [tailFollowRequestSignal, setTailFollowRequestSignal] = useState(0);
   const modeGridCompactProgress = useRef(new Animated.Value(0)).current;
   const rootLayoutRef = useRef<View>(null);
   const categoryGridRef = useRef<View>(null);
-  const messageListRef = useRef<FlatList<Message>>(null);
-  const isNearBottomRef = useRef(true);
-  const shouldFollowConversationTailRef = useRef(true);
-  const isConversationDragActiveRef = useRef(false);
-  const isConversationMomentumActiveRef = useRef(false);
-  const lastMessageCountRef = useRef(0);
   const lastLoggedRenderedMessageCountRef = useRef(0);
-  const hasScrolledInitiallyRef = useRef(false);
   const greetingPlaybackCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingGestureRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingSpeechHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1152,7 +1140,7 @@ export default function ModeSelectHomeScreen() {
           });
       }
 
-      shouldFollowConversationTailRef.current = true;
+      setTailFollowRequestSignal((previous) => previous + 1);
       logModeSelectDebugTrace('send_dispatched', {
         conversationId: normalizedTargetConversationId,
         uiConversationId: modeSelectConversationId || null,
@@ -1379,91 +1367,6 @@ export default function ModeSelectHomeScreen() {
     });
   }, []);
 
-  const scrollToLatest = useCallback((animated: boolean) => {
-    requestAnimationFrame(() => {
-      messageListRef.current?.scrollToEnd({ animated });
-    });
-  }, []);
-
-  const syncTailFollowFromDistance = useCallback((distanceFromBottom: number) => {
-    const isUserGestureActive = isConversationDragActiveRef.current || isConversationMomentumActiveRef.current;
-    const resolution = resolveModeSelectTailFollowState({
-      distanceFromBottom,
-      isUserGestureActive,
-      shouldFollowTail: shouldFollowConversationTailRef.current,
-      restoreDistancePx: FOLLOW_TAIL_RESTORE_DISTANCE_PX,
-      breakDistancePx: FOLLOW_TAIL_BREAK_DISTANCE_PX
-    });
-
-    shouldFollowConversationTailRef.current = resolution.shouldFollowTail;
-    isNearBottomRef.current = resolution.isNearBottom;
-    if (resolution.changed) {
-      logModeSelectDebugTrace('tail_follow_changed', {
-        following: resolution.shouldFollowTail,
-        distanceFromBottom: Math.round(distanceFromBottom)
-      });
-    }
-  }, []);
-
-  const handleConversationContentSizeChange = useCallback(() => {
-    if (!hasScrolledInitiallyRef.current) {
-      hasScrolledInitiallyRef.current = true;
-      scrollToLatest(false);
-      shouldFollowConversationTailRef.current = true;
-      return;
-    }
-
-    if (shouldFollowConversationTailRef.current) {
-      scrollToLatest(true);
-    }
-  }, [scrollToLatest]);
-
-  const handleConversationScroll = useCallback(({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offsetY = nativeEvent.contentOffset?.y ?? 0;
-    const contentHeight = nativeEvent.contentSize?.height ?? 0;
-    const layoutHeight = nativeEvent.layoutMeasurement?.height ?? 0;
-    const distanceFromBottom = contentHeight - (offsetY + layoutHeight);
-    syncTailFollowFromDistance(distanceFromBottom);
-  }, [syncTailFollowFromDistance]);
-
-  const handleConversationScrollBeginDrag = useCallback(() => {
-    isConversationDragActiveRef.current = true;
-  }, []);
-
-  const handleConversationScrollEndDrag = useCallback(
-    ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
-      isConversationDragActiveRef.current = false;
-      const offsetY = nativeEvent.contentOffset?.y ?? 0;
-      const contentHeight = nativeEvent.contentSize?.height ?? 0;
-      const layoutHeight = nativeEvent.layoutMeasurement?.height ?? 0;
-      const distanceFromBottom = contentHeight - (offsetY + layoutHeight);
-      syncTailFollowFromDistance(distanceFromBottom);
-    },
-    [syncTailFollowFromDistance]
-  );
-
-  const handleConversationMomentumScrollBegin = useCallback(() => {
-    isConversationMomentumActiveRef.current = true;
-  }, []);
-
-  const handleConversationMomentumScrollEnd = useCallback(() => {
-    isConversationMomentumActiveRef.current = false;
-  }, []);
-
-  const renderMessage = useCallback(
-    ({ item }: { item: Message }) => (
-      <ChatBubble
-        message={item}
-        userDisplayName={userDisplayName}
-        artistDisplayName={resolvedArtistDisplayName}
-        onRetryMessage={retryMessage}
-        onRetryVoice={retryVoiceForMessage}
-        audioPlayer={audioPlayer}
-      />
-    ),
-    [audioPlayer, resolvedArtistDisplayName, retryMessage, retryVoiceForMessage, userDisplayName]
-  );
-
   const clearGreetingPlaybackCheck = useCallback(() => {
     if (greetingPlaybackCheckTimeoutRef.current) {
       clearTimeout(greetingPlaybackCheckTimeoutRef.current);
@@ -1678,19 +1581,6 @@ export default function ModeSelectHomeScreen() {
   ]);
 
   useEffect(() => {
-    const nextMessageCount = messages.length;
-    const previousMessageCount = lastMessageCountRef.current;
-    lastMessageCountRef.current = nextMessageCount;
-
-    if (!hasScrolledInitiallyRef.current || !shouldFollowConversationTailRef.current) {
-      return;
-    }
-
-    const shouldAnimate = nextMessageCount > previousMessageCount;
-    scrollToLatest(shouldAnimate);
-  }, [messages, scrollToLatest]);
-
-  useEffect(() => {
     if (!isModeSelectDebugLoggingEnabled()) {
       return;
     }
@@ -1758,12 +1648,7 @@ export default function ModeSelectHomeScreen() {
     setIsInputFocused(false);
     setIsGreetingBooting(false);
     setPendingAutoMicGreetingMessageId(null);
-    isNearBottomRef.current = true;
-    shouldFollowConversationTailRef.current = true;
-    isConversationDragActiveRef.current = false;
-    isConversationMomentumActiveRef.current = false;
-    hasScrolledInitiallyRef.current = false;
-    lastMessageCountRef.current = 0;
+    setTailFollowRequestSignal(0);
     autoMicManualOverrideRef.current = false;
     autoMicTriggeredGreetingIdsRef.current.clear();
   }, [artistId]);
@@ -2323,27 +2208,30 @@ export default function ModeSelectHomeScreen() {
                   <Text style={styles.greetingVoiceLabel}>{greetingVoiceLabel}</Text>
                 </View>
               ) : null}
-              <FlatList
-                ref={messageListRef}
+              <MessageList
                 testID="mode-select-message-list"
-                key={modeSelectConversationId}
-                style={styles.conversationList}
+                listKey={modeSelectConversationId}
+                listStyle={styles.conversationList}
                 contentContainerStyle={styles.conversationListContent}
-                data={messages}
-                keyExtractor={(item) => item.id}
-                renderItem={renderMessage}
+                messages={messages}
+                userDisplayName={userDisplayName}
+                artistDisplayName={resolvedArtistDisplayName}
+                onRetryMessage={retryMessage}
+                onRetryVoice={retryVoiceForMessage}
+                audioPlayer={audioPlayer}
+                showEmptyState={false}
+                forceFollowSignal={tailFollowRequestSignal}
                 windowSize={24}
                 initialNumToRender={48}
                 maxToRenderPerBatch={48}
                 removeClippedSubviews={false}
                 disableVirtualization
-                onContentSizeChange={handleConversationContentSizeChange}
-                onScroll={handleConversationScroll}
-                onScrollBeginDrag={handleConversationScrollBeginDrag}
-                onScrollEndDrag={handleConversationScrollEndDrag}
-                onMomentumScrollBegin={handleConversationMomentumScrollBegin}
-                onMomentumScrollEnd={handleConversationMomentumScrollEnd}
-                scrollEventThrottle={16}
+                onTailFollowChanged={({ shouldFollowTail, distanceFromBottom }) => {
+                  logModeSelectDebugTrace('tail_follow_changed', {
+                    following: shouldFollowTail,
+                    distanceFromBottom: Math.round(distanceFromBottom)
+                  });
+                }}
               />
               {hasStreaming ? <StreamingIndicator /> : null}
             </View>

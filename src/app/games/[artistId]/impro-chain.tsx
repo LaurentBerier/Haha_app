@@ -1,21 +1,58 @@
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from 'react-native';
+import { ChatInput } from '../../../components/chat/ChatInput';
+import { MessageList } from '../../../components/chat/MessageList';
 import { BackButton } from '../../../components/common/BackButton';
 import { ScoreBar } from '../../../components/chat/ScoreBar';
 import { GameResultPanel } from '../../../components/games/GameResultPanel';
-import { ImproStory } from '../../../components/games/ImproStory';
 import { useImproChain } from '../../../games/hooks/useImproChain';
 import { ImproThemesService } from '../../../games/services/ImproThemesService';
 import { shouldGuardGameExit, useGameExitGuard } from '../../../hooks/useGameExitGuard';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
+import { useVoiceConversation } from '../../../hooks/useVoiceConversation';
 import { t } from '../../../i18n';
+import type { ChatError } from '../../../models/ChatError';
+import type { ChatSendPayload } from '../../../models/ChatSendPayload';
+import type { Message } from '../../../models/Message';
 import type { UserProfile } from '../../../models/UserProfile';
 import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
 
 function normalizeThemeInput(value: string): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function formatUserDisplayName(displayName: string | null, email: string | null): string {
+  const trimmed = displayName?.trim();
+  if (trimmed) {
+    return trimmed;
+  }
+
+  const emailPrefix = (email ?? '').split('@')[0]?.trim();
+  return emailPrefix || t('chatUserFallbackName');
+}
+
+function formatArtistDisplayName(artistName: string | null): string {
+  if (!artistName) {
+    return t('chatDefaultArtistName');
+  }
+
+  if (artistName === 'Cathy Gauthier') {
+    return t('chatDefaultArtistName');
+  }
+
+  return artistName;
 }
 
 function hashString(input: string): number {
@@ -99,6 +136,38 @@ function mergeUniqueThemes(primary: ImproTheme[], secondary: ImproTheme[]): Impr
 
 function toAvoidThemes(themes: ImproTheme[]): string[] {
   return themes.map((theme) => `${theme.titre} - ${theme.premisse}`);
+}
+
+function mapImproTurnsToMessages(
+  conversationId: string,
+  turns: Array<{ role: 'user' | 'artist'; content: string }>,
+  streamingContent: string
+): Message[] {
+  const mappedTurns = turns.map((turn, index) => ({
+    id: `${conversationId}:turn:${index}`,
+    conversationId,
+    role: turn.role,
+    content: turn.content,
+    status: 'complete' as const,
+    timestamp: new Date(2026, 0, 1, 0, 0, index).toISOString()
+  }));
+
+  const normalizedStreaming = streamingContent.trim();
+  if (!normalizedStreaming) {
+    return mappedTurns;
+  }
+
+  return [
+    ...mappedTurns,
+    {
+      id: `${conversationId}:streaming`,
+      conversationId,
+      role: 'artist',
+      content: normalizedStreaming,
+      status: 'streaming' as const,
+      timestamp: new Date(2026, 0, 1, 0, 1, mappedTurns.length).toISOString()
+    }
+  ];
 }
 
 function getAstroTrait(userProfile: UserProfile | null, language: string): string {
@@ -356,7 +425,8 @@ export default function ImproChainScreen() {
   const artistId = params.artistId ?? '';
   const navigation = useNavigation();
   const headerHorizontalInset = useHeaderHorizontalInset();
-  const [draft, setDraft] = useState('');
+  const [hasTypedDraft, setHasTypedDraft] = useState(false);
+  const [improTailFollowSignal, setImproTailFollowSignal] = useState(0);
   const [selectedTheme, setSelectedTheme] = useState<ImproTheme | null>(null);
   const [customTheme, setCustomTheme] = useState('');
   const [themeSuggestionNonce, setThemeSuggestionNonce] = useState(0);
@@ -367,14 +437,16 @@ export default function ImproChainScreen() {
   const avoidThemesRef = useRef<string[]>([]);
   const artists = useStore((state) => state.artists);
   const userProfile = useStore((state) => state.userProfile);
+  const sessionUser = useStore((state) => state.session?.user ?? null);
   const language = useStore((state) => state.language);
+  const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
+  const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
   const accessToken = useStore((state) => state.session?.accessToken ?? '');
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
 
   const {
     game,
     turns,
-    rewards,
     theme: activeTheme,
     targetUserTurns,
     userTurnsCount,
@@ -387,6 +459,13 @@ export default function ImproChainScreen() {
     clear
   } = useImproChain(artistId);
   const gameStatus = game?.status ?? 'none';
+  const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? null);
+  const artistDisplayName = formatArtistDisplayName(artist?.name ?? null);
+  const improConversationId = `impro-game-${game?.id ?? artistId}`;
+  const improMessages = useMemo(
+    () => mapImproTurnsToMessages(improConversationId, turns, streamingContent),
+    [improConversationId, streamingContent, turns]
+  );
 
   const navigateBackOrGamesHome = useCallback(() => {
     if (router.canGoBack()) {
@@ -543,22 +622,57 @@ export default function ImproChainScreen() {
     [normalizedCustomTheme, selectedTheme]
   );
   const showLobby = !game || game.status === 'abandoned';
-  const handleSubmit = async () => {
-    const text = draft.trim();
-    if (!text || isStreaming || game?.status === 'cathy-ending') {
-      return;
-    }
-    setDraft('');
-    try {
-      await submitTurn(text);
-    } catch (error) {
-      console.error('[impro-chain] Failed to submit user turn', error);
-    }
-  };
-
   const showComposer = Boolean(
     game && !isComplete && game.status !== 'cathy-ending' && userTurnsCount < targetUserTurns
   );
+  const showActiveGameView = Boolean(game && !showLobby && !isComplete);
+  const sendFromImproComposer = useCallback(
+    (payload: ChatSendPayload): ChatError | null => {
+      const text = payload.text.trim();
+
+      if (payload.image) {
+        return { code: 'imageNotSupportedInImpro' };
+      }
+
+      if (!text || isStreaming || game?.status === 'cathy-ending') {
+        return null;
+      }
+
+      setImproTailFollowSignal((previous) => previous + 1);
+      void submitTurn(text).catch((error: unknown) => {
+        console.error('[impro-chain] Failed to submit user turn', error);
+      });
+
+      return null;
+    },
+    [game?.status, isStreaming, submitTurn]
+  );
+  const {
+    isListening,
+    transcript,
+    error: conversationError,
+    status: conversationStatus,
+    hint: conversationHint,
+    pauseListening,
+    resumeListening
+  } = useVoiceConversation({
+    enabled: showComposer && conversationModeEnabled,
+    disabled: !showComposer || isStreaming || game?.status === 'cathy-ending',
+    hasTypedDraft,
+    isPlaying: false,
+    onSend: (text) => {
+      const normalized = text.trim();
+      if (!normalized) {
+        return;
+      }
+      sendFromImproComposer({ text: normalized });
+    },
+    onStopAudio: () => {
+      // No in-bubble voice player in Impro gameplay.
+    },
+    language,
+    fallbackLanguage: language
+  });
   const interventionsLeft = useMemo(
     () => Math.max(0, targetUserTurns - userTurnsCount),
     [targetUserTurns, userTurnsCount]
@@ -569,118 +683,20 @@ export default function ImproChainScreen() {
       <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
         <BackButton testID="impro-back" onPress={handleBack} />
       </View>
-      <ScrollView contentContainerStyle={styles.content} style={styles.scroll} testID="impro-screen">
-        <Text style={styles.title}>{t('gameImproTitle')}</Text>
-        <Text style={styles.subtitle}>{artist.name}</Text>
-        <ScoreBar />
-
-        {showLobby ? (
-          <View style={styles.lobbyCard}>
-            <Text style={styles.lobbyTitle}>{t('gameImproThemeSelectionTitle')}</Text>
-            <Text style={styles.lobbyHint}>{t('gameImproThemeSelectionSubtitle')}</Text>
-
-            {themesLoading ? (
-              <View style={styles.themesLoadingRow}>
-                <ActivityIndicator size="small" color={theme.colors.neonBlue} />
-                <Text style={styles.themesLoadingText}>{t('gameImproThemesLoading')}</Text>
-              </View>
-            ) : (
-              <View style={styles.themeGrid}>
-                {suggestedThemes.map((themeOption) => {
-                  const active =
-                    selectedTheme?.id === themeOption.id &&
-                    selectedTheme?.titre === themeOption.titre &&
-                    !normalizeThemeInput(customTheme);
-
-                  return (
-                    <Pressable
-                      key={`impro-theme-${themeOption.id}-${themeOption.titre}`}
-                      onPress={() => {
-                        setSelectedTheme(themeOption);
-                        setCustomTheme('');
-                      }}
-                      style={({ pressed }) => [
-                        styles.themeChip,
-                        active ? styles.themeChipActive : null,
-                        pressed ? styles.buttonPressed : null
-                      ]}
-                      accessibilityRole="button"
-                      testID={`impro-theme-${themeOption.id}`}
-                    >
-                      <Text style={[styles.themeChipTitle, active ? styles.themeChipLabelActive : null]}>
-                        {themeOption.titre}
-                      </Text>
-                      <Text style={[styles.themeChipPremise, active ? styles.themeChipPremiseActive : null]}>
-                        {themeOption.premisse}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            )}
-
-            {themesError ? (
-              <View style={styles.fallbackRow}>
-                <Text style={styles.fallbackHint}>{t('gameImproThemesFallback')}</Text>
-              </View>
-            ) : null}
-
-            <Pressable
-              onPress={() => {
-                setSelectedTheme(null);
-                setThemeSuggestionNonce((previous) => previous + 1);
-              }}
-              disabled={themesLoading}
-              style={({ pressed }) => [
-                styles.retryButton,
-                pressed ? styles.buttonPressed : null,
-                themesLoading ? styles.disabledButton : null
-              ]}
-              accessibilityRole="button"
-              testID="impro-themes-regenerate"
-            >
-              <Text style={styles.retryButtonLabel}>{t('gameImproRegenerateThemes')}</Text>
-            </Pressable>
-
-            <Text style={styles.customThemeLabel}>{t('gameLobbyTheme')}</Text>
-            <TextInput
-              value={customTheme}
-              onChangeText={(value) => {
-                setCustomTheme(value);
-                setSelectedTheme(null);
-              }}
-              style={styles.input}
-              placeholder={t('gameLobbyThemePlaceholder')}
-              placeholderTextColor={theme.colors.textDisabled}
-              testID="impro-custom-theme"
-            />
-
-            <Pressable
-              onPress={() => {
-                void (async () => {
-                  try {
-                    await startGame(resolvedTheme);
-                  } catch (error) {
-                    console.error('[impro-chain] Failed to start game', error);
-                  }
-                })();
-              }}
-              disabled={!resolvedTheme}
-              style={({ pressed }) => [
-                styles.startButton,
-                pressed ? styles.buttonPressed : null,
-                !resolvedTheme ? styles.disabledButton : null
-              ]}
-              accessibilityRole="button"
-              testID="impro-start"
-            >
-              <Text style={styles.startLabel}>{t('gameLobbyGoButton')}</Text>
-            </Pressable>
+      {showActiveGameView ? (
+        <KeyboardAvoidingView
+          behavior={Platform.select({ ios: 'padding', default: undefined })}
+          style={styles.activeGameContainer}
+          keyboardVerticalOffset={88}
+          testID="impro-screen"
+        >
+          <View style={styles.activeGameHeader}>
+            <Text style={styles.title}>{t('gameImproTitle')}</Text>
+            <Text style={styles.subtitle}>{artist.name}</Text>
+            <ScoreBar />
+            {game?.error ? <Text style={styles.errorText}>{game.error}</Text> : null}
           </View>
-        ) : null}
-
-        {game && !showLobby ? (
-          <View style={styles.panel}>
+          <View style={styles.activeGamePanel}>
             <View style={styles.metaRow}>
               <Text style={styles.metaText}>
                 {t('gameImproInterventionsLabel')} {userTurnsCount}/{targetUserTurns}
@@ -695,67 +711,190 @@ export default function ImproChainScreen() {
               </Text>
             ) : null}
 
-            <ImproStory turns={turns} rewards={rewards} streamingContent={streamingContent} />
+            <View style={styles.messageListFrame}>
+              <MessageList
+                testID="impro-message-list"
+                listKey={improConversationId}
+                messages={improMessages}
+                userDisplayName={userDisplayName}
+                artistDisplayName={artistDisplayName}
+                showEmptyState={false}
+                forceFollowSignal={improTailFollowSignal}
+                windowSize={24}
+                initialNumToRender={48}
+                maxToRenderPerBatch={48}
+                removeClippedSubviews={false}
+                disableVirtualization
+                contentContainerStyle={styles.improMessageListContent}
+              />
+            </View>
 
-            {game.status === 'cathy-ending' ? (
+            {game?.status === 'cathy-ending' ? (
               <Text style={styles.statusText}>{t('gameImproCathyEnding')}</Text>
             ) : isStreaming ? (
               <Text style={styles.statusText}>{t('gameImproCathyThinking')}</Text>
             ) : !showComposer ? (
               <Text style={styles.statusText}>{t('gameImproCathyWrapHint')}</Text>
             ) : null}
-
-            {showComposer ? (
-              <View style={styles.composer}>
-                <TextInput
-                  value={draft}
-                  onChangeText={setDraft}
-                  style={styles.input}
-                  placeholder={t('gameImproInputPlaceholder')}
-                  placeholderTextColor={theme.colors.textDisabled}
-                  editable={!isStreaming}
-                  testID="impro-input"
-                />
-                <Pressable
-                  onPress={() => void handleSubmit()}
-                  disabled={!draft.trim() || isStreaming}
-                  style={({ pressed }) => [
-                    styles.sendButton,
-                    pressed ? styles.buttonPressed : null,
-                    (!draft.trim() || isStreaming) ? styles.disabledButton : null
-                  ]}
-                  accessibilityRole="button"
-                  testID="impro-send"
-                >
-                  <Text style={styles.sendLabel}>{t('gameImproSend')}</Text>
-                </Pressable>
-              </View>
-            ) : null}
           </View>
-        ) : null}
 
-        {isComplete && game ? (
-          <GameResultPanel
-            title={t('gameImproCompleteTitle')}
-            subtitle={t('gameImproDescription')}
-            scoreLabel={`${userTurnsCount}/${targetUserTurns} ${t('gameImproInterventionsShort')}`}
-            replayLabel={t('gameImproReplay')}
-            exitLabel={t('gameExit')}
-            onReplay={() => {
-              clear();
-              setDraft('');
-              setSelectedTheme(null);
-              setCustomTheme('');
-              setThemeSuggestionNonce((previous) => previous + 1);
-            }}
-            onExit={() => {
-              clear();
-              navigateBackOrGamesHome();
-            }}
-            testID="impro-result"
-          />
-        ) : null}
-      </ScrollView>
+          {showComposer ? (
+            <View style={styles.composerDock}>
+              <ChatInput
+                onSend={sendFromImproComposer}
+                disabled={isStreaming || game?.status === 'cathy-ending'}
+                conversationMode={{
+                  enabled: conversationModeEnabled,
+                  isListening,
+                  transcript,
+                  error: conversationError,
+                  micState: conversationStatus,
+                  hint: conversationHint,
+                  onToggle: () => {
+                    setConversationModeEnabled(true);
+                  },
+                  onPauseListening: pauseListening,
+                  onResumeListening: resumeListening,
+                  onTypingStateChange: setHasTypedDraft
+                }}
+              />
+            </View>
+          ) : null}
+        </KeyboardAvoidingView>
+      ) : (
+        <ScrollView contentContainerStyle={styles.content} style={styles.scroll} testID="impro-screen">
+          <Text style={styles.title}>{t('gameImproTitle')}</Text>
+          <Text style={styles.subtitle}>{artist.name}</Text>
+          <ScoreBar />
+
+          {showLobby ? (
+            <View style={styles.lobbyCard}>
+              <Text style={styles.lobbyTitle}>{t('gameImproThemeSelectionTitle')}</Text>
+              <Text style={styles.lobbyHint}>{t('gameImproThemeSelectionSubtitle')}</Text>
+
+              {themesLoading ? (
+                <View style={styles.themesLoadingRow}>
+                  <ActivityIndicator size="small" color={theme.colors.neonBlue} />
+                  <Text style={styles.themesLoadingText}>{t('gameImproThemesLoading')}</Text>
+                </View>
+              ) : (
+                <View style={styles.themeGrid}>
+                  {suggestedThemes.map((themeOption) => {
+                    const active =
+                      selectedTheme?.id === themeOption.id &&
+                      selectedTheme?.titre === themeOption.titre &&
+                      !normalizeThemeInput(customTheme);
+
+                    return (
+                      <Pressable
+                        key={`impro-theme-${themeOption.id}-${themeOption.titre}`}
+                        onPress={() => {
+                          setSelectedTheme(themeOption);
+                          setCustomTheme('');
+                        }}
+                        style={({ pressed }) => [
+                          styles.themeChip,
+                          active ? styles.themeChipActive : null,
+                          pressed ? styles.buttonPressed : null
+                        ]}
+                        accessibilityRole="button"
+                        testID={`impro-theme-${themeOption.id}`}
+                      >
+                        <Text style={[styles.themeChipTitle, active ? styles.themeChipLabelActive : null]}>
+                          {themeOption.titre}
+                        </Text>
+                        <Text style={[styles.themeChipPremise, active ? styles.themeChipPremiseActive : null]}>
+                          {themeOption.premisse}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+
+              {themesError ? (
+                <View style={styles.fallbackRow}>
+                  <Text style={styles.fallbackHint}>{t('gameImproThemesFallback')}</Text>
+                </View>
+              ) : null}
+
+              <Pressable
+                onPress={() => {
+                  setSelectedTheme(null);
+                  setThemeSuggestionNonce((previous) => previous + 1);
+                }}
+                disabled={themesLoading}
+                style={({ pressed }) => [
+                  styles.retryButton,
+                  pressed ? styles.buttonPressed : null,
+                  themesLoading ? styles.disabledButton : null
+                ]}
+                accessibilityRole="button"
+                testID="impro-themes-regenerate"
+              >
+                <Text style={styles.retryButtonLabel}>{t('gameImproRegenerateThemes')}</Text>
+              </Pressable>
+
+              <Text style={styles.customThemeLabel}>{t('gameLobbyTheme')}</Text>
+              <TextInput
+                value={customTheme}
+                onChangeText={(value) => {
+                  setCustomTheme(value);
+                  setSelectedTheme(null);
+                }}
+                style={styles.input}
+                placeholder={t('gameLobbyThemePlaceholder')}
+                placeholderTextColor={theme.colors.textDisabled}
+                testID="impro-custom-theme"
+              />
+
+              <Pressable
+                onPress={() => {
+                  void (async () => {
+                    try {
+                      await startGame(resolvedTheme);
+                    } catch (error) {
+                      console.error('[impro-chain] Failed to start game', error);
+                    }
+                  })();
+                }}
+                disabled={!resolvedTheme}
+                style={({ pressed }) => [
+                  styles.startButton,
+                  pressed ? styles.buttonPressed : null,
+                  !resolvedTheme ? styles.disabledButton : null
+                ]}
+                accessibilityRole="button"
+                testID="impro-start"
+              >
+                <Text style={styles.startLabel}>{t('gameLobbyGoButton')}</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
+          {isComplete && game ? (
+            <GameResultPanel
+              title={t('gameImproCompleteTitle')}
+              subtitle={t('gameImproDescription')}
+              scoreLabel={`${userTurnsCount}/${targetUserTurns} ${t('gameImproInterventionsShort')}`}
+              replayLabel={t('gameImproReplay')}
+              exitLabel={t('gameExit')}
+              onReplay={() => {
+                clear();
+                setHasTypedDraft(false);
+                setSelectedTheme(null);
+                setCustomTheme('');
+                setThemeSuggestionNonce((previous) => previous + 1);
+              }}
+              onExit={() => {
+                clear();
+                navigateBackOrGamesHome();
+              }}
+              testID="impro-result"
+            />
+          ) : null}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -790,8 +929,36 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700'
   },
-  panel: {
+  activeGameContainer: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 680,
+    alignSelf: 'center',
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing.sm
+  },
+  activeGameHeader: {
     gap: theme.spacing.sm
+  },
+  activeGamePanel: {
+    flex: 1,
+    marginTop: theme.spacing.sm,
+    borderWidth: 1.3,
+    borderColor: theme.colors.border,
+    borderRadius: 14,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.sm,
+    gap: theme.spacing.sm
+  },
+  messageListFrame: {
+    flex: 1,
+    minHeight: 220
+  },
+  improMessageListContent: {
+    paddingBottom: theme.spacing.sm
+  },
+  composerDock: {
+    marginTop: theme.spacing.sm
   },
   metaRow: {
     flexDirection: 'row',
@@ -926,9 +1093,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase'
   },
-  composer: {
-    gap: theme.spacing.xs
-  },
   input: {
     borderWidth: 1.2,
     borderColor: theme.colors.border,
@@ -938,20 +1102,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     paddingHorizontal: theme.spacing.sm,
     paddingVertical: theme.spacing.sm
-  },
-  sendButton: {
-    minHeight: 42,
-    borderRadius: 10,
-    borderWidth: 1.4,
-    borderColor: theme.colors.neonBlueSoft,
-    backgroundColor: theme.colors.surfaceRaised,
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  sendLabel: {
-    color: theme.colors.textPrimary,
-    fontSize: 14,
-    fontWeight: '700'
   },
   startButton: {
     minHeight: 44,

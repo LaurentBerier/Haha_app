@@ -4,5 +4,8 @@ export type ChatError =
       maxLength: number;
     }
   | {
+      code: 'imageNotSupportedInImpro';
+    }
+  | {
       code: 'invalidConversation';
     };

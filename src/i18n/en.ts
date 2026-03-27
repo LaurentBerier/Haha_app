@@ -258,6 +258,7 @@ export const en = {
   voiceUnavailableGeneric: 'Voice unavailable for this message.',
   voiceRetryLabel: 'Retry voice',
   messageTooLong: 'Message is too long',
+  imageNotSupportedInImpro: 'Images are not supported in Impro yet.',
   newConversation: 'New conversation',
   noMessages: 'Start the conversation',
   chatEmptyHeadline: 'The stage is yours.',

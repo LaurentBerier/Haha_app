@@ -1,10 +1,14 @@
-import { memo, useCallback, useEffect, useRef } from 'react';
-import { FlatList, type NativeScrollEvent, type NativeSyntheticEvent, StyleSheet, Text, View } from 'react-native';
+import { memo, useCallback } from 'react';
+import { FlatList, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import type { Message } from '../../models/Message';
 import { t } from '../../i18n';
 import { theme } from '../../theme';
 import { ChatBubble } from './ChatBubble';
 import type { AudioPlayerController } from '../../hooks/useAudioPlayer';
+import {
+  useBottomAnchoredMessageList,
+  type TailFollowChangedPayload
+} from '../../hooks/useBottomAnchoredMessageList';
 
 interface MessageListProps {
   messages: Message[];
@@ -13,6 +17,18 @@ interface MessageListProps {
   onRetryMessage?: (messageId: string) => void;
   onRetryVoice?: (messageId: string) => Promise<void> | void;
   audioPlayer?: AudioPlayerController;
+  testID?: string;
+  listKey?: string;
+  listStyle?: StyleProp<ViewStyle>;
+  contentContainerStyle?: StyleProp<ViewStyle>;
+  showEmptyState?: boolean;
+  forceFollowSignal?: number;
+  onTailFollowChanged?: (payload: TailFollowChangedPayload) => void;
+  windowSize?: number;
+  initialNumToRender?: number;
+  maxToRenderPerBatch?: number;
+  removeClippedSubviews?: boolean;
+  disableVirtualization?: boolean;
 }
 
 function MessageListBase({
@@ -21,48 +37,34 @@ function MessageListBase({
   artistDisplayName,
   onRetryMessage,
   onRetryVoice,
-  audioPlayer
+  audioPlayer,
+  testID = 'message-list',
+  listKey,
+  listStyle,
+  contentContainerStyle,
+  showEmptyState = true,
+  forceFollowSignal,
+  onTailFollowChanged,
+  windowSize = 8,
+  initialNumToRender = 12,
+  maxToRenderPerBatch,
+  removeClippedSubviews,
+  disableVirtualization
 }: MessageListProps) {
-  const listRef = useRef<FlatList<Message>>(null);
-  const isNearBottomRef = useRef(true);
-  const hasScrolledInitiallyRef = useRef(false);
-
-  const scrollToLatest = useCallback((animated: boolean) => {
-    requestAnimationFrame(() => {
-      listRef.current?.scrollToEnd({ animated });
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!hasScrolledInitiallyRef.current) {
-      return;
-    }
-
-    if (isNearBottomRef.current) {
-      scrollToLatest(true);
-    }
-  }, [messages, scrollToLatest]);
-
-  const handleContentSizeChange = useCallback(() => {
-    if (!hasScrolledInitiallyRef.current) {
-      hasScrolledInitiallyRef.current = true;
-      scrollToLatest(false);
-      return;
-    }
-
-    if (isNearBottomRef.current) {
-      scrollToLatest(true);
-    }
-  }, [scrollToLatest]);
-
-  const handleScroll = useCallback(({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offsetY = nativeEvent.contentOffset?.y ?? 0;
-    const contentHeight = nativeEvent.contentSize?.height ?? 0;
-    const layoutHeight = nativeEvent.layoutMeasurement?.height ?? 0;
-    const distanceFromBottom = contentHeight - (offsetY + layoutHeight);
-
-    isNearBottomRef.current = distanceFromBottom < 80;
-  }, []);
+  const {
+    listRef,
+    onContentSizeChange,
+    onScroll,
+    onScrollBeginDrag,
+    onScrollEndDrag,
+    onMomentumScrollBegin,
+    onMomentumScrollEnd
+  } = useBottomAnchoredMessageList<Message>({
+    itemCount: messages.length,
+    resetKey: listKey,
+    forceFollowSignal,
+    onTailFollowChanged
+  });
 
   const renderItem = useCallback(
     ({ item }: { item: Message }) => (
@@ -80,24 +82,34 @@ function MessageListBase({
 
   return (
     <FlatList
+      key={listKey}
       ref={listRef}
-      testID="message-list"
-      style={styles.list}
-      contentContainerStyle={styles.content}
+      testID={testID}
+      style={[styles.list, listStyle]}
+      contentContainerStyle={[styles.content, contentContainerStyle]}
       data={messages}
       keyExtractor={(item) => item.id}
       renderItem={renderItem}
-      windowSize={8}
-      initialNumToRender={12}
-      onContentSizeChange={handleContentSizeChange}
-      onScroll={handleScroll}
+      windowSize={windowSize}
+      initialNumToRender={initialNumToRender}
+      maxToRenderPerBatch={maxToRenderPerBatch}
+      removeClippedSubviews={removeClippedSubviews}
+      disableVirtualization={disableVirtualization}
+      onContentSizeChange={onContentSizeChange}
+      onScroll={onScroll}
+      onScrollBeginDrag={onScrollBeginDrag}
+      onScrollEndDrag={onScrollEndDrag}
+      onMomentumScrollBegin={onMomentumScrollBegin}
+      onMomentumScrollEnd={onMomentumScrollEnd}
       scrollEventThrottle={16}
       ListEmptyComponent={
-        <View style={styles.emptyState} testID="message-list-empty">
-          <Text style={styles.emptyEmoji}>🎤</Text>
-          <Text style={styles.emptyTitle}>{t('chatEmptyHeadline')}</Text>
-          <Text style={styles.emptySubtitle}>{t('chatEmptySubtext')}</Text>
-        </View>
+        showEmptyState ? (
+          <View style={styles.emptyState} testID="message-list-empty">
+            <Text style={styles.emptyEmoji}>🎤</Text>
+            <Text style={styles.emptyTitle}>{t('chatEmptyHeadline')}</Text>
+            <Text style={styles.emptySubtitle}>{t('chatEmptySubtext')}</Text>
+          </View>
+        ) : null
       }
     />
   );
