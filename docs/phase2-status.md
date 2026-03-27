@@ -1,6 +1,6 @@
 # Phase 2 Status (Mobile + API)
 
-Last updated: **2026-03-22**
+Last updated: **2026-03-27**
 
 ## Scope
 
@@ -159,8 +159,8 @@ Core targets:
 - Phase 2 is complete for the current execution scope (`web + API + iOS`).
 - Android validation is intentionally deferred for now (explicit decision).
 - PayPal/Apple checkout end-to-end remains out of scope for this execution window.
-- Latest cross-phase code review snapshot: [`docs/code-review-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-20.md).
-- Latest targeted admin fix QA run: [`docs/qa-run-2026-03-22.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-22.md).
+- Latest cross-phase code review snapshot: [`docs/code-review-2026-03-27.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-27.md).
+- Latest targeted admin fix QA run: [`docs/qa-run-2026-03-27.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-27.md).
 - Current dashboard state snapshot: [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md).
 
 ## Planned Next

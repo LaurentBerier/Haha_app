@@ -1,6 +1,6 @@
 # Phase 3 Status (Voice + Prompt Intelligence)
 
-Last updated: **2026-03-20**
+Last updated: **2026-03-27**
 
 ## Scope
 
@@ -77,7 +77,8 @@ Phase 3 focuses on two tracks:
 - Phase 4 status and QA are tracked separately in [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md).
 - Voice production path is validated in production with authenticated tier-aware smoke (`/api/tts -> 200` under cap, `429` on cap/rate-limit).
 - Android manual voice QA is intentionally deferred for now.
-- Latest cross-phase code review snapshot: [`docs/code-review-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-20.md).
+- Latest cross-phase code review snapshot: [`docs/code-review-2026-03-27.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-27.md).
+- Latest full regression run: [`docs/qa-run-2026-03-27.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-27.md).
 
 ## Explicitly Out of Scope (Current Execution)
 

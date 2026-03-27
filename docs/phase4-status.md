@@ -1,6 +1,6 @@
 # Phase 4 Status (Conversation Naturelle)
 
-Last updated: **2026-03-25**
+Last updated: **2026-03-27**
 
 ## Scope
 
@@ -113,11 +113,14 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
 
 ## QA Status
 
-Validated on **2026-03-24** (mode-select stabilization + full regression pass):
+Validated on **2026-03-27** (full regression pass + code review refresh):
 
 - `npm run typecheck` -> PASS
 - `npm run lint` -> PASS
-- `npm run test:unit` -> PASS (`42` suites, `234` tests)
+- `npm run test:unit` -> PASS (`63` suites, `334` tests)
+- `npm run verify:profile-prompt` -> PASS
+- `npm run smoke:auth` -> PASS
+- `npm run smoke:voice` -> PASS
 
 Prior targeted mode-select layout baseline remains available from **2026-03-23**:
 
@@ -126,13 +129,14 @@ Prior targeted mode-select layout baseline remains available from **2026-03-23**
 
 Detailed run logs:
 
+- [`docs/qa-run-2026-03-27.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-27.md)
 - [`docs/qa-run-2026-03-24.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-24.md)
 - [`docs/qa-run-2026-03-23.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-23.md)
 - [`docs/qa-run-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-20.md)
 - [`docs/qa-run-2026-03-19.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-19.md)
 - [`docs/qa-run-2026-03-18.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-18.md)
 - [`docs/qa-run-2026-03-17.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-17.md)
-- Latest code review snapshot: [`docs/code-review-2026-03-20.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-20.md)
+- Latest code review snapshot: [`docs/code-review-2026-03-27.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-27.md)
 
 ## Games & Prompt Quality (2026-03-25)
 

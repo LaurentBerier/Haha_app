@@ -1,6 +1,6 @@
 # Admin Dashboard Status
 
-Last updated: **2026-03-24**
+Last updated: **2026-03-27**
 
 ## Scope
 
@@ -89,7 +89,7 @@ Current admin client behavior (`src/services/adminService.ts`):
 
 Latest targeted QA run:
 
-- [`docs/qa-run-2026-03-24.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-24.md)
+- [`docs/qa-run-2026-03-27.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-27.md)
 
 Validated commands:
 

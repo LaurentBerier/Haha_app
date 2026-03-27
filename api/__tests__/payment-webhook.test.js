@@ -137,6 +137,10 @@ describe('api/payment-webhook', () => {
     process.env.REVENUECAT_WEBHOOK_SECRET = 'top-secret';
     const insert = jest.fn().mockResolvedValue({ error: null });
     const updateProfileEq = jest.fn().mockResolvedValue({ error: null });
+    const profileMaybeSingle = jest.fn().mockResolvedValue({
+      data: { account_type_id: 'free' },
+      error: null
+    });
     const getUserById = jest.fn().mockResolvedValue({
       data: { user: { app_metadata: { locale: 'fr-CA' } } },
       error: null
@@ -153,6 +157,11 @@ describe('api/payment-webhook', () => {
 
           if (table === 'profiles') {
             return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: profileMaybeSingle
+                })
+              }),
               update: () => ({
                 eq: updateProfileEq
               })
@@ -185,6 +194,72 @@ describe('api/payment-webhook', () => {
       }
     });
     expect(res.statusCode).toBe(200);
+  });
+
+  it('rolls back profile tier when metadata update fails', async () => {
+    process.env.REVENUECAT_WEBHOOK_SECRET = 'top-secret';
+    const insert = jest.fn().mockResolvedValue({ error: null });
+    const updateProfileEq = jest
+      .fn()
+      .mockResolvedValueOnce({ error: null })
+      .mockResolvedValueOnce({ error: null });
+    const updateProfile = jest.fn(() => ({
+      eq: updateProfileEq
+    }));
+    const profileMaybeSingle = jest.fn().mockResolvedValue({
+      data: { account_type_id: 'free' },
+      error: null
+    });
+    const getUserById = jest.fn().mockResolvedValue({
+      data: { user: { app_metadata: { locale: 'fr-CA' } } },
+      error: null
+    });
+    const updateUserById = jest.fn().mockResolvedValue({ error: { message: 'metadata update failed' } });
+    const paymentEvents = buildPaymentEventsTable({ insert });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => ({
+        from: jest.fn((table) => {
+          if (table === 'payment_events') {
+            return paymentEvents;
+          }
+
+          if (table === 'profiles') {
+            return {
+              select: () => ({
+                eq: () => ({
+                  maybeSingle: profileMaybeSingle
+                })
+              }),
+              update: updateProfile
+            };
+          }
+
+          throw new Error(`Unexpected table: ${table}`);
+        }),
+        auth: {
+          admin: {
+            getUserById,
+            updateUserById
+          }
+        }
+      }))
+    }));
+
+    const handler = require('../payment-webhook');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer top-secret' },
+      body: { event: { type: 'INITIAL_PURCHASE', app_user_id: 'user-1', product_id: 'haha_premium_monthly' } }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.payload.error.message).toBe('metadata update failed');
+    expect(updateProfile).toHaveBeenNthCalledWith(1, { account_type_id: 'premium' });
+    expect(updateProfile).toHaveBeenNthCalledWith(2, { account_type_id: 'free' });
+    expect(updateProfileEq).toHaveBeenNthCalledWith(1, 'id', 'user-1');
+    expect(updateProfileEq).toHaveBeenNthCalledWith(2, 'id', 'user-1');
   });
 
   it('returns duplicate=true when RevenueCat event already exists', async () => {

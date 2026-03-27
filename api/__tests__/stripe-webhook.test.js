@@ -12,7 +12,9 @@ function buildSupabaseMock({
   linkLookupUserId = '',
   targetUser = { id: 'user-1', app_metadata: { locale: 'fr-CA' } },
   duplicateEventCount = 0,
-  paymentInsertResults = [{ error: null }]
+  paymentInsertResults = [{ error: null }],
+  previousAccountTypeId = 'free',
+  metadataUpdateError = null
 } = {}) {
   const linksUpsert = jest.fn().mockResolvedValue({ error: null });
   const paymentInsert = jest.fn();
@@ -24,11 +26,18 @@ function buildSupabaseMock({
   }
   const paymentSelectContains = jest.fn().mockResolvedValue({ count: duplicateEventCount, error: null });
   const profilesEq = jest.fn().mockResolvedValue({ error: null });
+  const profilesUpdate = jest.fn(() => ({
+    eq: profilesEq
+  }));
+  const profileMaybeSingle = jest.fn().mockResolvedValue({
+    data: { account_type_id: previousAccountTypeId },
+    error: null
+  });
   const linksMaybeSingle = jest.fn().mockResolvedValue({
     data: linkLookupUserId ? { user_id: linkLookupUserId } : null,
     error: null
   });
-  const updateUserById = jest.fn().mockResolvedValue({ error: null });
+  const updateUserById = jest.fn().mockResolvedValue({ error: metadataUpdateError });
   const getUserById = jest.fn().mockResolvedValue({ data: { user: targetUser }, error: null });
 
   const from = jest.fn((table) => {
@@ -56,9 +65,12 @@ function buildSupabaseMock({
 
     if (table === 'profiles') {
       return {
-        update: () => ({
-          eq: profilesEq
-        })
+        select: () => ({
+          eq: () => ({
+            maybeSingle: profileMaybeSingle
+          })
+        }),
+        update: profilesUpdate
       };
     }
 
@@ -75,7 +87,17 @@ function buildSupabaseMock({
         }
       }
     },
-    spies: { linksUpsert, paymentInsert, paymentSelectContains, profilesEq, linksMaybeSingle, getUserById, updateUserById }
+    spies: {
+      linksUpsert,
+      paymentInsert,
+      paymentSelectContains,
+      profilesUpdate,
+      profilesEq,
+      profileMaybeSingle,
+      linksMaybeSingle,
+      getUserById,
+      updateUserById
+    }
   };
 }
 
@@ -324,5 +346,46 @@ describe('api/stripe-webhook', () => {
         account_type: 'free'
       }
     });
+  });
+
+  it('rolls back profile tier when metadata update fails', async () => {
+    const event = {
+      id: 'evt_checkout_metadata_fail',
+      type: 'checkout.session.completed',
+      data: {
+        object: {
+          id: 'cs_123',
+          client_reference_id: 'user-1',
+          customer: 'cus_123',
+          subscription: 'sub_123',
+          payment_link: 'plink_premium'
+        }
+      }
+    };
+    const payload = JSON.stringify(event);
+    const signature = signPayload(payload, process.env.STRIPE_WEBHOOK_SECRET);
+    const supabase = buildSupabaseMock({
+      previousAccountTypeId: 'free',
+      metadataUpdateError: { message: 'metadata update failed' }
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+
+    const handler = require('../stripe-webhook');
+    const { req, res } = createReqRes({
+      headers: { 'stripe-signature': signature },
+      body: payload
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.payload.error.message).toBe('metadata update failed');
+    expect(supabase.spies.profilesUpdate).toHaveBeenNthCalledWith(1, { account_type_id: 'premium' });
+    expect(supabase.spies.profilesUpdate).toHaveBeenNthCalledWith(2, { account_type_id: 'free' });
+    expect(supabase.spies.profilesEq).toHaveBeenNthCalledWith(1, 'id', 'user-1');
+    expect(supabase.spies.profilesEq).toHaveBeenNthCalledWith(2, 'id', 'user-1');
   });
 });

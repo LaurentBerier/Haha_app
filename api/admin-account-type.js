@@ -68,6 +68,13 @@ async function readCurrentAccountType(supabaseAdmin, userId) {
   return typeof data?.account_type_id === 'string' ? data.account_type_id : null;
 }
 
+async function restorePreviousProfileAccountType(supabaseAdmin, userId, previousAccountTypeId) {
+  return supabaseAdmin
+    .from('profiles')
+    .update({ account_type_id: previousAccountTypeId })
+    .eq('id', userId);
+}
+
 async function updateAppMetadata(supabaseAdmin, userId, accountTypeId) {
   const {
     data: userLookup,
@@ -180,6 +187,14 @@ module.exports = async function handler(req, res) {
     const { error: metadataError } = await updateAppMetadata(supabaseAdmin, userId, accountTypeId);
 
     if (metadataError) {
+      const { error: rollbackError } = await restorePreviousProfileAccountType(
+        supabaseAdmin,
+        userId,
+        previousAccountTypeId
+      );
+      if (rollbackError) {
+        console.error(`[api/admin-account-type][${requestId}] Failed to rollback profile account type`, rollbackError);
+      }
       sendError(res, 500, metadataError.message, { code: 'SERVER_ERROR', requestId });
       return;
     }

@@ -212,6 +212,27 @@ async function updateAppMetadata(supabaseAdmin, userId, accountTypeId) {
   });
 }
 
+async function readCurrentAccountType(supabaseAdmin, userId) {
+  const { data, error } = await supabaseAdmin
+    .from('profiles')
+    .select('account_type_id')
+    .eq('id', userId)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return typeof data?.account_type_id === 'string' ? data.account_type_id : null;
+}
+
+async function restorePreviousProfileAccountType(supabaseAdmin, userId, previousAccountTypeId) {
+  return supabaseAdmin
+    .from('profiles')
+    .update({ account_type_id: previousAccountTypeId })
+    .eq('id', userId);
+}
+
 module.exports = async function handler(req, res) {
   const requestId = attachRequestId(req, res);
   const supabaseAdmin = getSupabaseAdmin();
@@ -302,6 +323,7 @@ module.exports = async function handler(req, res) {
     }
 
     if (accountTypeId) {
+      const previousAccountTypeId = await readCurrentAccountType(supabaseAdmin, userId);
       const { error: profileError } = await supabaseAdmin
         .from('profiles')
         .update({ account_type_id: accountTypeId })
@@ -315,6 +337,14 @@ module.exports = async function handler(req, res) {
       const { error: metadataError } = await updateAppMetadata(supabaseAdmin, userId, accountTypeId);
 
       if (metadataError) {
+        const { error: rollbackError } = await restorePreviousProfileAccountType(
+          supabaseAdmin,
+          userId,
+          previousAccountTypeId
+        );
+        if (rollbackError) {
+          console.error(`[api/payment-webhook][${requestId}] Failed to rollback profile account type`, rollbackError);
+        }
         sendError(res, 500, metadataError.message, { code: 'SERVER_ERROR', requestId });
         return;
       }
