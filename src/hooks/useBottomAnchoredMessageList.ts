@@ -52,7 +52,7 @@ interface UseBottomAnchoredMessageListResult<T> {
   onScrollBeginDrag: () => void;
   onScrollEndDrag: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   onMomentumScrollBegin: () => void;
-  onMomentumScrollEnd: () => void;
+  onMomentumScrollEnd: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
 }
 
 function scheduleFrame(callback: () => void): void {
@@ -176,9 +176,17 @@ export function useBottomAnchoredMessageList<T>({
     isMomentumActiveRef.current = true;
   }, []);
 
-  const onMomentumScrollEnd = useCallback(() => {
+  const onMomentumScrollEnd = useCallback(
+    ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
     isMomentumActiveRef.current = false;
-  }, []);
+      const offsetY = nativeEvent.contentOffset?.y ?? 0;
+      const contentHeight = nativeEvent.contentSize?.height ?? 0;
+      const layoutHeight = nativeEvent.layoutMeasurement?.height ?? 0;
+      const distanceFromBottom = contentHeight - (offsetY + layoutHeight);
+      syncTailFollowFromDistance(distanceFromBottom);
+    },
+    [syncTailFollowFromDistance]
+  );
 
   useEffect(() => {
     const previousCount = lastItemCountRef.current;
