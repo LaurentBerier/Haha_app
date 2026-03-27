@@ -14,12 +14,10 @@ import {
 import { ChatInput } from '../../../components/chat/ChatInput';
 import { MessageList } from '../../../components/chat/MessageList';
 import { StreamingIndicator } from '../../../components/chat/StreamingIndicator';
-import { ThreadModeHeader } from '../../../components/chat/ThreadModeHeader';
 import { AmbientGlow } from '../../../components/common/AmbientGlow';
 import { BackButton } from '../../../components/common/BackButton';
 import { MODE_IDS } from '../../../config/constants';
 import { MODE_CATEGORY_META, MODE_CATEGORY_ORDER, type ModeCategoryId } from '../../../config/modeCategories';
-import { resolveModeIdCompat } from '../../../config/modeCompat';
 import { getModeById } from '../../../config/modes';
 import { API_BASE_URL, CLAUDE_PROXY_URL, E2E_AUTH_BYPASS, GREETING_FORCE_TUTORIAL } from '../../../config/env';
 import { useAutoReplayLastArtistMessage } from '../../../hooks/useAutoReplayLastArtistMessage';
@@ -29,6 +27,7 @@ import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInse
 import { useVoiceConversation } from '../../../hooks/useVoiceConversation';
 import { t } from '../../../i18n';
 import type { ChatError } from '../../../models/ChatError';
+import { normalizeConversationThreadType } from '../../../models/Conversation';
 import type { Message } from '../../../models/Message';
 import { synthesizeVoice } from '../../../services/voiceEngine';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voiceFillerService';
@@ -555,12 +554,11 @@ function parseGreetingTutorialInfo(value: unknown): GreetingTutorialInfo | null 
 }
 
 function hasInjectedGreetingMessageForArtist(params: {
-  conversationsForArtist: Array<{ id: string; modeId?: string | null }>;
+  conversationsForArtist: Array<{ id: string; threadType?: string | null }>;
   messagesByConversation: Record<string, { messages: Message[] }>;
 }): boolean {
   for (const conversation of params.conversationsForArtist) {
-    const conversationModeId = conversation.modeId ?? MODE_IDS.ON_JASE;
-    if (conversationModeId !== MODE_IDS.ON_JASE) {
+    if (normalizeConversationThreadType(conversation.threadType) !== 'primary') {
       continue;
     }
 
@@ -1003,12 +1001,6 @@ export default function ModeSelectHomeScreen() {
     () => (modeSelectConversation?.language?.trim() ? modeSelectConversation.language : language),
     [language, modeSelectConversation?.language]
   );
-  const modeSelectThreadMode = useMemo(() => {
-    const candidateModeId = modeSelectConversation?.modeId?.trim() || MODE_IDS.ON_JASE;
-    return getModeById(resolveModeIdCompat(candidateModeId));
-  }, [modeSelectConversation?.modeId]);
-  const modeSelectThreadModeTitle = modeSelectThreadMode?.name ?? getModeById(MODE_IDS.ON_JASE)?.name ?? 'On jase';
-  const modeSelectThreadModeSubtitle = modeSelectThreadMode?.description ?? '';
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? null);
   const artistDisplayName = formatArtistDisplayName(artist?.name ?? null);
   const [pendingGreetingAudio, setPendingGreetingAudio] = useState<PendingGreetingAudio | null>(null);
@@ -1068,7 +1060,8 @@ export default function ModeSelectHomeScreen() {
         const recoveryConversation = createConversation(
           artist.id,
           resolveGreetingConversationLanguage(artist, language),
-          MODE_IDS.ON_JASE
+          MODE_IDS.ON_JASE,
+          { threadType: 'primary' }
         );
         recoveredConversationId = recoveryConversation.id;
       }
@@ -1199,8 +1192,7 @@ export default function ModeSelectHomeScreen() {
       if (sendContext.conversation.artistId !== artist.id) {
         return false;
       }
-      const modeId = sendContext.conversation.modeId ?? MODE_IDS.ON_JASE;
-      return modeId === MODE_IDS.ON_JASE;
+      return normalizeConversationThreadType(sendContext.conversation.threadType) === 'primary';
     };
 
     if (isValidTarget(uiConversationId)) {
@@ -1808,7 +1800,8 @@ export default function ModeSelectHomeScreen() {
     const conversation = createConversation(
       artist.id,
       resolveGreetingConversationLanguage(artist, language),
-      MODE_IDS.ON_JASE
+      MODE_IDS.ON_JASE,
+      { threadType: 'primary' }
     );
     commitBoundConversationId(conversation.id, 'missing_context');
     if (activeConversationId !== conversation.id) {
@@ -1879,7 +1872,8 @@ export default function ModeSelectHomeScreen() {
         const introConversation = createConversation(
           artist.id,
           resolveGreetingConversationLanguage(artist, language),
-          MODE_IDS.ON_JASE
+          MODE_IDS.ON_JASE,
+          { threadType: 'primary' }
         );
         commitBoundConversationId(introConversation.id, 'missing_context');
         const liveActiveConversationId = useStore.getState().activeConversationId;
@@ -2220,11 +2214,6 @@ export default function ModeSelectHomeScreen() {
                   <Text style={styles.greetingVoiceLabel}>{greetingVoiceLabel}</Text>
                 </View>
               ) : null}
-              <ThreadModeHeader
-                title={modeSelectThreadModeTitle}
-                subtitle={modeSelectThreadModeSubtitle}
-                testID="mode-select-thread-mode-header"
-              />
               <MessageList
                 testID="mode-select-message-list"
                 listKey={modeSelectConversationId}

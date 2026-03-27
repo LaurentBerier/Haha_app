@@ -14,6 +14,7 @@ import { useChat } from '../../hooks/useChat';
 import { useVoiceConversation } from '../../hooks/useVoiceConversation';
 import { t } from '../../i18n';
 import type { ChatSendPayload } from '../../models/ChatSendPayload';
+import { normalizeConversationThreadType } from '../../models/Conversation';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../services/voiceFillerService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
@@ -111,19 +112,23 @@ export default function ChatScreen() {
 
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? '');
   const artistDisplayName = formatArtistDisplayName(currentArtistName);
+  const isPrimaryThread = normalizeConversationThreadType(currentConversation?.threadType) === 'primary';
   const activeMode = useMemo(() => {
+    if (isPrimaryThread) {
+      return null;
+    }
     const modeId = currentConversation?.modeId?.trim();
     if (!modeId) {
       return null;
     }
     return getModeById(resolveModeIdCompat(modeId));
-  }, [currentConversation?.modeId]);
+  }, [currentConversation?.modeId, isPrimaryThread]);
   const effectiveAccountType = useMemo(
     () => resolveEffectiveAccountType(sessionUser?.accountType ?? null, sessionUser?.role ?? null),
     [sessionUser?.accountType, sessionUser?.role]
   );
-  const activeModeLabel = activeMode?.name ?? t('chatModeUnknown');
-  const activeModeEmoji = activeMode?.emoji ?? '💬';
+  const activeModeLabel = isPrimaryThread ? t('primaryThreadTitle') : activeMode?.name ?? t('chatModeUnknown');
+  const activeModeEmoji = isPrimaryThread ? '💬' : activeMode?.emoji ?? '💬';
   const chatHeaderTitle = `${activeModeEmoji} ${activeModeLabel}`;
   const shouldUseVoiceFiller = Boolean(
       conversationModeEnabled &&
@@ -219,7 +224,7 @@ export default function ChatScreen() {
           <>
             <ThreadModeHeader
               title={activeModeLabel}
-              subtitle={activeMode?.description ?? ''}
+              subtitle={isPrimaryThread ? t('primaryThreadSubtitle') : activeMode?.description ?? ''}
               testID="chat-thread-mode-header"
             />
             <MessageList

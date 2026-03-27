@@ -4,8 +4,8 @@ import { MODE_IDS } from '../config/constants';
 import { resolveModeIdCompat } from '../config/modeCompat';
 import { setLanguage as setI18nLanguage } from '../i18n';
 import { EMPTY_GAMIFICATION_STATS } from '../models/Gamification';
-import type { Conversation } from '../models/Conversation';
-import type { PersistedStoreSnapshot } from '../models/Persistence';
+import { normalizeConversationThreadType, type Conversation } from '../models/Conversation';
+import type { PersistedConversation, PersistedStoreSnapshot } from '../models/Persistence';
 import type { Message, MessagePage } from '../models/Message';
 import { createArtistAccessSlice, type ArtistAccessSlice } from './slices/artistAccessSlice';
 import { createArtistSlice, type ArtistSlice } from './slices/artistSlice';
@@ -37,13 +37,14 @@ export type StoreState = ArtistSlice &
     markHydrated: () => void;
   };
 
-function normalizeConversations(input: Record<string, Conversation[]>): Record<string, Conversation[]> {
+function normalizeConversations(input: Record<string, PersistedConversation[]>): Record<string, Conversation[]> {
   const normalized: Record<string, Conversation[]> = {};
 
   Object.entries(input).forEach(([artistId, conversations]) => {
     normalized[artistId] = (conversations ?? []).map((conversation) => ({
       ...conversation,
-      modeId: resolveModeIdCompat(conversation.modeId ?? MODE_IDS.ON_JASE)
+      modeId: resolveModeIdCompat(conversation.modeId ?? MODE_IDS.ON_JASE),
+      threadType: normalizeConversationThreadType(conversation.threadType)
     }));
   });
 

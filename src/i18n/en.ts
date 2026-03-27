@@ -20,6 +20,8 @@ export const en = {
   modeSelectCategoryEmptySubtitle: 'Try another category to continue.',
   modeSelectGreetingSpeaking: 'Cathy is speaking...',
   modeSelectGreetingTapToPlay: 'Tap the screen to start voice',
+  primaryThreadTitle: 'Main thread',
+  primaryThreadSubtitle: 'Direct conversation with Cathy.',
   modeSelectEmptyHeadline: 'No mode available yet',
   modeSelectEmptySubtext: 'This artist has no active modes right now. Check back soon.',
   historyModeTitle: 'Chat History',

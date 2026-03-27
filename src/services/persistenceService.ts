@@ -25,6 +25,7 @@ function isValidConversation(value: unknown): boolean {
     typeof value.title === 'string' &&
     typeof value.language === 'string' &&
     typeof value.modeId === 'string' &&
+    (value.threadType === undefined || value.threadType === 'primary' || value.threadType === 'mode') &&
     typeof value.createdAt === 'string' &&
     typeof value.updatedAt === 'string' &&
     typeof value.lastMessagePreview === 'string'

@@ -22,6 +22,7 @@ function buildState(overrides: Partial<StoreState> = {}): StoreState {
           title: 'Test',
           language: 'fr-CA',
           modeId: 'on-jase',
+          threadType: 'mode',
           createdAt: '2026-03-20T10:00:00.000Z',
           updatedAt: '2026-03-20T10:10:00.000Z',
           lastMessagePreview: ''

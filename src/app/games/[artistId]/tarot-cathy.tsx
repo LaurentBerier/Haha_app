@@ -88,7 +88,7 @@ export default function TarotCathyScreen() {
       </View>
       <ScrollView contentContainerStyle={styles.content} style={styles.scroll} testID="tarot-screen">
         <Text style={styles.title}>{t('gameTarotTitle')}</Text>
-        <Text style={styles.subtitle}>{artist.name}</Text>
+        <Text style={styles.subtitle}>{t('gameTarotDescription')}</Text>
         <ScoreBar />
 
         {game?.error ? (

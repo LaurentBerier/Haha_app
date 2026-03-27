@@ -1,5 +1,4 @@
-import { MODE_IDS } from '../config/constants';
-import type { Conversation } from '../models/Conversation';
+import { normalizeConversationThreadType, type Conversation } from '../models/Conversation';
 
 export type ModeSelectConversationRecoveryAction =
   | {
@@ -15,9 +14,9 @@ function toTimestamp(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-export function sortOnJaseConversationsByRecency(conversations: Conversation[]): Conversation[] {
+export function sortPrimaryConversationsByRecency(conversations: Conversation[]): Conversation[] {
   return conversations
-    .filter((conversation) => (conversation.modeId ?? MODE_IDS.ON_JASE) === MODE_IDS.ON_JASE)
+    .filter((conversation) => normalizeConversationThreadType(conversation.threadType) === 'primary')
     .slice()
     .sort((left, right) => toTimestamp(right.updatedAt) - toTimestamp(left.updatedAt));
 }
@@ -25,11 +24,11 @@ export function sortOnJaseConversationsByRecency(conversations: Conversation[]):
 export function resolveModeSelectConversationRecoveryAction(
   conversations: Conversation[]
 ): ModeSelectConversationRecoveryAction {
-  const [latestOnJaseConversation] = sortOnJaseConversationsByRecency(conversations);
-  if (latestOnJaseConversation?.id) {
+  const [latestPrimaryConversation] = sortPrimaryConversationsByRecency(conversations);
+  if (latestPrimaryConversation?.id) {
     return {
       type: 'use_existing',
-      conversationId: latestOnJaseConversation.id
+      conversationId: latestPrimaryConversation.id
     };
   }
 

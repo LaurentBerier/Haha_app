@@ -95,7 +95,9 @@ export default function ModeCategoryScreen() {
       if (!artist) {
         return;
       }
-      const nextConversation = createConversation(artist.id, resolveConversationLanguage(artist), modeId);
+      const nextConversation = createConversation(artist.id, resolveConversationLanguage(artist), modeId, {
+        threadType: 'mode'
+      });
       const introMessage = generateModeIntro(modeId, userProfile);
       const now = new Date().toISOString();
       const introMessageId = generateId('msg');

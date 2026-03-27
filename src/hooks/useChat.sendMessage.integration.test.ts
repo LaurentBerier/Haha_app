@@ -146,6 +146,7 @@ function createConversation(id: string, artistId = ARTIST_IDS.CATHY_GAUTHIER): C
     title: 'On jase',
     language: 'fr-CA',
     modeId: MODE_IDS.ON_JASE,
+    threadType: 'mode',
     createdAt: timestamp,
     updatedAt: timestamp,
     lastMessagePreview: ''

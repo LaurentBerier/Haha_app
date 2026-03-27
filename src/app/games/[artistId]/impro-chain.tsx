@@ -692,7 +692,7 @@ export default function ImproChainScreen() {
         >
           <View style={styles.activeGameHeader}>
             <Text style={styles.title}>{t('gameImproTitle')}</Text>
-            <Text style={styles.subtitle}>{artist.name}</Text>
+            <Text style={styles.subtitle}>{t('gameImproDescription')}</Text>
             <ScoreBar />
             {game?.error ? <Text style={styles.errorText}>{game.error}</Text> : null}
           </View>
@@ -764,7 +764,7 @@ export default function ImproChainScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.content} style={styles.scroll} testID="impro-screen">
           <Text style={styles.title}>{t('gameImproTitle')}</Text>
-          <Text style={styles.subtitle}>{artist.name}</Text>
+          <Text style={styles.subtitle}>{t('gameImproDescription')}</Text>
           <ScoreBar />
 
           {showLobby ? (

@@ -86,7 +86,7 @@ export default function VraiOuInventeScreen() {
       </View>
       <ScrollView contentContainerStyle={styles.content} style={styles.scroll} testID="vrai-screen">
         <Text style={styles.title}>{t('gameVraiInventeTitle')}</Text>
-        <Text style={styles.subtitle}>{artist.name}</Text>
+        <Text style={styles.subtitle}>{t('gameVraiInventeDescription')}</Text>
         <ScoreBar />
 
         {game?.error ? (

@@ -28,6 +28,7 @@ describe('conversationSlice', () => {
           title: 'old',
           language: 'fr-CA',
           modeId: 'default',
+          threadType: 'mode',
           createdAt: '2026-03-01T00:00:00.000Z',
           updatedAt: '2026-03-01T00:00:00.000Z',
           lastMessagePreview: 'before'
@@ -40,6 +41,7 @@ describe('conversationSlice', () => {
           title: 'keep',
           language: 'fr-CA',
           modeId: 'default',
+          threadType: 'mode',
           createdAt: '2026-03-01T00:00:00.000Z',
           updatedAt: '2026-03-01T00:00:00.000Z',
           lastMessagePreview: 'unchanged'

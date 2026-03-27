@@ -1,12 +1,11 @@
-import { MODE_IDS } from '../config/constants';
-import type { Conversation } from '../models/Conversation';
+import { normalizeConversationThreadType, type Conversation } from '../models/Conversation';
 import type { MessagePage } from '../models/Message';
 import { resolveModeSelectConversationRecoveryAction } from './modeSelectConversationRecovery';
 
 export type ModeSelectBoundResolutionReason =
   | 'keep_bound'
-  | 'active_on_jase'
-  | 'latest_on_jase'
+  | 'active_primary'
+  | 'latest_primary'
   | 'missing_context'
   | 'blocked_not_greeted';
 
@@ -29,11 +28,11 @@ interface FindArtistConversationForMessageParams {
   messageId: string;
 }
 
-function isOnJaseConversation(conversation: Conversation | null | undefined): conversation is Conversation {
+function isPrimaryConversation(conversation: Conversation | null | undefined): conversation is Conversation {
   if (!conversation) {
     return false;
   }
-  return (conversation.modeId ?? MODE_IDS.ON_JASE) === MODE_IDS.ON_JASE;
+  return normalizeConversationThreadType(conversation.threadType) === 'primary';
 }
 
 function findConversationByIdInList(
@@ -51,7 +50,7 @@ export function isValidBoundModeSelectConversation(
   conversationsForArtist: Conversation[]
 ): boolean {
   const conversation = findConversationByIdInList(conversationsForArtist, boundConversationId.trim());
-  return isOnJaseConversation(conversation);
+  return isPrimaryConversation(conversation);
 }
 
 export function resolveModeSelectBoundConversationId(
@@ -83,10 +82,10 @@ export function resolveModeSelectBoundConversationId(
     params.conversationsForArtist,
     params.activeConversationId?.trim() ?? ''
   );
-  if (isOnJaseConversation(activeConversation)) {
+  if (isPrimaryConversation(activeConversation)) {
     return {
       conversationId: activeConversation.id,
-      reason: 'active_on_jase'
+      reason: 'active_primary'
     };
   }
 
@@ -94,7 +93,7 @@ export function resolveModeSelectBoundConversationId(
   if (recoveryAction.type === 'use_existing') {
     return {
       conversationId: recoveryAction.conversationId,
-      reason: 'latest_on_jase'
+      reason: 'latest_primary'
     };
   }
 
@@ -113,7 +112,7 @@ export function findArtistConversationIdForMessageId(
   }
 
   for (const conversation of params.conversationsForArtist) {
-    if (!isOnJaseConversation(conversation)) {
+    if (!isPrimaryConversation(conversation)) {
       continue;
     }
 

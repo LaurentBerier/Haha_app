@@ -23,6 +23,7 @@ import { useVoiceConversation } from '../hooks/useVoiceConversation';
 import { useStorePersistence } from '../hooks/useStorePersistence';
 import { t } from '../i18n';
 import type { ChatSendPayload } from '../models/ChatSendPayload';
+import { normalizeConversationThreadType } from '../models/Conversation';
 import { signOut } from '../services/authService';
 import { initSentry } from '../services/sentry';
 import { useStore } from '../store/useStore';
@@ -201,8 +202,11 @@ export default function RootLayout() {
       let conversationId: string | null = null;
 
       if (isModeSelectContext) {
+        const activeConversation = artistConversations.find((conversation) => conversation.id === activeConversationId) ?? null;
         const activeCandidateId =
-          activeConversationId && artistConversations.some((conversation) => conversation.id === activeConversationId)
+          activeConversationId &&
+          activeConversation &&
+          normalizeConversationThreadType(activeConversation.threadType) === 'primary'
             ? activeConversationId
             : null;
 
@@ -220,19 +224,22 @@ export default function RootLayout() {
             : null;
 
         if (!conversationId && artistConversations.length > 0) {
-          const [latestConversation] = artistConversations
+          const [latestPrimaryConversation] = artistConversations
+            .filter((conversation) => normalizeConversationThreadType(conversation.threadType) === 'primary')
             .slice()
             .sort((left, right) => {
               const rightTime = Date.parse(right.updatedAt);
               const leftTime = Date.parse(left.updatedAt);
               return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
             });
-          conversationId = latestConversation?.id ?? null;
+          conversationId = latestPrimaryConversation?.id ?? null;
         }
       }
 
       if (!conversationId) {
-        conversationId = createConversation(targetArtistId, language, MODE_IDS.ON_JASE).id;
+        conversationId = createConversation(targetArtistId, language, MODE_IDS.ON_JASE, {
+          threadType: 'primary'
+        }).id;
       }
 
       setActiveConversation(conversationId);

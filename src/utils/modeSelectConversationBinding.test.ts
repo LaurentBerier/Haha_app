@@ -15,6 +15,7 @@ function createConversation(overrides: Partial<Conversation> = {}): Conversation
     title: overrides.title ?? 'Conversation',
     language: overrides.language ?? 'fr-CA',
     modeId: overrides.modeId ?? MODE_IDS.ON_JASE,
+    threadType: overrides.threadType ?? 'primary',
     createdAt: overrides.createdAt ?? timestamp,
     updatedAt: overrides.updatedAt ?? timestamp,
     lastMessagePreview: overrides.lastMessagePreview ?? ''
@@ -61,11 +62,16 @@ describe('modeSelectConversationBinding', () => {
     });
   });
 
-  it('falls back to latest On Jase when bound conversation is missing', () => {
+  it('falls back to latest primary conversation when bound conversation is missing', () => {
     const conversations = [
       createConversation({ id: 'on-jase-older', updatedAt: '2026-03-22T08:00:00.000Z' }),
       createConversation({ id: 'on-jase-latest', updatedAt: '2026-03-22T12:00:00.000Z' }),
-      createConversation({ id: 'grill-latest', modeId: MODE_IDS.GRILL, updatedAt: '2026-03-22T14:00:00.000Z' })
+      createConversation({
+        id: 'grill-latest',
+        modeId: MODE_IDS.GRILL,
+        threadType: 'mode',
+        updatedAt: '2026-03-22T14:00:00.000Z'
+      })
     ];
 
     const result = resolveModeSelectBoundConversationId({
@@ -78,7 +84,7 @@ describe('modeSelectConversationBinding', () => {
 
     expect(result).toEqual({
       conversationId: 'on-jase-latest',
-      reason: 'latest_on_jase'
+      reason: 'latest_primary'
     });
   });
 
@@ -112,13 +118,13 @@ describe('modeSelectConversationBinding', () => {
     });
   });
 
-  it('returns missing_context when no On Jase conversation exists', () => {
+  it('returns missing_context when no primary conversation exists', () => {
     const result = resolveModeSelectBoundConversationId({
       artistId: 'cathy-gauthier',
       isGreetingGateSatisfied: true,
       boundConversationId: '',
       activeConversationId: null,
-      conversationsForArtist: [createConversation({ id: 'grill-only', modeId: MODE_IDS.GRILL })]
+      conversationsForArtist: [createConversation({ id: 'grill-only', modeId: MODE_IDS.GRILL, threadType: 'mode' })]
     });
 
     expect(result).toEqual({
@@ -147,10 +153,10 @@ describe('modeSelectConversationBinding', () => {
     expect(isValidBoundModeSelectConversation('conv-a', conversations)).toBe(true);
   });
 
-  it('ignores non On Jase conversations for audio mismatch rebinding', () => {
+  it('ignores non-primary conversations for audio mismatch rebinding', () => {
     const conversations = [
-      createConversation({ id: 'conv-jase', modeId: MODE_IDS.ON_JASE }),
-      createConversation({ id: 'conv-grill', modeId: MODE_IDS.GRILL })
+      createConversation({ id: 'conv-jase', modeId: MODE_IDS.ON_JASE, threadType: 'primary' }),
+      createConversation({ id: 'conv-grill', modeId: MODE_IDS.GRILL, threadType: 'mode' })
     ];
     const messagesByConversation: Record<string, MessagePage> = {
       'conv-jase': createMessagePage(['msg-jase']),
@@ -164,5 +170,30 @@ describe('modeSelectConversationBinding', () => {
         messageId: 'msg-grill'
       })
     ).toBeNull();
+  });
+
+  it('prefers active primary conversation over mode threads', () => {
+    const conversations = [
+      createConversation({ id: 'active-primary', threadType: 'primary', updatedAt: '2026-03-22T10:00:00.000Z' }),
+      createConversation({
+        id: 'active-mode',
+        modeId: MODE_IDS.GRILL,
+        threadType: 'mode',
+        updatedAt: '2026-03-22T11:00:00.000Z'
+      })
+    ];
+
+    const result = resolveModeSelectBoundConversationId({
+      artistId: 'cathy-gauthier',
+      isGreetingGateSatisfied: true,
+      boundConversationId: '',
+      activeConversationId: 'active-primary',
+      conversationsForArtist: conversations
+    });
+
+    expect(result).toEqual({
+      conversationId: 'active-primary',
+      reason: 'active_primary'
+    });
   });
 });

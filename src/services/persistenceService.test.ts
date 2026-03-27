@@ -31,6 +31,7 @@ describe('persistenceService', () => {
             title: 'Nouvelle conversation',
             language: 'fr-CA',
             modeId: 'default',
+            threadType: 'mode',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             lastMessagePreview: 'Bonjour'
@@ -84,6 +85,75 @@ describe('persistenceService', () => {
     };
 
     (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify(invalidSnapshot));
+
+    const snapshot = await loadPersistedSnapshot();
+
+    expect(snapshot).toBeNull();
+  });
+
+  it('accepts legacy snapshots when threadType is absent', async () => {
+    const legacySnapshot = {
+      selectedArtistId: 'cathy-gauthier',
+      conversations: {
+        'cathy-gauthier': [
+          {
+            id: 'conv-legacy',
+            artistId: 'cathy-gauthier',
+            title: 'Legacy',
+            language: 'fr-CA',
+            modeId: 'on-jase',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            lastMessagePreview: 'Salut'
+          }
+        ]
+      },
+      activeConversationId: 'conv-legacy',
+      messagesByConversation: {
+        'conv-legacy': {
+          messages: [],
+          hasMore: false,
+          cursor: null
+        }
+      }
+    };
+
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify(legacySnapshot));
+
+    const snapshot = await loadPersistedSnapshot();
+
+    expect(snapshot).toEqual(legacySnapshot);
+  });
+
+  it('rejects snapshots when threadType has an invalid value', async () => {
+    const invalidThreadTypeSnapshot = {
+      selectedArtistId: 'cathy-gauthier',
+      conversations: {
+        'cathy-gauthier': [
+          {
+            id: 'conv-invalid-thread',
+            artistId: 'cathy-gauthier',
+            title: 'Invalid',
+            language: 'fr-CA',
+            modeId: 'on-jase',
+            threadType: 'weird',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            lastMessagePreview: ''
+          }
+        ]
+      },
+      activeConversationId: 'conv-invalid-thread',
+      messagesByConversation: {
+        'conv-invalid-thread': {
+          messages: [],
+          hasMore: false,
+          cursor: null
+        }
+      }
+    };
+
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify(invalidThreadTypeSnapshot));
 
     const snapshot = await loadPersistedSnapshot();
 

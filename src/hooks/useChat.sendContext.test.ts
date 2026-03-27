@@ -11,6 +11,7 @@ function createConversation(overrides: Partial<Conversation> = {}): Conversation
     title: overrides.title ?? 'Conversation',
     language: overrides.language ?? 'fr-CA',
     modeId: overrides.modeId ?? MODE_IDS.ON_JASE,
+    threadType: overrides.threadType ?? 'mode',
     createdAt: overrides.createdAt ?? timestamp,
     updatedAt: overrides.updatedAt ?? timestamp,
     lastMessagePreview: overrides.lastMessagePreview ?? ''

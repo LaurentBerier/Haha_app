@@ -1,4 +1,4 @@
-import type { Conversation } from './Conversation';
+import type { Conversation, ConversationThreadType } from './Conversation';
 import type { GamificationStats } from './Gamification';
 import type { MessagePage } from './Message';
 
@@ -9,10 +9,14 @@ export interface PersistedUiPreferences {
   voiceAutoPlay: boolean;
 }
 
+export type PersistedConversation = Omit<Conversation, 'threadType'> & {
+  threadType?: ConversationThreadType;
+};
+
 export interface PersistedStoreSnapshot {
   ownerUserId?: string | null;
   selectedArtistId: string | null;
-  conversations: Record<string, Conversation[]>;
+  conversations: Record<string, PersistedConversation[]>;
   activeConversationId: string | null;
   messagesByConversation: Record<string, MessagePage>;
   gamification?: Partial<GamificationStats>;
