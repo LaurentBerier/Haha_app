@@ -18,7 +18,18 @@ describe('personalityEngineService', () => {
     expect(prompt).toContain('## MODE ACTIF : on-jase');
     expect(prompt).toContain('Ce mode s\'appelle "Dis-moi la verite"');
     expect(prompt).toContain('Pas en mode roast');
+    expect(prompt).toContain('Si la reponse utilisateur est vague');
+    expect(prompt).toContain('Questions ciblees possibles');
     expect(prompt).not.toContain("L'utilisateur veut se faire roaster");
+  });
+
+  it('builds Grill prompt with targeted follow-up when user input is too vague', () => {
+    const prompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'grill', null, 'fr-CA');
+
+    expect(prompt).toContain("L'utilisateur veut se faire roaster");
+    expect(prompt).toContain('Si la reponse utilisateur est vague');
+    expect(prompt).toContain('Questions ciblees possibles');
+    expect(prompt).toContain('roast intelligent et drole');
   });
 
   it('builds screenshot analyzer prompt for screenshot and pasted text input', () => {

@@ -9,6 +9,7 @@ import {
   useBottomAnchoredMessageList,
   type TailFollowChangedPayload
 } from '../../hooks/useBottomAnchoredMessageList';
+import { resolveMessageListVerticalAlignment } from './messageListLayout';
 
 interface MessageListProps {
   messages: Message[];
@@ -51,6 +52,7 @@ function MessageListBase({
   removeClippedSubviews,
   disableVirtualization
 }: MessageListProps) {
+  const verticalAlignment = resolveMessageListVerticalAlignment(messages.length);
   const {
     listRef,
     onContentSizeChange,
@@ -86,7 +88,11 @@ function MessageListBase({
       ref={listRef}
       testID={testID}
       style={[styles.list, listStyle]}
-      contentContainerStyle={[styles.content, contentContainerStyle]}
+      contentContainerStyle={[
+        styles.content,
+        verticalAlignment === 'bottom-anchored' ? styles.contentBottomAnchored : null,
+        contentContainerStyle
+      ]}
       data={messages}
       keyExtractor={(item) => item.id}
       renderItem={renderItem}
@@ -124,6 +130,10 @@ const styles = StyleSheet.create({
   content: {
     paddingVertical: theme.spacing.sm,
     paddingBottom: 96
+  },
+  contentBottomAnchored: {
+    flexGrow: 1,
+    justifyContent: 'flex-end'
   },
   emptyState: {
     marginTop: 40,

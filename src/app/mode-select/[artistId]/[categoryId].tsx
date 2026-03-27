@@ -11,7 +11,7 @@ import { getModeById } from '../../../config/modes';
 import { getLanguage, t } from '../../../i18n';
 import { GAME_TYPE_CONFIGS } from '../../../games/types';
 import type { Mode } from '../../../models/Mode';
-import { generateModeIntro } from '../../../services/modeIntroService';
+import { fetchModeIntroFromApi, generateModeIntro } from '../../../services/modeIntroService';
 import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
 import { generateId } from '../../../utils/generateId';
@@ -41,8 +41,10 @@ export default function ModeCategoryScreen() {
   const createConversation = useStore((state) => state.createConversation);
   const setActiveConversation = useStore((state) => state.setActiveConversation);
   const addMessage = useStore((state) => state.addMessage);
+  const updateMessage = useStore((state) => state.updateMessage);
   const updateConversation = useStore((state) => state.updateConversation);
   const userProfile = useStore((state) => state.userProfile);
+  const accessToken = useStore((state) => state.session?.accessToken ?? '');
 
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
   const categoryId = isModeCategoryId(categoryIdParam) ? categoryIdParam : null;
@@ -96,13 +98,18 @@ export default function ModeCategoryScreen() {
       const nextConversation = createConversation(artist.id, resolveConversationLanguage(artist), modeId);
       const introMessage = generateModeIntro(modeId, userProfile);
       const now = new Date().toISOString();
+      const introMessageId = generateId('msg');
       addMessage(nextConversation.id, {
-        id: generateId('msg'),
+        id: introMessageId,
         conversationId: nextConversation.id,
         role: 'artist',
         content: introMessage,
         status: 'complete',
-        timestamp: now
+        timestamp: now,
+        metadata: {
+          injected: true,
+          injectedType: 'mode_nudge'
+        }
       });
       updateConversation(
         nextConversation.id,
@@ -114,8 +121,38 @@ export default function ModeCategoryScreen() {
       );
       setActiveConversation(nextConversation.id);
       router.push(`/chat/${nextConversation.id}`);
+
+      void fetchModeIntroFromApi({
+        artistId: artist.id,
+        modeId,
+        language: nextConversation.language,
+        accessToken,
+        preferredName: userProfile?.preferredName ?? null,
+        memoryFacts: Array.isArray(userProfile?.memoryFacts) ? userProfile.memoryFacts : []
+      })
+        .then((generatedIntro) => {
+          if (!generatedIntro) {
+            return;
+          }
+
+          updateMessage(nextConversation.id, introMessageId, {
+            content: generatedIntro,
+            status: 'complete'
+          });
+          updateConversation(
+            nextConversation.id,
+            {
+              lastMessagePreview: generatedIntro.slice(0, 120),
+              title: generatedIntro.slice(0, 30)
+            },
+            artist.id
+          );
+        })
+        .catch(() => {
+          // Keep fallback intro when API intro is unavailable.
+        });
     },
-    [addMessage, artist, createConversation, setActiveConversation, updateConversation, userProfile]
+    [accessToken, addMessage, artist, createConversation, setActiveConversation, updateConversation, updateMessage, userProfile]
   );
 
   if (!artist || !categoryId) {

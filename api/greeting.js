@@ -15,6 +15,20 @@ const MAX_NEWS_SIGNALS_PER_REGION = 3;
 const TUTORIAL_CONNECTION_LIMIT = 3;
 const TUTORIAL_NUDGE_AFTER_USER_MESSAGES = 2;
 const DEFAULT_HEADLINE_INCLUSION_RATE = 0.3;
+const MODE_INTRO_TYPE = 'mode_intro';
+const DEFAULT_INTRO_TYPE = 'greeting';
+const MODE_ID_ON_JASE = 'on-jase';
+const MODE_ID_GRILL = 'grill';
+
+const MODE_ID_COMPAT = {
+  'radar-attitude': MODE_ID_ON_JASE,
+  relax: MODE_ID_ON_JASE,
+  'je-casse-tout': MODE_ID_ON_JASE,
+  'phrase-du-jour': MODE_ID_ON_JASE,
+  'victime-du-jour': MODE_ID_ON_JASE,
+  roast: MODE_ID_GRILL,
+  'coach-brutal': MODE_ID_GRILL
+};
 
 const RSS_FEEDS = [
   {
@@ -299,6 +313,38 @@ function parseCoords(rawCoords) {
   return { lat, lon };
 }
 
+function normalizeIntroType(value) {
+  if (typeof value !== 'string') {
+    return DEFAULT_INTRO_TYPE;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return DEFAULT_INTRO_TYPE;
+  }
+  if (normalized === MODE_INTRO_TYPE) {
+    return MODE_INTRO_TYPE;
+  }
+  if (normalized === DEFAULT_INTRO_TYPE) {
+    return DEFAULT_INTRO_TYPE;
+  }
+
+  throw new Error(`introType "${value}" is not supported.`);
+}
+
+function normalizeModeId(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+
+  return MODE_ID_COMPAT[normalized] ?? normalized;
+}
+
 function parsePayload(body) {
   if (!isRecord(body)) {
     throw new Error('JSON body is required.');
@@ -307,6 +353,14 @@ function parsePayload(body) {
   const artistId = typeof body.artistId === 'string' ? body.artistId.trim() : '';
   if (!artistId) {
     throw new Error('artistId is required.');
+  }
+  const introType = normalizeIntroType(body.introType);
+  const modeId = normalizeModeId(body.modeId);
+  if (introType === MODE_INTRO_TYPE && !modeId) {
+    throw new Error('modeId is required when introType is mode_intro.');
+  }
+  if (introType === MODE_INTRO_TYPE && modeId !== MODE_ID_ON_JASE && modeId !== MODE_ID_GRILL) {
+    throw new Error(`modeId "${modeId}" is not supported for mode_intro.`);
   }
 
   const isSessionFirstGreeting = body.isSessionFirstGreeting === true;
@@ -331,6 +385,8 @@ function parsePayload(body) {
   return {
     artistId,
     language: normalizeLanguage(body.language),
+    introType,
+    modeId,
     coords: parseCoords(body.coords),
     isSessionFirstGreeting,
     availableModes,
@@ -1072,6 +1128,113 @@ function buildGreetingVariationCue(language) {
   return cues[index] ?? cues[0];
 }
 
+function buildModeIntroVariationCue(language, modeId) {
+  const isEnglish = language.toLowerCase().startsWith('en');
+  const englishByMode = {
+    [MODE_ID_ON_JASE]: ['blunt coach energy', 'complicit reality check', 'direct wake-up call'],
+    [MODE_ID_GRILL]: ['playful fire', 'sharp roast setup', 'high-voltage tease']
+  };
+  const frenchByMode = {
+    [MODE_ID_ON_JASE]: ['coach cash', 'claque de realite complice', 'franchise utile'],
+    [MODE_ID_GRILL]: ['feu taquin', 'setup de roast mordant', 'attaque theatrale']
+  };
+  const source = isEnglish ? englishByMode : frenchByMode;
+  const fallbacks = isEnglish ? ['direct opener'] : ['entree directe'];
+  const cues = source[modeId] ?? fallbacks;
+  const index = Math.floor(Math.random() * cues.length);
+  return cues[index] ?? cues[0] ?? fallbacks[0];
+}
+
+function buildModeIntroSystemPrompt(language, modeId) {
+  const isEnglish = language.toLowerCase().startsWith('en');
+
+  if (isEnglish) {
+    if (modeId === MODE_ID_GRILL) {
+      return `You are Cathy Gauthier. You are opening the mode "Mets-moi sur le grill".
+Write exactly 2 to 3 short sentences, maximum 45 words total.
+Required structure:
+1) Greet the user by first name when available.
+2) Explain the mode concept: sharper roast energy, still intelligent and playful.
+3) End by inviting the user to talk and provide concrete details.
+Hard rules:
+- No tutorial/mic instructions.
+- No weather, headlines, or mode list.
+- Keep it welcoming but bold.
+- If name style is unusual, add one short positive nod.
+- No markdown, no bullets, no asterisks, no em dash.`;
+    }
+
+    return `You are Cathy Gauthier. You are opening the mode "Dis-moi la verite".
+Write exactly 2 to 3 short sentences, maximum 45 words total.
+Required structure:
+1) Greet the user by first name when available.
+2) Explain the mode concept: blunt truth plus useful coaching, no gratuitous humiliation.
+3) End by inviting the user to talk and share one concrete situation.
+Hard rules:
+- No tutorial/mic instructions.
+- No weather, headlines, or mode list.
+- Keep it warm, direct, and confident.
+- If name style is unusual, add one short positive nod.
+- No markdown, no bullets, no asterisks, no em dash.`;
+  }
+
+  if (modeId === MODE_ID_GRILL) {
+    return `Tu es Cathy Gauthier. Tu ouvres le mode "Mets-moi sur le grill".
+Ecris exactement 2 a 3 phrases courtes, maximum 45 mots au total.
+Structure obligatoire:
+1) Salue la personne par son prenom si disponible.
+2) Explique le concept du mode: roast plus mordant, mais intelligent et ludique.
+3) Termine par une invitation claire a parler avec des details concrets.
+Regles absolues:
+- Aucune instruction tutorial/micro.
+- Pas de meteo, pas d'actualites, pas de liste de modes.
+- Ton accueillant mais assume et energique.
+- Si le style du prenom est inhabituel, ajoute un clin d'oeil positif bref.
+- Pas de markdown, pas de liste, pas d'asterisque, pas de tiret long.`;
+  }
+
+  return `Tu es Cathy Gauthier. Tu ouvres le mode "Dis-moi la verite".
+Ecris exactement 2 a 3 phrases courtes, maximum 45 mots au total.
+Structure obligatoire:
+1) Salue la personne par son prenom si disponible.
+2) Explique le concept du mode: verite frontale et coaching utile, sans humiliation gratuite.
+3) Termine par une invitation claire a parler d'une situation concrete.
+Regles absolues:
+- Aucune instruction tutorial/micro.
+- Pas de meteo, pas d'actualites, pas de liste de modes.
+- Ton chaleureux, direct, confiant.
+- Si le style du prenom est inhabituel, ajoute un clin d'oeil positif bref.
+- Pas de markdown, pas de liste, pas d'asterisque, pas de tiret long.`;
+}
+
+function buildModeIntroUserPrompt(context) {
+  const isEnglish = context.language.toLowerCase().startsWith('en');
+
+  if (isEnglish) {
+    return [
+      `Date: ${context.dateLabel}`,
+      `Time: ${context.timeLabel}`,
+      `Artist: ${context.artistId}`,
+      `Mode ID: ${context.modeId}`,
+      `First name: ${context.preferredName ?? 'Unknown'}`,
+      `Name style: ${context.nameStyle === 'unusual' ? 'unusual' : 'normal'}`,
+      `Recent facts about the person: ${context.memoryFacts && context.memoryFacts.length > 0 ? context.memoryFacts.join(' | ') : 'none'}`,
+      `Variation cue: ${context.variationCue}`
+    ].join('\n');
+  }
+
+  return [
+    `Date: ${context.dateLabel}`,
+    `Heure: ${context.timeLabel}`,
+    `Artiste: ${context.artistId}`,
+    `Mode ID: ${context.modeId}`,
+    `Prenom: ${context.preferredName ?? 'Inconnu'}`,
+    `Style du prenom: ${context.nameStyle === 'unusual' ? 'inhabituel' : 'normal'}`,
+    `Contexte recents sur la personne: ${context.memoryFacts && context.memoryFacts.length > 0 ? context.memoryFacts.join(' | ') : 'aucun'}`,
+    `Variation: ${context.variationCue}`
+  ].join('\n');
+}
+
 function buildGreetingUserPrompt(context) {
   const isEnglish = context.language.toLowerCase().startsWith('en');
   if (isEnglish) {
@@ -1189,6 +1352,14 @@ async function generateGreetingText(context) {
   const timeoutMs = parsePositiveInt(process.env.ANTHROPIC_FETCH_TIMEOUT_MS, DEFAULT_FETCH_TIMEOUT_MS);
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+  const isModeIntro = context.introType === MODE_INTRO_TYPE;
+  const systemPrompt = isModeIntro
+    ? buildModeIntroSystemPrompt(context.language, context.modeId)
+    : buildGreetingSystemPrompt(context.language, {
+        includeVoiceHint: context.includeVoiceHint,
+        tutorialActive: context.tutorialActive
+      });
+  const userPrompt = isModeIntro ? buildModeIntroUserPrompt(context) : buildGreetingUserPrompt(context);
 
   try {
     const response = await fetch(ANTHROPIC_API_URL, {
@@ -1203,14 +1374,11 @@ async function generateGreetingText(context) {
         max_tokens: 160,
         temperature: 0.9,
         stream: false,
-        system: buildGreetingSystemPrompt(context.language, {
-          includeVoiceHint: context.includeVoiceHint,
-          tutorialActive: context.tutorialActive
-        }),
+        system: systemPrompt,
         messages: [
           {
             role: 'user',
-            content: buildGreetingUserPrompt(context)
+            content: userPrompt
           }
         ]
       }),
@@ -1262,11 +1430,8 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const requiredEnv = forcedTutorialGreetingActive
-    ? ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']
-    : ['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'ANTHROPIC_API_KEY'];
-  const missingEnv = getMissingEnv(requiredEnv);
-  if (missingEnv.length > 0) {
+  const baseMissingEnv = getMissingEnv(['SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY']);
+  if (baseMissingEnv.length > 0) {
     sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
   }
@@ -1298,6 +1463,47 @@ module.exports = async function handler(req, res) {
   } catch (error) {
     const message = error instanceof Error && error.message ? error.message : 'Invalid payload.';
     sendError(res, 400, message, { code: 'INVALID_REQUEST', requestId });
+    return;
+  }
+
+  const isModeIntroRequest = input.introType === MODE_INTRO_TYPE;
+  const requiresAnthropicApiKey = isModeIntroRequest || !forcedTutorialGreetingActive;
+  if (requiresAnthropicApiKey) {
+    const anthropicMissingEnv = getMissingEnv(['ANTHROPIC_API_KEY']);
+    if (anthropicMissingEnv.length > 0) {
+      sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
+      return;
+    }
+  }
+
+  if (isModeIntroRequest) {
+    const { dateLabel, timeLabel } = formatLocalDateTime(input.language);
+    const preferredName = input.preferredName || extractPreferredName(user);
+    const nameStyle = classifyGreetingNameStyle(preferredName);
+
+    let modeIntroGreeting;
+    try {
+      modeIntroGreeting = await generateGreetingText({
+        introType: MODE_INTRO_TYPE,
+        artistId: input.artistId,
+        language: input.language,
+        modeId: input.modeId,
+        dateLabel,
+        timeLabel,
+        preferredName,
+        nameStyle,
+        memoryFacts: input.memoryFacts,
+        variationCue: buildModeIntroVariationCue(input.language, input.modeId)
+      });
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : 'Greeting generator unavailable.';
+      sendError(res, 502, message, { code: 'UPSTREAM_ERROR', requestId });
+      return;
+    }
+
+    res.status(200).json({
+      greeting: clampToWordLimit(clampToSentenceLimit(modeIntroGreeting, 3), 45)
+    });
     return;
   }
 
@@ -1361,6 +1567,7 @@ module.exports = async function handler(req, res) {
     try {
       greeting = await generateGreetingText(
         {
+          introType: DEFAULT_INTRO_TYPE,
           artistId: input.artistId,
           language: input.language,
           dateLabel,

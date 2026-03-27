@@ -528,6 +528,100 @@ describe('api/greeting tutorial behavior', () => {
     expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
   });
 
+  it('generates mode_intro for on-jase without tutorial side effects', async () => {
+    const supabase = buildSupabaseClient({
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 0 }
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    const fetchMock = installFetchMockWithOptions({
+      anthropicText: "Hey Laurent, mode Dis-moi la verite active. J'te dis la vraie affaire sans te planter. Raconte-moi ton probleme concret."
+    });
+
+    const handler = require('../greeting');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        language: 'fr-CA',
+        introType: 'mode_intro',
+        modeId: 'on-jase',
+        isSessionFirstGreeting: true,
+        preferredName: 'Laurent'
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.greeting).toContain('Laurent');
+    expect(res.payload.tutorial).toBeUndefined();
+    const anthropicBody = extractAnthropicRequestBody(fetchMock);
+    expect(anthropicBody.system).toContain('Tu ouvres le mode "Dis-moi la verite".');
+    expect(anthropicBody.messages?.[0]?.content).toContain('Mode ID: on-jase');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0] ?? '')).toBe(ANTHROPIC_API_URL);
+    expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
+  });
+
+  it('normalizes roast compatibility mode into grill for mode_intro prompting', async () => {
+    const supabase = buildSupabaseClient({
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 0 }
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    const fetchMock = installFetchMockWithOptions({
+      anthropicText: "Hey Laurent, Mets-moi sur le grill est active. Tu veux du feu? Donne-moi un detail concret et je m'occupe du reste."
+    });
+
+    const handler = require('../greeting');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        language: 'fr-CA',
+        introType: 'mode_intro',
+        modeId: 'roast',
+        isSessionFirstGreeting: false
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const anthropicBody = extractAnthropicRequestBody(fetchMock);
+    expect(anthropicBody.system).toContain('Tu ouvres le mode "Mets-moi sur le grill".');
+    expect(anthropicBody.messages?.[0]?.content).toContain('Mode ID: grill');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects mode_intro payloads without modeId', async () => {
+    const supabase = buildSupabaseClient();
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    const fetchMock = installFetchMock();
+
+    const handler = require('../greeting');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        language: 'fr-CA',
+        introType: 'mode_intro'
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(400);
+    expect(String(res.payload?.error?.message ?? '')).toContain('modeId is required');
+    expect(fetchMock).toHaveBeenCalledTimes(0);
+  });
+
   it('falls back to session-only tutorial mode when counter column is missing', async () => {
     const supabase = buildSupabaseClient({
       profile: { horoscope_sign: 'taurus' },
