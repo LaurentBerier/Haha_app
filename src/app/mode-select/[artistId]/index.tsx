@@ -2321,7 +2321,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end'
   },
   conversationList: {
-    flexGrow: 0
+    flexGrow: 0,
+    flexShrink: 1,
+    flexBasis: 'auto'
   },
   conversationListContent: {
     paddingTop: theme.spacing.xs,
