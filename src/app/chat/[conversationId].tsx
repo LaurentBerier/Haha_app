@@ -4,7 +4,9 @@ import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-na
 import { ChatInput } from '../../components/chat/ChatInput';
 import { MessageList } from '../../components/chat/MessageList';
 import { StreamingIndicator } from '../../components/chat/StreamingIndicator';
+import { ThreadModeHeader } from '../../components/chat/ThreadModeHeader';
 import { BackButton } from '../../components/common/BackButton';
+import { resolveModeIdCompat } from '../../config/modeCompat';
 import { getModeById } from '../../config/modes';
 import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import { useAutoReplayLastArtistMessage } from '../../hooks/useAutoReplayLastArtistMessage';
@@ -109,10 +111,13 @@ export default function ChatScreen() {
 
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? '');
   const artistDisplayName = formatArtistDisplayName(currentArtistName);
-  const activeMode = useMemo(
-    () => (currentConversation?.modeId ? getModeById(currentConversation.modeId) : null),
-    [currentConversation?.modeId]
-  );
+  const activeMode = useMemo(() => {
+    const modeId = currentConversation?.modeId?.trim();
+    if (!modeId) {
+      return null;
+    }
+    return getModeById(resolveModeIdCompat(modeId));
+  }, [currentConversation?.modeId]);
   const effectiveAccountType = useMemo(
     () => resolveEffectiveAccountType(sessionUser?.accountType ?? null, sessionUser?.role ?? null),
     [sessionUser?.accountType, sessionUser?.role]
@@ -211,14 +216,21 @@ export default function ChatScreen() {
       </View>
       <View style={styles.container}>
         {isValidConversation ? (
-          <MessageList
-            messages={messages}
-            userDisplayName={userDisplayName}
-            artistDisplayName={artistDisplayName}
-            onRetryMessage={retryMessage}
-            onRetryVoice={retryVoiceForMessage}
-            audioPlayer={audioPlayer}
-          />
+          <>
+            <ThreadModeHeader
+              title={activeModeLabel}
+              subtitle={activeMode?.description ?? ''}
+              testID="chat-thread-mode-header"
+            />
+            <MessageList
+              messages={messages}
+              userDisplayName={userDisplayName}
+              artistDisplayName={artistDisplayName}
+              onRetryMessage={retryMessage}
+              onRetryVoice={retryVoiceForMessage}
+              audioPlayer={audioPlayer}
+            />
+          </>
         ) : (
           <Text style={styles.error} testID="chat-invalid-conversation">
             {t('invalidConversation')}

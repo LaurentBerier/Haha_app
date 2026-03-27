@@ -5,7 +5,7 @@ export const modes: Mode[] = [
   {
     "id": "on-jase",
     "name": "Dis-moi la vérité",
-    "description": "Cathy te dit la vraie affaire: lucide, frontale, sans filtre inutile. Entre coach et claque dans face.",
+    "description": "Je te dis la vraie affaire: lucide, frontale, sans filtre inutile. Entre coach et claque dans face.",
     "emoji": "🎤",
     "kind": "delire"
   },
@@ -59,7 +59,7 @@ export const modes: Mode[] = [
   {
     "id": "message-personnalise",
     "name": "Message personnalisé",
-    "description": "Donne le contexte (fête, rupture, félicitations), Cathy écrit le message que t'oses pas envoyer toi-même.",
+    "description": "Donne le contexte (fête, rupture, félicitations), j'écris le message que t'oses pas envoyer toi-même.",
     "kind": "chat"
   },
   {
@@ -71,7 +71,7 @@ export const modes: Mode[] = [
   {
     "id": "horoscope",
     "name": "Horoscope",
-    "description": "Les astres n'avaient rien demandé, mais Cathy lit ton destin avec panache et mauvaise foi assumée.",
+    "description": "Les astres n'avaient rien demandé, mais je lis ton destin avec panache et mauvaise foi assumée.",
     "kind": "chat"
   },
   {
@@ -83,21 +83,21 @@ export const modes: Mode[] = [
   {
     "id": "meme-generator",
     "name": "Générateur de Meme",
-    "description": "Tu envoies une image, Cathy te sort le caption qui fait rire avant même le deuxième scroll.",
+    "description": "Tu envoies une image, je te sors le caption qui fait rire avant même le deuxième scroll.",
     "emoji": "😂",
     "kind": "image"
   },
   {
     "id": "screenshot-analyzer",
     "name": "Jugement de Texto",
-    "description": "Capture ou texte collé: Cathy juge le sous-texte, ton style d’écriture et te donne la réplique à envoyer.",
+    "description": "Capture ou texte collé: je juge le sous-texte, ton style d’écriture et je te donne la réplique à envoyer.",
     "emoji": "🔍",
     "kind": "image"
   },
   {
     "id": "roast-battle",
     "name": "Bataille de Roast",
-    "description": "Tu lances un roast, Cathy répond et arbitre: léger, solide ou destruction totale.",
+    "description": "Tu lances un roast, je réponds et j'arbitre: léger, solide ou destruction totale.",
     "emoji": "⚔️",
     "kind": "battle"
   }

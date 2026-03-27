@@ -14,10 +14,12 @@ import {
 import { ChatInput } from '../../../components/chat/ChatInput';
 import { MessageList } from '../../../components/chat/MessageList';
 import { StreamingIndicator } from '../../../components/chat/StreamingIndicator';
+import { ThreadModeHeader } from '../../../components/chat/ThreadModeHeader';
 import { AmbientGlow } from '../../../components/common/AmbientGlow';
 import { BackButton } from '../../../components/common/BackButton';
 import { MODE_IDS } from '../../../config/constants';
 import { MODE_CATEGORY_META, MODE_CATEGORY_ORDER, type ModeCategoryId } from '../../../config/modeCategories';
+import { resolveModeIdCompat } from '../../../config/modeCompat';
 import { getModeById } from '../../../config/modes';
 import { API_BASE_URL, CLAUDE_PROXY_URL, E2E_AUTH_BYPASS, GREETING_FORCE_TUTORIAL } from '../../../config/env';
 import { useAutoReplayLastArtistMessage } from '../../../hooks/useAutoReplayLastArtistMessage';
@@ -993,10 +995,20 @@ export default function ModeSelectHomeScreen() {
     [activeConversationId, artistId, boundConversationId, conversationsForArtist, isGreetingGateSatisfied]
   );
   const modeSelectConversationId = boundConversationId;
-  const modeSelectConversationLanguage = useMemo(() => {
-    const activeConversation = conversationsForArtist.find((conversation) => conversation.id === modeSelectConversationId);
-    return activeConversation?.language?.trim() ? activeConversation.language : language;
-  }, [conversationsForArtist, language, modeSelectConversationId]);
+  const modeSelectConversation = useMemo(
+    () => conversationsForArtist.find((conversation) => conversation.id === modeSelectConversationId) ?? null,
+    [conversationsForArtist, modeSelectConversationId]
+  );
+  const modeSelectConversationLanguage = useMemo(
+    () => (modeSelectConversation?.language?.trim() ? modeSelectConversation.language : language),
+    [language, modeSelectConversation?.language]
+  );
+  const modeSelectThreadMode = useMemo(() => {
+    const candidateModeId = modeSelectConversation?.modeId?.trim() || MODE_IDS.ON_JASE;
+    return getModeById(resolveModeIdCompat(candidateModeId));
+  }, [modeSelectConversation?.modeId]);
+  const modeSelectThreadModeTitle = modeSelectThreadMode?.name ?? getModeById(MODE_IDS.ON_JASE)?.name ?? 'On jase';
+  const modeSelectThreadModeSubtitle = modeSelectThreadMode?.description ?? '';
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? null);
   const artistDisplayName = formatArtistDisplayName(artist?.name ?? null);
   const [pendingGreetingAudio, setPendingGreetingAudio] = useState<PendingGreetingAudio | null>(null);
@@ -2208,6 +2220,11 @@ export default function ModeSelectHomeScreen() {
                   <Text style={styles.greetingVoiceLabel}>{greetingVoiceLabel}</Text>
                 </View>
               ) : null}
+              <ThreadModeHeader
+                title={modeSelectThreadModeTitle}
+                subtitle={modeSelectThreadModeSubtitle}
+                testID="mode-select-thread-mode-header"
+              />
               <MessageList
                 testID="mode-select-message-list"
                 listKey={modeSelectConversationId}
