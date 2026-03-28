@@ -167,6 +167,7 @@ npm run smoke:voice
 
 1. Inspect message/conversation language in state:
    - conversation language is the source of truth for STT/TTS locale routing.
+   - auto-detected language candidates do not switch immediately; a yes/no confirmation message must be resolved first.
 2. Validate TTS request body in network:
    - first attempt should include `language_code` when language prefix is supported.
 3. If first attempt returns provider locale error (`400/422`), confirm second upstream call is sent without `language_code`.

@@ -949,16 +949,22 @@ Symptoms:
 Current expected behavior:
 
 - Language is resolved per turn with strict priority:
-  1. explicit switch command (`parle en ...`, `speak in ...`, ISO/BCP-47 code)
-  2. auto-detection from user text
-  3. keep current conversation language
+  1. explicit switch command (`parle en ...`, `speak in ...`, ISO/BCP-47 code) -> immediate persistent switch
+  2. explicit one-off phrase/translation request -> one-turn override only (no persistence)
+  3. auto-detection from user text -> requires injected yes/no confirmation before switch
+  4. keep current conversation language
 - Switch scope is per conversation only (global app UI language is unchanged).
 - If explicit switch target is unknown, Cathy asks for a short language-code clarification.
+- On auto-detection confirmation:
+  - `yes/oui` replays the original pending message after switching
+  - `no/non` replays the original pending message while keeping current conversation language
+  - unclear replies trigger a short yes/no reminder and keep the pending request
 
 Checks:
 
 1. Confirm you are testing explicit commands with a recognizable target:
    - examples: `parle en anglais`, `speak in spanish`, `pt-BR`
+   - one-off examples (non-persistent): `traduis cette phrase en allemand`, `say this sentence in english`
 2. Verify active conversation language in store/message context:
    - switching one conversation should not affect another conversation.
 3. If explicit switch fails, test with a direct code:

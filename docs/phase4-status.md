@@ -1,6 +1,6 @@
 # Phase 4 Status (Conversation Naturelle)
 
-Last updated: **2026-03-27**
+Last updated: **2026-03-28**
 
 ## Scope
 
@@ -75,9 +75,14 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
   - replay is once-per-message-id and current-conversation scoped
 - Multilingual conversation switching:
   - per-turn resolver in chat uses strict priority:
-    1. explicit switch command (`parle en ...`, `speak in ...`, ISO/BCP-47 codes)
-    2. auto language detection (script + latin heuristics with ambiguity guard)
-    3. keep current conversation language
+    1. explicit switch command (`parle en ...`, `speak in ...`, ISO/BCP-47 codes) -> immediate persistent switch on active conversation
+    2. explicit one-off phrase/translation request -> language override for current turn only (no conversation-language persistence)
+    3. auto language detection (script + latin heuristics with ambiguity guard) -> requires injected yes/no confirmation before switch
+    4. keep current conversation language
+  - auto-switch confirmation behavior:
+    - user reply `yes/oui` -> switch + automatic replay of the pending original message
+    - user reply `no/non` -> keep current conversation language + automatic replay of the pending original message
+    - unclear reply -> short reminder asking for `yes/no`, pending switch request is preserved
   - conversation language persists per conversation and no longer overwrites global app UI language
   - explicit unknown language switch prompts a short clarification request for language code
 - Prompt language coherence:
@@ -112,6 +117,12 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
     - `idle`: play icon
 
 ## QA Status
+
+Incremental validation on **2026-03-28** (language confirmation update):
+
+- `npm run test:unit -- src/utils/conversationLanguage.test.ts src/hooks/useChat.sendMessage.integration.test.ts` -> PASS
+- `npm run typecheck` -> PASS
+- `npx eslint src/utils/conversationLanguage.ts src/utils/conversationLanguage.test.ts src/hooks/useChat.ts src/hooks/useChat.sendMessage.integration.test.ts` -> PASS
 
 Validated on **2026-03-27** (full regression pass + code review refresh):
 

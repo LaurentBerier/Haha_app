@@ -60,6 +60,12 @@ const EXPLICIT_SWITCH_PATTERNS = [
   /\b(?:speak|talk|reply|respond|answer|continue|switch|change)\b/i
 ];
 
+const EXPLICIT_ONE_OFF_INTENT_PATTERNS = [
+  /\b(?:traduis?|traduire|translate)\b/i,
+  /\b(?:comment on dit|how do you say)\b/i,
+  /\b(?:dis|dites|ecris|ecrivez|say|write)\b[^.!?\n]{0,72}\b(?:phrase|sentence|texte|text|mot|word|ceci|this|that|following)\b/i
+];
+
 const EXPLICIT_LANGUAGE_WORD_PATTERN = /\b(?:langue|language|idiome)\b/i;
 
 const EXPLICIT_TARGET_PATTERN =
@@ -225,9 +231,19 @@ export interface ExplicitLanguageSwitchResult {
   language: string | null;
 }
 
+interface ExplicitLanguageOneOffResult {
+  detected: boolean;
+  language: string | null;
+}
+
+export type LanguageResolutionRequestKind = 'explicit_switch' | 'explicit_one_off' | 'auto_candidate' | 'current';
+
 export interface LanguageResolutionResult {
   language: string;
   source: 'explicit' | 'auto' | 'current';
+  requestKind: LanguageResolutionRequestKind;
+  persistLanguage: boolean;
+  requiresConfirmation: boolean;
   explicitDetected: boolean;
   explicitRecognized: boolean;
 }
@@ -390,6 +406,40 @@ export function parseExplicitLanguageSwitch(text: string): ExplicitLanguageSwitc
   };
 }
 
+function parseExplicitLanguageOneOff(text: string): ExplicitLanguageOneOffResult {
+  if (typeof text !== 'string' || !text.trim()) {
+    return { detected: false, language: null };
+  }
+
+  const normalizedText = normalizeForMatching(text);
+  if (!normalizedText) {
+    return { detected: false, language: null };
+  }
+
+  const hasOneOffIntent = EXPLICIT_ONE_OFF_INTENT_PATTERNS.some((pattern) => pattern.test(normalizedText));
+  if (!hasOneOffIntent) {
+    return { detected: false, language: null };
+  }
+
+  const aliasLanguage = findAliasLanguage(normalizedText);
+  const codeCandidate = extractCodeCandidate(text);
+  const codeLanguage = codeCandidate ? normalizeConversationLanguage(codeCandidate, '') : '';
+  const resolvedLanguage = aliasLanguage ?? (codeLanguage || null);
+  const hasExplicitTarget = Boolean(extractExplicitTarget(normalizedText));
+
+  if (resolvedLanguage) {
+    return {
+      detected: true,
+      language: normalizeConversationLanguage(resolvedLanguage, 'fr-CA')
+    };
+  }
+
+  return {
+    detected: hasOneOffIntent || hasExplicitTarget,
+    language: null
+  };
+}
+
 function detectScriptLanguage(text: string): string | null {
   if (/[\u0600-\u06ff]/.test(text)) {
     return 'ar-SA';
@@ -460,12 +510,15 @@ export function detectAutoConversationLanguage(text: string, currentLanguage: st
 
 export function resolveLanguageForTurn(text: string, currentLanguage: string): LanguageResolutionResult {
   const fallbackLanguage = normalizeConversationLanguage(currentLanguage, 'fr-CA');
-  const explicit = parseExplicitLanguageSwitch(text);
-  if (explicit.detected) {
-    if (explicit.language) {
+  const explicitOneOff = parseExplicitLanguageOneOff(text);
+  if (explicitOneOff.detected) {
+    if (explicitOneOff.language) {
       return {
-        language: normalizeConversationLanguage(explicit.language, fallbackLanguage),
+        language: normalizeConversationLanguage(explicitOneOff.language, fallbackLanguage),
         source: 'explicit',
+        requestKind: 'explicit_one_off',
+        persistLanguage: false,
+        requiresConfirmation: false,
         explicitDetected: true,
         explicitRecognized: true
       };
@@ -474,6 +527,34 @@ export function resolveLanguageForTurn(text: string, currentLanguage: string): L
     return {
       language: fallbackLanguage,
       source: 'current',
+      requestKind: 'current',
+      persistLanguage: true,
+      requiresConfirmation: false,
+      explicitDetected: true,
+      explicitRecognized: false
+    };
+  }
+
+  const explicit = parseExplicitLanguageSwitch(text);
+  if (explicit.detected) {
+    if (explicit.language) {
+      return {
+        language: normalizeConversationLanguage(explicit.language, fallbackLanguage),
+        source: 'explicit',
+        requestKind: 'explicit_switch',
+        persistLanguage: true,
+        requiresConfirmation: false,
+        explicitDetected: true,
+        explicitRecognized: true
+      };
+    }
+
+    return {
+      language: fallbackLanguage,
+      source: 'current',
+      requestKind: 'current',
+      persistLanguage: true,
+      requiresConfirmation: false,
       explicitDetected: true,
       explicitRecognized: false
     };
@@ -484,6 +565,9 @@ export function resolveLanguageForTurn(text: string, currentLanguage: string): L
     return {
       language: detected,
       source: 'auto',
+      requestKind: 'auto_candidate',
+      persistLanguage: true,
+      requiresConfirmation: true,
       explicitDetected: false,
       explicitRecognized: false
     };
@@ -492,6 +576,9 @@ export function resolveLanguageForTurn(text: string, currentLanguage: string): L
   return {
     language: fallbackLanguage,
     source: 'current',
+    requestKind: 'current',
+    persistLanguage: true,
+    requiresConfirmation: false,
     explicitDetected: false,
     explicitRecognized: false
   };

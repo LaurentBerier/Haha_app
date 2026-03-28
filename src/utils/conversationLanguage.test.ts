@@ -55,6 +55,9 @@ describe('conversationLanguage', () => {
       expect.objectContaining({
         language: 'en-CA',
         source: 'explicit',
+        requestKind: 'explicit_switch',
+        persistLanguage: true,
+        requiresConfirmation: false,
         explicitDetected: true,
         explicitRecognized: true
       })
@@ -64,6 +67,9 @@ describe('conversationLanguage', () => {
       expect.objectContaining({
         language: 'en-CA',
         source: 'auto',
+        requestKind: 'auto_candidate',
+        persistLanguage: true,
+        requiresConfirmation: true,
         explicitDetected: false
       })
     );
@@ -72,6 +78,35 @@ describe('conversationLanguage', () => {
       expect.objectContaining({
         language: 'fr-CA',
         source: 'current',
+        requestKind: 'current',
+        persistLanguage: true,
+        requiresConfirmation: false,
+        explicitDetected: true,
+        explicitRecognized: false
+      })
+    );
+  });
+
+  it('resolves explicit one-off phrase requests without persisting conversation language', () => {
+    expect(resolveLanguageForTurn('Dis cette phrase en allemand: bonne journee!', 'fr-CA')).toEqual(
+      expect.objectContaining({
+        language: 'de-DE',
+        source: 'explicit',
+        requestKind: 'explicit_one_off',
+        persistLanguage: false,
+        requiresConfirmation: false,
+        explicitDetected: true,
+        explicitRecognized: true
+      })
+    );
+  });
+
+  it('flags unknown one-off explicit language requests for clarification', () => {
+    expect(resolveLanguageForTurn('Traduis ca en klingon', 'fr-CA')).toEqual(
+      expect.objectContaining({
+        language: 'fr-CA',
+        source: 'current',
+        requestKind: 'current',
         explicitDetected: true,
         explicitRecognized: false
       })

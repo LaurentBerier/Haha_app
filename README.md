@@ -29,7 +29,11 @@ Implemented in this repository:
 - Tier-aware voice strategy is on ElevenLabs v3 (Free/Regular/Premium/Admin) with emotional audio tags support and display-safe tag stripping.
 - Conversation naturelle (Phase 4) is integrated across chat and mode-select:
   - default-on conversation mode with shared composer UX and explicit mic states (`off`, `starting`, `listening`, `assistant_busy`, `paused_manual`, `recovering`, `paused_recovery`, `unsupported`, `error`)
-  - conversation language resolution is per-conversation (explicit command first, then auto-detection, then keep current language)
+  - conversation language resolution is per-conversation with explicit intent handling:
+    - explicit switch command -> immediate switch on the active conversation
+    - explicit one-off phrase/translation request -> one-turn language override without persistence
+    - auto-detected language candidate -> injected yes/no confirmation before switching
+  - when auto-detection is confirmed/rejected, the original pending message is replayed automatically in the selected language context
   - explicit language switches do not change global UI language; they persist on the active conversation only
   - STT silence auto-send (`1800ms` default) and strict STT/TTS mutual exclusion
   - STT starts with conversation locale and retries once with app locale when startup fails due to locale support

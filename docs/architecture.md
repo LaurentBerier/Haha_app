@@ -447,7 +447,12 @@ Display mode note:
 For image-enabled chats, `imageIntent` (`photo-roast`, `meme-generator`, `screenshot-analyzer`) is passed to the backend so prompt assembly can specialize behavior even when the same mode is reused.
 
 Conversation language behavior:
-- Conversation language is resolved per turn from user text (explicit switch command first, then auto-detection heuristics, then current conversation language).
+- Conversation language is resolved per turn from user text with explicit intent classes:
+  - `explicit_switch`: immediate conversation-language switch
+  - `explicit_one_off`: one-turn language override only (no persistence)
+  - `auto_candidate`: requires injected yes/no confirmation before switching
+  - `current`: keep current conversation language
+- When an auto-detected switch candidate is confirmed or rejected, the original pending user message is replayed automatically using the selected language context.
 - Global app UI language remains independent (`fr-CA` / `en-CA`) and is not overwritten by chat-language switches.
 - STT and voice fillers use conversation language when available; STT falls back once to app locale if startup fails with the conversation locale.
 

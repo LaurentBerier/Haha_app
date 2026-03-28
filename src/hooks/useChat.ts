@@ -58,9 +58,30 @@ interface StreamJob {
   tutorialMode: boolean;
 }
 
+type PendingLanguageConfirmationDecision = 'confirm' | 'reject' | 'unknown';
+
+interface PendingAutoLanguageSwitch {
+  payload: ChatSendPayload;
+  userMessageId: string;
+  requestedLanguage: string;
+  fallbackLanguage: string;
+}
+
+interface InternalSendOptions {
+  conversationId?: string;
+  _forcedLanguageForTurn?: string;
+  _persistLanguageOverride?: boolean;
+  _skipAutoCandidateConfirmation?: boolean;
+  _skipPendingConfirmationFlow?: boolean;
+  _skipAddUserMessage?: boolean;
+  _existingUserMessageId?: string;
+}
+
 const EMPTY_MESSAGES: Message[] = [];
 const MAX_CLAUDE_HISTORY_MESSAGES = 39;
 const VOICE_MAX_CLAUDE_HISTORY_MESSAGES = 8;
+const CONFIRMATION_YES_PATTERN = /^(?:oui|ouais|yes|yeah|yep|sure|ok|okay|d accord|daccord)(?:\s+(?:stp|svp|please|pls))?$/i;
+const CONFIRMATION_NO_PATTERN = /^(?:non|no|nope|nah|annule|annuler|cancel)(?:\s+(?:stp|svp|please|pls))?$/i;
 export {
   buildCathyVoiceNotice,
   resolveTerminalTtsCode,
@@ -96,6 +117,60 @@ function buildLanguageSwitchClarificationMessage(language: string): string {
   }
 
   return 'Je peux changer de langue. Ecris le code langue (ex: en, es-ES, pt-BR).';
+}
+
+function buildAutoLanguageSwitchConfirmationMessage(language: string, detectedLanguage: string): string {
+  if (language.toLowerCase().startsWith('en')) {
+    return `I detected another language (${detectedLanguage}). Do you want me to switch this conversation to it? Reply yes or no.`;
+  }
+
+  return `J'ai detecte une autre langue (${detectedLanguage}). Veux-tu que je change la conversation vers cette langue? Reponds oui ou non.`;
+}
+
+function buildAutoLanguageSwitchConfirmationReminderMessage(language: string): string {
+  if (language.toLowerCase().startsWith('en')) {
+    return 'Please reply yes or no so I can continue.';
+  }
+
+  return 'Reponds simplement oui ou non pour que je continue.';
+}
+
+function normalizeConfirmationInput(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[’']/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function resolvePendingLanguageConfirmation(text: string): PendingLanguageConfirmationDecision {
+  const normalized = normalizeConfirmationInput(text);
+  if (!normalized) {
+    return 'unknown';
+  }
+  if (CONFIRMATION_YES_PATTERN.test(normalized)) {
+    return 'confirm';
+  }
+  if (CONFIRMATION_NO_PATTERN.test(normalized)) {
+    return 'reject';
+  }
+  return 'unknown';
+}
+
+function clonePayload(payload: ChatSendPayload): ChatSendPayload {
+  return {
+    text: payload.text,
+    image: payload.image
+      ? {
+          uri: payload.image.uri,
+          base64: payload.image.base64,
+          mediaType: payload.image.mediaType
+        }
+      : payload.image
+  };
 }
 
 
@@ -205,6 +280,7 @@ export function useChat(conversationId: string) {
   const flushFrameRef = useRef<number | null>(null);
   const displayPendingTagRef = useRef('');
   const rawTtsResponseRef = useRef('');
+  const pendingAutoLanguageSwitchRef = useRef<Map<string, PendingAutoLanguageSwitch>>(new Map());
   const conversationIdRef = useRef(conversationId);
   conversationIdRef.current = conversationId;
   const audioPlaybackStateRef = useRef({
@@ -1289,12 +1365,7 @@ export function useChat(conversationId: string) {
     [accessToken, audioPlayer, currentAccountType, currentRole, resolveVoiceErrorCode, updateMessage]
   );
 
-  const sendMessage = (
-    payload: ChatSendPayload,
-    options?: {
-      conversationId?: string;
-    }
-  ): ChatError | null => {
+  const sendMessageInternal = (payload: ChatSendPayload, options?: InternalSendOptions): ChatError | null => {
     const trimmed = payload.text.trim();
     const hasImage = Boolean(payload.image);
 
@@ -1332,33 +1403,89 @@ export function useChat(conversationId: string) {
 
     const targetConversationId = sendContext.conversationId;
     const targetConversation = sendContext.conversation;
-    const modeFewShotsForTurn = resolveModeFewShotsForConversation(targetConversation);
     const preferredLanguage = targetConversation.language || getLanguage();
-    const languageResolution = resolveLanguageForTurn(trimmed, preferredLanguage);
-    const languageForTurn = languageResolution.language;
-    const shouldAskLanguageClarification = languageResolution.explicitDetected && !languageResolution.explicitRecognized;
-
     const now = new Date().toISOString();
     const rawMessagesBeforeSend = getMessages(targetConversationId);
     const historyBeforeSend = formatConversationHistory(rawMessagesBeforeSend);
     const previewText = trimmed || '[Image]';
+    const shouldAddUserMessage = !options?._skipAddUserMessage;
+    const userMessageId = options?._existingUserMessageId ?? generateId('msg');
 
-    const userMessage: Message = {
-      id: generateId('msg'),
-      conversationId: targetConversationId,
-      role: 'user',
-      content: trimmed,
-      status: 'complete',
-      timestamp: now,
-      metadata: payload.image
-        ? {
-            imageUri: payload.image.uri,
-            imageMediaType: payload.image.mediaType
-          }
-        : undefined
-    };
+    if (shouldAddUserMessage) {
+      const userMessage: Message = {
+        id: userMessageId,
+        conversationId: targetConversationId,
+        role: 'user',
+        content: trimmed,
+        status: 'complete',
+        timestamp: now,
+        metadata: payload.image
+          ? {
+              imageUri: payload.image.uri,
+              imageMediaType: payload.image.mediaType
+            }
+          : undefined
+      };
+      addMessage(targetConversationId, userMessage);
+    }
 
-    addMessage(targetConversationId, userMessage);
+    const pendingAutoLanguageSwitch = options?._skipPendingConfirmationFlow
+      ? null
+      : pendingAutoLanguageSwitchRef.current.get(targetConversationId) ?? null;
+    if (pendingAutoLanguageSwitch) {
+      const decision = hasImage ? 'unknown' : resolvePendingLanguageConfirmation(trimmed);
+      if (decision === 'confirm' || decision === 'reject') {
+        pendingAutoLanguageSwitchRef.current.delete(targetConversationId);
+        return sendMessageInternal(pendingAutoLanguageSwitch.payload, {
+          conversationId: targetConversationId,
+          _forcedLanguageForTurn:
+            decision === 'confirm'
+              ? pendingAutoLanguageSwitch.requestedLanguage
+              : pendingAutoLanguageSwitch.fallbackLanguage,
+          _persistLanguageOverride: true,
+          _skipAutoCandidateConfirmation: true,
+          _skipPendingConfirmationFlow: true,
+          _skipAddUserMessage: true,
+          _existingUserMessageId: pendingAutoLanguageSwitch.userMessageId
+        });
+      }
+
+      const reminderMessage: Message = {
+        id: generateId('msg'),
+        conversationId: targetConversationId,
+        role: 'artist',
+        content: buildAutoLanguageSwitchConfirmationReminderMessage(preferredLanguage),
+        status: 'complete',
+        timestamp: now,
+        metadata: {
+          injected: true
+        }
+      };
+      addMessage(targetConversationId, reminderMessage);
+      updateConversation(
+        targetConversationId,
+        {
+          language: preferredLanguage,
+          lastMessagePreview: previewText,
+          title: previewText.slice(0, 30)
+        },
+        targetConversation.artistId
+      );
+      return null;
+    }
+
+    const modeFewShotsForTurn = resolveModeFewShotsForConversation(targetConversation);
+    const languageResolution = resolveLanguageForTurn(trimmed, preferredLanguage);
+    const languageForTurn = options?._forcedLanguageForTurn ?? languageResolution.language;
+    const shouldPersistLanguage = options?._persistLanguageOverride ?? languageResolution.persistLanguage;
+    const shouldAskLanguageClarification =
+      options?._forcedLanguageForTurn === undefined &&
+      languageResolution.explicitDetected &&
+      !languageResolution.explicitRecognized;
+    const shouldAskAutoLanguageConfirmation =
+      options?._forcedLanguageForTurn === undefined &&
+      !options?._skipAutoCandidateConfirmation &&
+      languageResolution.requiresConfirmation;
 
     if (shouldAskLanguageClarification) {
       const clarificationMessage: Message = {
@@ -1374,6 +1501,38 @@ export function useChat(conversationId: string) {
       };
 
       addMessage(targetConversationId, clarificationMessage);
+      updateConversation(
+        targetConversationId,
+        {
+          language: preferredLanguage,
+          lastMessagePreview: previewText,
+          title: previewText.slice(0, 30)
+        },
+        targetConversation.artistId
+      );
+      return null;
+    }
+
+    if (shouldAskAutoLanguageConfirmation) {
+      pendingAutoLanguageSwitchRef.current.set(targetConversationId, {
+        payload: clonePayload(payload),
+        userMessageId,
+        requestedLanguage: languageForTurn,
+        fallbackLanguage: preferredLanguage
+      });
+      const confirmationMessage: Message = {
+        id: generateId('msg'),
+        conversationId: targetConversationId,
+        role: 'artist',
+        content: buildAutoLanguageSwitchConfirmationMessage(preferredLanguage, languageForTurn),
+        status: 'complete',
+        timestamp: now,
+        metadata: {
+          injected: true
+        }
+      };
+
+      addMessage(targetConversationId, confirmationMessage);
       updateConversation(
         targetConversationId,
         {
@@ -1455,7 +1614,7 @@ export function useChat(conversationId: string) {
     queueRef.current.push({
       conversationId: targetConversationId,
       artistMessageId,
-      userMessageId: userMessage.id,
+      userMessageId,
       artistId: targetConversation.artistId,
       mockUserTurn: createMockUserTurn(trimmed, hasImage),
       claudeUserMessage: {
@@ -1472,14 +1631,21 @@ export function useChat(conversationId: string) {
     });
     runNext();
 
-    updateConversation(targetConversationId, {
-      language: languageForTurn,
-      lastMessagePreview: previewText,
-      title: previewText.slice(0, 30)
-    }, targetConversation.artistId);
+    updateConversation(
+      targetConversationId,
+      {
+        language: shouldPersistLanguage ? languageForTurn : preferredLanguage,
+        lastMessagePreview: previewText,
+        title: previewText.slice(0, 30)
+      },
+      targetConversation.artistId
+    );
 
     return null;
   };
+
+  const sendMessage = (payload: ChatSendPayload, options?: { conversationId?: string }): ChatError | null =>
+    sendMessageInternal(payload, options);
 
   useEffect(() => {
     const capturedId = conversationId;
@@ -1506,6 +1672,7 @@ export function useChat(conversationId: string) {
       });
       queueRef.current = [];
       failedJobsRef.current.clear();
+      pendingAutoLanguageSwitchRef.current.clear();
       isStreamingRef.current = false;
       runNextLockRef.current = false;
       streamingConversationIdRef.current = null;

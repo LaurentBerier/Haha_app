@@ -394,6 +394,105 @@ describe('useChat sendMessage integration', () => {
     expect(mockStreamMockReply).toHaveBeenCalledTimes(1);
   });
 
+  it('uses explicit one-off language without persisting conversation language', () => {
+    const conversationId = 'conv-explicit-one-off';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const result = chat.sendMessage({ text: 'Dis cette phrase en allemand: Bonne journee.' });
+
+    expect(result).toBeNull();
+    expect(state.addMessage).toHaveBeenCalledTimes(2);
+    expect(mockStreamMockReply).toHaveBeenCalledTimes(1);
+    const streamCall = (mockStreamMockReply as jest.Mock).mock.calls[0]?.[0] as { language?: string };
+    expect(streamCall?.language).toBe('de-DE');
+    expect(state.updateConversation).toHaveBeenCalledWith(
+      conversation.id,
+      expect.objectContaining({
+        language: 'fr-CA',
+        lastMessagePreview: 'Dis cette phrase en allemand: Bonne journee.'
+      }),
+      conversation.artistId
+    );
+  });
+
+  it('asks for confirmation before auto language switch and replays pending message on yes', () => {
+    const conversationId = 'conv-auto-confirm-yes';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const firstResult = chat.sendMessage({ text: 'I need help with this today please.' });
+    expect(firstResult).toBeNull();
+    expect(state.addMessage).toHaveBeenCalledTimes(2);
+    expect(mockStreamMockReply).not.toHaveBeenCalled();
+
+    const latestArtistMessage =
+      state.messagesByConversation[conversation.id]?.messages.find((message) => message.role === 'artist') ?? null;
+    expect(latestArtistMessage?.content).toContain('oui ou non');
+
+    const secondResult = chat.sendMessage({ text: 'oui' });
+    expect(secondResult).toBeNull();
+    expect(state.addMessage).toHaveBeenCalledTimes(4);
+    expect(mockStreamMockReply).toHaveBeenCalledTimes(1);
+    const streamCall = (mockStreamMockReply as jest.Mock).mock.calls[0]?.[0] as { language?: string };
+    expect(streamCall?.language).toBe('en-CA');
+
+    const lastUpdateCall = state.updateConversation.mock.calls[state.updateConversation.mock.calls.length - 1];
+    expect(lastUpdateCall?.[1]).toEqual(
+      expect.objectContaining({
+        language: 'en-CA',
+        lastMessagePreview: 'I need help with this today please.'
+      })
+    );
+
+    const originalMessageCount =
+      state.messagesByConversation[conversation.id]?.messages.filter(
+        (message) => message.role === 'user' && message.content === 'I need help with this today please.'
+      ).length ?? 0;
+    expect(originalMessageCount).toBe(1);
+  });
+
+  it('asks for confirmation before auto language switch and replays pending message on no in current language', () => {
+    const conversationId = 'conv-auto-confirm-no';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const firstResult = chat.sendMessage({ text: 'I need help with this today please.' });
+    expect(firstResult).toBeNull();
+    expect(state.addMessage).toHaveBeenCalledTimes(2);
+    expect(mockStreamMockReply).not.toHaveBeenCalled();
+
+    const secondResult = chat.sendMessage({ text: 'non' });
+    expect(secondResult).toBeNull();
+    expect(state.addMessage).toHaveBeenCalledTimes(4);
+    expect(mockStreamMockReply).toHaveBeenCalledTimes(1);
+    const streamCall = (mockStreamMockReply as jest.Mock).mock.calls[0]?.[0] as { language?: string };
+    expect(streamCall?.language).toBe('fr-CA');
+
+    const lastUpdateCall = state.updateConversation.mock.calls[state.updateConversation.mock.calls.length - 1];
+    expect(lastUpdateCall?.[1]).toEqual(
+      expect.objectContaining({
+        language: 'fr-CA',
+        lastMessagePreview: 'I need help with this today please.'
+      })
+    );
+  });
+
   it('asks for language code when explicit switch request is unrecognized and skips LLM call', () => {
     const conversationId = 'conv-unknown-switch';
     const chat = renderUseChatHook(conversationId);
