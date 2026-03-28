@@ -10,6 +10,11 @@ const {
 
 const MAX_PAGE_LIMIT = 100;
 const DEFAULT_PAGE_LIMIT = 25;
+const ADMIN_USER_LIST_SELECT_WITH_ID_TEXT =
+  'id,id_text,email,auth_created_at,tier,messages_this_month,monthly_cap_override,monthly_reset_at,last_active_at,total_events';
+const ADMIN_USER_LIST_SELECT_LEGACY =
+  'id,email,auth_created_at,tier,messages_this_month,monthly_cap_override,monthly_reset_at,last_active_at,total_events';
+let adminUserListSupportsIdText = true;
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -71,6 +76,55 @@ function sanitizeSearchTerm(value) {
   return value.replace(/[,%()']/g, ' ').trim();
 }
 
+function isMissingIdTextError(error) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const code = typeof error.code === 'string' ? error.code : '';
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return code === '42703' && message.includes('id_text');
+}
+
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function buildUsersQuery(supabaseAdmin, options) {
+  const {
+    tier,
+    safeSearch,
+    from,
+    to,
+    includeIdText
+  } = options;
+
+  let usersQuery = supabaseAdmin
+    .from('admin_user_list')
+    .select(
+      includeIdText ? ADMIN_USER_LIST_SELECT_WITH_ID_TEXT : ADMIN_USER_LIST_SELECT_LEGACY,
+      { count: 'exact' }
+    );
+
+  if (tier) {
+    usersQuery = usersQuery.eq('tier', tier);
+  }
+
+  if (safeSearch) {
+    if (includeIdText) {
+      usersQuery = usersQuery.or(`email.ilike.%${safeSearch}%,id_text.ilike.%${safeSearch}%`);
+    } else {
+      const clauses = [`email.ilike.%${safeSearch}%`];
+      if (isUuidLike(safeSearch)) {
+        clauses.push(`id.eq.${safeSearch}`);
+      }
+      usersQuery = usersQuery.or(clauses.join(','));
+    }
+  }
+
+  return usersQuery.order('auth_created_at', { ascending: false, nullsFirst: false }).range(from, to);
+}
+
 module.exports = async function handler(req, res) {
   const requestId = attachRequestId(req, res);
   const corsResult = setCorsHeaders(req, res, { methods: 'GET, OPTIONS' });
@@ -121,24 +175,29 @@ module.exports = async function handler(req, res) {
   try {
     const from = page * limit;
     const to = from + limit - 1;
-    let usersQuery = supabaseAdmin
-      .from('admin_user_list')
-      .select(
-        'id,id_text,email,auth_created_at,tier,messages_this_month,monthly_cap_override,monthly_reset_at,last_active_at,total_events',
-        { count: 'exact' }
-      );
-
-    if (tier) {
-      usersQuery = usersQuery.eq('tier', tier);
-    }
-
     const safeSearch = sanitizeSearchTerm(search);
-    if (safeSearch) {
-      usersQuery = usersQuery.or(`email.ilike.%${safeSearch}%,id_text.ilike.%${safeSearch}%`);
+
+    let includeIdText = adminUserListSupportsIdText;
+    let { data: rows, error: usersError, count } = await buildUsersQuery(supabaseAdmin, {
+      tier,
+      safeSearch,
+      from,
+      to,
+      includeIdText
+    });
+
+    if (usersError && includeIdText && isMissingIdTextError(usersError)) {
+      adminUserListSupportsIdText = false;
+      includeIdText = false;
+      ({ data: rows, error: usersError, count } = await buildUsersQuery(supabaseAdmin, {
+        tier,
+        safeSearch,
+        from,
+        to,
+        includeIdText
+      }));
     }
 
-    usersQuery = usersQuery.order('auth_created_at', { ascending: false, nullsFirst: false }).range(from, to);
-    const { data: rows, error: usersError, count } = await usersQuery;
     if (usersError) {
       log('error', 'Failed to query admin_user_list', {
         scope: 'api/admin-users',

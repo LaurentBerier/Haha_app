@@ -27,6 +27,7 @@
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.1.2",
     "@sentry/node": "^10.45.0",
+    "@sentry/react": "^10.44.0",
     "@sentry/react-native": "^8.5.0",
     "@supabase/supabase-js": "^2.98.0",
     "@vercel/kv": "^2.0.0",

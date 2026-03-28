@@ -1,6 +1,6 @@
 const { createReqRes } = require('./testHelpers');
 
-function buildSupabaseMock({ rows, user } = {}) {
+function buildSupabaseMock({ rows, user, missingIdText = false } = {}) {
   const adminUser = user ?? { id: 'admin-1', app_metadata: { role: 'admin', account_type: 'admin' } };
   const dataset = rows ?? [
     {
@@ -44,7 +44,8 @@ function buildSupabaseMock({ rows, user } = {}) {
 
     const state = {
       tier: null,
-      search: null
+      search: null,
+      selectedColumns: ''
     };
 
     const query = {
@@ -59,6 +60,17 @@ function buildSupabaseMock({ rows, user } = {}) {
       },
       order: () => query,
       range: (start, end) => {
+        if (missingIdText && typeof state.selectedColumns === 'string' && state.selectedColumns.includes('id_text')) {
+          return Promise.resolve({
+            data: null,
+            error: {
+              code: '42703',
+              message: 'column admin_user_list.id_text does not exist'
+            },
+            count: null
+          });
+        }
+
         let filtered = [...dataset];
         if (state.tier) {
           filtered = filtered.filter((row) => row.tier === state.tier);
@@ -67,12 +79,17 @@ function buildSupabaseMock({ rows, user } = {}) {
         if (state.search) {
           const match = state.search.match(/email\.ilike\.%([^%]+)%/i);
           const searchTerm = match && typeof match[1] === 'string' ? match[1].toLowerCase() : '';
+          const idEqMatch = state.search.match(/id\.eq\.([^,]+)/i);
+          const idEqTerm = idEqMatch && typeof idEqMatch[1] === 'string' ? idEqMatch[1].toLowerCase() : '';
           if (searchTerm) {
             filtered = filtered.filter(
               (row) =>
                 (typeof row.email === 'string' && row.email.toLowerCase().includes(searchTerm)) ||
-                row.id_text.toLowerCase().includes(searchTerm)
+                row.id_text.toLowerCase().includes(searchTerm) ||
+                (idEqTerm && row.id.toLowerCase() === idEqTerm)
             );
+          } else if (idEqTerm) {
+            filtered = filtered.filter((row) => row.id.toLowerCase() === idEqTerm);
           }
         }
 
@@ -86,7 +103,10 @@ function buildSupabaseMock({ rows, user } = {}) {
     };
 
     return {
-      select: () => query
+      select: (columns) => {
+        state.selectedColumns = columns;
+        return query;
+      }
     };
   });
 
@@ -225,5 +245,28 @@ describe('api/admin-users', () => {
     expect(res.payload.total).toBe(2);
     expect(res.payload.page).toBe(0);
     expect(res.payload.limit).toBe(1);
+  });
+
+  it('falls back when admin_user_list.id_text is missing', async () => {
+    const supabase = buildSupabaseMock({ missingIdText: true });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+
+    const handler = require('../admin-users');
+    const { req, res } = createReqRes({
+      method: 'GET',
+      headers: { authorization: 'Bearer admin-token' }
+    });
+    req.query = { page: '0', limit: '25', search: 'target@example.com' };
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.users).toHaveLength(1);
+    expect(res.payload.users[0]).toMatchObject({
+      id: 'user-3',
+      email: 'target@example.com'
+    });
   });
 });

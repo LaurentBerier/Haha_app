@@ -49,13 +49,23 @@ export function initSentry(): boolean {
   }
 
   const isDevRuntime = typeof __DEV__ !== 'undefined' && __DEV__;
+  const replayOptions =
+    Platform.OS === 'web'
+      ? {
+          integrations: [Sentry.browserReplayIntegration()],
+          replaysSessionSampleRate: isDevRuntime ? 1.0 : 0.1,
+          replaysOnErrorSampleRate: 1.0
+        }
+      : {};
 
   try {
     Sentry.init({
       dsn,
       environment: isDevRuntime ? 'development' : 'production',
       tracesSampleRate: isDevRuntime ? 0.2 : 0.1,
-      enableNative: Platform.OS !== 'web'
+      sendDefaultPii: true,
+      enableNative: Platform.OS !== 'web',
+      ...replayOptions
     });
     isInitialized = true;
     return true;
