@@ -1,16 +1,17 @@
-import { NativeModules, Platform } from 'react-native';
+import { Platform } from 'react-native';
 import { fetchAndCacheVoice, type FetchVoiceOptions } from './ttsService';
 
 type Listener = { remove: () => void };
+type NativeSpeechRecognitionEvent = {
+  results?: Array<{ transcript?: string }>;
+  message?: string;
+  error?: string;
+};
 type SpeechRecognitionModule = {
   requestPermissionsAsync: () => Promise<{ granted: boolean }>;
   addListener: (
-    eventName: 'result' | 'error',
-    callback: (event: {
-      results?: Array<{ transcript?: string }>;
-      message?: string;
-      error?: string;
-    }) => void
+    eventName: 'result' | 'error' | 'end',
+    callback: (event?: NativeSpeechRecognitionEvent) => void
   ) => Listener;
   start: (options: {
     lang: string;
@@ -20,6 +21,7 @@ type SpeechRecognitionModule = {
     addsPunctuation: boolean;
   }) => void;
   stop: () => void;
+  isRecognitionAvailable?: () => boolean;
 };
 
 interface WebSpeechRecognitionResultItem {
@@ -118,30 +120,18 @@ const STT_DEFAULT_LOCALE_BY_PREFIX: Record<string, string> = {
   zh: 'zh-CN'
 };
 
-function hasSpeechRecognitionNativeBinding(): boolean {
-  if (Platform.OS === 'web') {
+function hasRequiredNativeSpeechModuleApi(value: unknown): value is SpeechRecognitionModule {
+  if (!value || typeof value !== 'object') {
     return false;
   }
 
-  const rnNativeModules = NativeModules as Record<string, unknown> | undefined;
-  if (rnNativeModules?.ExpoSpeechRecognition) {
-    return true;
-  }
-
-  const scope = globalThis as {
-    ExpoModules?: Record<string, unknown>;
-    expo?: { modules?: Record<string, unknown> };
-  };
-
-  if (scope.ExpoModules?.ExpoSpeechRecognition) {
-    return true;
-  }
-
-  if (scope.expo?.modules?.ExpoSpeechRecognition) {
-    return true;
-  }
-
-  return false;
+  const candidate = value as Partial<SpeechRecognitionModule>;
+  return (
+    typeof candidate.requestPermissionsAsync === 'function' &&
+    typeof candidate.addListener === 'function' &&
+    typeof candidate.start === 'function' &&
+    typeof candidate.stop === 'function'
+  );
 }
 
 function getSpeechRecognitionModule(): SpeechRecognitionModule | null {
@@ -149,19 +139,21 @@ function getSpeechRecognitionModule(): SpeechRecognitionModule | null {
     return cachedModule;
   }
 
-  if (!hasSpeechRecognitionNativeBinding()) {
+  if (Platform.OS === 'web') {
     cachedModule = null;
-    if (!hasLoggedMissingNativeSpeechModule) {
-      hasLoggedMissingNativeSpeechModule = true;
-      console.warn('[voiceEngine] ExpoSpeechRecognition native module is missing in this build.');
-    }
     return cachedModule;
   }
 
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const loaded = require('expo-speech-recognition') as { ExpoSpeechRecognitionModule?: SpeechRecognitionModule };
-    cachedModule = loaded?.ExpoSpeechRecognitionModule ?? null;
+    const loaded = require('expo-speech-recognition') as { ExpoSpeechRecognitionModule?: unknown };
+    cachedModule = hasRequiredNativeSpeechModuleApi(loaded?.ExpoSpeechRecognitionModule)
+      ? loaded.ExpoSpeechRecognitionModule
+      : null;
+    if (!cachedModule && !hasLoggedMissingNativeSpeechModule) {
+      hasLoggedMissingNativeSpeechModule = true;
+      console.warn('[voiceEngine] ExpoSpeechRecognition native module is missing in this build.');
+    }
   } catch (error) {
     cachedModule = null;
     if (!hasLoggedMissingNativeSpeechModule) {
@@ -264,9 +256,19 @@ function isPermissionLikeMessage(rawMessage: string): boolean {
   return (
     normalized.includes('permission') ||
     normalized.includes('not-allowed') ||
-    normalized.includes('service-not-allowed') ||
     normalized.includes('audio-capture') ||
     normalized.includes('denied')
+  );
+}
+
+function isUnsupportedLikeMessage(rawMessage: string): boolean {
+  const normalized = rawMessage.toLowerCase();
+  return (
+    normalized.includes('service-not-allowed') ||
+    normalized.includes('language-not-supported') ||
+    normalized.includes('recognition is unavailable') ||
+    normalized.includes('speech recognition is unavailable') ||
+    normalized.includes('not supported')
   );
 }
 
@@ -287,14 +289,71 @@ function classifyWebErrorReason(event: WebSpeechRecognitionErrorEvent): VoiceSes
 function classifyStartErrorReason(error: unknown): VoiceSessionEndReason {
   const message =
     error instanceof Error ? error.message : typeof error === 'string' ? error : 'Speech recognition failed';
+  if (isUnsupportedLikeMessage(message)) {
+    return 'unsupported';
+  }
   return isPermissionLikeMessage(message) ? 'permission' : 'transient';
 }
 
-function classifyNativeErrorReason(rawMessage: string): VoiceSessionEndReason {
+function classifyNativeErrorReason(rawErrorCode: string | null | undefined, rawMessage: string): VoiceSessionEndReason {
+  const code = (rawErrorCode ?? '').trim().toLowerCase();
+  if (code === 'no-speech' || code === 'nomatch') {
+    return 'no_speech';
+  }
+  if (code === 'aborted') {
+    return 'aborted';
+  }
+  if (code === 'service-not-allowed' || code === 'language-not-supported') {
+    return 'unsupported';
+  }
+  if (code === 'not-allowed' || code === 'audio-capture') {
+    return 'permission';
+  }
+  if (isUnsupportedLikeMessage(rawMessage)) {
+    return 'unsupported';
+  }
   if (isPermissionLikeMessage(rawMessage)) {
     return 'permission';
   }
+  if (rawMessage.toLowerCase().includes('no speech')) {
+    return 'no_speech';
+  }
+  if (rawMessage.toLowerCase().includes('aborted')) {
+    return 'aborted';
+  }
   return 'transient';
+}
+
+function getAndroidApiLevel(): number | null {
+  if (Platform.OS !== 'android') {
+    return null;
+  }
+
+  const rawVersion = Platform.Version;
+  const parsed =
+    typeof rawVersion === 'number'
+      ? rawVersion
+      : Number.parseInt(typeof rawVersion === 'string' ? rawVersion : '', 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getNativeStartOptions(locale: string): {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  continuous: boolean;
+  addsPunctuation: boolean;
+} {
+  const androidApiLevel = getAndroidApiLevel();
+  const supportsContinuous = Platform.OS !== 'android' || androidApiLevel === null || androidApiLevel >= 33;
+  const supportsPunctuation = Platform.OS !== 'android' || androidApiLevel === null || androidApiLevel >= 33;
+  return {
+    lang: locale,
+    interimResults: true,
+    maxAlternatives: 1,
+    continuous: supportsContinuous,
+    addsPunctuation: supportsPunctuation
+  };
 }
 
 function cleanupWebRecognition(): void {
@@ -534,38 +593,36 @@ export function startVoiceListeningSession({
 
   const module = getSpeechRecognitionModule();
   if (module) {
+    if (typeof module.isRecognitionAvailable === 'function' && !module.isRecognitionAvailable()) {
+      scheduleVoiceMicrotask(() => {
+        emitEnd('unsupported', 'Speech recognition service is unavailable on this device.');
+      });
+      return session;
+    }
+
     activeNativeListeners = [
       module.addListener('result', (event) => {
-        const transcript = event.results?.[0]?.transcript?.trim();
+        const transcript = event?.results?.[0]?.transcript?.trim();
         if (transcript) {
           emitResult(transcript);
         }
       }),
       module.addListener('error', (event) => {
-        const message = event.message || event.error || 'Speech recognition failed';
-        emitEnd(classifyNativeErrorReason(message), message);
+        const message = event?.message || event?.error || 'Speech recognition failed';
+        emitEnd(classifyNativeErrorReason(event?.error, message), message);
+      }),
+      module.addListener('end', () => {
+        emitEnd('ended_unexpectedly', 'Speech recognition ended unexpectedly');
       })
     ];
 
     try {
-      module.start({
-        lang: resolvedLocales.primary,
-        interimResults: true,
-        maxAlternatives: 1,
-        continuous: true,
-        addsPunctuation: true
-      });
+      module.start(getNativeStartOptions(resolvedLocales.primary));
     } catch (error) {
       const reason = classifyStartErrorReason(error);
       if (reason !== 'permission' && resolvedLocales.fallback) {
         try {
-          module.start({
-            lang: resolvedLocales.fallback,
-            interimResults: true,
-            maxAlternatives: 1,
-            continuous: true,
-            addsPunctuation: true
-          });
+          module.start(getNativeStartOptions(resolvedLocales.fallback));
         } catch (fallbackError) {
           const fallbackMessage =
             fallbackError instanceof Error
