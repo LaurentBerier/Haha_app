@@ -89,4 +89,48 @@ describe('api/_utils checkIpRateLimit', () => {
     expect(second.status).toBe(429);
     expect(second.code).toBe('RATE_LIMIT_EXCEEDED');
   });
+
+  it('uses configured window size for KV bucket keys', async () => {
+    process.env.NODE_ENV = 'production';
+    process.env.KV_REST_API_URL = 'https://kv.example.test';
+    process.env.KV_REST_API_TOKEN = 'token';
+
+    const kvStore = new Map();
+    const incrMock = jest.fn(async (key) => {
+      const next = Number(kvStore.get(key) ?? 0) + 1;
+      kvStore.set(key, next);
+      return next;
+    });
+    const getMock = jest.fn(async (key) => (kvStore.has(key) ? kvStore.get(key) : null));
+    const expireMock = jest.fn(async () => 1);
+
+    jest.doMock('@vercel/kv', () => ({
+      kv: {
+        incr: incrMock,
+        expire: expireMock,
+        get: getMock
+      }
+    }));
+
+    jest.spyOn(Date, 'now').mockReturnValue(90_000);
+
+    const { checkIpRateLimit } = require('../_utils');
+    const result = await checkIpRateLimit(
+      {
+        headers: {
+          'x-forwarded-for': '198.51.100.77'
+        }
+      },
+      {
+        requestId: 'test-window',
+        windowMs: 120_000,
+        maxRequests: 10
+      }
+    );
+
+    expect(result.ok).toBe(true);
+    expect(incrMock).toHaveBeenCalledWith('ip_ratelimit:120000:198.51.100.77:0');
+    expect(getMock).toHaveBeenCalledWith('ip_ratelimit:120000:198.51.100.77:-1');
+    expect(expireMock).toHaveBeenCalledWith('ip_ratelimit:120000:198.51.100.77:0', 150);
+  });
 });

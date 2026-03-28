@@ -46,7 +46,6 @@ const CLAUDE_LIMITS_RPC_NAME = 'enforce_claude_limits';
 const MONTHLY_QUOTA_CACHE_TTL_MS = 5_000;
 const MONTHLY_QUOTA_CACHE_TTL_SECONDS = Math.max(1, Math.ceil(MONTHLY_QUOTA_CACHE_TTL_MS / 1000));
 const CONTEXT_CACHE_TTL_SECONDS = 30 * 60;
-const RATE_LIMIT_BUCKET_MS = 60_000;
 const DEFAULT_ARTIST_ID = 'cathy-gauthier';
 const DEFAULT_MODE_ID = 'default';
 const DEFAULT_MONTHLY_CAPS = {
@@ -1511,8 +1510,8 @@ function buildMonthlyQuotaKvKey(userId, monthStartIso) {
   return `quota:${userId}:${monthStartIso}`;
 }
 
-function buildRateLimitMinuteKey(userId, minuteBucket) {
-  return `ratelimit:${userId}:${minuteBucket}`;
+function buildRateLimitBucketKey(userId, bucketSizeMs, bucketIndex) {
+  return `ratelimit:${userId}:${bucketSizeMs}:${bucketIndex}`;
 }
 
 async function readPromptContextFromKv(cacheKey, requestId) {
@@ -1598,10 +1597,10 @@ async function enforceKvRateLimit(userId, nowMs, windowMs, maxRequests, requestI
   }
 
   const safeUserId = typeof userId === 'string' && userId ? userId : 'anonymous';
-  const currentMinute = Math.floor(nowMs / RATE_LIMIT_BUCKET_MS);
-  const minuteProgressRatio = (nowMs % RATE_LIMIT_BUCKET_MS) / RATE_LIMIT_BUCKET_MS;
-  const currentKey = buildRateLimitMinuteKey(safeUserId, currentMinute);
-  const previousKey = buildRateLimitMinuteKey(safeUserId, currentMinute - 1);
+  const currentBucket = Math.floor(nowMs / windowMs);
+  const bucketProgressRatio = (nowMs % windowMs) / windowMs;
+  const currentKey = buildRateLimitBucketKey(safeUserId, windowMs, currentBucket);
+  const previousKey = buildRateLimitBucketKey(safeUserId, windowMs, currentBucket - 1);
 
   try {
     const currentCount = await kv.incr(currentKey);
@@ -1612,7 +1611,7 @@ async function enforceKvRateLimit(userId, nowMs, windowMs, maxRequests, requestI
 
     const previousRaw = await kv.get(previousKey);
     const previousCount = parseFiniteNonNegativeInt(previousRaw) ?? 0;
-    const effectiveCount = currentCount + previousCount * (1 - minuteProgressRatio);
+    const effectiveCount = currentCount + previousCount * (1 - bucketProgressRatio);
 
     if (effectiveCount > maxRequests) {
       return {

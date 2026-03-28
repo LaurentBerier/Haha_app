@@ -4,7 +4,6 @@ const { kv } = require('@vercel/kv');
 const { captureApiException } = require('./_sentry');
 
 let supabaseAdminCache = undefined;
-const RATE_LIMIT_BUCKET_MS = 60_000;
 const DEFAULT_IP_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_IP_RATE_LIMIT_MAX_REQUESTS = 100;
 
@@ -298,8 +297,8 @@ function parseFiniteNonNegativeInt(value) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
-function buildIpRateLimitKey(ipAddress, minuteBucket) {
-  return `ip_ratelimit:${ipAddress}:${minuteBucket}`;
+function buildIpRateLimitKey(ipAddress, bucketSizeMs, bucketIndex) {
+  return `ip_ratelimit:${bucketSizeMs}:${ipAddress}:${bucketIndex}`;
 }
 
 function serializeError(error) {
@@ -425,10 +424,10 @@ async function checkIpRateLimit(req, options = {}) {
   }
 
   const nowMs = Date.now();
-  const currentMinute = Math.floor(nowMs / RATE_LIMIT_BUCKET_MS);
-  const minuteProgressRatio = (nowMs % RATE_LIMIT_BUCKET_MS) / RATE_LIMIT_BUCKET_MS;
-  const currentKey = buildIpRateLimitKey(ipAddress, currentMinute);
-  const previousKey = buildIpRateLimitKey(ipAddress, currentMinute - 1);
+  const currentBucket = Math.floor(nowMs / windowMs);
+  const bucketProgressRatio = (nowMs % windowMs) / windowMs;
+  const currentKey = buildIpRateLimitKey(ipAddress, windowMs, currentBucket);
+  const previousKey = buildIpRateLimitKey(ipAddress, windowMs, currentBucket - 1);
 
   try {
     const currentCount = await kv.incr(currentKey);
@@ -439,7 +438,7 @@ async function checkIpRateLimit(req, options = {}) {
 
     const previousRaw = await kv.get(previousKey);
     const previousCount = parseFiniteNonNegativeInt(previousRaw) ?? 0;
-    const effectiveCount = currentCount + previousCount * (1 - minuteProgressRatio);
+    const effectiveCount = currentCount + previousCount * (1 - bucketProgressRatio);
 
     if (effectiveCount > maxRequests) {
       return {

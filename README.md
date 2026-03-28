@@ -81,8 +81,8 @@ Implemented in this repository:
 - [`docs/phase3-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase3-status.md)
 - [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
 - Admin dashboard status: [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md)
-- Latest QA run: [`docs/qa-run-2026-03-27.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-27.md)
-- Latest code-review snapshot: [`docs/code-review-2026-03-27.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-27.md)
+- Latest QA run: [`docs/qa-run-2026-03-28.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-28.md)
+- Latest code-review snapshot: [`docs/code-review-2026-03-28.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-28.md)
 
 ## Repos and Vercel Projects
 
@@ -159,6 +159,9 @@ cp .env.example .env
 - `EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC` (optional; defaults to ElevenLabs built-in voice ID)
 - `EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY` (optional; when set, premium voice swaps without code changes)
 - `EXPO_PUBLIC_SENTRY_DSN` (optional; enables app-side exception capture)
+- `EXPO_PUBLIC_SILENCE_TIMEOUT_MS` (optional; default `1800`, minimum effective `1200`)
+- `EXPO_PUBLIC_VOICE_FILLER_COOLDOWN_MS` (optional; default `2500`, minimum effective `400`)
+- `EXPO_PUBLIC_GREETING_FORCE_TUTORIAL` (optional; forces tutorial greeting copy on client)
 
 Notes:
 
@@ -196,7 +199,12 @@ Notes:
 - `ELEVENLABS_USE_CATHY_FOR_ALL_PAID` (optional; default `true`)
 - `CLAUDE_RATE_LIMIT_MAX_REQUESTS` (optional, default `30`, per user)
 - `CLAUDE_RATE_LIMIT_WINDOW_MS` (optional, default `60000`)
+- `CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS` (optional, default `100`, per client IP)
+- `CLAUDE_IP_RATE_LIMIT_WINDOW_MS` (optional, default `60000`)
 - `ANTHROPIC_FETCH_TIMEOUT_MS` (optional, default `25000`)
+- `CLAUDE_CONTEXT_ENABLED` (optional; set `0` to disable weather/news context injection)
+- `CLAUDE_CONTEXT_FETCH_TIMEOUT_MS` (optional, default `4500`)
+- `CLAUDE_IP_GEO_TIMEOUT_MS` (optional, default `3000`)
 - `CLAUDE_MONTHLY_CAP_FREE` (optional, default `200`)
 - `CLAUDE_MONTHLY_CAP_REGULAR` (optional, default `3000`)
 - `CLAUDE_MONTHLY_CAP_PREMIUM` (optional, default `25000`)
@@ -208,6 +216,12 @@ Notes:
 - `TTS_RATE_LIMIT_MAX_REQUESTS_REGULAR` (optional, default `60`/min)
 - `TTS_RATE_LIMIT_MAX_REQUESTS_PREMIUM` (optional, default `180`/min)
 - `TTS_RATE_LIMIT_MAX_REQUESTS` (optional shared fallback when tier-specific values are not set)
+- `TTS_IP_RATE_LIMIT_MAX_REQUESTS` (optional, default `100`, per client IP)
+- `TTS_IP_RATE_LIMIT_WINDOW_MS` (optional, default `60000`)
+- `GREETING_FORCE_TUTORIAL` (optional; serves deterministic tutorial greeting copy from API)
+- `GREETING_HEADLINE_INCLUSION_RATE` (optional probability, default `0.3`)
+- `GREETING_IP_TIMEOUT_MS` / `GREETING_WEATHER_TIMEOUT_MS` / `GREETING_NEWS_TIMEOUT_MS` (optional, default `4500`)
+- `KV_URL` or (`KV_REST_API_URL` + `KV_REST_API_TOKEN`) or (`UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`) for cross-instance KV-backed rate limiting
 - `ENABLE_ADMIN_TIER_GRANTS` (optional, default disabled; required to allow `accountTypeId='admin'` through admin endpoint)
 - `SENTRY_DSN` (optional; enables API-side exception capture)
 
@@ -394,7 +408,7 @@ Notes:
   - Category detail (`/mode-select/[artistId]/[categoryId]`) with only relevant modes/actions
 - Games flow:
   - Entry banner from history (`/history/[artistId]` -> `/games/[artistId]`)
-  - Current game screens: `Histoire improvisée` and `Vrai ou Inventé`
+  - Current game screens: `Histoire improvisée`, `Vrai ou Inventé`, and `Tirage de Tarot`
 - Mode catalog currently includes:
   - `On Jase?`: `On jase!`, `Mets-moi sur le grill`
   - `Blagues & Gadgets`: `Générateur de Meme`, `Analyste de Screenshots`, `Victime du Jour`, `Phrase du Jour`, `Numéro de Show`
@@ -550,11 +564,13 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/qa-run-2026-03-23.md`
 - `docs/qa-run-2026-03-24.md`
 - `docs/qa-run-2026-03-27.md`
+- `docs/qa-run-2026-03-28.md`
 - `docs/code-review-2026-03-15.md`
 - `docs/code-review-2026-03-16.md`
 - `docs/code-review-2026-03-17.md`
 - `docs/code-review-2026-03-20.md`
 - `docs/code-review-2026-03-27.md`
+- `docs/code-review-2026-03-28.md`
 - `docs/voice-ops-runbook.md`
 - `docs/troubleshooting.md`
 - `ha-ha-ai-build-prompt.improved.md`

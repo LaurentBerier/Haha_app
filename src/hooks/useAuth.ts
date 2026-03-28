@@ -11,6 +11,15 @@ interface UseAuthOptions {
   bootstrap?: boolean;
 }
 
+async function clearVoiceCacheOnSessionResetSafely(): Promise<void> {
+  try {
+    const ttsService = await import('../services/ttsService');
+    ttsService.clearVoiceCacheOnSessionReset();
+  } catch {
+    // Best effort: session reset should continue even if voice cache cleanup fails.
+  }
+}
+
 export function useAuth(options: UseAuthOptions = {}) {
   const { bootstrap = false } = options;
   const session = useStore((state) => state.session);
@@ -64,6 +73,7 @@ export function useAuth(options: UseAuthOptions = {}) {
         };
 
         if (!storedSession) {
+          void clearVoiceCacheOnSessionResetSafely();
           if (hasLocalChatData()) {
             clearAccountScopedState();
           }
@@ -104,6 +114,7 @@ export function useAuth(options: UseAuthOptions = {}) {
         if (!isRunCurrent(runId)) {
           return;
         }
+        void clearVoiceCacheOnSessionResetSafely();
         clearSession();
         resetQuota();
         resetGamification();
@@ -113,6 +124,7 @@ export function useAuth(options: UseAuthOptions = {}) {
     runBootstrap().catch((error) => {
       console.error('[useAuth] bootstrap failed', error);
       if (isMounted) {
+        void clearVoiceCacheOnSessionResetSafely();
         clearSession();
       }
     });
@@ -124,6 +136,7 @@ export function useAuth(options: UseAuthOptions = {}) {
 
       if (event === 'SIGNED_OUT') {
         nextRunId();
+        void clearVoiceCacheOnSessionResetSafely();
         clearSession();
         clearUserProfile();
         clearAccountScopedState();
@@ -145,6 +158,7 @@ export function useAuth(options: UseAuthOptions = {}) {
           return;
         }
         if (!nextSession) {
+          void clearVoiceCacheOnSessionResetSafely();
           clearAccountScopedState();
           resetQuota();
           resetGamification();
@@ -160,6 +174,9 @@ export function useAuth(options: UseAuthOptions = {}) {
         const currentOwnerUserId = useStore.getState().persistedOwnerUserId;
         if ((currentOwnerUserId !== nextSession.user.id || didUserChange) && hasLocalChatData) {
           clearAccountScopedState();
+        }
+        if (didUserChange) {
+          void clearVoiceCacheOnSessionResetSafely();
         }
 
         const accountType = resolveEffectiveAccountType(nextSession.user.accountType, nextSession.user.role);

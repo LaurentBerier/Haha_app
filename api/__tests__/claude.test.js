@@ -105,7 +105,9 @@ describe('api/claude', () => {
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
     CLAUDE_RATE_LIMIT_MAX_REQUESTS: process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS,
+    CLAUDE_RATE_LIMIT_WINDOW_MS: process.env.CLAUDE_RATE_LIMIT_WINDOW_MS,
     CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS: process.env.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS,
+    CLAUDE_IP_RATE_LIMIT_WINDOW_MS: process.env.CLAUDE_IP_RATE_LIMIT_WINDOW_MS,
     CLAUDE_MONTHLY_CAP_FREE: process.env.CLAUDE_MONTHLY_CAP_FREE,
     CLAUDE_LIMITS_RPC: process.env.CLAUDE_LIMITS_RPC,
     KV_URL: process.env.KV_URL,
@@ -124,7 +126,9 @@ describe('api/claude', () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
     process.env.ANTHROPIC_API_KEY = 'anthropic-api-key';
     process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = '30';
+    delete process.env.CLAUDE_RATE_LIMIT_WINDOW_MS;
     delete process.env.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS;
+    delete process.env.CLAUDE_IP_RATE_LIMIT_WINDOW_MS;
     delete process.env.CLAUDE_MONTHLY_CAP_FREE;
     delete process.env.CLAUDE_LIMITS_RPC;
     delete process.env.ALLOWED_ORIGINS;
@@ -171,10 +175,22 @@ describe('api/claude', () => {
       delete process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS;
     }
 
+    if (typeof originalEnv.CLAUDE_RATE_LIMIT_WINDOW_MS === 'string') {
+      process.env.CLAUDE_RATE_LIMIT_WINDOW_MS = originalEnv.CLAUDE_RATE_LIMIT_WINDOW_MS;
+    } else {
+      delete process.env.CLAUDE_RATE_LIMIT_WINDOW_MS;
+    }
+
     if (typeof originalEnv.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS === 'string') {
       process.env.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS = originalEnv.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS;
     } else {
       delete process.env.CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS;
+    }
+
+    if (typeof originalEnv.CLAUDE_IP_RATE_LIMIT_WINDOW_MS === 'string') {
+      process.env.CLAUDE_IP_RATE_LIMIT_WINDOW_MS = originalEnv.CLAUDE_IP_RATE_LIMIT_WINDOW_MS;
+    } else {
+      delete process.env.CLAUDE_IP_RATE_LIMIT_WINDOW_MS;
     }
 
     if (typeof originalEnv.CLAUDE_MONTHLY_CAP_FREE === 'string') {
@@ -871,6 +887,64 @@ describe('api/claude', () => {
     expect(first.res.statusCode).toBe(200);
     expect(second.res.statusCode).toBe(429);
     expect(second.res.payload.error.code).toBe('RATE_LIMIT_EXCEEDED');
+  });
+
+  it('uses configured user rate-limit window for KV bucket keys', async () => {
+    process.env.CLAUDE_RATE_LIMIT_MAX_REQUESTS = '1';
+    process.env.CLAUDE_RATE_LIMIT_WINDOW_MS = '120000';
+    process.env.KV_REST_API_URL = 'https://kv.example.test';
+    process.env.KV_REST_API_TOKEN = 'kv-token';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
+    });
+
+    const kvStore = new Map();
+    const incrMock = jest.fn(async (key) => {
+      const next = Number(kvStore.get(key) ?? 0) + 1;
+      kvStore.set(key, next);
+      return next;
+    });
+    const getMock = jest.fn(async (key) => (kvStore.has(key) ? kvStore.get(key) : null));
+    const expireMock = jest.fn(async () => 1);
+    const setMock = jest.fn(async (key, value) => {
+      kvStore.set(key, value);
+      return 'OK';
+    });
+
+    jest.doMock('@vercel/kv', () => ({
+      kv: {
+        incr: incrMock,
+        get: getMock,
+        expire: expireMock,
+        set: setMock
+      }
+    }));
+
+    jest.spyOn(Date, 'now').mockReturnValue(90_000);
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../claude');
+    const first = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello' }] }
+    });
+    const second = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello again' }] }
+    });
+
+    await handler(first.req, first.res);
+    await handler(second.req, second.res);
+
+    expect(first.res.statusCode).toBe(200);
+    expect(second.res.statusCode).toBe(429);
+    expect(second.res.payload.error.code).toBe('RATE_LIMIT_EXCEEDED');
+    expect(incrMock).toHaveBeenCalledWith('ratelimit:user-1:120000:0');
+    expect(getMock).toHaveBeenCalledWith('ratelimit:user-1:120000:-1');
   });
 
   it('enforces per-IP rate limiting via KV when configured', async () => {

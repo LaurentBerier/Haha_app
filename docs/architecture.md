@@ -209,7 +209,7 @@ Store-level account isolation:
   - `Tirage de Tarot` (`/games/[artistId]/tarot-cathy`)
 - `TarotCard` component (`src/components/games/TarotCard.tsx`): 3D flip animation (`rotateY`, `Animated`, useNativeDriver), two modes: `selection` (face-down) and `reveal`.
 - Memory facts utility (`src/utils/memoryFacts.ts`): `collectArtistMemoryFacts` and `extractMemoryFactsFromText`, shared by `useChat.ts` and `useTarotCathy.ts`.
-- Web route restore (`src/utils/routeRestore.ts`) excludes `/games/` routes so page refresh never lands on a game screen.
+- Web route restore (`src/utils/routeRestore.ts`) persists/restores all non-home, non-auth routes (including `/games/`) during fresh web resume/reload flows.
 
 ### Hooks (`src/hooks`)
 

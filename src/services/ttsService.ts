@@ -5,6 +5,7 @@ import { API_BASE_URL, CLAUDE_PROXY_URL } from '../config/env';
 const MAX_TTS_INPUT_CHARS = 1000;
 const TTS_ENDPOINT_TIMEOUT_MS = 10_000;
 const WEB_TTS_CACHE = new Map<string, string>();
+const WEB_TTS_CACHE_MAX_ENTRIES = 40;
 const EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC = process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC;
 const EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY = process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY;
 const VOICE_CACHE_VERSION = `${EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC ?? ''}|${EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY ?? ''}`;
@@ -90,6 +91,63 @@ function buildTtsError(status: number, code?: string): Error & { status: number;
 
 function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
+}
+
+function revokeWebObjectUrl(url: string): void {
+  if (typeof URL === 'undefined' || typeof URL.revokeObjectURL !== 'function') {
+    return;
+  }
+  try {
+    URL.revokeObjectURL(url);
+  } catch {
+    // Best effort cleanup.
+  }
+}
+
+function readWebTtsCache(cacheKey: string): string | null {
+  const cachedUrl = WEB_TTS_CACHE.get(cacheKey);
+  if (!cachedUrl) {
+    return null;
+  }
+
+  // Touch cache entry to preserve LRU ordering.
+  WEB_TTS_CACHE.delete(cacheKey);
+  WEB_TTS_CACHE.set(cacheKey, cachedUrl);
+  return cachedUrl;
+}
+
+function writeWebTtsCache(cacheKey: string, blobUrl: string): void {
+  const existingUrl = WEB_TTS_CACHE.get(cacheKey);
+  if (existingUrl) {
+    WEB_TTS_CACHE.delete(cacheKey);
+    if (existingUrl !== blobUrl) {
+      revokeWebObjectUrl(existingUrl);
+    }
+  }
+
+  WEB_TTS_CACHE.set(cacheKey, blobUrl);
+
+  while (WEB_TTS_CACHE.size > WEB_TTS_CACHE_MAX_ENTRIES) {
+    const oldestKey = WEB_TTS_CACHE.keys().next().value;
+    if (!oldestKey) {
+      break;
+    }
+    const oldestUrl = WEB_TTS_CACHE.get(oldestKey);
+    WEB_TTS_CACHE.delete(oldestKey);
+    if (oldestUrl) {
+      revokeWebObjectUrl(oldestUrl);
+    }
+  }
+}
+
+export function clearVoiceCacheOnSessionReset(): void {
+  if (WEB_TTS_CACHE.size === 0) {
+    return;
+  }
+  for (const cachedUrl of WEB_TTS_CACHE.values()) {
+    revokeWebObjectUrl(cachedUrl);
+  }
+  WEB_TTS_CACHE.clear();
 }
 
 export function buildTtsProxyCandidates(): string[] {
@@ -281,7 +339,7 @@ export async function fetchAndCacheVoice(
   const cacheKey = buildCacheKey(normalizedText, normalizedArtistId, language.trim(), purpose);
 
   if (Platform.OS === 'web') {
-    const cachedUrl = WEB_TTS_CACHE.get(cacheKey);
+    const cachedUrl = readWebTtsCache(cacheKey);
     if (cachedUrl) {
       return cachedUrl;
     }
@@ -298,7 +356,7 @@ export async function fetchAndCacheVoice(
 
     const blob = new Blob([response.arrayBuffer], { type: 'audio/mpeg' });
     const blobUrl = URL.createObjectURL(blob);
-    WEB_TTS_CACHE.set(cacheKey, blobUrl);
+    writeWebTtsCache(cacheKey, blobUrl);
     return blobUrl;
   }
 
