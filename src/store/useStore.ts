@@ -41,11 +41,19 @@ function normalizeConversations(input: Record<string, PersistedConversation[]>):
   const normalized: Record<string, Conversation[]> = {};
 
   Object.entries(input).forEach(([artistId, conversations]) => {
-    normalized[artistId] = (conversations ?? []).map((conversation) => ({
-      ...conversation,
-      modeId: resolveModeIdCompat(conversation.modeId ?? MODE_IDS.ON_JASE),
-      threadType: normalizeConversationThreadType(conversation.threadType)
-    }));
+    normalized[artistId] = (conversations ?? []).map((conversation) => {
+      const modeId = resolveModeIdCompat(conversation.modeId ?? MODE_IDS.ON_JASE);
+      const threadType =
+        conversation.threadType === undefined && modeId === MODE_IDS.ON_JASE
+          ? 'primary'
+          : normalizeConversationThreadType(conversation.threadType);
+
+      return {
+        ...conversation,
+        modeId,
+        threadType
+      };
+    });
   });
 
   return normalized;
