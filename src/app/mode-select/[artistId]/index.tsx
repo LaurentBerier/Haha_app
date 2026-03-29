@@ -17,8 +17,8 @@ import { StreamingIndicator } from '../../../components/chat/StreamingIndicator'
 import { AmbientGlow } from '../../../components/common/AmbientGlow';
 import { BackButton } from '../../../components/common/BackButton';
 import { MODE_IDS } from '../../../config/constants';
+import { getVisibleModeNamesForGreeting } from '../../../config/experienceCatalog';
 import { MODE_CATEGORY_META, MODE_CATEGORY_ORDER, type ModeCategoryId } from '../../../config/modeCategories';
-import { getModeById } from '../../../config/modes';
 import { API_BASE_URL, CLAUDE_PROXY_URL, E2E_AUTH_BYPASS, GREETING_FORCE_TUTORIAL } from '../../../config/env';
 import { useAutoReplayLastArtistMessage } from '../../../hooks/useAutoReplayLastArtistMessage';
 import { resolveChatSendContextFromState } from '../../../hooks/chatSendContext';
@@ -30,6 +30,7 @@ import type { ChatError } from '../../../models/ChatError';
 import { normalizeConversationThreadType } from '../../../models/Conversation';
 import type { Message } from '../../../models/Message';
 import { synthesizeVoice } from '../../../services/voiceEngine';
+import { tryLaunchExperienceFromText } from '../../../services/experienceLaunchService';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voiceFillerService';
 import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
@@ -254,6 +255,7 @@ function resolveVoiceErrorCode(error: unknown): string {
 }
 
 interface ArtistModeSource {
+  id: string;
   name?: string;
   supportedModeIds?: string[];
   supportedLanguages?: string[];
@@ -508,27 +510,8 @@ function estimateGreetingSpeechDurationMs(text: string): number {
   return Math.max(2_200, Math.min(estimated, 9_000));
 }
 
-function buildAvailableModesForGreeting(artist: ArtistModeSource): string[] {
-  const seen = new Set<string>();
-  const names: string[] = [];
-  const modeIds = [MODE_IDS.ON_JASE, ...(artist.supportedModeIds ?? [])];
-
-  modeIds.forEach((modeId) => {
-    const modeName = getModeById(modeId)?.name?.trim();
-    if (!modeName) {
-      return;
-    }
-
-    const key = modeName.toLowerCase();
-    if (seen.has(key)) {
-      return;
-    }
-
-    seen.add(key);
-    names.push(modeName);
-  });
-
-  return names.slice(0, 10);
+function buildAvailableModesForGreeting(artist: ArtistModeSource, language: string): string[] {
+  return getVisibleModeNamesForGreeting(artist.id, language).slice(0, 10);
 }
 
 function parseGreetingTutorialInfo(value: unknown): GreetingTutorialInfo | null {
@@ -1206,6 +1189,19 @@ export default function ModeSelectHomeScreen() {
   }, [artist?.id, modeSelectConversationId, recoverModeSelectBoundConversation]);
   const sendFromModeSelect = useCallback(
     (payload: ChatSendPayload): ChatError | null => {
+      const normalizedText = payload.text.trim();
+      if (normalizedText && !payload.image && artist?.id) {
+        const launchOutcome = tryLaunchExperienceFromText({
+          artistId: artist.id,
+          text: normalizedText,
+          fallbackLanguage: language,
+          preferredConversationLanguage: modeSelectConversationLanguage
+        });
+        if (launchOutcome.launched) {
+          return null;
+        }
+      }
+
       const targetConversationId = resolveModeSelectSendTargetConversationId();
       if (!targetConversationId) {
         logModeSelectDebugTrace('send_blocked', {
@@ -1248,8 +1244,11 @@ export default function ModeSelectHomeScreen() {
     },
     [
       activeConversationId,
+      artist?.id,
       commitBoundConversationId,
+      language,
       modeSelectConversationId,
+      modeSelectConversationLanguage,
       recoverModeSelectBoundConversation,
       resolveModeSelectSendTargetConversationId,
       sendFromModeSelectCurrentBinding,
@@ -1881,7 +1880,7 @@ export default function ModeSelectHomeScreen() {
           setActiveConversation(introConversation.id);
         }
 
-        const availableModes = buildAvailableModesForGreeting(artist);
+        const availableModes = buildAvailableModesForGreeting(artist, language);
         const coords = await getOptionalCoords();
         if (isCancelled) {
           return;

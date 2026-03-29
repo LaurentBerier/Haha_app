@@ -25,11 +25,20 @@ export interface ClaudeMessage {
   content: string | ClaudeContentBlock[];
 }
 
+export interface ClaudeAvailableExperience {
+  id: string;
+  type: 'mode' | 'game';
+  name: string;
+  aliases?: string[];
+  ctaExamples?: string[];
+}
+
 export interface ClaudeStreamParams {
   messages: ClaudeMessage[];
   artistId: string;
   modeId: string;
   language: string;
+  availableExperiences?: ClaudeAvailableExperience[];
   imageIntent?: ImageIntent;
   tutorialMode?: boolean;
   maxTokens?: number;
@@ -225,7 +234,17 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
   };
 
   const runStream = async () => {
-    const { artistId, modeId, language, imageIntent, tutorialMode, messages, maxTokens = 300, temperature = 0.9 } = params;
+    const {
+      artistId,
+      modeId,
+      language,
+      availableExperiences,
+      imageIntent,
+      tutorialMode,
+      messages,
+      maxTokens = 300,
+      temperature = 0.9
+    } = params;
 
     if (proxyUrlCandidates.length === 0) {
       emitError(new Error('Missing Claude proxy URL. Set EXPO_PUBLIC_CLAUDE_PROXY_URL.'));
@@ -248,6 +267,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
           artistId,
           modeId,
           language,
+          availableExperiences,
           imageIntent,
           tutorialMode: tutorialMode === true,
           messages

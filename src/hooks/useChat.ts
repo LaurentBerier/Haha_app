@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ARTIST_IDS, MAX_MESSAGE_LENGTH, MODE_IDS } from '../config/constants';
+import { buildAvailableExperiencesForPrompt } from '../config/experienceCatalog';
 import { USE_MOCK_LLM } from '../config/env';
 import { getAllCathyFewShots, getCathyModeFewShots } from '../data/cathy-gauthier/modeFewShots';
 import { getLanguage } from '../i18n';
@@ -7,7 +8,7 @@ import type { ChatError } from '../models/ChatError';
 import type { ChatSendPayload } from '../models/ChatSendPayload';
 import type { Conversation } from '../models/Conversation';
 import type { Message } from '../models/Message';
-import type { ClaudeContentBlock, ClaudeMessage } from '../services/claudeApiService';
+import type { ClaudeAvailableExperience, ClaudeContentBlock, ClaudeMessage } from '../services/claudeApiService';
 import { streamClaudeResponse } from '../services/claudeApiService';
 import { detectImageIntent, type ImageIntent } from '../services/imageIntentService';
 import { streamMockReply } from '../services/mockLlmService';
@@ -54,6 +55,7 @@ interface StreamJob {
   language: string;
   modeFewShots: ReturnType<typeof getCathyModeFewShots>;
   modeId: string;
+  availableExperiences: ClaudeAvailableExperience[];
   imageIntent: ImageIntent;
   tutorialMode: boolean;
 }
@@ -341,6 +343,7 @@ export function useChat(conversationId: string) {
         language,
         modeFewShots,
         modeId,
+        availableExperiences,
         imageIntent,
         tutorialMode
       } = nextJob;
@@ -1176,6 +1179,7 @@ export function useChat(conversationId: string) {
           artistId,
           modeId,
           language,
+          availableExperiences,
           tutorialMode,
           messages: [...history, claudeUserMessage],
           imageIntent,
@@ -1558,6 +1562,7 @@ export function useChat(conversationId: string) {
     addMessage(targetConversationId, placeholder);
 
     const modeId = targetConversation.modeId || MODE_IDS.DEFAULT;
+    const availableExperiences = buildAvailableExperiencesForPrompt(targetConversation.artistId, languageForTurn);
     const imageIntent = hasImage ? detectImageIntent(modeId, trimmed.length > 0) : 'default';
     const imageIntentPromptPrefix = getImageIntentPromptPrefix(imageIntent);
     const latestProfile = latestStateForSend.userProfile ?? userProfile;
@@ -1626,6 +1631,7 @@ export function useChat(conversationId: string) {
       language: languageForTurn,
       modeFewShots: modeFewShotsForTurn,
       modeId,
+      availableExperiences,
       imageIntent,
       tutorialMode
     });

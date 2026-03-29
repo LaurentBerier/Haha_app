@@ -1,6 +1,5 @@
-import { artists } from '../config/artists';
-import { ARTIST_IDS, MODE_IDS } from '../config/constants';
-import { getModeById } from '../config/modes';
+import { ARTIST_IDS } from '../config/constants';
+import { buildAvailableExperiencesForPrompt } from '../config/experienceCatalog';
 import type { Message } from '../models/Message';
 import type { UserProfile } from '../models/UserProfile';
 import { resolveArtistModePrompt, resolveArtistPromptBlueprint } from './artistPromptRegistry';
@@ -210,45 +209,29 @@ Utilise cette tension naturellement quand c'est pertinent, pas a chaque reponse.
 }
 
 function buildAvailableModesSection(artistId: string, language: PromptLanguage): string {
-  const artist = artists.find((entry) => entry.id === artistId);
-  if (!artist) {
+  const descriptors = buildAvailableExperiencesForPrompt(artistId, language === 'en' ? 'en-CA' : 'fr-CA');
+  if (descriptors.length === 0) {
     return '';
   }
 
-  const modeIds = [MODE_IDS.ON_JASE, ...(artist.supportedModeIds ?? [])];
-  const seen = new Set<string>();
-  const modeNames: string[] = [];
-
-  modeIds.forEach((modeId) => {
-    const modeName = getModeById(modeId)?.name?.trim();
-    if (!modeName) {
-      return;
-    }
-
-    const key = modeName.toLowerCase();
-    if (seen.has(key)) {
-      return;
-    }
-    seen.add(key);
-    modeNames.push(modeName);
-  });
-
-  if (modeNames.length === 0) {
-    return '';
-  }
+  const lines = descriptors.map((entry) =>
+    language !== 'fr'
+      ? `- ${entry.type === 'game' ? 'Game' : 'Mode'}: ${entry.name}`
+      : `- ${entry.type === 'game' ? 'Jeu' : 'Mode'}: ${entry.name}`
+  );
 
   if (language !== 'fr') {
     return `
-## AVAILABLE MODES
+## AVAILABLE MODES AND GAMES
 If the user asks what you can do, you can naturally mention these:
-${modeNames.map((name) => `- ${name}`).join('\n')}
+${lines.join('\n')}
 Do not dump the full list unless asked.`;
   }
 
   return `
-## MODES DISPONIBLES
-Si l'utilisateur demande ce que tu peux faire, tu peux mentionner naturellement ces modes:
-${modeNames.map((name) => `- ${name}`).join('\n')}
+## MODES ET JEUX DISPONIBLES
+Si l'utilisateur demande ce que tu peux faire, tu peux mentionner naturellement ces experiences:
+${lines.join('\n')}
 N'enumeres pas toute la liste sauf si on te le demande.`;
 }
 

@@ -5,30 +5,16 @@ import { AmbientGlow } from '../../../components/common/AmbientGlow';
 import { BackButton } from '../../../components/common/BackButton';
 import { ModeCard } from '../../../components/mode/ModeCard';
 import { MODE_IDS } from '../../../config/constants';
+import { VISIBLE_GAME_IDS } from '../../../config/experienceCatalog';
 import { CATEGORY_MODE_IDS, MODE_CATEGORY_META, isModeCategoryId } from '../../../config/modeCategories';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
 import { getModeById } from '../../../config/modes';
-import { getLanguage, t } from '../../../i18n';
+import { t } from '../../../i18n';
 import { GAME_TYPE_CONFIGS } from '../../../games/types';
 import type { Mode } from '../../../models/Mode';
-import { fetchModeIntroFromApi, generateModeIntro } from '../../../services/modeIntroService';
+import { launchVisibleGameRoute, launchVisibleModeConversation } from '../../../services/experienceLaunchService';
 import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
-import { generateId } from '../../../utils/generateId';
-
-function resolveConversationLanguage(artist: { supportedLanguages: string[]; defaultLanguage: string }): string {
-  const appLanguage = getLanguage();
-  if (artist.supportedLanguages.includes(appLanguage)) {
-    return appLanguage;
-  }
-
-  const languagePrefix = appLanguage.toLowerCase().split('-')[0];
-  const familyMatch = artist.supportedLanguages.find((language) =>
-    language.toLowerCase().startsWith(languagePrefix ?? '')
-  );
-
-  return familyMatch ?? artist.defaultLanguage;
-}
 
 export default function ModeCategoryScreen() {
   const navigation = useNavigation();
@@ -38,13 +24,7 @@ export default function ModeCategoryScreen() {
   const headerHorizontalInset = useHeaderHorizontalInset();
 
   const artists = useStore((state) => state.artists);
-  const createConversation = useStore((state) => state.createConversation);
-  const setActiveConversation = useStore((state) => state.setActiveConversation);
-  const addMessage = useStore((state) => state.addMessage);
-  const updateMessage = useStore((state) => state.updateMessage);
-  const updateConversation = useStore((state) => state.updateConversation);
-  const userProfile = useStore((state) => state.userProfile);
-  const accessToken = useStore((state) => state.session?.accessToken ?? '');
+  const language = useStore((state) => state.language);
 
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
   const categoryId = isModeCategoryId(categoryIdParam) ? categoryIdParam : null;
@@ -80,7 +60,7 @@ export default function ModeCategoryScreen() {
 
   const availableGames = useMemo(
     () =>
-      GAME_TYPE_CONFIGS.filter((gameType) => gameType.available).map((gameType) => ({
+      GAME_TYPE_CONFIGS.filter((gameType) => gameType.available && VISIBLE_GAME_IDS.includes(gameType.id)).map((gameType) => ({
         id: gameType.id,
         name: t(gameType.labelKey),
         description: t(gameType.descriptionKey),
@@ -95,66 +75,13 @@ export default function ModeCategoryScreen() {
       if (!artist) {
         return;
       }
-      const nextConversation = createConversation(artist.id, resolveConversationLanguage(artist), modeId, {
-        threadType: 'mode'
-      });
-      const introMessage = generateModeIntro(modeId, userProfile);
-      const now = new Date().toISOString();
-      const introMessageId = generateId('msg');
-      addMessage(nextConversation.id, {
-        id: introMessageId,
-        conversationId: nextConversation.id,
-        role: 'artist',
-        content: introMessage,
-        status: 'complete',
-        timestamp: now,
-        metadata: {
-          injected: true,
-          injectedType: 'mode_nudge'
-        }
-      });
-      updateConversation(
-        nextConversation.id,
-        {
-          lastMessagePreview: introMessage.slice(0, 120),
-          title: introMessage.slice(0, 30)
-        },
-        artist.id
-      );
-      setActiveConversation(nextConversation.id);
-      router.push(`/chat/${nextConversation.id}`);
-
-      void fetchModeIntroFromApi({
+      launchVisibleModeConversation({
         artistId: artist.id,
         modeId,
-        language: nextConversation.language,
-        accessToken,
-        preferredName: userProfile?.preferredName ?? null,
-        memoryFacts: Array.isArray(userProfile?.memoryFacts) ? userProfile.memoryFacts : []
-      })
-        .then((generatedIntro) => {
-          if (!generatedIntro) {
-            return;
-          }
-
-          updateMessage(nextConversation.id, introMessageId, {
-            content: generatedIntro,
-            status: 'complete'
-          });
-          updateConversation(
-            nextConversation.id,
-            {
-              lastMessagePreview: generatedIntro.slice(0, 120),
-              title: generatedIntro.slice(0, 30)
-            },
-            artist.id
-          );
-        })
-        .catch(() => {
-          // Keep fallback intro when API intro is unavailable.
-        });
+        fallbackLanguage: language
+      });
     },
-    [accessToken, addMessage, artist, createConversation, setActiveConversation, updateConversation, updateMessage, userProfile]
+    [artist, language]
   );
 
   if (!artist || !categoryId) {
@@ -214,7 +141,7 @@ export default function ModeCategoryScreen() {
               <ModeCard
                 key={gameMode.id}
                 mode={gameMode}
-                onPress={() => router.push(`/games/${artist.id}/${gameMode.id}`)}
+                onPress={() => launchVisibleGameRoute(artist.id, gameMode.id)}
               />
             ))}
           </View>

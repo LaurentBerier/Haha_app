@@ -99,6 +99,13 @@ const SOFT2_CONTEXT_WINDOW_BY_TIER = {
 const ECONOMY_CONTEXT_WINDOW = 3;
 const ECONOMY_MAX_TOKENS = 100;
 const ALLOWED_IMAGE_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+const MAX_AVAILABLE_EXPERIENCES = 12;
+const MAX_EXPERIENCE_ID_CHARS = 80;
+const MAX_EXPERIENCE_NAME_CHARS = 80;
+const MAX_EXPERIENCE_ALIAS_COUNT = 8;
+const MAX_EXPERIENCE_ALIAS_CHARS = 40;
+const MAX_EXPERIENCE_CTA_COUNT = 3;
+const MAX_EXPERIENCE_CTA_CHARS = 120;
 const DEFAULT_MODE_PROMPT = `Conversation libre. Reponds comme Cathy dans une discussion informelle,
 avec repartie rapide, sarcasme et punchlines courtes.
 Quand tu parles de toi, utilise je/moi/mon, jamais "Cathy" a la troisieme personne.`;
@@ -602,6 +609,64 @@ function normalizePreferredName(value) {
   return trimmed.slice(0, 80);
 }
 
+function normalizePromptExperienceType(value) {
+  if (value === 'mode' || value === 'game') {
+    return value;
+  }
+  return null;
+}
+
+function normalizeAvailableExperiences(rawValue) {
+  if (!Array.isArray(rawValue)) {
+    return [];
+  }
+
+  const normalized = [];
+
+  for (const entry of rawValue) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const rawId = typeof entry.id === 'string' ? entry.id.trim() : '';
+    const rawName = typeof entry.name === 'string' ? entry.name.trim() : '';
+    const type = normalizePromptExperienceType(entry.type);
+
+    if (!rawId || !rawName || !type) {
+      continue;
+    }
+
+    const aliases = Array.isArray(entry.aliases)
+      ? entry.aliases
+          .filter((value) => typeof value === 'string')
+          .map((value) => value.trim().slice(0, MAX_EXPERIENCE_ALIAS_CHARS))
+          .filter(Boolean)
+          .slice(0, MAX_EXPERIENCE_ALIAS_COUNT)
+      : [];
+    const ctaExamples = Array.isArray(entry.ctaExamples)
+      ? entry.ctaExamples
+          .filter((value) => typeof value === 'string')
+          .map((value) => value.trim().slice(0, MAX_EXPERIENCE_CTA_CHARS))
+          .filter(Boolean)
+          .slice(0, MAX_EXPERIENCE_CTA_COUNT)
+      : [];
+
+    normalized.push({
+      id: rawId.slice(0, MAX_EXPERIENCE_ID_CHARS),
+      type,
+      name: rawName.slice(0, MAX_EXPERIENCE_NAME_CHARS),
+      aliases,
+      ctaExamples
+    });
+
+    if (normalized.length >= MAX_AVAILABLE_EXPERIENCES) {
+      break;
+    }
+  }
+
+  return normalized;
+}
+
 function normalizePromptContext(body) {
   if (!isRecord(body)) {
     return {
@@ -609,6 +674,7 @@ function normalizePromptContext(body) {
       artistId: DEFAULT_ARTIST_ID,
       modeId: DEFAULT_MODE_ID,
       language: 'fr-CA',
+      availableExperiences: [],
       imageIntent: null,
       tutorialMode: false
     };
@@ -626,12 +692,14 @@ function normalizePromptContext(body) {
   const rawImageIntent = typeof body.imageIntent === 'string' ? body.imageIntent.trim() : '';
   const imageIntent = rawImageIntent && IMAGE_INTENT_PROMPTS[rawImageIntent] ? rawImageIntent : null;
   const tutorialMode = body.tutorialMode === true;
+  const availableExperiences = normalizeAvailableExperiences(body.availableExperiences);
 
   return {
     ok: true,
     artistId: rawArtistId || DEFAULT_ARTIST_ID,
     modeId,
     language,
+    availableExperiences,
     imageIntent,
     tutorialMode
   };
@@ -972,6 +1040,56 @@ Pour Cathy, vise 0-1 marqueur par réponse (max 2 seulement en vrai pic) :
 Ne pose pas un marqueur au début de chaque phrase. Varie leur position.`;
 }
 
+function buildAvailableExperiencesSection(promptLanguage, availableExperiences) {
+  if (!Array.isArray(availableExperiences) || availableExperiences.length === 0) {
+    return '';
+  }
+
+  const lines = availableExperiences.map((experience) => {
+    const typeLabel =
+      promptLanguage !== 'fr'
+        ? experience.type === 'game'
+          ? 'Game'
+          : 'Mode'
+        : experience.type === 'game'
+          ? 'Jeu'
+          : 'Mode';
+    const cta =
+      Array.isArray(experience.ctaExamples) && experience.ctaExamples[0]
+        ? experience.ctaExamples[0]
+        : promptLanguage !== 'fr'
+          ? `Launch ${experience.name}`
+          : `Lance ${experience.name}`;
+    return `- ${typeLabel}: ${experience.name} | CTA: ${cta}`;
+  });
+
+  if (promptLanguage !== 'fr') {
+    return `
+## AVAILABLE MODES AND GAMES
+Only these experiences are visible and launchable in-app:
+${lines.join('\n')}
+
+Suggestion policy:
+- Suggest at most ONE experience per reply, only when user context clearly fits.
+- Match suggestions using profile signals (age, interests, relationship status, horoscope, memory) and the current user intent.
+- Never suggest experiences outside this list.
+- When suggesting, include one launchable CTA in this exact format:
+Say: "launch <experience name>"`;
+  }
+
+  return `
+## MODES ET JEUX DISPONIBLES
+Seulement ces experiences sont visibles et lancables dans l'app:
+${lines.join('\n')}
+
+Politique de suggestion:
+- Suggere au maximum UNE experience par reponse, seulement quand le contexte utilisateur est clair.
+- Fais le matching avec le profil (age, interets, statut, astro, memoire) et l'intention du message.
+- Ne suggere jamais une experience hors de cette liste.
+- Quand tu suggeres, ajoute un CTA lancable dans ce format exact:
+Dis: "lance <nom de l'experience>"`;
+}
+
 /**
  * Build the final server-side system prompt from mode context, profile hints and optional live context.
  *
@@ -997,6 +1115,9 @@ function buildServerSystemPrompt(
   const isCathy = artistId === DEFAULT_ARTIST_ID;
   const modePrompt = isCathy ? MODE_PROMPTS[canonicalModeId] ?? DEFAULT_MODE_PROMPT : GENERIC_MODE_PROMPT;
   const imageIntentPrompt = context.imageIntent ? IMAGE_INTENT_PROMPTS[context.imageIntent] ?? '' : '';
+  const availableExperiencesSection = isCathy
+    ? buildAvailableExperiencesSection(promptLanguage, context.availableExperiences)
+    : '';
   const userProfileSection = buildUserProfileSection(profile, promptLanguage, preferredName);
   const memorySection = buildConversationMemorySection(rawMessages, promptLanguage);
   const b = ARTIST_BLUEPRINTS[artistId] ?? CATHY_BLUEPRINT;
@@ -1348,6 +1469,7 @@ ${responseStructureIntl}
 
 ## ACTIVE MODE: ${context.modeId}
 ${modePrompt}
+${availableExperiencesSection}
 ${imageIntentPrompt ? `\n## IMAGE CONTEXT\n${imageIntentPrompt}` : ''}
 ${userProfileSection}
 ${currentContextSection}
@@ -1402,6 +1524,7 @@ ${responseStructureSection}
 
 ## MODE ACTIF : ${context.modeId}
 ${modePrompt}
+${availableExperiencesSection}
 ${imageIntentPrompt ? `\n## CONTEXTE IMAGE\n${imageIntentPrompt}` : ''}
 ${userProfileSection}
 ${currentContextSection}

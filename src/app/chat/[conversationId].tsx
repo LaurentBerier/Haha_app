@@ -15,6 +15,7 @@ import { useVoiceConversation } from '../../hooks/useVoiceConversation';
 import { t } from '../../i18n';
 import type { ChatSendPayload } from '../../models/ChatSendPayload';
 import { normalizeConversationThreadType } from '../../models/Conversation';
+import { tryLaunchExperienceFromText } from '../../services/experienceLaunchService';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../services/voiceFillerService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
@@ -139,6 +140,19 @@ export default function ChatScreen() {
 
   const sendWithFiller = useCallback(
     (payload: ChatSendPayload) => {
+      const normalizedText = payload.text.trim();
+      if (normalizedText && !payload.image && currentConversation?.artistId) {
+        const launchOutcome = tryLaunchExperienceFromText({
+          artistId: currentConversation.artistId,
+          text: normalizedText,
+          fallbackLanguage: language,
+          preferredConversationLanguage: conversationLanguage
+        });
+        if (launchOutcome.launched) {
+          return null;
+        }
+      }
+
       if (
         shouldUseVoiceFiller &&
         !audioPlayer.isPlaying &&
@@ -161,7 +175,15 @@ export default function ChatScreen() {
 
       return sendMessage(payload);
     },
-    [accessToken, audioPlayer, conversationLanguage, currentConversation?.artistId, sendMessage, shouldUseVoiceFiller]
+    [
+      accessToken,
+      audioPlayer,
+      conversationLanguage,
+      currentConversation?.artistId,
+      language,
+      sendMessage,
+      shouldUseVoiceFiller
+    ]
   );
 
   useEffect(() => {

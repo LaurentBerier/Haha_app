@@ -1,12 +1,14 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AmbientGlow } from '../../../components/common/AmbientGlow';
 import { BackButton } from '../../../components/common/BackButton';
 import { GameCard } from '../../../components/games/GameCard';
+import { VISIBLE_GAME_IDS } from '../../../config/experienceCatalog';
 import { GAME_TYPE_CONFIGS } from '../../../games/types';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
 import { t } from '../../../i18n';
+import { launchVisibleGameRoute } from '../../../services/experienceLaunchService';
 import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
 
@@ -25,7 +27,7 @@ export default function GamesScreen() {
     );
   }
 
-  const entries = GAME_TYPE_CONFIGS.filter((item) => item.available);
+  const entries = GAME_TYPE_CONFIGS.filter((item) => item.available && VISIBLE_GAME_IDS.includes(item.id));
 
   return (
     <View style={styles.screen}>
@@ -45,7 +47,7 @@ export default function GamesScreen() {
               emoji={entry.emoji}
               title={t(entry.labelKey)}
               description={t(entry.descriptionKey)}
-              onPress={() => router.push(`/games/${artist.id}/${entry.id}`)}
+              onPress={() => launchVisibleGameRoute(artist.id, entry.id)}
               testID={`games-card-${entry.id}`}
             />
           ))}
@@ -104,4 +106,3 @@ const styles = StyleSheet.create({
     color: theme.colors.error
   }
 });
-

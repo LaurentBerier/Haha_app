@@ -1,4 +1,4 @@
-import { MODE_IDS } from './constants';
+import { VISIBLE_MODE_IDS_BY_CATEGORY } from './experienceCatalog';
 
 export type ModeCategoryId = 'delire' | 'experiences' | 'battles' | 'profile';
 type ModeCategoryLabelKey =
@@ -23,12 +23,8 @@ export const MODE_CATEGORY_META: Record<
 };
 
 export const CATEGORY_MODE_IDS: Record<Exclude<ModeCategoryId, 'profile'>, string[]> = {
-  delire: [MODE_IDS.ON_JASE, MODE_IDS.GRILL],
-  experiences: [
-    MODE_IDS.MEME_GENERATOR,
-    MODE_IDS.SCREENSHOT_ANALYZER,
-    MODE_IDS.NUMERO_DE_SHOW
-  ],
+  delire: [...VISIBLE_MODE_IDS_BY_CATEGORY.delire],
+  experiences: [...VISIBLE_MODE_IDS_BY_CATEGORY.experiences],
   battles: []
 };
 

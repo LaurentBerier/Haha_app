@@ -470,6 +470,97 @@ describe('api/claude', () => {
     expect(upstreamBody.system).toContain('Lis le screenshot comme un texto');
   });
 
+  it('injects available experiences section with discrete suggestion rules for Cathy', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_exp', content: [{ type: 'text', text: 'ok' }] })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        modeId: 'on-jase',
+        language: 'fr-CA',
+        availableExperiences: [
+          {
+            id: 'on-jase',
+            type: 'mode',
+            name: 'Dis-moi la verite',
+            aliases: ['dis moi la verite'],
+            ctaExamples: ['Lance le mode Dis-moi la verite']
+          },
+          {
+            id: 'impro-chain',
+            type: 'game',
+            name: 'Impro',
+            aliases: ['impro'],
+            ctaExamples: ['Lance le jeu Impro']
+          }
+        ],
+        messages: [{ role: 'user', content: 'Je veux un truc fun.' }]
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(upstreamBody.system).toContain('## MODES ET JEUX DISPONIBLES');
+    expect(upstreamBody.system).toContain('Mode: Dis-moi la verite');
+    expect(upstreamBody.system).toContain('Jeu: Impro');
+    expect(upstreamBody.system).toContain('Suggere au maximum UNE experience par reponse');
+    expect(upstreamBody.system).toContain('Dis: "lance <nom de l\'experience>"');
+  });
+
+  it('sanitizes available experiences and ignores invalid entries', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_exp_clean', content: [{ type: 'text', text: 'ok' }] })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => buildSupabaseClient())
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        modeId: 'on-jase',
+        language: 'fr-CA',
+        availableExperiences: [
+          {
+            id: 'invalid-entry',
+            type: 'unknown',
+            name: 'Should be ignored'
+          },
+          {
+            id: 'screenshot-analyzer',
+            type: 'mode',
+            name: 'Jugement de Texto',
+            aliases: ['jugement de texto'],
+            ctaExamples: ['Lance le mode Jugement de Texto']
+          }
+        ],
+        messages: [{ role: 'user', content: 'Salut' }]
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(upstreamBody.system).toContain('Mode: Jugement de Texto');
+    expect(upstreamBody.system).not.toContain('Should be ignored');
+  });
+
   it('builds an English system prompt without French-only constraints for en-* language', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,

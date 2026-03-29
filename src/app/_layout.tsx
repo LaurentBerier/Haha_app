@@ -25,6 +25,7 @@ import { t } from '../i18n';
 import type { ChatSendPayload } from '../models/ChatSendPayload';
 import { normalizeConversationThreadType } from '../models/Conversation';
 import { signOut } from '../services/authService';
+import { tryLaunchExperienceFromText } from '../services/experienceLaunchService';
 import { initSentry } from '../services/sentry';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme';
@@ -195,6 +196,17 @@ export default function RootLayout() {
       };
       if ((!normalizedText && !normalizedPayload.image) || !targetArtistId) {
         return;
+      }
+
+      if (normalizedText && !normalizedPayload.image) {
+        const launchOutcome = tryLaunchExperienceFromText({
+          artistId: targetArtistId,
+          text: normalizedText,
+          fallbackLanguage: language
+        });
+        if (launchOutcome.launched) {
+          return;
+        }
       }
 
       const isModeSelectContext = isModeSelectRoute(pathname);

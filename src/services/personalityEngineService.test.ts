@@ -75,13 +75,14 @@ describe('personalityEngineService', () => {
     expect(showPrompt).toContain("L'utilisateur veut un mini numero d'humour.");
   });
 
-  it('lists available modes for Cathy in the base system prompt', () => {
+  it('lists only visible launchable experiences for Cathy in the base system prompt', () => {
     const prompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'on-jase', null, 'fr-CA');
 
-    expect(prompt).toContain('## MODES DISPONIBLES');
-    expect(prompt).toContain('Dis-moi la vérité');
-    expect(prompt).toContain('Coach de vie');
-    expect(prompt).toContain('Meteo');
-    expect(prompt).toContain('Numéro de show');
+    expect(prompt).toContain('## MODES ET JEUX DISPONIBLES');
+    expect(prompt).toContain('Mode: Dis-moi la verite');
+    expect(prompt).toContain('Mode: Numero de show');
+    expect(prompt).toContain('Jeu: Impro');
+    expect(prompt).not.toContain('Coach de vie');
+    expect(prompt).not.toContain('Meteo');
   });
 });
