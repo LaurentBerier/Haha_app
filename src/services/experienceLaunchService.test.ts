@@ -111,4 +111,15 @@ describe('experienceLaunchService', () => {
     );
     expect(pushMock).toHaveBeenCalledWith('/chat/conv-1');
   });
+
+  it('preserves the active conversation language family when launching a mode', () => {
+    launchVisibleModeConversation({
+      artistId: 'cathy-gauthier',
+      modeId: 'on-jase',
+      fallbackLanguage: 'fr-CA',
+      preferredConversationLanguage: 'en-US'
+    });
+
+    expect(createConversationMock).toHaveBeenCalledWith('cathy-gauthier', 'en-CA', 'on-jase', { threadType: 'mode' });
+  });
 });

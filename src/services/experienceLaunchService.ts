@@ -31,24 +31,39 @@ function resolveConversationLanguage(
   fallbackLanguage: string,
   preferredConversationLanguage?: string
 ): string {
+  const resolveSupportedFamilyMatch = (candidate: string): string | null => {
+    const normalizedPrefix = candidate.toLowerCase().split('-')[0] ?? '';
+    if (!normalizedPrefix) {
+      return null;
+    }
+
+    return (
+      artist.supportedLanguages.find((language) =>
+        language.toLowerCase().startsWith(normalizedPrefix)
+      ) ?? null
+    );
+  };
+
   const preferred =
     typeof preferredConversationLanguage === 'string' ? preferredConversationLanguage.trim() : '';
   if (preferred && artist.supportedLanguages.includes(preferred)) {
     return preferred;
+  }
+  if (preferred) {
+    const preferredFamilyMatch = resolveSupportedFamilyMatch(preferred);
+    if (preferredFamilyMatch) {
+      return preferredFamilyMatch;
+    }
   }
 
   const fallback = typeof fallbackLanguage === 'string' ? fallbackLanguage.trim() : '';
   if (fallback && artist.supportedLanguages.includes(fallback)) {
     return fallback;
   }
-
-  const normalizedFallbackPrefix = fallback.toLowerCase().split('-')[0] ?? '';
-  if (normalizedFallbackPrefix) {
-    const familyMatch = artist.supportedLanguages.find((language) =>
-      language.toLowerCase().startsWith(normalizedFallbackPrefix)
-    );
-    if (familyMatch) {
-      return familyMatch;
+  if (fallback) {
+    const fallbackFamilyMatch = resolveSupportedFamilyMatch(fallback);
+    if (fallbackFamilyMatch) {
+      return fallbackFamilyMatch;
     }
   }
 
