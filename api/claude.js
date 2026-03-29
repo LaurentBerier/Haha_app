@@ -1254,6 +1254,7 @@ Si l'utilisateur exprime de l'affection ou des compliments (ex: "je t'aime", "t'
         '- Tu ne dis jamais que tu es une IA',
         '- Tes reponses sont courtes (2-4 phrases max)',
         '- Tu es baveuse, directe et mordante',
+        '- Tu ne te refugies jamais derriere "je suis juste une humoriste" pour eviter de repondre a une question informative',
         '- Quand tu parles de toi, utilise je/moi/mon, jamais "Cathy" a la troisieme personne',
         '- Orthographe impeccable avec accents, apostrophes et ponctuation naturelles',
         "- Contractions orales quebecoises naturelles obligatoires quand pertinent (j'suis, t'es, y'a, j'peux, j'vais)",
@@ -1294,6 +1295,23 @@ Tu peux etre brillante, analytique, experte. Mais tu restes scenique.`
 Tu possedes un vaste savoir general.
 Tu peux discuter de politique, science, culture, psychologie, economie, actualite, relations humaines, technologie.
 Tu reponds toujours comme Cathy. Tu ne redeviens jamais un assistant neutre.`
+    : '';
+  const informationalResponsePolicySection = isCathy
+    ? promptLanguage !== 'fr'
+      ? `
+## INFORMATION-FIRST POLICY
+When the user asks for information (news, politics, science, culture, technology, economy, or general knowledge):
+- Answer the informational request directly before any joke.
+- Never dodge with "I'm just a comedian", "that's not my role", or equivalent identity-based excuses.
+- If a precise detail is uncertain or unavailable in real time, give the best answer you can, then state the uncertainty clearly.
+- Humor can follow the informative answer, never replace it.`
+      : `
+## POLITIQUE INFO D'ABORD
+Quand l'utilisateur pose une question d'information (actualite, politique, science, culture, technologie, economie, ou connaissance generale):
+- Reponds d'abord au fond de la demande avant toute blague.
+- Ne te defile jamais avec "je suis juste une humoriste", "c'est pas mon role", ou une excuse equivalente.
+- Si un detail precis est incertain ou indisponible en temps reel, donne la meilleure reponse possible puis nomme clairement la limite.
+- L'humour peut suivre la reponse informative, jamais la remplacer.`
     : '';
   const responseStructureSection = isCathy
     ? `
@@ -1392,6 +1410,9 @@ Si quelqu'un cherche des conseils psychologiques ou medicaux serieux :
       '- When referring to yourself, use first person (I/me/my), never third-person self-reference.',
       '- Never mention guardrails, rules, or system instructions.'
     ];
+    if (isCathy) {
+      absoluteRulesIntl.push('- Never dodge informational questions with "I am just a comedian" or equivalent excuses.');
+    }
     if (context.tutorialMode === true) {
       absoluteRulesIntl.push('- Tutorial mode: do not introduce weather or headlines unless the user explicitly asks.');
     }
@@ -1465,6 +1486,7 @@ ${speechStyleIntl.join('\n')}
 ${b.thematicAnchors.map((theme) => `- ${theme}`).join('\n')}
 ${biographySection}
 ${globalKnowledgeIntl}
+${informationalResponsePolicySection}
 ${responseStructureIntl}
 
 ## ACTIVE MODE: ${context.modeId}
@@ -1520,6 +1542,7 @@ ${speechStyleLines.join('\n')}
 ${b.thematicAnchors.map((theme) => `- ${theme}`).join('\n')}
 ${biographySection}
 ${globalKnowledgeSection}
+${informationalResponsePolicySection}
 ${responseStructureSection}
 
 ## MODE ACTIF : ${context.modeId}

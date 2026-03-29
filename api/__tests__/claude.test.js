@@ -403,6 +403,9 @@ describe('api/claude', () => {
     expect(upstreamBody.system).toContain('## MODE ACTIF : roast');
     expect(upstreamBody.system).toContain('Evite les amorces "Ah la" ou "Allo" en debut de reponse');
     expect(upstreamBody.system).toContain("L'autoderision est autorisee, mais jamais en devalorisant la qualite de tes blagues.");
+    expect(upstreamBody.system).toContain("## POLITIQUE INFO D'ABORD");
+    expect(upstreamBody.system).toContain('Reponds d\'abord au fond de la demande avant toute blague.');
+    expect(upstreamBody.system).toContain('Tu ne te refugies jamais derriere "je suis juste une humoriste"');
     expect(upstreamBody.system).toContain('Utilise cette balise seulement quand une reaction est vraiment appropriee');
     expect(upstreamBody.system).toContain('Frequence cible: environ aux quelques reponses, pas a chaque fois.');
     expect(upstreamBody.system).not.toContain('Commence CHAQUE reponse avec exactement une balise');
@@ -588,6 +591,8 @@ describe('api/claude', () => {
     const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
     expect(upstreamBody.system).toContain('You are Cathy Gauthier');
     expect(upstreamBody.system).toContain('- Respond in English.');
+    expect(upstreamBody.system).toContain('## INFORMATION-FIRST POLICY');
+    expect(upstreamBody.system).toContain('Never dodge informational questions with "I am just a comedian"');
     expect(upstreamBody.system).not.toContain('Tu reponds toujours en francais quebecois');
     expect(upstreamBody.system).not.toContain('Registre : francais quebecois familier');
   });
@@ -619,6 +624,8 @@ describe('api/claude', () => {
     const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
     expect(upstreamBody.system).toContain('You are Cathy Gauthier');
     expect(upstreamBody.system).toContain('Respond in the active conversation language (es-ES)');
+    expect(upstreamBody.system).toContain('## INFORMATION-FIRST POLICY');
+    expect(upstreamBody.system).toContain('Never dodge informational questions with "I am just a comedian"');
     expect(upstreamBody.system).not.toContain('Tu reponds toujours en francais quebecois');
     expect(upstreamBody.system).not.toContain('Registre : francais quebecois familier');
   });

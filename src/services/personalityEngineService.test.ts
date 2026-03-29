@@ -10,6 +10,9 @@ describe('personalityEngineService', () => {
     expect(prompt).toContain("L'utilisateur veut se faire roaster");
     expect(prompt).toContain('## MARQUEURS AUDIO');
     expect(prompt).toContain('[laughs]');
+    expect(prompt).toContain("## POLITIQUE INFO D'ABORD");
+    expect(prompt).toContain('Reponds d\'abord au fond de la demande avant toute blague.');
+    expect(prompt).toContain('Tu ne te refugies jamais derriere "je suis juste une humoriste"');
   });
 
   it('builds On Jase prompt as "Dis-moi la verite" without roast framing', () => {
@@ -62,6 +65,8 @@ describe('personalityEngineService', () => {
     expect(prompt).toContain('You are Cathy Gauthier');
     expect(prompt).toContain('## AUDIO EXPRESSION TAGS');
     expect(prompt).toContain('## ABSOLUTE RULES');
+    expect(prompt).toContain('## INFORMATION-FIRST POLICY');
+    expect(prompt).toContain('Never dodge informational questions with "I am just a comedian"');
     expect(prompt).not.toContain('Tu reponds toujours en francais quebecois');
   });
 

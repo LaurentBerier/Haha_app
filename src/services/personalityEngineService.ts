@@ -312,6 +312,7 @@ export function buildSystemPromptForArtist(
   language?: string,
   preferredName?: string | null
 ): string {
+  const isCathy = artistId === ARTIST_IDS.CATHY_GAUTHIER;
   const b = resolveArtistPromptBlueprint(artistId);
   const modePrompt = resolveArtistModePrompt(artistId, modeId);
   const promptLanguage = resolvePromptLanguage(language);
@@ -330,8 +331,28 @@ export function buildSystemPromptForArtist(
     promptLanguage === 'intl'
       ? '\n- Do not force Quebec French contractions or idioms when the active language is not French.'
       : '';
+  const informationalResponsePolicySection = isCathy
+    ? promptLanguage !== 'fr'
+      ? `
+## INFORMATION-FIRST POLICY
+When the user asks for information (news, politics, science, culture, technology, economy, or general knowledge):
+- Answer the informational request directly before any joke.
+- Never dodge with "I'm just a comedian", "that's not my role", or equivalent identity-based excuses.
+- If a precise detail is uncertain or unavailable in real time, give the best answer you can, then state the uncertainty clearly.
+- Humor can follow the informative answer, never replace it.`
+      : `
+## POLITIQUE INFO D'ABORD
+Quand l'utilisateur pose une question d'information (actualite, politique, science, culture, technologie, economie, ou connaissance generale):
+- Reponds d'abord au fond de la demande avant toute blague.
+- Ne te defile jamais avec "je suis juste une humoriste", "c'est pas mon role", ou une excuse equivalente.
+- Si un detail precis est incertain ou indisponible en temps reel, donne la meilleure reponse possible puis nomme clairement la limite.
+- L'humour peut suivre la reponse informative, jamais la remplacer.`
+    : '';
 
   if (promptLanguage !== 'fr') {
+    const absoluteRulesInfoLine = isCathy
+      ? '\n- Never dodge informational questions with "I am just a comedian" or equivalent excuses.'
+      : '';
     return `
 You are ${b.identity.name}, ${b.identity.role}.
 
@@ -353,6 +374,7 @@ You are ${b.identity.name}, ${b.identity.role}.
 ## PREFERRED THEMES
 ${b.thematicAnchors.map((theme) => `- ${theme}`).join('\n')}
 ${biographySection}
+${informationalResponsePolicySection}
 
 ## ACTIVE MODE: ${modeId}
 ${modePrompt}
@@ -393,6 +415,7 @@ ${affectionResponseSection}
 - Keep the tone direct and sharp
 - ${responseLanguageRule.slice(2)}
 - When referring to yourself, use first person (I/me/my), never "Cathy" in third person
+${absoluteRulesInfoLine}
 ${intlLanguageGuard}
 ${userProfileSection}
     `.trim();
@@ -427,6 +450,7 @@ Tu es ${b.identity.name}, ${b.identity.role}.
 ## THEMES PREFERES
 ${b.thematicAnchors.map((theme) => `- ${theme}`).join('\n')}
 ${biographySection}
+${informationalResponsePolicySection}
 
 ## MODE ACTIF : ${modeId}
 ${modePrompt}
@@ -466,6 +490,7 @@ ${affectionResponseSection}
 - Tu ne dis jamais que tu es une IA
 - Tes reponses sont courtes (2-4 phrases max)
 - Tu es baveuse, directe et mordante
+- Tu ne te refugies jamais derriere "je suis juste une humoriste" pour eviter de repondre a une question informative
 - Quand tu parles de toi, utilise je/moi/mon, jamais "Cathy" a la troisieme personne
 - Orthographe impeccable: accents, apostrophes et ponctuation naturelles (ex: "C'est", "déjà", "être")
 - Contractions orales quebecoises naturelles obligatoires quand pertinent (ex: "j'suis", "t'es", "y'a", "j'peux", "j'vais")
