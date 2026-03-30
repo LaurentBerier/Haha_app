@@ -1090,6 +1090,29 @@ Politique de suggestion:
 Dis: "lance <nom de l'experience>"`;
 }
 
+function clampSystemPrompt(prompt, maxChars = MAX_SYSTEM_PROMPT_CHARS) {
+  if (typeof prompt !== 'string') {
+    return '';
+  }
+
+  const normalized = prompt.trim();
+  if (!normalized) {
+    return '';
+  }
+
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+
+  const hardSlice = normalized.slice(0, maxChars);
+  const lastLineBreak = hardSlice.lastIndexOf('\n');
+  if (lastLineBreak >= Math.floor(maxChars * 0.7)) {
+    return hardSlice.slice(0, lastLineBreak).trimEnd();
+  }
+
+  return hardSlice.trimEnd();
+}
+
 /**
  * Build the final server-side system prompt from mode context, profile hints and optional live context.
  *
@@ -1584,12 +1607,9 @@ function parsePayload(body, tierMaxTokens = DEFAULT_MAX_TOKENS, systemPrompt = '
     throw new Error('JSON body is required.');
   }
 
-  const normalizedSystemPrompt = typeof systemPrompt === 'string' ? systemPrompt.trim() : '';
+  const normalizedSystemPrompt = clampSystemPrompt(systemPrompt);
   if (!normalizedSystemPrompt) {
     throw new Error('System prompt unavailable.');
-  }
-  if (normalizedSystemPrompt.length > MAX_SYSTEM_PROMPT_CHARS) {
-    throw new Error(`systemPrompt exceeds ${MAX_SYSTEM_PROMPT_CHARS} chars.`);
   }
 
   const messages = normalizeMessages(body.messages);
@@ -2901,13 +2921,15 @@ module.exports = async function handler(req, res) {
   const tierMaxTokens = getMaxTokensForTier(effectiveAccountType);
   const effectiveMaxTokens = Math.max(1, Math.min(tierMaxTokens, quotaStatus.maxTokens));
   const profileForPrompt = await profileForPromptPromise;
-  const baseServerSystemPrompt = buildServerSystemPrompt(
-    promptContext,
-    profileForPrompt,
-    req.body?.messages,
-    auth.preferredName ?? null,
-    '',
-    currentInfoInstructionSection
+  const baseServerSystemPrompt = clampSystemPrompt(
+    buildServerSystemPrompt(
+      promptContext,
+      profileForPrompt,
+      req.body?.messages,
+      auth.preferredName ?? null,
+      '',
+      currentInfoInstructionSection
+    )
   );
 
   let payload;
@@ -2927,16 +2949,18 @@ module.exports = async function handler(req, res) {
     const resolvedCoords = await resolvePromptContextCoords(req, requestId);
     currentContextSection = await buildCurrentContextSection(promptContext.language, resolvedCoords, requestId);
   }
-  payload.system = currentContextSection || currentInfoInstructionSection
-    ? buildServerSystemPrompt(
-        promptContext,
-        profileForPrompt,
-        req.body?.messages,
-        auth.preferredName ?? null,
-        currentContextSection,
-        currentInfoInstructionSection
-      )
-    : baseServerSystemPrompt;
+  payload.system = clampSystemPrompt(
+    currentContextSection || currentInfoInstructionSection
+      ? buildServerSystemPrompt(
+          promptContext,
+          profileForPrompt,
+          req.body?.messages,
+          auth.preferredName ?? null,
+          currentContextSection,
+          currentInfoInstructionSection
+        )
+      : baseServerSystemPrompt
+  );
 
   let upstreamResponse;
   const fetchTimeoutMs = parsePositiveInt(process.env.ANTHROPIC_FETCH_TIMEOUT_MS, DEFAULT_FETCH_TIMEOUT_MS);

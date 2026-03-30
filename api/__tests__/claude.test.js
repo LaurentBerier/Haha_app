@@ -817,6 +817,64 @@ describe('api/claude', () => {
     expect(upstreamBody.system).not.toContain('a'.repeat(51));
   });
 
+  it('clamps oversized server system prompts instead of returning 400', async () => {
+    const oversizedExperiences = Array.from({ length: 20 }, (_, index) => ({
+      id: `exp-${index}`,
+      type: 'mode',
+      name: `Experience ${index} ${'x'.repeat(120)}`,
+      ctaExamples: [`lance ${index} ${'y'.repeat(200)}`]
+    }));
+
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'ok' }] })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'user-1', app_metadata: { account_type: 'free' } },
+          profile: {
+            preferred_name: 'Laurent',
+            age: 34,
+            sex: 'male',
+            relationship_status: 'in_relationship',
+            horoscope_sign: 'aries',
+            interests: Array.from({ length: 12 }, (_, idx) => `interet-${idx}-${'z'.repeat(80)}`)
+          }
+        })
+      )
+    }));
+
+    const handler = require('../claude');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer valid-token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        modeId: 'on-jase',
+        language: 'fr-CA',
+        availableExperiences: oversizedExperiences,
+        messages: [
+          {
+            role: 'user',
+            content:
+              'Je travaille de nuit. Je vis a Montreal. Je prefere l humour noir. Je joue au hockey. Je suis sagittaire. Je veux monter mes standards.'
+          }
+        ]
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const upstreamFetchCall = global.fetch.mock.calls.find((call) => String(call?.[0] ?? '').includes('/v1/messages'));
+    expect(upstreamFetchCall).toBeTruthy();
+    const upstreamBody = JSON.parse(upstreamFetchCall[1].body);
+    expect(upstreamBody.system.length).toBeLessThanOrEqual(12000);
+    expect(upstreamBody.system).toContain('## MODE ACTIF : on-jase');
+    expect(upstreamBody.system).toContain('## GUARDRAILS');
+  });
+
   it('returns 400 for unsupported artist in prompt context', async () => {
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => buildSupabaseClient())
