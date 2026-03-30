@@ -126,7 +126,7 @@ export const useStore = create<StoreState>()((...a) => ({
       snapshot.preferences?.reduceMotion === 'on' || snapshot.preferences?.reduceMotion === 'off'
         ? snapshot.preferences.reduceMotion
         : 'system';
-    const nextVoiceAutoPlay = snapshot.preferences?.voiceAutoPlay === true;
+    const nextVoiceAutoPlay = snapshot.preferences?.voiceAutoPlay ?? true;
 
     setI18nLanguage(nextLanguage);
 

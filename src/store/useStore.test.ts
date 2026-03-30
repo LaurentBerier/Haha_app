@@ -53,4 +53,35 @@ describe('useStore hydration', () => {
       ])
     );
   });
+
+  it('defaults voice auto-play to true when absent and preserves explicit false', () => {
+    useStore.getState().hydrateStore({
+      ownerUserId: null,
+      selectedArtistId: 'cathy-gauthier',
+      conversations: {},
+      activeConversationId: null,
+      messagesByConversation: {},
+      preferences: {
+        language: 'fr-CA',
+        displayMode: 'dark'
+      }
+    });
+
+    expect(useStore.getState().voiceAutoPlay).toBe(true);
+
+    useStore.getState().hydrateStore({
+      ownerUserId: null,
+      selectedArtistId: 'cathy-gauthier',
+      conversations: {},
+      activeConversationId: null,
+      messagesByConversation: {},
+      preferences: {
+        language: 'fr-CA',
+        displayMode: 'dark',
+        voiceAutoPlay: false
+      }
+    });
+
+    expect(useStore.getState().voiceAutoPlay).toBe(false);
+  });
 });

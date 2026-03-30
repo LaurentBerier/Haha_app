@@ -1,6 +1,7 @@
 const pushMock = jest.fn();
-const fetchModeIntroFromApiMock = jest.fn(async () => null);
-const generateModeIntroMock = jest.fn(() => 'intro fallback');
+const fetchModeIntroFromApiMock = jest.fn<Promise<string | null>, unknown[]>(async () => null);
+const generateModeIntroMock = jest.fn<string, unknown[]>(() => 'intro fallback');
+const fetchAndCacheVoiceMock = jest.fn<Promise<string | null>, unknown[]>(async () => 'https://voice.test/intro.mp3');
 const createConversationMock = jest.fn();
 const addMessageMock = jest.fn();
 const updateConversationMock = jest.fn();
@@ -19,6 +20,20 @@ jest.mock('./modeIntroService', () => ({
   generateModeIntro: (...args: unknown[]) => (generateModeIntroMock as (...values: unknown[]) => string)(...args)
 }));
 
+jest.mock('./ttsService', () => ({
+  fetchAndCacheVoice: (...args: unknown[]) => (fetchAndCacheVoiceMock as (...values: unknown[]) => Promise<unknown>)(...args)
+}));
+
+interface MockMessage {
+  id: string;
+  conversationId: string;
+  role: 'user' | 'artist';
+  content: string;
+  status: 'pending' | 'streaming' | 'complete' | 'error';
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+}
+
 const storeState = {
   artists: [
     {
@@ -33,14 +48,44 @@ const storeState = {
     memoryFacts: ['Je vis a Montreal']
   },
   session: {
-    accessToken: 'token-1'
+    accessToken: 'token-1',
+    user: {
+      accountType: 'free',
+      role: null
+    }
   },
+  messagesByConversation: {} as Record<string, { messages: MockMessage[] }>,
   createConversation: createConversationMock,
   addMessage: addMessageMock,
   updateConversation: updateConversationMock,
   updateMessage: updateMessageMock,
   setActiveConversation: setActiveConversationMock
 };
+
+addMessageMock.mockImplementation((conversationId: string, message: MockMessage) => {
+  const existing = storeState.messagesByConversation[conversationId]?.messages ?? [];
+  storeState.messagesByConversation[conversationId] = {
+    messages: [...existing, message]
+  };
+});
+
+updateMessageMock.mockImplementation(
+  (conversationId: string, messageId: string, updates: Partial<MockMessage>) => {
+    const page = storeState.messagesByConversation[conversationId];
+    if (!page) {
+      return;
+    }
+
+    page.messages = page.messages.map((message) =>
+      message.id === messageId
+        ? {
+            ...message,
+            ...updates
+          }
+        : message
+    );
+  }
+);
 
 jest.mock('../store/useStore', () => ({
   useStore: {
@@ -50,16 +95,40 @@ jest.mock('../store/useStore', () => ({
 
 import { launchVisibleGameRoute, launchVisibleModeConversation, tryLaunchExperienceFromText } from './experienceLaunchService';
 
+async function settleIntroPipeline(waitMs: number): Promise<void> {
+  await jest.advanceTimersByTimeAsync(waitMs);
+  await Promise.resolve();
+}
+
+function extractContentUpdates(): string[] {
+  return updateMessageMock.mock.calls
+    .map((call) => call[2] as { content?: string } | undefined)
+    .filter((updates): updates is { content?: string } => Boolean(updates && 'content' in updates))
+    .map((updates) => updates.content ?? '');
+}
+
 describe('experienceLaunchService', () => {
   beforeEach(() => {
+    jest.useFakeTimers();
     jest.clearAllMocks();
+    storeState.session.accessToken = 'token-1';
+    storeState.session.user.accountType = 'free';
+    storeState.session.user.role = null;
+    storeState.messagesByConversation = {};
     createConversationMock.mockReturnValue({
       id: 'conv-1',
       language: 'fr-CA'
     });
+    fetchModeIntroFromApiMock.mockResolvedValue(null);
+    generateModeIntroMock.mockReturnValue('intro fallback');
+    fetchAndCacheVoiceMock.mockResolvedValue('https://voice.test/intro.mp3');
   });
 
-  it('launches a visible mode in a dedicated mode thread', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('launches a visible mode in a dedicated mode thread with a single intro message', async () => {
     const result = launchVisibleModeConversation({
       artistId: 'cathy-gauthier',
       modeId: 'on-jase',
@@ -76,9 +145,93 @@ describe('experienceLaunchService', () => {
     );
     expect(createConversationMock).toHaveBeenCalledWith('cathy-gauthier', 'fr-CA', 'on-jase', { threadType: 'mode' });
     expect(addMessageMock).toHaveBeenCalledTimes(1);
+    expect(addMessageMock.mock.calls[0]?.[1]).toMatchObject({
+      role: 'artist',
+      content: '',
+      status: 'pending',
+      metadata: {
+        injected: true,
+        injectedType: 'mode_nudge'
+      }
+    });
     expect(setActiveConversationMock).toHaveBeenCalledWith('conv-1');
     expect(pushMock).toHaveBeenCalledWith('/chat/conv-1');
     expect(fetchModeIntroFromApiMock).toHaveBeenCalledTimes(1);
+
+    await settleIntroPipeline(300);
+
+    expect(extractContentUpdates()).toEqual(['intro fallback']);
+    expect(updateConversationMock).toHaveBeenCalledWith(
+      'conv-1',
+      expect.objectContaining({
+        lastMessagePreview: expect.stringContaining('intro fallback'),
+        title: expect.stringContaining('intro fallback')
+      }),
+      'cathy-gauthier'
+    );
+  });
+
+  it('uses API intro when available before timeout', async () => {
+    fetchModeIntroFromApiMock.mockResolvedValue('intro api final');
+
+    launchVisibleModeConversation({
+      artistId: 'cathy-gauthier',
+      modeId: 'grill',
+      fallbackLanguage: 'fr-CA'
+    });
+
+    await settleIntroPipeline(300);
+
+    expect(extractContentUpdates()).toEqual(['intro api final']);
+  });
+
+  it('falls back after timeout and ignores late API intro updates', async () => {
+    fetchModeIntroFromApiMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve('intro api tardive'), 2_000);
+        })
+    );
+
+    launchVisibleModeConversation({
+      artistId: 'cathy-gauthier',
+      modeId: 'on-jase',
+      fallbackLanguage: 'fr-CA'
+    });
+
+    await settleIntroPipeline(1_500);
+    expect(extractContentUpdates()).toEqual(['intro fallback']);
+
+    await settleIntroPipeline(700);
+    expect(extractContentUpdates()).toEqual(['intro fallback']);
+  });
+
+  it('writes intro TTS metadata lifecycle for Cathy responses', async () => {
+    fetchModeIntroFromApiMock.mockResolvedValue('intro voix');
+    fetchAndCacheVoiceMock.mockResolvedValue('https://voice.test/intro-ready.mp3');
+
+    launchVisibleModeConversation({
+      artistId: 'cathy-gauthier',
+      modeId: 'on-jase',
+      fallbackLanguage: 'fr-CA'
+    });
+
+    await settleIntroPipeline(300);
+
+    const metadataUpdates = updateMessageMock.mock.calls
+      .map((call) => call[2] as { metadata?: Record<string, unknown> } | undefined)
+      .filter((updates) => Boolean(updates?.metadata))
+      .map((updates) => updates?.metadata ?? {});
+
+    expect(metadataUpdates.some((metadata) => metadata.voiceStatus === 'generating')).toBe(true);
+    expect(
+      metadataUpdates.some(
+        (metadata) =>
+          metadata.voiceStatus === 'ready' &&
+          Array.isArray(metadata.voiceQueue) &&
+          metadata.voiceQueue[0] === 'https://voice.test/intro-ready.mp3'
+      )
+    ).toBe(true);
   });
 
   it('launches a visible game route', () => {

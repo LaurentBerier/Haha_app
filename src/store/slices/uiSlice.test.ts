@@ -35,6 +35,7 @@ describe('uiSlice', () => {
     const slice = createSliceHarness((set, get) => createUiSlice(set as never, get as never, undefined as never));
 
     expect(slice.conversationModeEnabled).toBe(true);
+    expect(slice.voiceAutoPlay).toBe(true);
     expect(slice.greetedArtistIds.has('cathy-gauthier')).toBe(false);
     expect(slice.queuedChatSendPayload).toBeNull();
 

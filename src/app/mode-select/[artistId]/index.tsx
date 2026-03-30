@@ -933,7 +933,7 @@ export default function ModeSelectHomeScreen() {
   const activeConversationId = useStore((state) => state.activeConversationId);
   const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
-  const setVoiceAutoPlay = useStore((state) => state.setVoiceAutoPlay);
+  const voiceAutoPlay = useStore((state) => state.voiceAutoPlay);
   const createConversation = useStore((state) => state.createConversation);
   const setActiveConversation = useStore((state) => state.setActiveConversation);
   const addMessage = useStore((state) => state.addMessage);
@@ -1498,10 +1498,6 @@ export default function ModeSelectHomeScreen() {
   ]);
 
   useEffect(() => {
-    setVoiceAutoPlay(conversationModeEnabled);
-  }, [conversationModeEnabled, setVoiceAutoPlay]);
-
-  useEffect(() => {
     if (
       !conversationModeEnabled ||
       !artist?.id ||
@@ -1610,6 +1606,7 @@ export default function ModeSelectHomeScreen() {
     audioPlayer,
     enabled: isValidConversation,
     hasStreaming,
+    voiceAutoPlay,
     replayOnFocus: false
   });
 

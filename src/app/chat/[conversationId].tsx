@@ -63,7 +63,7 @@ export default function ChatScreen() {
   const language = useStore((state) => state.language);
   const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
-  const setVoiceAutoPlay = useStore((state) => state.setVoiceAutoPlay);
+  const voiceAutoPlay = useStore((state) => state.voiceAutoPlay);
   const consumeChatSendPayload = useStore((state) => state.consumeChatSendPayload);
   const currentConversation = useStore(
     useCallback((state) => findConversationById(state.conversations, conversationId), [conversationId])
@@ -197,10 +197,6 @@ export default function ChatScreen() {
   }, [chatHeaderTitle, isValidConversation, navigation]);
 
   useEffect(() => {
-    setVoiceAutoPlay(conversationModeEnabled);
-  }, [conversationModeEnabled, setVoiceAutoPlay]);
-
-  useEffect(() => {
     if (!shouldUseVoiceFiller || !currentConversation?.artistId) {
       return;
     }
@@ -228,6 +224,7 @@ export default function ChatScreen() {
     audioPlayer,
     enabled: isValidConversation,
     hasStreaming,
+    voiceAutoPlay,
     replayOnFocus: false
   });
 

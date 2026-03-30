@@ -55,7 +55,7 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set, ge
   language: resolveLanguage(APP_DEFAULT_LANGUAGE),
   displayMode: 'dark',
   reduceMotion: 'system',
-  voiceAutoPlay: false,
+  voiceAutoPlay: true,
   conversationModeEnabled: true,
   greetedArtistIds: new Set<string>(),
   queuedChatSendPayload: null,

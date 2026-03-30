@@ -9,11 +9,20 @@ interface UseAutoReplayLastArtistMessageParams {
   audioPlayer: AudioPlayerController;
   enabled: boolean;
   hasStreaming: boolean;
+  voiceAutoPlay?: boolean;
   replayOnFocus?: boolean;
 }
 
-export function shouldReplayOnFocusLifecycle(enabled: boolean, replayOnFocus: boolean): boolean {
-  return enabled && replayOnFocus;
+export function canAutoReplayArtistMessage(enabled: boolean, voiceAutoPlay: boolean): boolean {
+  return enabled && voiceAutoPlay;
+}
+
+export function shouldReplayOnFocusLifecycle(
+  enabled: boolean,
+  replayOnFocus: boolean,
+  voiceAutoPlay: boolean
+): boolean {
+  return canAutoReplayArtistMessage(enabled, voiceAutoPlay) && replayOnFocus;
 }
 
 export function useAutoReplayLastArtistMessage({
@@ -21,13 +30,14 @@ export function useAutoReplayLastArtistMessage({
   audioPlayer,
   enabled,
   hasStreaming,
+  voiceAutoPlay = true,
   replayOnFocus = true
 }: UseAutoReplayLastArtistMessageParams): void {
   const hasRunInitialReplayRef = useRef(false);
   const lastReplayedMessageIdRef = useRef<string | null>(null);
 
   const attemptReplay = useCallback(() => {
-    if (!enabled || hasStreaming || audioPlayer.isPlaying || audioPlayer.isLoading) {
+    if (!canAutoReplayArtistMessage(enabled, voiceAutoPlay) || hasStreaming || audioPlayer.isPlaying || audioPlayer.isLoading) {
       return;
     }
 
@@ -43,10 +53,10 @@ export function useAutoReplayLastArtistMessage({
     void audioPlayer.playQueue(latestReplayable.uris, {
       messageId: latestReplayable.messageId
     });
-  }, [audioPlayer, enabled, hasStreaming, messages]);
+  }, [audioPlayer, enabled, hasStreaming, messages, voiceAutoPlay]);
 
   useEffect(() => {
-    if (!enabled) {
+    if (!canAutoReplayArtistMessage(enabled, voiceAutoPlay)) {
       hasRunInitialReplayRef.current = false;
       return;
     }
@@ -61,10 +71,10 @@ export function useAutoReplayLastArtistMessage({
 
     hasRunInitialReplayRef.current = true;
     attemptReplay();
-  }, [attemptReplay, enabled, messages]);
+  }, [attemptReplay, enabled, messages, voiceAutoPlay]);
 
   useEffect(() => {
-    if (!shouldReplayOnFocusLifecycle(enabled, replayOnFocus)) {
+    if (!shouldReplayOnFocusLifecycle(enabled, replayOnFocus, voiceAutoPlay)) {
       return;
     }
 
@@ -96,5 +106,5 @@ export function useAutoReplayLastArtistMessage({
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       }
     };
-  }, [attemptReplay, enabled, replayOnFocus]);
+  }, [attemptReplay, enabled, replayOnFocus, voiceAutoPlay]);
 }
