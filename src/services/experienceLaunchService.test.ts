@@ -7,6 +7,7 @@ const addMessageMock = jest.fn();
 const updateConversationMock = jest.fn();
 const updateMessageMock = jest.fn();
 const setActiveConversationMock = jest.fn();
+const setVoiceAutoPlayMock = jest.fn();
 
 jest.mock('expo-router', () => ({
   router: {
@@ -54,12 +55,15 @@ const storeState = {
       role: null
     }
   },
+  conversationModeEnabled: true,
+  voiceAutoPlay: true,
   messagesByConversation: {} as Record<string, { messages: MockMessage[] }>,
   createConversation: createConversationMock,
   addMessage: addMessageMock,
   updateConversation: updateConversationMock,
   updateMessage: updateMessageMock,
-  setActiveConversation: setActiveConversationMock
+  setActiveConversation: setActiveConversationMock,
+  setVoiceAutoPlay: setVoiceAutoPlayMock
 };
 
 addMessageMock.mockImplementation((conversationId: string, message: MockMessage) => {
@@ -86,6 +90,10 @@ updateMessageMock.mockImplementation(
     );
   }
 );
+
+setVoiceAutoPlayMock.mockImplementation((enabled: boolean) => {
+  storeState.voiceAutoPlay = enabled;
+});
 
 jest.mock('../store/useStore', () => ({
   useStore: {
@@ -114,6 +122,8 @@ describe('experienceLaunchService', () => {
     storeState.session.accessToken = 'token-1';
     storeState.session.user.accountType = 'free';
     storeState.session.user.role = null;
+    storeState.conversationModeEnabled = true;
+    storeState.voiceAutoPlay = true;
     storeState.messagesByConversation = {};
     createConversationMock.mockReturnValue({
       id: 'conv-1',
@@ -169,6 +179,20 @@ describe('experienceLaunchService', () => {
       }),
       'cathy-gauthier'
     );
+  });
+
+  it('re-enables voice auto-play when conversation mode is active during mode launch', () => {
+    storeState.conversationModeEnabled = true;
+    storeState.voiceAutoPlay = false;
+
+    launchVisibleModeConversation({
+      artistId: 'cathy-gauthier',
+      modeId: 'on-jase',
+      fallbackLanguage: 'fr-CA'
+    });
+
+    expect(setVoiceAutoPlayMock).toHaveBeenCalledWith(true);
+    expect(storeState.voiceAutoPlay).toBe(true);
   });
 
   it('uses API intro when available before timeout', async () => {

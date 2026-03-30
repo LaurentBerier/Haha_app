@@ -1429,10 +1429,7 @@ export default function ModeSelectHomeScreen() {
   const stopModeSelectVoiceAndMic = useCallback(() => {
     stopModeSelectGreetingPlayback();
     pauseListening();
-    if (useStore.getState().conversationModeEnabled) {
-      setConversationModeEnabled(false);
-    }
-  }, [pauseListening, setConversationModeEnabled, stopModeSelectGreetingPlayback]);
+  }, [pauseListening, stopModeSelectGreetingPlayback]);
 
   const pulseGreetingSpeechHint = useCallback((durationMs: number) => {
     clearGreetingSpeechHint();

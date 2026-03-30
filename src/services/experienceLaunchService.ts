@@ -268,6 +268,11 @@ function launchModeConversation(params: LaunchModeConversationParams): Experienc
     return { launched: false };
   }
 
+  // Keep mode launch aligned with active voice conversation behavior.
+  if (state.conversationModeEnabled && !state.voiceAutoPlay) {
+    state.setVoiceAutoPlay(true);
+  }
+
   const conversationLanguage = resolveConversationLanguage(
     artist,
     params.fallbackLanguage,
