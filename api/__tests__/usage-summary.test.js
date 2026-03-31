@@ -3,6 +3,7 @@ const { createReqRes } = require('./testHelpers');
 function buildSupabaseClient({
   user = { id: 'user-1', app_metadata: { account_type: 'free' } },
   profileAccountType = 'free',
+  profileMonthlyCapOverride = null,
   usageCount = 0,
   usageError = null
 } = {}) {
@@ -30,7 +31,10 @@ function buildSupabaseClient({
           select: () => ({
             eq: () => ({
               maybeSingle: jest.fn().mockResolvedValue({
-                data: { account_type_id: profileAccountType },
+                data: {
+                  account_type_id: profileAccountType,
+                  monthly_cap_override: profileMonthlyCapOverride
+                },
                 error: null
               })
             })
@@ -208,6 +212,32 @@ describe('api/usage-summary', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.payload.messagesCap).toBe(25000);
+  });
+
+  it('uses per-user monthly cap override when configured on the profile', async () => {
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'override-user', app_metadata: { account_type: 'regular' } },
+          profileAccountType: 'regular',
+          profileMonthlyCapOverride: 500,
+          usageCount: 480
+        })
+      )
+    }));
+
+    const handler = require('../usage-summary');
+    const { req, res } = createReqRes({
+      method: 'GET',
+      headers: { authorization: 'Bearer override-token' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.messagesCap).toBe(500);
+    expect(res.payload.softCapReached).toBe(true);
+    expect(res.payload.economyMode).toBe(false);
   });
 
   it('treats role=admin as unlimited even when account_type is regular', async () => {

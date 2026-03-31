@@ -7,7 +7,7 @@ const {
   setCorsHeaders
 } = require('./_utils');
 const { resolveEffectiveAccountType } = require('./_account-tier');
-const { getTierMonthlyCap } = require('./_monthly-cap');
+const { getEffectiveMonthlyCap } = require('./_monthly-cap');
 
 const SOFT_CAP_RATIO = 0.75;
 
@@ -25,32 +25,56 @@ function getNextMonthStartIso() {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
 }
 
-async function resolveAccountTypeFromProfile(supabaseAdmin, userId, fallbackAccountType, role, requestId) {
-  const fallback = resolveEffectiveAccountType(fallbackAccountType, role);
-  if (fallback === 'admin') {
-    return fallback;
+async function resolveProfileUsageSettings(supabaseAdmin, userId, fallbackAccountType, role, requestId) {
+  const fallbackAccount = resolveEffectiveAccountType(fallbackAccountType, role);
+  if (fallbackAccount === 'admin') {
+    return {
+      accountType: fallbackAccount,
+      monthlyCapOverride: null
+    };
   }
 
   try {
     const { data, error } = await supabaseAdmin
       .from('profiles')
-      .select('account_type_id')
+      .select('account_type_id, monthly_cap_override')
       .eq('id', userId)
       .maybeSingle();
 
     if (error) {
-      console.error(`[api/usage-summary][${requestId}] Failed to read profile account type`, error);
-      return fallback;
+      console.error(`[api/usage-summary][${requestId}] Failed to read profile usage settings`, error);
+      return {
+        accountType: fallbackAccount,
+        monthlyCapOverride: null
+      };
     }
 
-    if (isRecord(data) && typeof data.account_type_id === 'string' && data.account_type_id.trim()) {
-      return resolveEffectiveAccountType(data.account_type_id, role);
+    if (isRecord(data)) {
+      const profileAccountType =
+        typeof data.account_type_id === 'string' && data.account_type_id.trim()
+          ? resolveEffectiveAccountType(data.account_type_id, role)
+          : fallbackAccount;
+      const monthlyCapOverride =
+        typeof data.monthly_cap_override === 'number' && Number.isFinite(data.monthly_cap_override)
+          ? data.monthly_cap_override
+          : null;
+
+      return {
+        accountType: profileAccountType,
+        monthlyCapOverride
+      };
     }
 
-    return fallback;
+    return {
+      accountType: fallbackAccount,
+      monthlyCapOverride: null
+    };
   } catch (error) {
-    console.error(`[api/usage-summary][${requestId}] Failed to read profile account type`, error);
-    return fallback;
+    console.error(`[api/usage-summary][${requestId}] Failed to read profile usage settings`, error);
+    return {
+      accountType: fallbackAccount,
+      monthlyCapOverride: null
+    };
   }
 }
 
@@ -109,7 +133,13 @@ module.exports = async function handler(req, res) {
       ? user.app_metadata.account_type
       : 'free';
   const roleRaw = typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : null;
-  const accountType = await resolveAccountTypeFromProfile(supabaseAdmin, user.id, accountTypeRaw, roleRaw, requestId);
+  const { accountType, monthlyCapOverride } = await resolveProfileUsageSettings(
+    supabaseAdmin,
+    user.id,
+    accountTypeRaw,
+    roleRaw,
+    requestId
+  );
 
   const { count, error } = await supabaseAdmin
     .from('usage_events')
@@ -124,7 +154,7 @@ module.exports = async function handler(req, res) {
   }
 
   const isAdmin = accountType === 'admin';
-  const cap = isAdmin ? null : getTierMonthlyCap(accountType);
+  const cap = isAdmin ? null : getEffectiveMonthlyCap(accountType, monthlyCapOverride);
   const used = count ?? 0;
   const softCapThreshold = typeof cap === 'number' ? Math.max(1, Math.floor(cap * SOFT_CAP_RATIO)) : null;
   const softCapReached = typeof softCapThreshold === 'number' ? used >= softCapThreshold : false;
