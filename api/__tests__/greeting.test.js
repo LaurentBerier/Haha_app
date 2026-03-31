@@ -80,6 +80,24 @@ function createJsonTextResponse(ok, jsonPayload, textPayload = '') {
   };
 }
 
+function createAnthropicErrorResponse({ status, message, type, retryAfter }) {
+  return {
+    ok: false,
+    status,
+    headers: {
+      get(name) {
+        return String(name).toLowerCase() === 'retry-after' ? retryAfter ?? null : null;
+      }
+    },
+    json: jest.fn().mockResolvedValue({
+      error: {
+        message,
+        type
+      }
+    })
+  };
+}
+
 function installFetchMock() {
   const fetchMock = jest.fn().mockImplementation((url) => {
     const target = String(url);
@@ -693,6 +711,49 @@ describe('api/greeting tutorial behavior', () => {
     expect(res.payload.tutorial.active).toBe(true);
     expect(supabase.spies.profileSelect).toHaveBeenCalledTimes(2);
     expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 503 with Retry-After when Anthropic is overloaded', async () => {
+    const supabase = buildSupabaseClient({
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 0 }
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    const fetchMock = jest.fn().mockImplementation((url) => {
+      if (String(url) === ANTHROPIC_API_URL) {
+        return Promise.resolve(
+          createAnthropicErrorResponse({
+            status: 529,
+            message: 'Overloaded',
+            type: 'overloaded_error',
+            retryAfter: '11'
+          })
+        );
+      }
+      return Promise.resolve(createJsonTextResponse(true, {}));
+    });
+    global.fetch = fetchMock;
+
+    const handler = require('../greeting');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        language: 'fr-CA',
+        isSessionFirstGreeting: true,
+        availableModes: ['On Jase', 'Jeux'],
+        coords: { lat: 45.5, lon: -73.5 }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.headers['Retry-After']).toBe('11');
+    expect(res.payload.error.code).toBe('UPSTREAM_OVERLOADED');
+    expect(String(res.payload.error.message ?? '')).toContain('temporarily overloaded');
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 

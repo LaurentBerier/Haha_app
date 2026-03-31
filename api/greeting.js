@@ -4,6 +4,7 @@ const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const IP_API_URL = 'https://ipapi.co';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
+const DEFAULT_OVERLOAD_RETRY_AFTER_SECONDS = 3;
 const DEFAULT_WEATHER_TIMEOUT_MS = 4_500;
 const DEFAULT_NEWS_TIMEOUT_MS = 4_500;
 const DEFAULT_IP_GEO_TIMEOUT_MS = 4_500;
@@ -19,6 +20,7 @@ const MODE_INTRO_TYPE = 'mode_intro';
 const DEFAULT_INTRO_TYPE = 'greeting';
 const MODE_ID_ON_JASE = 'on-jase';
 const MODE_ID_GRILL = 'grill';
+const TRANSIENT_UPSTREAM_STATUSES = new Set([429, 500, 502, 503, 504, 529]);
 
 const MODE_ID_COMPAT = {
   'radar-attitude': MODE_ID_ON_JASE,
@@ -69,6 +71,10 @@ function isRecord(value) {
   return typeof value === 'object' && value !== null;
 }
 
+function normalizeText(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(value ?? '', 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -101,6 +107,70 @@ function parseProbability(value, fallback) {
   }
 
   return parsed;
+}
+
+function parseRetryAfterSeconds(value) {
+  const raw = normalizeText(value);
+  if (!raw) {
+    return null;
+  }
+
+  const asInt = Number.parseInt(raw, 10);
+  if (Number.isFinite(asInt) && asInt > 0) {
+    return asInt;
+  }
+
+  const asDateMs = Date.parse(raw);
+  if (!Number.isFinite(asDateMs)) {
+    return null;
+  }
+
+  const deltaSeconds = Math.ceil((asDateMs - Date.now()) / 1000);
+  return deltaSeconds > 0 ? deltaSeconds : null;
+}
+
+function getErrorStatus(error) {
+  if (!isRecord(error)) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(String(error.status ?? ''), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getErrorRetryAfterSeconds(error) {
+  if (!isRecord(error)) {
+    return null;
+  }
+
+  if (Number.isFinite(error.retryAfterSeconds) && error.retryAfterSeconds > 0) {
+    return Math.ceil(error.retryAfterSeconds);
+  }
+
+  if (typeof error.retryAfter === 'string') {
+    return parseRetryAfterSeconds(error.retryAfter);
+  }
+
+  return null;
+}
+
+function isTransientUpstreamOverload(error) {
+  const status = getErrorStatus(error);
+  if (Number.isFinite(status) && TRANSIENT_UPSTREAM_STATUSES.has(status)) {
+    return true;
+  }
+
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const code = normalizeText(error.code).toLowerCase();
+  if (code.includes('overload')) {
+    return true;
+  }
+
+  const message = normalizeText(error.message).toLowerCase();
+  return message.includes('overloaded') || message.includes('overload');
 }
 
 async function fetchJsonWithTimeout(url, timeoutMs) {
@@ -1435,6 +1505,15 @@ async function generateGreetingText(context) {
           : 'Greeting generation failed.';
       const error = new Error(errorMessage);
       error.status = response.status;
+      if (isRecord(payload) && isRecord(payload.error) && typeof payload.error.type === 'string') {
+        error.code = payload.error.type;
+      }
+      const retryAfterHeader =
+        response.headers && typeof response.headers.get === 'function' ? response.headers.get('retry-after') : '';
+      const retryAfterSeconds = parseRetryAfterSeconds(retryAfterHeader);
+      if (Number.isFinite(retryAfterSeconds)) {
+        error.retryAfterSeconds = retryAfterSeconds;
+      }
       throw error;
     }
 
@@ -1444,9 +1523,42 @@ async function generateGreetingText(context) {
     }
 
     return clampToWordLimit(clampToSentenceLimit(rawText, 3), 45);
+  } catch (error) {
+    if (isRecord(error) && error.name === 'AbortError') {
+      const timeoutError = new Error('Greeting generator timed out.');
+      timeoutError.code = 'UPSTREAM_TIMEOUT';
+      timeoutError.status = 504;
+      throw timeoutError;
+    }
+    throw error;
   } finally {
     clearTimeout(timeoutHandle);
   }
+}
+
+function sendGreetingUpstreamError(res, requestId, error) {
+  if (isRecord(error) && error.code === 'UPSTREAM_TIMEOUT') {
+    sendError(res, 504, 'Greeting generator timed out.', { code: 'UPSTREAM_TIMEOUT', requestId, error });
+    return;
+  }
+
+  if (isTransientUpstreamOverload(error)) {
+    const retryAfterSeconds = getErrorRetryAfterSeconds(error) ?? DEFAULT_OVERLOAD_RETRY_AFTER_SECONDS;
+    res.setHeader('Retry-After', String(Math.max(1, retryAfterSeconds)));
+    sendError(res, 503, 'Greeting generator is temporarily overloaded. Please retry.', {
+      code: 'UPSTREAM_OVERLOADED',
+      requestId,
+      capture: false,
+      error
+    });
+    return;
+  }
+
+  const upstreamStatus = getErrorStatus(error);
+  const status =
+    Number.isFinite(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599 ? upstreamStatus : 502;
+  const message = error instanceof Error && error.message ? error.message : 'Greeting generator unavailable.';
+  sendError(res, status, message, { code: 'UPSTREAM_ERROR', requestId, error });
 }
 
 module.exports = async function handler(req, res) {
@@ -1538,8 +1650,7 @@ module.exports = async function handler(req, res) {
         variationCue: buildModeIntroVariationCue(input.language, input.modeId)
       });
     } catch (error) {
-      const message = error instanceof Error && error.message ? error.message : 'Greeting generator unavailable.';
-      sendError(res, 502, message, { code: 'UPSTREAM_ERROR', requestId });
+      sendGreetingUpstreamError(res, requestId, error);
       return;
     }
 
@@ -1634,8 +1745,7 @@ module.exports = async function handler(req, res) {
         }
       );
     } catch (error) {
-      const message = error instanceof Error && error.message ? error.message : 'Greeting generator unavailable.';
-      sendError(res, 502, message, { code: 'UPSTREAM_ERROR', requestId });
+      sendGreetingUpstreamError(res, requestId, error);
       return;
     }
   }
