@@ -1,6 +1,15 @@
 export type MessageStatus = 'pending' | 'streaming' | 'complete' | 'error';
 export type MessageRole = 'user' | 'artist';
 
+export interface GreetingActivitySnapshot {
+  punchlinesCreated: number;
+  battleWins: number;
+  memesGenerated: number;
+  photosRoasted: number;
+  roastsGenerated: number;
+  capturedAt: string;
+}
+
 export interface MessageMetadata {
   tokensUsed?: number;
   voiceUrl?: string;
@@ -19,6 +28,7 @@ export interface MessageMetadata {
   injected?: boolean;
   showUpgradeCta?: boolean;
   upgradeFromTier?: string;
+  greetingActivitySnapshot?: GreetingActivitySnapshot;
 }
 
 export interface Message {

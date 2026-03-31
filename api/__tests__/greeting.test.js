@@ -500,6 +500,43 @@ describe('api/greeting tutorial behavior', () => {
     expect(anthropicBody.messages?.[0]?.content).toContain('Contexte manchette disponible: oui');
   });
 
+  it('injects recent activity prompt signals when provided by the client payload', async () => {
+    process.env.GREETING_HEADLINE_INCLUSION_RATE = '0';
+    const supabase = buildSupabaseClient({
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 3 }
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    const fetchMock = installFetchMockWithOptions({
+      anthropicText: "Hey Laurent, j'ai vu ton activite, on continue?"
+    });
+
+    const handler = require('../greeting');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        language: 'fr-CA',
+        isSessionFirstGreeting: false,
+        availableModes: ['On Jase', 'Jeux'],
+        recentActivityFacts: ["T'as bouge dans des jeux/defis depuis mon dernier coucou."],
+        askActivityFeedback: true,
+        lastGreetingSnippet: "Hey Laurent, comment tu vas?",
+        coords: { lat: 45.5, lon: -73.5 }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const anthropicBody = extractAnthropicRequestBody(fetchMock);
+    expect(anthropicBody).toBeTruthy();
+    expect(anthropicBody.messages?.[0]?.content).toContain('Contexte activite recente:');
+    expect(anthropicBody.messages?.[0]?.content).toContain('Demander feedback activite: oui');
+    expect(anthropicBody.messages?.[0]?.content).toContain('Extrait dernier greeting:');
+  });
+
   it('does not increment tutorial counter when isSessionFirstGreeting is false', async () => {
     const supabase = buildSupabaseClient({
       profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 1 }

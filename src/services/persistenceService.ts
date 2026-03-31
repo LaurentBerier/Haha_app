@@ -14,6 +14,20 @@ function isStringOrNull(value: unknown): value is string | null {
   return typeof value === 'string' || value === null;
 }
 
+function isValidGreetingActivitySnapshot(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const numericKeys = ['punchlinesCreated', 'battleWins', 'memesGenerated', 'photosRoasted', 'roastsGenerated'] as const;
+  const hasValidNumbers = numericKeys.every((key) => {
+    const raw = value[key];
+    return typeof raw === 'number' && Number.isFinite(raw) && raw >= 0;
+  });
+  const hasValidCapturedAt = typeof value.capturedAt === 'string' && value.capturedAt.trim().length > 0;
+  return hasValidNumbers && hasValidCapturedAt;
+}
+
 function isValidConversation(value: unknown): boolean {
   if (!isRecord(value)) {
     return false;
@@ -79,6 +93,8 @@ function isValidMessageMetadata(value: unknown): boolean {
   const injectedValid = value.injected === undefined || typeof value.injected === 'boolean';
   const showUpgradeCtaValid = value.showUpgradeCta === undefined || typeof value.showUpgradeCta === 'boolean';
   const upgradeFromTierValid = value.upgradeFromTier === undefined || typeof value.upgradeFromTier === 'string';
+  const greetingActivitySnapshotValid =
+    value.greetingActivitySnapshot === undefined || isValidGreetingActivitySnapshot(value.greetingActivitySnapshot);
   const battleResultValid =
     value.battleResult === undefined ||
     value.battleResult === 'light' ||
@@ -101,6 +117,7 @@ function isValidMessageMetadata(value: unknown): boolean {
     injectedValid &&
     showUpgradeCtaValid &&
     upgradeFromTierValid &&
+    greetingActivitySnapshotValid &&
     battleResultValid
   );
 }

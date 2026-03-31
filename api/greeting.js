@@ -381,6 +381,16 @@ function parsePayload(body) {
         .slice(0, 6)
         .map((entry) => entry.slice(0, 140))
     : [];
+  const recentActivityFacts = Array.isArray(body.recentActivityFacts)
+    ? body.recentActivityFacts
+        .filter((entry) => typeof entry === 'string')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((entry) => entry.slice(0, 140))
+    : [];
+  const askActivityFeedback = body.askActivityFeedback === true;
+  const lastGreetingSnippet = normalizeOptionalString(body.lastGreetingSnippet, 180);
 
   return {
     artistId,
@@ -391,7 +401,10 @@ function parsePayload(body) {
     isSessionFirstGreeting,
     availableModes,
     preferredName: normalizeOptionalString(body.preferredName, 40),
-    memoryFacts
+    memoryFacts,
+    recentActivityFacts,
+    askActivityFeedback,
+    lastGreetingSnippet
   };
 }
 
@@ -1087,6 +1100,9 @@ Hard rules:
 - Headlines are optional and rare: mention one only if "Headline context available" is "yes" and it is truly relevant/funny.
 - If "Headline context available" is "no", do not mention headlines.
 - If you have recent facts about the person, weave one in naturally.
+- If "Recent activity facts" is not "none", mention one of those activity facts naturally.
+- If "Ask activity feedback" is "yes", include one short question asking whether they liked it.
+- If "Previous greeting snippet" is provided, avoid repeating that same wording.
 - No forced "Cathy's clone" joke.
 - Never write "how are you with Cathy" or similar unnatural phrasing.
 - Avoid opening with "Ah là", "Allô", or equivalent intros; use "Hey", "Hi", or start directly.
@@ -1108,6 +1124,9 @@ Règles absolues :
 - Les manchettes sont optionnelles et rares : n'en parle que si "Contexte manchette disponible" est "oui" et que c'est pertinent/drôle.
 - Si "Contexte manchette disponible" est "non", ne parle pas des nouvelles.
 - Si tu as une info récente sur la personne, glisse-en une naturellement.
+- Si "Contexte activite recente" n'est pas "aucun", mentionne naturellement un de ces elements.
+- Si "Demander feedback activite" est "oui", ajoute une question courte pour savoir si la personne a aime ca.
+- Si "Extrait dernier greeting" est fourni, evite de reutiliser la meme formulation.
 - Pas de blague forcée sur le clone de Cathy.
 - Interdit de dire "comment tu vas avec Cathy" ou une tournure équivalente.
 - Évite d'ouvrir avec "Ah là", "Allô" ou équivalent ; privilégie "Hey", "Salut" ou une entrée directe.
@@ -1248,6 +1267,9 @@ function buildGreetingUserPrompt(context) {
       `Weather: ${context.weatherSummary}`,
       `Headline: ${context.headlineSummary}`,
       `Recent facts about the person: ${context.memoryFacts && context.memoryFacts.length > 0 ? context.memoryFacts.join(' | ') : 'none'}`,
+      `Recent activity facts: ${context.recentActivityFacts && context.recentActivityFacts.length > 0 ? context.recentActivityFacts.join(' | ') : 'none'}`,
+      `Ask activity feedback: ${context.askActivityFeedback ? 'yes' : 'no'}`,
+      `Previous greeting snippet: ${context.lastGreetingSnippet ?? 'none'}`,
       `Available modes: ${context.availableModes.join(', ') || 'none provided'}`,
       `Variation cue: ${context.variationCue}`,
       `Headline context available: ${context.headlineContextAvailable ? 'yes' : 'no'}`,
@@ -1266,6 +1288,9 @@ function buildGreetingUserPrompt(context) {
     `Meteo: ${context.weatherSummary}`,
     `Manchette: ${context.headlineSummary}`,
     `Contexte recents sur la personne: ${context.memoryFacts && context.memoryFacts.length > 0 ? context.memoryFacts.join(' | ') : 'aucun'}`,
+    `Contexte activite recente: ${context.recentActivityFacts && context.recentActivityFacts.length > 0 ? context.recentActivityFacts.join(' | ') : 'aucun'}`,
+    `Demander feedback activite: ${context.askActivityFeedback ? 'oui' : 'non'}`,
+    `Extrait dernier greeting: ${context.lastGreetingSnippet ?? 'aucun'}`,
     `Modes disponibles: ${context.availableModes.join(', ') || 'aucun fourni'}`,
     `Variation: ${context.variationCue}`,
     `Contexte manchette disponible: ${context.headlineContextAvailable ? 'oui' : 'non'}`,
@@ -1582,7 +1607,10 @@ module.exports = async function handler(req, res) {
           includeVoiceHint,
           tutorialActive: tutorialGreetingContextActive,
           availableModes: input.availableModes,
-          memoryFacts: input.memoryFacts
+          memoryFacts: input.memoryFacts,
+          recentActivityFacts: input.recentActivityFacts,
+          askActivityFeedback: input.askActivityFeedback,
+          lastGreetingSnippet: input.lastGreetingSnippet
         }
       );
     } catch (error) {

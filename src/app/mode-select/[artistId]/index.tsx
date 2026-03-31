@@ -35,6 +35,7 @@ import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voice
 import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
 import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../../../utils/accountTypeUtils';
+import { deriveGreetingActivityContext } from '../../../utils/greetingActivity';
 import { collectArtistMemoryFacts } from '../../../utils/memoryFacts';
 import {
   captureModeSelectReplayBarrier,
@@ -427,12 +428,39 @@ function speakGreetingWithWebFallback(text: string, language: string): boolean {
   }
 }
 
+function pickRandom<T>(values: T[]): T {
+  if (values.length === 0) {
+    throw new Error('pickRandom requires at least one value.');
+  }
+  const index = Math.floor(Math.random() * values.length);
+  return values[index] ?? values[0]!;
+}
+
+function pickGreetingVariant(variants: string[], lastGreetingSnippet: string | null): string {
+  if (variants.length === 0) {
+    return '';
+  }
+
+  const normalizedSnippet = typeof lastGreetingSnippet === 'string' ? lastGreetingSnippet.toLowerCase() : '';
+  const pool =
+    normalizedSnippet.length > 0
+      ? variants.filter((entry) => !normalizedSnippet.includes(entry.toLowerCase()))
+      : variants;
+  const selectedPool = pool.length > 0 ? pool : variants;
+  return pickRandom(selectedPool);
+}
+
 function buildFallbackGreetingText(
   artist: ArtistModeSource,
   language: string,
   preferredName: string | null,
   _availableModes: string[],
-  isTutorialGreeting: boolean
+  isTutorialGreeting: boolean,
+  options?: {
+    recentActivityFacts?: string[];
+    askActivityFeedback?: boolean;
+    lastGreetingSnippet?: string | null;
+  }
 ): string {
   const isEnglish = language.toLowerCase().startsWith('en');
   const displayName = preferredName ?? (isEnglish ? 'there' : 'toi');
@@ -440,7 +468,16 @@ function buildFallbackGreetingText(
   const shouldAcknowledgeName = Boolean(preferredName) && nameStyle === 'unusual';
   const artistName = artist.name?.trim() || 'Cathy';
   const isCathyArtist = artistName.toLowerCase().includes('cathy');
-  const variationIndex = Math.floor(Math.random() * 5);
+  const recentActivityFacts = Array.isArray(options?.recentActivityFacts)
+    ? options.recentActivityFacts
+        .filter((entry): entry is string => typeof entry === 'string')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .slice(0, 2)
+    : [];
+  const askActivityFeedback = options?.askActivityFeedback === true;
+  const lastGreetingSnippet = options?.lastGreetingSnippet ?? null;
+  const hasRecentActivity = recentActivityFacts.length > 0;
 
   if (isTutorialGreeting) {
     if (isEnglish) {
@@ -460,16 +497,26 @@ function buildFallbackGreetingText(
       `Hi ${displayName}, doing okay? ${artistName} here, still caffeinated.`,
       `Yo ${displayName}, how are you? It's ${artistName}, still loud in a useful way.`
     ];
-    const voiceSentenceVariants = ['The mic at the bottom is how you talk to me.'];
-    const onboardingVariants = [
-      "Drop one short line and I'll take it from there.",
-      "Keep it simple: tell me your vibe and we'll roll.",
-      "Start anywhere, I'll adapt fast."
+    const activityFollowUpVariants = [
+      "Did you like that vibe, or should we crank it differently this time?",
+      'Did that land for you, or do you want a different angle now?'
     ];
+    const onboardingVariants = hasRecentActivity
+      ? [
+          "Tell me where you want to pick this up and we'll keep rolling.",
+          'Give me your next move and I will follow your energy.'
+        ]
+      : [
+          "Drop one short line and I'll take it from there.",
+          "Keep it simple: tell me your vibe and we'll roll.",
+          "Start anywhere, I'll adapt fast."
+        ];
+
     return [
-      openingVariants[variationIndex % openingVariants.length] ?? openingVariants[0],
-      voiceSentenceVariants[variationIndex % voiceSentenceVariants.length] ?? voiceSentenceVariants[0],
-      onboardingVariants[variationIndex % onboardingVariants.length] ?? onboardingVariants[0]
+      pickGreetingVariant(openingVariants, lastGreetingSnippet),
+      hasRecentActivity ? recentActivityFacts.join(' ') : null,
+      askActivityFeedback ? pickGreetingVariant(activityFollowUpVariants, lastGreetingSnippet) : null,
+      pickGreetingVariant(onboardingVariants, lastGreetingSnippet)
     ]
       .filter(Boolean)
       .join(' ');
@@ -477,28 +524,30 @@ function buildFallbackGreetingText(
 
   const openingVariants = isCathyArtist
     ? [
-        `Hey ${displayName}, ça va? J'suis le clone de Cathy, version nerveuse.`,
-        `Salut ${displayName}, tu vas bien? J'suis le clone de Cathy, même répartie.`,
-        `Yo ${displayName}, comment ça roule? Clone de Cathy au rapport, sarcasme inclus.`,
-        `Salut ${displayName}, prêt(e)? J'suis le clone de Cathy, version turbo.`,
-        `Bon ${displayName}, on part ça? Clone de Cathy, léger glitch d'attitude.`
+        `Hey ${displayName}, ca va? J'suis le clone de Cathy, version nerveuse.`,
+        `Salut ${displayName}, tu vas bien? J'suis le clone de Cathy, meme repartie.`,
+        `Yo ${displayName}, comment ca roule? Clone de Cathy au rapport, sarcasme inclus.`,
+        `Salut ${displayName}, pret(e)? J'suis le clone de Cathy, version turbo.`,
+        `Bon ${displayName}, on part ca? Clone de Cathy, leger glitch d'attitude.`
       ]
     : [
-        `Hey ${displayName}, ça va? J'suis ${artistName}.`,
+        `Hey ${displayName}, ca va? J'suis ${artistName}.`,
         `Salut ${displayName}, tu vas bien? Moi c'est ${artistName}.`,
-        `Yo ${displayName}, comment ça roule? C'est ${artistName}, on part ça.`
+        `Yo ${displayName}, comment ca roule? C'est ${artistName}, on part ca.`
       ];
-  const voiceSentenceVariants = ["Le micro en bas permet de me parler direct."];
-  const onboardingVariants = [
-    "Aucune pression, lance juste une phrase.",
-    "On garde ça simple, dis-moi ton mood.",
-    "Commence où t'veux, j'm'ajuste vite."
+  const activityFollowUpVariants = [
+    "T'as aime ca, ou tu veux qu'on tourne ca autrement?",
+    "T'as aime l'ambiance, ou tu veux qu'on change le ton?"
   ];
+  const onboardingVariants = hasRecentActivity
+    ? ["Dis-moi ou tu veux reprendre, pis j'embarque.", "Lance ta prochaine idee, pis on continue."]
+    : ['Aucune pression, lance juste une phrase.', "On garde ca simple, dis-moi ton mood.", "Commence ou t'veux, j'm'ajuste vite."];
 
   return [
-    openingVariants[variationIndex % openingVariants.length] ?? openingVariants[0],
-    voiceSentenceVariants[variationIndex % voiceSentenceVariants.length] ?? voiceSentenceVariants[0],
-    onboardingVariants[variationIndex % onboardingVariants.length] ?? onboardingVariants[0]
+    pickGreetingVariant(openingVariants, lastGreetingSnippet),
+    hasRecentActivity ? recentActivityFacts.join(' ') : null,
+    askActivityFeedback ? pickGreetingVariant(activityFollowUpVariants, lastGreetingSnippet) : null,
+    pickGreetingVariant(onboardingVariants, lastGreetingSnippet)
   ]
     .filter(Boolean)
     .join(' ');
@@ -539,35 +588,6 @@ function parseGreetingTutorialInfo(value: unknown): GreetingTutorialInfo | null 
     sessionIndex,
     connectionLimit
   };
-}
-
-function hasInjectedGreetingMessageForArtist(params: {
-  conversationsForArtist: Array<{ id: string; threadType?: string | null }>;
-  messagesByConversation: Record<string, { messages: Message[] }>;
-}): boolean {
-  for (const conversation of params.conversationsForArtist) {
-    if (normalizeConversationThreadType(conversation.threadType) !== 'primary') {
-      continue;
-    }
-
-    const page = params.messagesByConversation[conversation.id];
-    if (!page || !Array.isArray(page.messages)) {
-      continue;
-    }
-
-    const hasGreetingMessage = page.messages.some((message) => {
-      if (message.role !== 'artist') {
-        return false;
-      }
-      const injectedType = message.metadata?.injectedType;
-      return injectedType === 'greeting' || injectedType === 'tutorial_greeting';
-    });
-    if (hasGreetingMessage) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 function normalizeUrl(value: string): string {
@@ -700,7 +720,10 @@ async function fetchGreetingFromApi(
   availableModes: string[],
   preferredName: string | null,
   isSessionFirstGreeting: boolean,
-  memoryFacts: string[] = []
+  memoryFacts: string[] = [],
+  recentActivityFacts: string[] = [],
+  askActivityFeedback = false,
+  lastGreetingSnippet: string | null = null
 ): Promise<GreetingFetchResult> {
   const token = accessToken.trim();
   if (!token || shouldSkipGreetingApiCall()) {
@@ -718,6 +741,19 @@ async function fetchGreetingFromApi(
   };
   if (memoryFacts.length > 0) {
     payload.memoryFacts = memoryFacts;
+  }
+  if (recentActivityFacts.length > 0) {
+    payload.recentActivityFacts = recentActivityFacts
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .slice(0, 2);
+  }
+  if (askActivityFeedback) {
+    payload.askActivityFeedback = true;
+  }
+  if (typeof lastGreetingSnippet === 'string' && lastGreetingSnippet.trim()) {
+    payload.lastGreetingSnippet = lastGreetingSnippet.trim().slice(0, 180);
   }
   if (preferredName) {
     payload.preferredName = preferredName;
@@ -927,6 +963,7 @@ export default function ModeSelectHomeScreen() {
   const [pendingAutoMicGreetingMessageId, setPendingAutoMicGreetingMessageId] = useState<string | null>(null);
   const [categoryGridBottomY, setCategoryGridBottomY] = useState<number | null>(null);
   const [isGreetingBooting, setIsGreetingBooting] = useState(false);
+  const [greetingOpenCycle, setGreetingOpenCycle] = useState(0);
   const [replayBarrier, setReplayBarrier] = useState<ModeSelectReplayBarrier | null>(null);
   const [greetingBootingLineIndex, setGreetingBootingLineIndex] = useState(() =>
     Math.floor(Math.random() * GREETING_BOOTING_FR_LINES.length)
@@ -1006,6 +1043,8 @@ export default function ModeSelectHomeScreen() {
   const greetingPlaybackCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingGestureRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingSpeechHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const greetingCycleFocusStateRef = useRef(false);
+  const lastInjectedGreetingCycleRef = useRef('');
   const sendContextRecoveryLockRef = useRef(false);
   const sendContextRecoveryResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLoggedEmptyArtistMessageIdRef = useRef<string | null>(null);
@@ -1680,9 +1719,20 @@ export default function ModeSelectHomeScreen() {
     setPendingAutoMicGreetingMessageId(null);
     setReplayBarrier(null);
     setTailFollowRequestSignal(0);
+    setGreetingOpenCycle(0);
     autoMicManualOverrideRef.current = false;
     autoMicTriggeredGreetingIdsRef.current.clear();
+    greetingCycleFocusStateRef.current = false;
+    lastInjectedGreetingCycleRef.current = '';
   }, [artistId]);
+
+  useEffect(() => {
+    const wasFocused = greetingCycleFocusStateRef.current;
+    if (isModeSelectScreenFocused && !wasFocused) {
+      setGreetingOpenCycle((previous) => previous + 1);
+    }
+    greetingCycleFocusStateRef.current = isModeSelectScreenFocused;
+  }, [artistId, isModeSelectScreenFocused]);
 
   useEffect(() => {
     const targetMessageId = pendingAutoMicGreetingMessageId;
@@ -1796,20 +1846,15 @@ export default function ModeSelectHomeScreen() {
   }, [measureCategoryGridBottom, shouldCompactModeGrid, viewportHeight, messages.length]);
 
   useEffect(() => {
-    if (!artist || !artistId || boundConversationIdRef.current.trim()) {
+    if (!E2E_AUTH_BYPASS || !artist || !isModeSelectScreenFocused || greetingOpenCycle <= 0) {
       return;
     }
 
-    const sessionState = useStore.getState();
-    const conversationsForCurrentArtist = sessionState.conversations[artist.id] ?? [];
-    const hasGreetingHistory = hasInjectedGreetingMessageForArtist({
-      conversationsForArtist: conversationsForCurrentArtist,
-      messagesByConversation: sessionState.messagesByConversation
-    });
-    const hasAlreadyGreeted = sessionState.greetedArtistIds.has(artist.id);
-    if (!E2E_AUTH_BYPASS && (!hasAlreadyGreeted || !hasGreetingHistory)) {
+    const cycleKey = `${artist.id}:bypass:${greetingOpenCycle}`;
+    if (lastInjectedGreetingCycleRef.current === cycleKey) {
       return;
     }
+    lastInjectedGreetingCycleRef.current = cycleKey;
 
     const conversation = createConversation(
       artist.id,
@@ -1818,10 +1863,20 @@ export default function ModeSelectHomeScreen() {
       { threadType: 'primary' }
     );
     commitBoundConversationId(conversation.id, 'missing_context');
-    if (activeConversationId !== conversation.id) {
+    const liveActiveConversationId = useStore.getState().activeConversationId;
+    if (liveActiveConversationId !== conversation.id) {
       setActiveConversation(conversation.id);
     }
-  }, [activeConversationId, artist, artistId, commitBoundConversationId, createConversation, language, setActiveConversation]);
+    setIsGreetingBooting(false);
+  }, [
+    artist,
+    commitBoundConversationId,
+    createConversation,
+    greetingOpenCycle,
+    isModeSelectScreenFocused,
+    language,
+    setActiveConversation
+  ]);
 
   useEffect(() => {
     if (E2E_AUTH_BYPASS) {
@@ -1831,32 +1886,15 @@ export default function ModeSelectHomeScreen() {
       return;
     }
 
-    if (!artist) {
+    if (!artist || !isModeSelectScreenFocused || greetingOpenCycle <= 0) {
       return;
     }
 
-    const initialGreetingState = useStore.getState();
-    const initialArtistConversations = initialGreetingState.conversations[artist.id] ?? [];
-    const hasGreetingHistory = hasInjectedGreetingMessageForArtist({
-      conversationsForArtist: initialArtistConversations,
-      messagesByConversation: initialGreetingState.messagesByConversation
-    });
-    const wasAlreadyGreeted = initialGreetingState.greetedArtistIds.has(artist.id);
-    if (wasAlreadyGreeted && hasGreetingHistory) {
-      logModeSelectDebugTrace('greeting_skipped_existing_history', {
-        artistId: artist.id,
-        conversations: initialArtistConversations.length
-      });
-      setIsGreetingBooting(false);
+    const cycleKey = `${artist.id}:${greetingOpenCycle}`;
+    if (lastInjectedGreetingCycleRef.current === cycleKey) {
       return;
     }
-
-    if (wasAlreadyGreeted && !hasGreetingHistory) {
-      logModeSelectDebugTrace('greeting_recovery_missing_history', {
-        artistId: artist.id,
-        conversations: initialArtistConversations.length
-      });
-    }
+    lastInjectedGreetingCycleRef.current = cycleKey;
 
     clearGreetingPlaybackCheck();
     clearGreetingGestureRetry();
@@ -1865,24 +1903,12 @@ export default function ModeSelectHomeScreen() {
     let isCancelled = false;
     const runGreeting = async () => {
       const sessionStateBeforeGreeting = useStore.getState();
-      const artistConversationsBeforeGreeting = sessionStateBeforeGreeting.conversations[artist.id] ?? [];
-      const hasGreetingHistoryBeforeGreeting = hasInjectedGreetingMessageForArtist({
-        conversationsForArtist: artistConversationsBeforeGreeting,
-        messagesByConversation: sessionStateBeforeGreeting.messagesByConversation
-      });
-      const wasAlreadyGreetedBeforeGreeting = sessionStateBeforeGreeting.greetedArtistIds.has(artist.id);
-      if (wasAlreadyGreetedBeforeGreeting && hasGreetingHistoryBeforeGreeting) {
-        setIsGreetingBooting(false);
-        return;
-      }
       setIsGreetingBooting(true);
       let hasInsertedGreetingMessage = false;
 
       try {
         const greetedArtistCount = sessionStateBeforeGreeting.greetedArtistIds.size;
-        const shouldRecoverMissingGreeting = wasAlreadyGreetedBeforeGreeting && !hasGreetingHistoryBeforeGreeting;
-        const isSessionFirstGreeting =
-          greetedArtistCount === 0 || (shouldRecoverMissingGreeting && greetedArtistCount === 1);
+        const isSessionFirstGreeting = greetedArtistCount === 0;
         const introConversation = createConversation(
           artist.id,
           resolveGreetingConversationLanguage(artist, language),
@@ -1901,7 +1927,8 @@ export default function ModeSelectHomeScreen() {
           return;
         }
 
-        const greetingMemoryFacts = collectArtistMemoryFacts(useStore.getState(), artist.id, introConversation.id);
+        const greetingMemoryFacts = collectArtistMemoryFacts(sessionStateBeforeGreeting, artist.id, introConversation.id);
+        const greetingActivityContext = deriveGreetingActivityContext(sessionStateBeforeGreeting, artist.id, language);
         const fetchedResult = await fetchGreetingFromApi(
           artist.id,
           language,
@@ -1910,7 +1937,10 @@ export default function ModeSelectHomeScreen() {
           availableModes,
           preferredName,
           isSessionFirstGreeting,
-          greetingMemoryFacts
+          greetingMemoryFacts,
+          greetingActivityContext.recentActivityFacts,
+          greetingActivityContext.askActivityFeedback,
+          greetingActivityContext.lastGreetingSnippet
         );
         const fallbackTutorialMode = isSessionFirstGreeting;
         const isTutorialConversationForMetadata = fetchedResult.tutorial?.active ?? fallbackTutorialMode;
@@ -1918,11 +1948,16 @@ export default function ModeSelectHomeScreen() {
         const greetingMetadata = {
           injected: true,
           tutorialMode: isTutorialConversationForMetadata,
-          injectedType: isTutorialConversationForMetadata ? 'tutorial_greeting' : 'greeting'
+          injectedType: isTutorialConversationForMetadata ? 'tutorial_greeting' : 'greeting',
+          greetingActivitySnapshot: greetingActivityContext.currentSnapshot
         } as const;
         const nextGreeting =
           fetchedResult.greeting ??
-          buildFallbackGreetingText(artist, language, preferredName, availableModes, isTutorialGreetingCopy);
+          buildFallbackGreetingText(artist, language, preferredName, availableModes, isTutorialGreetingCopy, {
+            recentActivityFacts: greetingActivityContext.recentActivityFacts,
+            askActivityFeedback: greetingActivityContext.askActivityFeedback,
+            lastGreetingSnippet: greetingActivityContext.lastGreetingSnippet
+          });
         if (isCancelled || !nextGreeting) {
           return;
         }
@@ -2090,6 +2125,8 @@ export default function ModeSelectHomeScreen() {
     clearGreetingPlaybackCheck,
     clearGreetingSpeechHint,
     createConversation,
+    greetingOpenCycle,
+    isModeSelectScreenFocused,
     language,
     markArtistGreeted,
     preferredName,
