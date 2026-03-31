@@ -298,6 +298,12 @@ function launchModeConversation(params: LaunchModeConversationParams): Experienc
     }
   });
 
+  state.trackSessionExperienceEvent({
+    artistId: artist.id,
+    experienceType: 'mode',
+    experienceId: params.modeId,
+    occurredAt: timestamp
+  });
   state.setActiveConversation(nextConversation.id);
   router.push(`/chat/${nextConversation.id}`);
 
@@ -350,6 +356,13 @@ function launchGameRoute(artistId: string, gameId: GameType): ExperienceLaunchOu
     return { launched: false };
   }
 
+  const state = useStore.getState();
+  state.trackSessionExperienceEvent({
+    artistId,
+    experienceType: 'game',
+    experienceId: gameId,
+    occurredAt: new Date().toISOString()
+  });
   router.push(`/games/${artistId}/${gameId}`);
 
   return {

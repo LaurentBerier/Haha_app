@@ -54,6 +54,11 @@ function createState(params: {
   memesGenerated?: number;
   photosRoasted?: number;
   roastsGenerated?: number;
+  sessionExperienceEvents?: Array<{
+    experienceType: 'mode' | 'game';
+    experienceId: string;
+    occurredAt: string;
+  }>;
 }): StoreState {
   const baseConversations: Conversation[] = [createConversation('conv-1')];
   const messagesByConversation: Record<string, MessagePage> = {
@@ -74,7 +79,15 @@ function createState(params: {
     battleWins: params.battleWins ?? 0,
     memesGenerated: params.memesGenerated ?? 0,
     photosRoasted: params.photosRoasted ?? 0,
-    roastsGenerated: params.roastsGenerated ?? 0
+    roastsGenerated: params.roastsGenerated ?? 0,
+    sessionExperienceEventsByArtist: {
+      'cathy-gauthier': (params.sessionExperienceEvents ?? []).map((event) => ({
+        artistId: 'cathy-gauthier',
+        experienceType: event.experienceType,
+        experienceId: event.experienceId,
+        occurredAt: event.occurredAt
+      }))
+    }
   } as unknown as StoreState;
 }
 
@@ -231,6 +244,84 @@ describe('deriveGreetingActivityContext', () => {
     expect(result.hasActivity).toBe(true);
     expect(result.askActivityFeedback).toBe(true);
     expect(result.recentActivityFacts.join(' ')).toContain('jeux/defis');
+  });
+
+  it('mentions the latest launched mode by name in recent activity facts', () => {
+    const state = createState({
+      messages: [
+        createMessage({
+          id: 'msg-greeting',
+          role: 'artist',
+          timestamp: '2026-03-31T12:00:00.000Z',
+          content: 'On repart?',
+          metadata: {
+            injected: true,
+            injectedType: 'greeting',
+            greetingActivitySnapshot: {
+              punchlinesCreated: 0,
+              battleWins: 0,
+              memesGenerated: 0,
+              photosRoasted: 0,
+              roastsGenerated: 0,
+              capturedAt: '2026-03-31T12:00:00.000Z'
+            }
+          }
+        })
+      ],
+      sessionExperienceEvents: [
+        {
+          experienceType: 'mode',
+          experienceId: 'grill',
+          occurredAt: '2026-03-31T12:03:00.000Z'
+        }
+      ]
+    });
+
+    const result = deriveGreetingActivityContext(state, 'cathy-gauthier', 'fr-CA');
+
+    expect(result.recentExperienceType).toBe('mode');
+    expect(result.recentExperienceName).toBe('Mets-moi sur le grill');
+    expect(result.recentActivityFacts.join(' ')).toContain('Mets-moi sur le grill');
+    expect(result.askActivityFeedback).toBe(true);
+  });
+
+  it('adds tarot feedback cue when latest experience is tarot', () => {
+    const state = createState({
+      messages: [
+        createMessage({
+          id: 'msg-greeting',
+          role: 'artist',
+          timestamp: '2026-03-31T12:00:00.000Z',
+          content: 'Hey!',
+          metadata: {
+            injected: true,
+            injectedType: 'greeting',
+            greetingActivitySnapshot: {
+              punchlinesCreated: 0,
+              battleWins: 0,
+              memesGenerated: 0,
+              photosRoasted: 0,
+              roastsGenerated: 0,
+              capturedAt: '2026-03-31T12:00:00.000Z'
+            }
+          }
+        })
+      ],
+      sessionExperienceEvents: [
+        {
+          experienceType: 'game',
+          experienceId: 'tarot-cathy',
+          occurredAt: '2026-03-31T12:02:00.000Z'
+        }
+      ]
+    });
+
+    const result = deriveGreetingActivityContext(state, 'cathy-gauthier', 'fr-CA');
+
+    expect(result.recentExperienceType).toBe('game');
+    expect(result.recentExperienceName).toBe('Tirage de Tarot');
+    expect(result.askActivityFeedback).toBe(true);
+    expect(result.activityFeedbackCue).toContain("t'aimes ton avenir");
   });
 
   it('keeps feedback question disabled when activity is only one short user message', () => {

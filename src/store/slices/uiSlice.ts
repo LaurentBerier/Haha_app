@@ -15,6 +15,17 @@ export interface QueuedChatSendPayload {
   payload: ChatSendPayload;
 }
 
+export type SessionExperienceType = 'mode' | 'game';
+
+export interface SessionExperienceEvent {
+  artistId: string;
+  experienceType: SessionExperienceType;
+  experienceId: string;
+  occurredAt: string;
+}
+
+const MAX_SESSION_EXPERIENCE_EVENTS_PER_ARTIST = 40;
+
 function resolveLanguage(language: string | null | undefined): AppLanguage {
   if (!language) {
     return 'fr-CA';
@@ -27,6 +38,15 @@ function resolveLanguage(language: string | null | undefined): AppLanguage {
   return 'fr-CA';
 }
 
+function normalizeSessionEventTimestamp(value: string | null | undefined): string {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  const parsed = Date.parse(normalized);
+  if (normalized && Number.isFinite(parsed)) {
+    return new Date(parsed).toISOString();
+  }
+  return new Date().toISOString();
+}
+
 export interface UiSlice {
   isLoading: boolean;
   voiceStatus: VoiceStatus;
@@ -37,6 +57,8 @@ export interface UiSlice {
   conversationModeEnabled: boolean;
   greetedArtistIds: Set<string>;
   queuedChatSendPayload: QueuedChatSendPayload | null;
+  modeSelectSessionHubConversationByArtist: Record<string, string>;
+  sessionExperienceEventsByArtist: Record<string, SessionExperienceEvent[]>;
   setLoading: (val: boolean) => void;
   setVoiceStatus: (status: VoiceStatus) => void;
   setLanguagePreference: (language: AppLanguage) => void;
@@ -45,6 +67,8 @@ export interface UiSlice {
   setVoiceAutoPlay: (enabled: boolean) => void;
   setConversationModeEnabled: (enabled: boolean) => void;
   markArtistGreeted: (artistId: string) => void;
+  setModeSelectSessionHubConversation: (artistId: string, conversationId: string) => void;
+  trackSessionExperienceEvent: (entry: Omit<SessionExperienceEvent, 'occurredAt'> & { occurredAt?: string }) => void;
   queueChatSendPayload: (entry: QueuedChatSendPayload) => void;
   consumeChatSendPayload: (conversationId: string, nonce: string) => ChatSendPayload | null;
 }
@@ -59,6 +83,8 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set, ge
   conversationModeEnabled: true,
   greetedArtistIds: new Set<string>(),
   queuedChatSendPayload: null,
+  modeSelectSessionHubConversationByArtist: {},
+  sessionExperienceEventsByArtist: {},
   setLoading: (val) => set({ isLoading: val }),
   setVoiceStatus: (status) => set({ voiceStatus: status }),
   setLanguagePreference: (language) => {
@@ -79,6 +105,66 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set, ge
       const next = new Set(state.greetedArtistIds);
       next.add(normalizedArtistId);
       return { greetedArtistIds: next };
+    }),
+  setModeSelectSessionHubConversation: (artistId, conversationId) =>
+    set((state) => {
+      const normalizedArtistId = artistId.trim();
+      if (!normalizedArtistId) {
+        return {};
+      }
+
+      const normalizedConversationId = conversationId.trim();
+      const currentMap = state.modeSelectSessionHubConversationByArtist;
+      const previousConversationId = currentMap[normalizedArtistId] ?? '';
+
+      if (!normalizedConversationId) {
+        if (!previousConversationId) {
+          return {};
+        }
+
+        const nextMap = { ...currentMap };
+        delete nextMap[normalizedArtistId];
+        return { modeSelectSessionHubConversationByArtist: nextMap };
+      }
+
+      if (previousConversationId === normalizedConversationId) {
+        return {};
+      }
+
+      return {
+        modeSelectSessionHubConversationByArtist: {
+          ...currentMap,
+          [normalizedArtistId]: normalizedConversationId
+        }
+      };
+    }),
+  trackSessionExperienceEvent: (entry) =>
+    set((state) => {
+      const normalizedArtistId = entry.artistId.trim();
+      const normalizedExperienceId = entry.experienceId.trim();
+      const experienceType =
+        entry.experienceType === 'mode' || entry.experienceType === 'game' ? entry.experienceType : null;
+      if (!normalizedArtistId || !normalizedExperienceId || !experienceType) {
+        return {};
+      }
+
+      const occurredAt = normalizeSessionEventTimestamp(entry.occurredAt);
+      const nextEvent: SessionExperienceEvent = {
+        artistId: normalizedArtistId,
+        experienceType,
+        experienceId: normalizedExperienceId,
+        occurredAt
+      };
+      const currentByArtist = state.sessionExperienceEventsByArtist;
+      const previousEvents = currentByArtist[normalizedArtistId] ?? [];
+      const nextEvents = [...previousEvents, nextEvent].slice(-MAX_SESSION_EXPERIENCE_EVENTS_PER_ARTIST);
+
+      return {
+        sessionExperienceEventsByArtist: {
+          ...currentByArtist,
+          [normalizedArtistId]: nextEvents
+        }
+      };
     }),
   queueChatSendPayload: (entry) => set({ queuedChatSendPayload: entry }),
   consumeChatSendPayload: (conversationId, nonce) => {

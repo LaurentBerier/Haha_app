@@ -522,6 +522,9 @@ describe('api/greeting tutorial behavior', () => {
         availableModes: ['On Jase', 'Jeux'],
         recentActivityFacts: ["T'as bouge dans des jeux/defis depuis mon dernier coucou."],
         askActivityFeedback: true,
+        recentExperienceName: 'Tirage de Tarot',
+        recentExperienceType: 'game',
+        activityFeedbackCue: "Pis, t'aimes ton avenir?",
         lastGreetingSnippet: "Hey Laurent, comment tu vas?",
         coords: { lat: 45.5, lon: -73.5 }
       }
@@ -533,7 +536,10 @@ describe('api/greeting tutorial behavior', () => {
     const anthropicBody = extractAnthropicRequestBody(fetchMock);
     expect(anthropicBody).toBeTruthy();
     expect(anthropicBody.messages?.[0]?.content).toContain('Contexte activite recente:');
+    expect(anthropicBody.messages?.[0]?.content).toContain('Nom experience recente: Tirage de Tarot');
+    expect(anthropicBody.messages?.[0]?.content).toContain('Type experience recente: game');
     expect(anthropicBody.messages?.[0]?.content).toContain('Demander feedback activite: oui');
+    expect(anthropicBody.messages?.[0]?.content).toContain("Cue feedback activite: Pis, t'aimes ton avenir?");
     expect(anthropicBody.messages?.[0]?.content).toContain('Extrait dernier greeting:');
   });
 

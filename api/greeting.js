@@ -390,6 +390,10 @@ function parsePayload(body) {
         .map((entry) => entry.slice(0, 140))
     : [];
   const askActivityFeedback = body.askActivityFeedback === true;
+  const recentExperienceName = normalizeOptionalString(body.recentExperienceName, 80);
+  const recentExperienceType =
+    body.recentExperienceType === 'mode' || body.recentExperienceType === 'game' ? body.recentExperienceType : null;
+  const activityFeedbackCue = normalizeOptionalString(body.activityFeedbackCue, 180);
   const lastGreetingSnippet = normalizeOptionalString(body.lastGreetingSnippet, 180);
 
   return {
@@ -404,6 +408,9 @@ function parsePayload(body) {
     memoryFacts,
     recentActivityFacts,
     askActivityFeedback,
+    recentExperienceName,
+    recentExperienceType,
+    activityFeedbackCue,
     lastGreetingSnippet
   };
 }
@@ -1101,7 +1108,9 @@ Hard rules:
 - If "Headline context available" is "no", do not mention headlines.
 - If you have recent facts about the person, weave one in naturally.
 - If "Recent activity facts" is not "none", mention one of those activity facts naturally.
+- If "Recent experience name" is provided, explicitly name that exact mode/game once in your greeting.
 - If "Ask activity feedback" is "yes", include one short question asking whether they liked it.
+- If "Activity feedback cue" is provided and feedback is requested, align your question to that cue.
 - If "Previous greeting snippet" is provided, avoid repeating that same wording.
 - No forced "Cathy's clone" joke.
 - Never write "how are you with Cathy" or similar unnatural phrasing.
@@ -1125,7 +1134,9 @@ Règles absolues :
 - Si "Contexte manchette disponible" est "non", ne parle pas des nouvelles.
 - Si tu as une info récente sur la personne, glisse-en une naturellement.
 - Si "Contexte activite recente" n'est pas "aucun", mentionne naturellement un de ces elements.
+- Si "Nom experience recente" est fourni, nomme explicitement ce mode/jeu exact une fois dans ton greeting.
 - Si "Demander feedback activite" est "oui", ajoute une question courte pour savoir si la personne a aime ca.
+- Si "Cue feedback activite" est fourni et que le feedback est demande, aligne ta question sur ce cue.
 - Si "Extrait dernier greeting" est fourni, evite de reutiliser la meme formulation.
 - Pas de blague forcée sur le clone de Cathy.
 - Interdit de dire "comment tu vas avec Cathy" ou une tournure équivalente.
@@ -1268,7 +1279,10 @@ function buildGreetingUserPrompt(context) {
       `Headline: ${context.headlineSummary}`,
       `Recent facts about the person: ${context.memoryFacts && context.memoryFacts.length > 0 ? context.memoryFacts.join(' | ') : 'none'}`,
       `Recent activity facts: ${context.recentActivityFacts && context.recentActivityFacts.length > 0 ? context.recentActivityFacts.join(' | ') : 'none'}`,
+      `Recent experience name: ${context.recentExperienceName ?? 'none'}`,
+      `Recent experience type: ${context.recentExperienceType ?? 'none'}`,
       `Ask activity feedback: ${context.askActivityFeedback ? 'yes' : 'no'}`,
+      `Activity feedback cue: ${context.activityFeedbackCue ?? 'none'}`,
       `Previous greeting snippet: ${context.lastGreetingSnippet ?? 'none'}`,
       `Available modes: ${context.availableModes.join(', ') || 'none provided'}`,
       `Variation cue: ${context.variationCue}`,
@@ -1289,7 +1303,10 @@ function buildGreetingUserPrompt(context) {
     `Manchette: ${context.headlineSummary}`,
     `Contexte recents sur la personne: ${context.memoryFacts && context.memoryFacts.length > 0 ? context.memoryFacts.join(' | ') : 'aucun'}`,
     `Contexte activite recente: ${context.recentActivityFacts && context.recentActivityFacts.length > 0 ? context.recentActivityFacts.join(' | ') : 'aucun'}`,
+    `Nom experience recente: ${context.recentExperienceName ?? 'aucun'}`,
+    `Type experience recente: ${context.recentExperienceType ?? 'aucun'}`,
     `Demander feedback activite: ${context.askActivityFeedback ? 'oui' : 'non'}`,
+    `Cue feedback activite: ${context.activityFeedbackCue ?? 'aucun'}`,
     `Extrait dernier greeting: ${context.lastGreetingSnippet ?? 'aucun'}`,
     `Modes disponibles: ${context.availableModes.join(', ') || 'aucun fourni'}`,
     `Variation: ${context.variationCue}`,
@@ -1610,6 +1627,9 @@ module.exports = async function handler(req, res) {
           memoryFacts: input.memoryFacts,
           recentActivityFacts: input.recentActivityFacts,
           askActivityFeedback: input.askActivityFeedback,
+          recentExperienceName: input.recentExperienceName,
+          recentExperienceType: input.recentExperienceType,
+          activityFeedbackCue: input.activityFeedbackCue,
           lastGreetingSnippet: input.lastGreetingSnippet
         }
       );

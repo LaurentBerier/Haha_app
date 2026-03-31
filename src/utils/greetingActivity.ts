@@ -1,6 +1,9 @@
 import { normalizeConversationThreadType } from '../models/Conversation';
 import type { GreetingActivitySnapshot, Message } from '../models/Message';
+import type { GameType } from '../games/types';
+import { getLaunchableExperienceByGameId, getLaunchableExperienceByModeId } from '../config/experienceCatalog';
 import type { StoreState } from '../store/useStore';
+import type { SessionExperienceType } from '../store/slices/uiSlice';
 
 const GREETING_INJECTED_TYPES = new Set(['greeting', 'tutorial_greeting']);
 const CHAT_ACTIVITY_FEEDBACK_THRESHOLD = 3;
@@ -13,10 +16,20 @@ interface LastGreetingRecord {
   snapshot: GreetingActivitySnapshot | null;
 }
 
+interface RecentSessionExperienceRecord {
+  experienceType: SessionExperienceType;
+  experienceId: string;
+  occurredAt: string;
+  occurredAtMs: number;
+}
+
 export interface GreetingActivityContext {
   recentActivityFacts: string[];
   askActivityFeedback: boolean;
   lastGreetingSnippet: string | null;
+  recentExperienceName: string | null;
+  recentExperienceType: SessionExperienceType | null;
+  activityFeedbackCue: string | null;
   currentSnapshot: GreetingActivitySnapshot;
   hasActivity: boolean;
   userChatMessageCount: number;
@@ -63,6 +76,103 @@ function buildCurrentSnapshot(state: StoreState): GreetingActivitySnapshot {
 function toTimestampMs(value: string): number {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeSessionExperienceEvent(value: unknown): RecentSessionExperienceRecord | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const raw = value as Record<string, unknown>;
+  const rawType = typeof raw.experienceType === 'string' ? raw.experienceType : '';
+  const experienceType = rawType === 'mode' || rawType === 'game' ? rawType : null;
+  if (!experienceType) {
+    return null;
+  }
+
+  const experienceId = typeof raw.experienceId === 'string' ? raw.experienceId.trim() : '';
+  if (!experienceId) {
+    return null;
+  }
+
+  const occurredAt = typeof raw.occurredAt === 'string' ? raw.occurredAt.trim() : '';
+  if (!occurredAt) {
+    return null;
+  }
+  const occurredAtMs = toTimestampMs(occurredAt);
+  if (occurredAtMs <= 0) {
+    return null;
+  }
+
+  return {
+    experienceType,
+    experienceId,
+    occurredAt,
+    occurredAtMs
+  };
+}
+
+function resolveRecentExperienceName(
+  artistId: string,
+  event: RecentSessionExperienceRecord,
+  language: string
+): string | null {
+  const isEnglish = language.toLowerCase().startsWith('en');
+
+  if (event.experienceType === 'mode') {
+    const experience = getLaunchableExperienceByModeId(artistId, event.experienceId);
+    if (!experience) {
+      return null;
+    }
+    return isEnglish ? experience.nameEn : experience.nameFr;
+  }
+
+  const experience = getLaunchableExperienceByGameId(artistId, event.experienceId as GameType);
+  if (!experience) {
+    return null;
+  }
+  return isEnglish ? experience.nameEn : experience.nameFr;
+}
+
+function buildRecentExperienceFact(
+  language: string,
+  recentExperienceName: string,
+  recentExperienceType: SessionExperienceType
+): string {
+  const isEnglish = language.toLowerCase().startsWith('en');
+  if (isEnglish) {
+    return recentExperienceType === 'game'
+      ? `You just came back from ${recentExperienceName}.`
+      : `You just came back from ${recentExperienceName}.`;
+  }
+
+  return recentExperienceType === 'game'
+    ? `Tu reviens du jeu ${recentExperienceName}.`
+    : `Tu reviens de ${recentExperienceName}.`;
+}
+
+function buildActivityFeedbackCue(
+  language: string,
+  recentExperience: RecentSessionExperienceRecord | null
+): string | null {
+  if (!recentExperience) {
+    return null;
+  }
+
+  const isEnglish = language.toLowerCase().startsWith('en');
+  if (recentExperience.experienceId === 'tarot-cathy') {
+    return isEnglish ? 'Did you like what your future looked like in that reading?' : "Pis, t'aimes ton avenir?";
+  }
+
+  if (recentExperience.experienceId === 'grill') {
+    return isEnglish
+      ? "Hope I didn't go too hard on you there. You good?"
+      : "Bon, j'espere que j'suis pas alle trop fort sur toi. T'es correct?";
+  }
+
+  return isEnglish
+    ? 'Did you like that experience, or should I switch the angle?'
+    : "T'as aime ca, ou tu veux que j'ajuste le ton?";
 }
 
 function compactText(value: string, maxLength = SNIPPET_MAX_LENGTH): string | null {
@@ -134,6 +244,8 @@ function buildGameDelta(currentSnapshot: GreetingActivitySnapshot, previousSnaps
 
 function buildActivityFacts(params: {
   language: string;
+  recentExperienceName: string | null;
+  recentExperienceType: SessionExperienceType | null;
   userChatMessageCount: number;
   modeLaunchCount: number;
   gameActivityDetected: boolean;
@@ -141,7 +253,17 @@ function buildActivityFacts(params: {
   const isEnglish = params.language.toLowerCase().startsWith('en');
   const facts: string[] = [];
 
-  if (params.gameActivityDetected) {
+  if (params.recentExperienceName && params.recentExperienceType) {
+    facts.push(
+      buildRecentExperienceFact(params.language, params.recentExperienceName, params.recentExperienceType)
+    );
+  }
+
+  if (
+    params.gameActivityDetected &&
+    facts.length < MAX_ACTIVITY_FACTS &&
+    !(params.recentExperienceName && params.recentExperienceType === 'game')
+  ) {
     facts.push(
       isEnglish
         ? 'You played around with games/challenges since my last hello.'
@@ -149,7 +271,11 @@ function buildActivityFacts(params: {
     );
   }
 
-  if (params.modeLaunchCount > 0 && facts.length < MAX_ACTIVITY_FACTS) {
+  if (
+    params.modeLaunchCount > 0 &&
+    facts.length < MAX_ACTIVITY_FACTS &&
+    !(params.recentExperienceName && params.recentExperienceType === 'mode')
+  ) {
     facts.push(
       isEnglish ? 'You also explored other modes in between.' : "T'as aussi explore d'autres modes entre-temps."
     );
@@ -180,6 +306,9 @@ export function deriveGreetingActivityContext(state: StoreState, artistId: strin
       recentActivityFacts: [],
       askActivityFeedback: false,
       lastGreetingSnippet: null,
+      recentExperienceName: null,
+      recentExperienceType: null,
+      activityFeedbackCue: null,
       currentSnapshot,
       hasActivity: false,
       userChatMessageCount: 0,
@@ -218,15 +347,38 @@ export function deriveGreetingActivityContext(state: StoreState, artistId: strin
     }
   }
 
+  const allExperienceEvents = Array.isArray(state.sessionExperienceEventsByArtist?.[artistId])
+    ? state.sessionExperienceEventsByArtist[artistId]
+        .map((entry) => normalizeSessionExperienceEvent(entry))
+        .filter((entry): entry is RecentSessionExperienceRecord => Boolean(entry))
+    : [];
+  let recentExperienceEvent: RecentSessionExperienceRecord | null = null;
+  for (const event of allExperienceEvents) {
+    if (event.occurredAtMs <= lastGreetingTimestampMs) {
+      continue;
+    }
+    if (!recentExperienceEvent || event.occurredAtMs > recentExperienceEvent.occurredAtMs) {
+      recentExperienceEvent = event;
+    }
+  }
+  const recentExperienceName = recentExperienceEvent
+    ? resolveRecentExperienceName(artistId, recentExperienceEvent, language)
+    : null;
+
   const gameActivityDelta = buildGameDelta(currentSnapshot, lastGreeting.snapshot);
   const gameActivityDetected = gameActivityDelta > 0;
-  const hasActivity = userChatMessageCount > 0 || modeLaunchCount > 0 || gameActivityDetected;
-  const askActivityFeedback = gameActivityDetected || userChatMessageCount >= CHAT_ACTIVITY_FEEDBACK_THRESHOLD;
+  const hasRecentExperience = Boolean(recentExperienceEvent);
+  const hasActivity = userChatMessageCount > 0 || modeLaunchCount > 0 || gameActivityDetected || hasRecentExperience;
+  const askActivityFeedback =
+    hasRecentExperience || gameActivityDetected || userChatMessageCount >= CHAT_ACTIVITY_FEEDBACK_THRESHOLD;
+  const activityFeedbackCue = askActivityFeedback ? buildActivityFeedbackCue(language, recentExperienceEvent) : null;
 
   return {
     recentActivityFacts: hasActivity
       ? buildActivityFacts({
           language,
+          recentExperienceName,
+          recentExperienceType: recentExperienceEvent?.experienceType ?? null,
           userChatMessageCount,
           modeLaunchCount,
           gameActivityDetected
@@ -234,6 +386,9 @@ export function deriveGreetingActivityContext(state: StoreState, artistId: strin
       : [],
     askActivityFeedback,
     lastGreetingSnippet: compactText(lastGreeting.message.content),
+    recentExperienceName,
+    recentExperienceType: recentExperienceEvent?.experienceType ?? null,
+    activityFeedbackCue,
     currentSnapshot,
     hasActivity,
     userChatMessageCount,

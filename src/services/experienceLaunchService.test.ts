@@ -8,6 +8,7 @@ const updateConversationMock = jest.fn();
 const updateMessageMock = jest.fn();
 const setActiveConversationMock = jest.fn();
 const setVoiceAutoPlayMock = jest.fn();
+const trackSessionExperienceEventMock = jest.fn();
 
 jest.mock('expo-router', () => ({
   router: {
@@ -63,7 +64,8 @@ const storeState = {
   updateConversation: updateConversationMock,
   updateMessage: updateMessageMock,
   setActiveConversation: setActiveConversationMock,
-  setVoiceAutoPlay: setVoiceAutoPlayMock
+  setVoiceAutoPlay: setVoiceAutoPlayMock,
+  trackSessionExperienceEvent: trackSessionExperienceEventMock
 };
 
 addMessageMock.mockImplementation((conversationId: string, message: MockMessage) => {
@@ -132,6 +134,7 @@ describe('experienceLaunchService', () => {
     fetchModeIntroFromApiMock.mockResolvedValue(null);
     generateModeIntroMock.mockReturnValue('intro fallback');
     fetchAndCacheVoiceMock.mockResolvedValue('https://voice.test/intro.mp3');
+    trackSessionExperienceEventMock.mockReset();
   });
 
   afterEach(() => {
@@ -165,6 +168,13 @@ describe('experienceLaunchService', () => {
       }
     });
     expect(setActiveConversationMock).toHaveBeenCalledWith('conv-1');
+    expect(trackSessionExperienceEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        artistId: 'cathy-gauthier',
+        experienceType: 'mode',
+        experienceId: 'on-jase'
+      })
+    );
     expect(pushMock).toHaveBeenCalledWith('/chat/conv-1');
     expect(fetchModeIntroFromApiMock).toHaveBeenCalledTimes(1);
 
@@ -266,6 +276,13 @@ describe('experienceLaunchService', () => {
         launched: true,
         targetType: 'game',
         targetId: 'impro-chain'
+      })
+    );
+    expect(trackSessionExperienceEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        artistId: 'cathy-gauthier',
+        experienceType: 'game',
+        experienceId: 'impro-chain'
       })
     );
     expect(pushMock).toHaveBeenCalledWith('/games/cathy-gauthier/impro-chain');

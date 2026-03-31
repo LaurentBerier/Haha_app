@@ -38,12 +38,31 @@ describe('uiSlice', () => {
     expect(slice.voiceAutoPlay).toBe(true);
     expect(slice.greetedArtistIds.has('cathy-gauthier')).toBe(false);
     expect(slice.queuedChatSendPayload).toBeNull();
+    expect(slice.modeSelectSessionHubConversationByArtist).toEqual({});
+    expect(slice.sessionExperienceEventsByArtist).toEqual({});
 
     slice.setConversationModeEnabled(false);
     expect(slice.conversationModeEnabled).toBe(false);
 
     slice.markArtistGreeted('cathy-gauthier');
     expect(slice.greetedArtistIds.has('cathy-gauthier')).toBe(true);
+
+    slice.setModeSelectSessionHubConversation('cathy-gauthier', 'conv-hub-1');
+    expect(slice.modeSelectSessionHubConversationByArtist['cathy-gauthier']).toBe('conv-hub-1');
+
+    slice.trackSessionExperienceEvent({
+      artistId: 'cathy-gauthier',
+      experienceType: 'mode',
+      experienceId: 'grill',
+      occurredAt: '2026-03-31T11:40:00.000Z'
+    });
+    expect(slice.sessionExperienceEventsByArtist['cathy-gauthier']).toEqual([
+      expect.objectContaining({
+        artistId: 'cathy-gauthier',
+        experienceType: 'mode',
+        experienceId: 'grill'
+      })
+    ]);
 
     slice.queueChatSendPayload({
       conversationId: 'conv-1',

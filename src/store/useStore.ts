@@ -154,6 +154,10 @@ export const useStore = create<StoreState>()((...a) => ({
       activeConversationId: null,
       messagesByConversation: {},
       activeGame: null,
+      greetedArtistIds: new Set<string>(),
+      queuedChatSendPayload: null,
+      modeSelectSessionHubConversationByArtist: {},
+      sessionExperienceEventsByArtist: {},
       ...EMPTY_GAMIFICATION_STATS
     }),
   markHydrated: () => a[0]({ hasHydrated: true })
