@@ -36,6 +36,11 @@ import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
 import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../../../utils/accountTypeUtils';
 import { collectArtistMemoryFacts } from '../../../utils/memoryFacts';
+import {
+  captureModeSelectReplayBarrier,
+  deriveMessagesAfterReplayBarrier,
+  type ModeSelectReplayBarrier
+} from '../../../utils/modeSelectReplayBarrier';
 import { stripAudioTags } from '../../../utils/audioTags';
 import { generateId } from '../../../utils/generateId';
 import {
@@ -918,9 +923,11 @@ export default function ModeSelectHomeScreen() {
   const [greeting, setGreeting] = useState<string | null>(null);
   const [hasTypedDraft, setHasTypedDraft] = useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
+  const [isModeSelectScreenFocused, setIsModeSelectScreenFocused] = useState(true);
   const [pendingAutoMicGreetingMessageId, setPendingAutoMicGreetingMessageId] = useState<string | null>(null);
   const [categoryGridBottomY, setCategoryGridBottomY] = useState<number | null>(null);
   const [isGreetingBooting, setIsGreetingBooting] = useState(false);
+  const [replayBarrier, setReplayBarrier] = useState<ModeSelectReplayBarrier | null>(null);
   const [greetingBootingLineIndex, setGreetingBootingLineIndex] = useState(() =>
     Math.floor(Math.random() * GREETING_BOOTING_FR_LINES.length)
   );
@@ -963,6 +970,8 @@ export default function ModeSelectHomeScreen() {
   const isGreetingGateSatisfied = E2E_AUTH_BYPASS || hasArtistBeenGreetedThisSession;
   const [boundConversationId, setBoundConversationId] = useState('');
   const boundConversationIdRef = useRef('');
+  const modeSelectScreenFocusedRef = useRef(true);
+  const modeSelectConversationIdRef = useRef('');
   const lastBoundArtistIdRef = useRef<string | null>(null);
   const resolvedBoundConversation = useMemo(
     () =>
@@ -997,12 +1006,15 @@ export default function ModeSelectHomeScreen() {
   const greetingPlaybackCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingGestureRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingSpeechHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const navigationBlurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sendContextRecoveryLockRef = useRef(false);
   const sendContextRecoveryResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLoggedEmptyArtistMessageIdRef = useRef<string | null>(null);
   const autoMicTriggeredGreetingIdsRef = useRef<Set<string>>(new Set());
   const autoMicManualOverrideRef = useRef(false);
+  const setModeSelectScreenFocus = useCallback((nextFocused: boolean) => {
+    modeSelectScreenFocusedRef.current = nextFocused;
+    setIsModeSelectScreenFocused(nextFocused);
+  }, []);
   const commitBoundConversationId = useCallback(
     (nextConversationId: string, reason: ModeSelectRuntimeRebindReason): boolean => {
       const normalizedNext = nextConversationId.trim();
@@ -1012,6 +1024,7 @@ export default function ModeSelectHomeScreen() {
       }
 
       boundConversationIdRef.current = normalizedNext;
+      modeSelectConversationIdRef.current = normalizedNext;
       setBoundConversationId(normalizedNext);
       logModeSelectDebugTrace('mode_select_rebind', {
         from: normalizedCurrent || null,
@@ -1089,6 +1102,19 @@ export default function ModeSelectHomeScreen() {
   const stopGreetingAudio = audioPlayer.stop;
   const isValidConversation = modeSelectConversationId.length > 0;
   const isModeSelectComposerDisabled = !isValidConversation || isQuotaBlocked || !isSendContextReady;
+  const replayEligibleMessages = useMemo(
+    () =>
+      deriveMessagesAfterReplayBarrier({
+        conversationId: modeSelectConversationId,
+        messages,
+        barrier: replayBarrier
+      }),
+    [messages, modeSelectConversationId, replayBarrier]
+  );
+
+  useEffect(() => {
+    modeSelectConversationIdRef.current = modeSelectConversationId;
+  }, [modeSelectConversationId]);
   const sendFromModeSelectCurrentBinding = useCallback(
     (payload: ChatSendPayload, targetConversationId: string): ChatError | null => {
       const liveState = useStore.getState();
@@ -1117,6 +1143,9 @@ export default function ModeSelectHomeScreen() {
         void getRandomFillerUri(liveSendContext.conversation.artistId, fillerLanguage, accessToken)
           .then((uri) => {
             if (!uri) {
+              return;
+            }
+            if (!modeSelectScreenFocusedRef.current) {
               return;
             }
             if (!audioPlayer.isPlaying && !audioPlayer.isLoading) {
@@ -1392,13 +1421,6 @@ export default function ModeSelectHomeScreen() {
     setIsWebSpeechFallbackActive(false);
   }, []);
 
-  const clearNavigationBlurTimeout = useCallback(() => {
-    if (navigationBlurTimeoutRef.current) {
-      clearTimeout(navigationBlurTimeoutRef.current);
-      navigationBlurTimeoutRef.current = null;
-    }
-  }, []);
-
   const clearSendContextRecoveryLock = useCallback(() => {
     if (sendContextRecoveryResetTimeoutRef.current) {
       clearTimeout(sendContextRecoveryResetTimeoutRef.current);
@@ -1430,6 +1452,17 @@ export default function ModeSelectHomeScreen() {
     stopModeSelectGreetingPlayback();
     pauseListening();
   }, [pauseListening, stopModeSelectGreetingPlayback]);
+
+  const captureReplayBarrierOnBlur = useCallback(() => {
+    const liveConversationId = modeSelectConversationIdRef.current.trim();
+    if (!liveConversationId) {
+      setReplayBarrier(null);
+      return;
+    }
+
+    const liveMessages = useStore.getState().messagesByConversation[liveConversationId]?.messages ?? [];
+    setReplayBarrier(captureModeSelectReplayBarrier(liveConversationId, liveMessages));
+  }, []);
 
   const pulseGreetingSpeechHint = useCallback((durationMs: number) => {
     clearGreetingSpeechHint();
@@ -1599,9 +1632,9 @@ export default function ModeSelectHomeScreen() {
   }, [messages, modeSelectConversationId]);
 
   useAutoReplayLastArtistMessage({
-    messages,
+    messages: replayEligibleMessages,
     audioPlayer,
-    enabled: isValidConversation,
+    enabled: isValidConversation && isModeSelectScreenFocused,
     hasStreaming,
     voiceAutoPlay,
     replayOnFocus: false
@@ -1645,6 +1678,7 @@ export default function ModeSelectHomeScreen() {
     setIsInputFocused(false);
     setIsGreetingBooting(false);
     setPendingAutoMicGreetingMessageId(null);
+    setReplayBarrier(null);
     setTailFollowRequestSignal(0);
     autoMicManualOverrideRef.current = false;
     autoMicTriggeredGreetingIdsRef.current.clear();
@@ -1676,7 +1710,7 @@ export default function ModeSelectHomeScreen() {
       return;
     }
 
-    if (!isValidConversation || isQuotaBlocked || hasTypedDraft || hasStreaming || isGreetingVoiceActive) {
+    if (!isModeSelectScreenFocused || !isValidConversation || isQuotaBlocked || hasTypedDraft || hasStreaming || isGreetingVoiceActive) {
       return;
     }
 
@@ -1690,6 +1724,7 @@ export default function ModeSelectHomeScreen() {
     armListeningActivation,
     conversationModeEnabled,
     isGreetingVoiceActive,
+    isModeSelectScreenFocused,
     hasStreaming,
     hasTypedDraft,
     isQuotaBlocked,
@@ -1725,36 +1760,20 @@ export default function ModeSelectHomeScreen() {
   }, [isEnglishLanguage, showGreetingBootingIndicator]);
 
   useEffect(() => {
-    const unsubscribe = navigation.addListener('blur', () => {
-      if (Platform.OS !== 'web') {
-        stopModeSelectVoiceAndMic();
-        return;
-      }
-
-      clearNavigationBlurTimeout();
-      navigationBlurTimeoutRef.current = setTimeout(() => {
-        navigationBlurTimeoutRef.current = null;
-        if (typeof document === 'undefined') {
-          stopModeSelectVoiceAndMic();
-          return;
-        }
-
-        const isHidden = document.visibilityState === 'hidden';
-        const hasFocus = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
-        if (isHidden || !hasFocus) {
-          stopModeSelectGreetingPlayback();
-          return;
-        }
-
-        stopModeSelectVoiceAndMic();
-      }, 0);
+    const unsubscribeFocus = navigation.addListener('focus', () => {
+      setModeSelectScreenFocus(true);
+    });
+    const unsubscribeBlur = navigation.addListener('blur', () => {
+      setModeSelectScreenFocus(false);
+      captureReplayBarrierOnBlur();
+      stopModeSelectVoiceAndMic();
     });
 
     return () => {
-      unsubscribe();
-      clearNavigationBlurTimeout();
+      unsubscribeFocus();
+      unsubscribeBlur();
     };
-  }, [clearNavigationBlurTimeout, navigation, stopModeSelectGreetingPlayback, stopModeSelectVoiceAndMic]);
+  }, [captureReplayBarrierOnBlur, navigation, setModeSelectScreenFocus, stopModeSelectVoiceAndMic]);
 
   useEffect(() => {
     Animated.timing(modeGridCompactProgress, {
@@ -1937,7 +1956,7 @@ export default function ModeSelectHomeScreen() {
         clearGreetingSpeechHint();
 
         if (!accessToken.trim()) {
-          if (Platform.OS === 'web') {
+          if (Platform.OS === 'web' && modeSelectScreenFocusedRef.current) {
             if (!speakGreetingWithWebFallback(nextGreeting, language)) {
               setPendingGreetingSpeechText(nextGreeting);
             } else {
@@ -1969,10 +1988,17 @@ export default function ModeSelectHomeScreen() {
               voiceStatus: 'ready'
             }
           });
+          if (!modeSelectScreenFocusedRef.current) {
+            return;
+          }
+
           void playGreetingAudio(greetingAudioUri, { messageId: greetingMessageId });
           if (Platform.OS === 'web') {
             clearGreetingPlaybackCheck();
             greetingPlaybackCheckTimeoutRef.current = setTimeout(() => {
+              if (!modeSelectScreenFocusedRef.current) {
+                return;
+              }
               const audioState = audioStateRef.current;
               if (audioState.isPlaying || audioState.isLoading || audioState.currentUri === greetingAudioUri) {
                 return;
@@ -2030,7 +2056,7 @@ export default function ModeSelectHomeScreen() {
             }
 
             // Keep Cathy identity: do not switch to generic Web Speech when TTS is quota/rate-limited.
-            if (Platform.OS === 'web' && !terminalTtsCode) {
+            if (Platform.OS === 'web' && !terminalTtsCode && modeSelectScreenFocusedRef.current) {
               if (!speakGreetingWithWebFallback(nextGreeting, language)) {
                 setPendingGreetingSpeechText(nextGreeting);
               } else {
@@ -2076,6 +2102,7 @@ export default function ModeSelectHomeScreen() {
   useEffect(() => {
     if (
       Platform.OS !== 'web' ||
+      !isModeSelectScreenFocused ||
       (!pendingGreetingAudio && !pendingGreetingSpeechText) ||
       typeof document === 'undefined'
     ) {
@@ -2083,6 +2110,9 @@ export default function ModeSelectHomeScreen() {
     }
 
     const handleFirstGesture = () => {
+      if (!modeSelectScreenFocusedRef.current) {
+        return;
+      }
       const pendingAudio = pendingGreetingAudio;
       const speechText = pendingGreetingSpeechText;
       setPendingGreetingAudio(null);
@@ -2095,6 +2125,9 @@ export default function ModeSelectHomeScreen() {
       if (speechText) {
         clearGreetingGestureRetry();
         greetingGestureRetryTimeoutRef.current = setTimeout(() => {
+          if (!modeSelectScreenFocusedRef.current) {
+            return;
+          }
           const audioState = audioStateRef.current;
           if (audioState.isPlaying || audioState.isLoading) {
             return;
@@ -2113,6 +2146,7 @@ export default function ModeSelectHomeScreen() {
     };
   }, [
     clearGreetingGestureRetry,
+    isModeSelectScreenFocused,
     language,
     pendingGreetingAudio,
     pendingGreetingSpeechText,
@@ -2122,6 +2156,7 @@ export default function ModeSelectHomeScreen() {
 
   useEffect(() => {
     return () => {
+      modeSelectScreenFocusedRef.current = false;
       stopModeSelectVoiceAndMic();
       clearSendContextRecoveryLock();
     };
