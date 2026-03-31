@@ -14,7 +14,7 @@ import { useToast } from '../../components/common/ToastProvider';
 import { resolveErrorMessage } from '../../config/errorMessages';
 import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import type { AdminUser, AdminUsersPage } from '../../services/adminService';
-import { getAdminUsers, setUserAccountType, setUserQuotaOverride } from '../../services/adminService';
+import { getAdminUsers, resetUserMonthlyUsage, setUserAccountType, setUserQuotaOverride } from '../../services/adminService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 import { getAccountTypeLabel } from '../../utils/accountTypeUtils';
@@ -38,6 +38,14 @@ function TierBadge({ tier }: { tier: string | null }) {
       <Text style={[styles.tierBadgeLabel, { color }]}>{tier ? getAccountTypeLabel(tier) : '—'}</Text>
     </View>
   );
+}
+
+function formatCap(value: number | null): string {
+  return typeof value === 'number' && Number.isFinite(value) ? String(value) : 'Unlimited';
+}
+
+function formatRemainingCredits(value: number | null): string {
+  return typeof value === 'number' && Number.isFinite(value) ? String(Math.max(0, Math.floor(value))) : '∞';
 }
 
 function UserRow({
@@ -91,6 +99,30 @@ function UserRow({
     }
   };
 
+  const handleUsageReset = () => {
+    Alert.alert('Reset monthly usage?', 'This will reset this user monthly message usage to 0.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Reset',
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            setSaving(true);
+            try {
+              await resetUserMonthlyUsage(token, user.id);
+              toast.success('Monthly usage reset');
+              onUpdated();
+            } catch (err) {
+              toast.error(resolveErrorMessage(err, 'generic'));
+            } finally {
+              setSaving(false);
+            }
+          })();
+        }
+      }
+    ]);
+  };
+
   const lastActive = user.lastActiveAt
     ? new Date(user.lastActiveAt).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
     : 'Never';
@@ -107,7 +139,7 @@ function UserRow({
             {user.email ?? user.id.slice(0, 8)}
           </Text>
           <Text style={styles.userMeta}>
-            {user.messagesThisMonth} msgs · last {lastActive}
+            {user.messagesThisMonth} used · {formatRemainingCredits(user.remainingCredits)} left · last {lastActive}
             {user.capOverride !== null ? ` · cap: ${user.capOverride}` : ''}
           </Text>
         </View>
@@ -164,6 +196,25 @@ function UserRow({
                 <ActivityIndicator color={theme.colors.textPrimary} size="small" />
               ) : (
                 <Text style={styles.saveButtonLabel}>Save</Text>
+              )}
+            </Pressable>
+          </View>
+
+          <Text style={styles.actionsLabel}>Usage reset</Text>
+          <View style={styles.resetRow}>
+            <Text style={styles.resetMeta}>
+              Used {user.messagesThisMonth} / Cap {formatCap(user.effectiveCap)} / Remaining {formatRemainingCredits(user.remainingCredits)}
+            </Text>
+            <Pressable
+              onPress={handleUsageReset}
+              disabled={saving}
+              style={[styles.resetButton, saving ? styles.disabledOpacity : null]}
+              testID="admin-usage-reset"
+            >
+              {saving ? (
+                <ActivityIndicator color={theme.colors.textPrimary} size="small" />
+              ) : (
+                <Text style={styles.resetButtonLabel}>Reset usage</Text>
               )}
             </Pressable>
           </View>
@@ -542,6 +593,30 @@ const styles = StyleSheet.create({
   },
   saveButtonLabel: {
     color: theme.colors.neonBlue,
+    fontSize: 13,
+    fontWeight: '700'
+  },
+  resetRow: {
+    gap: theme.spacing.xs
+  },
+  resetMeta: {
+    color: theme.colors.textMuted,
+    fontSize: 11
+  },
+  resetButton: {
+    height: 40,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.colors.neonRed,
+    backgroundColor: theme.colors.surfaceSunken,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 110,
+    alignSelf: 'flex-start'
+  },
+  resetButtonLabel: {
+    color: theme.colors.neonRed,
     fontSize: 13,
     fontWeight: '700'
   },

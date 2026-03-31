@@ -3,6 +3,7 @@ import { API_BASE_URL, CLAUDE_PROXY_URL } from '../config/env';
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type AdminStatsPeriod = '7d' | '30d' | 'mtd';
+export type AdminStatsGranularity = 'hour' | 'day' | 'week' | 'month';
 
 export interface AdminDailyUsageRow {
   day: string;
@@ -23,11 +24,28 @@ export interface AdminRevenueRow {
   totalCents: number;
 }
 
+export interface AdminTimeseriesRow {
+  bucketStart: string;
+  requests: number;
+  uniqueUsers: number;
+}
+
+export interface AdminTierUserBreakdownRow {
+  tier: string;
+  users: number;
+}
+
 export interface AdminStats {
   period: AdminStatsPeriod;
   periodStart: string;
+  granularity?: AdminStatsGranularity;
   dailyUsage: AdminDailyUsageRow[];
+  timeseries: AdminTimeseriesRow[];
+  peakRequests: number;
+  userTierBreakdown: AdminTierUserBreakdownRow[];
   revenue: AdminRevenueRow[];
+  estimatedClaudeCostCents: number;
+  estimatedTtsCostCents: number;
   estimatedCostCents: number;
   totalRevenueCents: number;
 }
@@ -39,6 +57,8 @@ export interface AdminUser {
   tier: string | null;
   messagesThisMonth: number;
   capOverride: number | null;
+  effectiveCap: number | null;
+  remainingCredits: number | null;
   resetAt: string | null;
   lastActiveAt: string | null;
   totalEvents: number;
@@ -126,8 +146,15 @@ async function apiFetch<T>(path: string, token: string, options: RequestInit = {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export async function getAdminStats(token: string, period: AdminStatsPeriod = 'mtd'): Promise<AdminStats> {
-  return apiFetch<AdminStats>(`/admin-stats?period=${encodeURIComponent(period)}`, token);
+export async function getAdminStats(
+  token: string,
+  period: AdminStatsPeriod = 'mtd',
+  granularity: AdminStatsGranularity = 'day'
+): Promise<AdminStats> {
+  return apiFetch<AdminStats>(
+    `/admin-stats?period=${encodeURIComponent(period)}&granularity=${encodeURIComponent(granularity)}`,
+    token
+  );
 }
 
 export async function getAdminUsers(token: string, query: AdminUsersQuery = {}): Promise<AdminUsersPage> {
@@ -168,5 +195,12 @@ export async function setUserAccountType(
   await apiFetch<unknown>('/admin-account-type', token, {
     method: 'POST',
     body: JSON.stringify({ userId, accountTypeId })
+  });
+}
+
+export async function resetUserMonthlyUsage(token: string, userId: string): Promise<void> {
+  await apiFetch<unknown>('/admin-user-reset', token, {
+    method: 'POST',
+    body: JSON.stringify({ userId })
   });
 }

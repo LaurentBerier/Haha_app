@@ -7,28 +7,12 @@ const {
   setCorsHeaders
 } = require('./_utils');
 const { resolveEffectiveAccountType } = require('./_account-tier');
+const { getTierMonthlyCap } = require('./_monthly-cap');
 
 const SOFT_CAP_RATIO = 0.75;
-const MONTHLY_CAPS = { free: 200, regular: 3_000, premium: 25_000 };
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
-}
-
-function parsePositiveInt(value, fallback) {
-  const parsed = Number.parseInt(value ?? '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function getMonthlyCap(accountType) {
-  const normalizedAccountType = typeof accountType === 'string' && accountType.trim() ? accountType.trim() : 'free';
-  const key = `CLAUDE_MONTHLY_CAP_${normalizedAccountType.toUpperCase()}`;
-  const fromEnv = parsePositiveInt(process.env[key], 0);
-  if (fromEnv > 0) {
-    return fromEnv;
-  }
-
-  return MONTHLY_CAPS[normalizedAccountType] ?? MONTHLY_CAPS.free;
 }
 
 function getMonthStartIso() {
@@ -140,7 +124,7 @@ module.exports = async function handler(req, res) {
   }
 
   const isAdmin = accountType === 'admin';
-  const cap = isAdmin ? null : getMonthlyCap(accountType);
+  const cap = isAdmin ? null : getTierMonthlyCap(accountType);
   const used = count ?? 0;
   const softCapThreshold = typeof cap === 'number' ? Math.max(1, Math.floor(cap * SOFT_CAP_RATIO)) : null;
   const softCapReached = typeof softCapThreshold === 'number' ? used >= softCapThreshold : false;

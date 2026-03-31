@@ -2,13 +2,221 @@ const { attachRequestId, getMissingEnv, getSupabaseAdmin, sendError, setCorsHead
 const { extractBearerToken } = require('./_utils');
 
 // Pricing constants (USD)
-const CLAUDE_INPUT_COST_PER_TOKEN = 3 / 1_000_000;   // $3 / 1M input tokens
-const CLAUDE_OUTPUT_COST_PER_TOKEN = 15 / 1_000_000;  // $15 / 1M output tokens
-// ElevenLabs is flat-rate — override via env var at launch (e.g. TTS_COST_PER_1K_CHARS=0.18)
-const TTS_COST_PER_1K_CHARS = parseFloat(process.env.TTS_COST_PER_1K_CHARS ?? '0') || 0;
+const CLAUDE_INPUT_COST_PER_TOKEN = 3 / 1_000_000; // $3 / 1M input tokens
+const CLAUDE_OUTPUT_COST_PER_TOKEN = 15 / 1_000_000; // $15 / 1M output tokens
+const DEFAULT_TTS_COST_PER_1K_CHARS = 0.18;
+const KNOWN_TIERS = ['free', 'regular', 'premium', 'admin'];
+const TIMESERIES_PAGE_SIZE = 1000;
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
+}
+
+function parseFinitePositiveNumber(value, fallback) {
+  const parsed = Number.parseFloat(String(value ?? ''));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function getTtsCostPer1kChars() {
+  return parseFinitePositiveNumber(process.env.TTS_COST_PER_1K_CHARS, DEFAULT_TTS_COST_PER_1K_CHARS);
+}
+
+function startOfUtcHour(date) {
+  return new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    date.getUTCHours(),
+    0,
+    0,
+    0
+  ));
+}
+
+function startOfUtcDay(date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
+function startOfUtcWeek(date) {
+  const dayStart = startOfUtcDay(date);
+  const day = dayStart.getUTCDay();
+  const offset = (day + 6) % 7; // Monday = 0
+  return new Date(dayStart.getTime() - offset * 24 * 60 * 60 * 1000);
+}
+
+function startOfUtcMonth(date) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+}
+
+function addHours(date, amount) {
+  return new Date(date.getTime() + amount * 60 * 60 * 1000);
+}
+
+function addDays(date, amount) {
+  return new Date(date.getTime() + amount * 24 * 60 * 60 * 1000);
+}
+
+function addWeeks(date, amount) {
+  return addDays(date, amount * 7);
+}
+
+function addMonths(date, amount) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + amount, 1));
+}
+
+function normalizeGranularity(value) {
+  if (value === 'hour' || value === 'day' || value === 'week' || value === 'month') {
+    return value;
+  }
+  return 'day';
+}
+
+function getTimeseriesBuckets(granularity) {
+  const now = new Date();
+
+  if (granularity === 'hour') {
+    const current = startOfUtcHour(now);
+    const first = addHours(current, -23);
+    return Array.from({ length: 24 }, (_, index) => addHours(first, index));
+  }
+
+  if (granularity === 'week') {
+    const current = startOfUtcWeek(now);
+    const first = addWeeks(current, -11);
+    return Array.from({ length: 12 }, (_, index) => addWeeks(first, index));
+  }
+
+  if (granularity === 'month') {
+    const current = startOfUtcMonth(now);
+    const first = addMonths(current, -11);
+    return Array.from({ length: 12 }, (_, index) => addMonths(first, index));
+  }
+
+  const current = startOfUtcDay(now);
+  const first = addDays(current, -29);
+  return Array.from({ length: 30 }, (_, index) => addDays(first, index));
+}
+
+function toBucketStartIso(date, granularity) {
+  if (!(date instanceof Date) || !Number.isFinite(date.getTime())) {
+    return '';
+  }
+
+  if (granularity === 'hour') {
+    return startOfUtcHour(date).toISOString();
+  }
+
+  if (granularity === 'week') {
+    return startOfUtcWeek(date).toISOString();
+  }
+
+  if (granularity === 'month') {
+    return startOfUtcMonth(date).toISOString();
+  }
+
+  return startOfUtcDay(date).toISOString();
+}
+
+async function fetchUsageEventsForTimeseries(supabaseAdmin, startIso) {
+  let from = 0;
+  const rows = [];
+
+  while (true) {
+    const to = from + TIMESERIES_PAGE_SIZE - 1;
+    const { data, error } = await supabaseAdmin
+      .from('usage_events')
+      .select('id,created_at,user_id')
+      .gte('created_at', startIso)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      return { ok: false, error };
+    }
+
+    const pageRows = Array.isArray(data) ? data : [];
+    if (pageRows.length === 0) {
+      break;
+    }
+
+    rows.push(...pageRows);
+
+    if (pageRows.length < TIMESERIES_PAGE_SIZE) {
+      break;
+    }
+
+    from += TIMESERIES_PAGE_SIZE;
+  }
+
+  return { ok: true, rows };
+}
+
+function buildTimeseries(rows, granularity, bucketStarts) {
+  const requestCounts = new Map();
+  const uniqueUsersByBucket = new Map();
+
+  const bucketKeys = bucketStarts.map((bucketDate) => bucketDate.toISOString());
+  for (const bucketKey of bucketKeys) {
+    requestCounts.set(bucketKey, 0);
+    uniqueUsersByBucket.set(bucketKey, new Set());
+  }
+
+  for (const row of rows) {
+    if (!isRecord(row) || typeof row.created_at !== 'string') {
+      continue;
+    }
+
+    const createdAt = new Date(row.created_at);
+    if (!Number.isFinite(createdAt.getTime())) {
+      continue;
+    }
+
+    const bucketKey = toBucketStartIso(createdAt, granularity);
+    if (!requestCounts.has(bucketKey)) {
+      continue;
+    }
+
+    requestCounts.set(bucketKey, (requestCounts.get(bucketKey) ?? 0) + 1);
+    if (typeof row.user_id === 'string' && row.user_id) {
+      uniqueUsersByBucket.get(bucketKey)?.add(row.user_id);
+    }
+  }
+
+  const timeseries = bucketKeys.map((bucketKey) => {
+    const requests = requestCounts.get(bucketKey) ?? 0;
+    const uniqueUsers = uniqueUsersByBucket.get(bucketKey)?.size ?? 0;
+    return {
+      bucketStart: bucketKey,
+      requests,
+      uniqueUsers
+    };
+  });
+
+  const peakRequests = timeseries.reduce((max, row) => Math.max(max, row.requests), 0);
+  return { timeseries, peakRequests };
+}
+
+async function fetchUserTierBreakdown(supabaseAdmin) {
+  const breakdown = [];
+
+  for (const tier of KNOWN_TIERS) {
+    const { count, error } = await supabaseAdmin
+      .from('profiles')
+      .select('id', { head: true, count: 'exact' })
+      .eq('account_type_id', tier);
+
+    if (error) {
+      return { ok: false, error };
+    }
+
+    breakdown.push({
+      tier,
+      users: typeof count === 'number' ? count : 0
+    });
+  }
+
+  return { ok: true, breakdown };
 }
 
 async function validateAdmin(supabaseAdmin, req, requestId) {
@@ -95,8 +303,10 @@ function toRevenueCamelRows(rows) {
   });
 }
 
-function computeEstimatedCostCents(usageRows) {
-  let totalCostUsd = 0;
+function computeEstimatedCostsCents(usageRows) {
+  const ttsCostPer1kChars = getTtsCostPer1kChars();
+  let claudeCostUsd = 0;
+  let ttsCostUsd = 0;
 
   for (const row of usageRows) {
     if (!isRecord(row)) {
@@ -107,12 +317,16 @@ function computeEstimatedCostCents(usageRows) {
     const outputTokens = Number(row.output_tokens ?? 0);
     const ttsChars = Number(row.tts_chars ?? 0);
 
-    totalCostUsd += inputTokens * CLAUDE_INPUT_COST_PER_TOKEN;
-    totalCostUsd += outputTokens * CLAUDE_OUTPUT_COST_PER_TOKEN;
-    totalCostUsd += (ttsChars / 1000) * TTS_COST_PER_1K_CHARS;
+    claudeCostUsd += inputTokens * CLAUDE_INPUT_COST_PER_TOKEN;
+    claudeCostUsd += outputTokens * CLAUDE_OUTPUT_COST_PER_TOKEN;
+    ttsCostUsd += (ttsChars / 1000) * ttsCostPer1kChars;
   }
 
-  return Math.round(totalCostUsd * 100);
+  return {
+    estimatedClaudeCostCents: Math.round(claudeCostUsd * 100),
+    estimatedTtsCostCents: Math.round(ttsCostUsd * 100),
+    estimatedCostCents: Math.round((claudeCostUsd + ttsCostUsd) * 100)
+  };
 }
 
 module.exports = async function handler(req, res) {
@@ -160,8 +374,13 @@ module.exports = async function handler(req, res) {
   const period = ['7d', '30d', 'mtd'].includes(rawPeriod) ? rawPeriod : 'mtd';
   const periodStart = getPeriodStart(period);
 
+  const rawGranularity = typeof req.query?.granularity === 'string' ? req.query.granularity : 'day';
+  const granularity = normalizeGranularity(rawGranularity);
+  const bucketStarts = getTimeseriesBuckets(granularity);
+  const timeseriesStartIso = bucketStarts[0]?.toISOString() ?? new Date(0).toISOString();
+
   try {
-    const [usageResult, revenueResult] = await Promise.all([
+    const [usageResult, revenueResult, usageEventsResult, tierBreakdownResult] = await Promise.all([
       supabaseAdmin
         .from('admin_daily_usage')
         .select('*')
@@ -169,7 +388,9 @@ module.exports = async function handler(req, res) {
       supabaseAdmin
         .from('admin_revenue_summary')
         .select('*')
-        .gte('month', periodStart.slice(0, 10))
+        .gte('month', periodStart.slice(0, 10)),
+      fetchUsageEventsForTimeseries(supabaseAdmin, timeseriesStartIso),
+      fetchUserTierBreakdown(supabaseAdmin)
     ]);
 
     if (usageResult.error) {
@@ -184,18 +405,37 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    if (!usageEventsResult.ok) {
+      console.error(`[api/admin-stats][${requestId}] Failed to query usage_events timeseries`, usageEventsResult.error);
+      sendError(res, 500, usageEventsResult.error.message, { code: 'SERVER_ERROR', requestId });
+      return;
+    }
+
+    if (!tierBreakdownResult.ok) {
+      console.error(`[api/admin-stats][${requestId}] Failed to query profile tier counts`, tierBreakdownResult.error);
+      sendError(res, 500, tierBreakdownResult.error.message, { code: 'SERVER_ERROR', requestId });
+      return;
+    }
+
     const dailyUsage = toCamelRows(usageResult.data ?? []);
     const revenue = toRevenueCamelRows(revenueResult.data ?? []);
-    const estimatedCostCents = computeEstimatedCostCents(usageResult.data ?? []);
+    const costBreakdown = computeEstimatedCostsCents(usageResult.data ?? []);
     const totalRevenueCents = revenue.reduce((sum, row) => sum + row.totalCents, 0);
+    const timeseries = buildTimeseries(usageEventsResult.rows, granularity, bucketStarts);
 
     res.status(200).json({
       ok: true,
       period,
       periodStart,
+      granularity,
       dailyUsage,
       revenue,
-      estimatedCostCents,
+      timeseries: timeseries.timeseries,
+      peakRequests: timeseries.peakRequests,
+      userTierBreakdown: tierBreakdownResult.breakdown,
+      estimatedClaudeCostCents: costBreakdown.estimatedClaudeCostCents,
+      estimatedTtsCostCents: costBreakdown.estimatedTtsCostCents,
+      estimatedCostCents: costBreakdown.estimatedCostCents,
       totalRevenueCents
     });
   } catch (err) {

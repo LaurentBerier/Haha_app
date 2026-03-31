@@ -7,7 +7,10 @@ import type {
   AdminDailyUsageRow,
   AdminRevenueRow,
   AdminStats,
-  AdminStatsPeriod
+  AdminStatsGranularity,
+  AdminStatsPeriod,
+  AdminTimeseriesRow,
+  AdminTierUserBreakdownRow
 } from '../../services/adminService';
 import { getAdminStats } from '../../services/adminService';
 import { useStore } from '../../store/useStore';
@@ -19,10 +22,17 @@ const PERIODS: Array<{ label: string; value: AdminStatsPeriod }> = [
   { label: 'This month', value: 'mtd' }
 ];
 
+const GRANULARITIES: Array<{ label: string; value: AdminStatsGranularity }> = [
+  { label: 'Hour', value: 'hour' },
+  { label: 'Day', value: 'day' },
+  { label: 'Week', value: 'week' },
+  { label: 'Month', value: 'month' }
+];
+
 const TIERS = ['free', 'regular', 'premium', 'admin'] as const;
 
-function formatCad(cents: number): string {
-  return `$${(cents / 100).toFixed(2)} CAD`;
+function formatMoney(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
 }
 
 function formatNumber(n: number): string {
@@ -33,6 +43,23 @@ function formatNumber(n: number): string {
     return `${(n / 1_000).toFixed(1)}k`;
   }
   return String(n);
+}
+
+function formatBucketLabel(iso: string, granularity: AdminStatsGranularity): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return '—';
+  }
+
+  if (granularity === 'hour') {
+    return date.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
+  if (granularity === 'month') {
+    return date.toLocaleDateString('en-CA', { month: 'short', year: '2-digit' });
+  }
+
+  return date.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
 }
 
 function sumField(rows: AdminDailyUsageRow[], field: keyof AdminDailyUsageRow): number {
@@ -70,23 +97,85 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
   );
 }
 
+function ChartCard({
+  title,
+  metricLabel,
+  peakValue,
+  valueKey,
+  color,
+  data,
+  granularity
+}: {
+  title: string;
+  metricLabel: string;
+  peakValue: number;
+  valueKey: 'requests' | 'uniqueUsers';
+  color: string;
+  data: AdminTimeseriesRow[];
+  granularity: AdminStatsGranularity;
+}) {
+  const maxValue = Math.max(1, ...data.map((row) => row[valueKey]), peakValue);
+  const firstBucket = data[0];
+  const lastBucket = data[data.length - 1];
+  const startLabel = firstBucket ? formatBucketLabel(firstBucket.bucketStart, granularity) : '—';
+  const endLabel = lastBucket ? formatBucketLabel(lastBucket.bucketStart, granularity) : '—';
+  const chartWidth = Math.max(data.length * 14, 240);
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.chartHeader}>
+        <Text style={styles.chartTitle}>{title}</Text>
+        <Text style={styles.chartPeak}>{metricLabel}: {formatNumber(peakValue)}</Text>
+      </View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+        <View style={[styles.chartBars, { width: chartWidth }]}>
+          {data.map((row) => {
+            const value = row[valueKey];
+            const ratio = value > 0 && maxValue > 0 ? Math.max(0.05, value / maxValue) : 0;
+            return (
+              <View key={row.bucketStart} style={styles.chartColumn}>
+                <View style={styles.chartTrack}>
+                  <View
+                    style={[
+                      styles.chartFill,
+                      {
+                        backgroundColor: color,
+                        height: `${(ratio * 100).toFixed(1)}%` as `${number}%`
+                      }
+                    ]}
+                  />
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+      <View style={styles.chartAxis}>
+        <Text style={styles.chartAxisLabel}>{startLabel}</Text>
+        <Text style={styles.chartAxisLabel}>{endLabel}</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function AdminDashboardScreen() {
   const headerHorizontalInset = useHeaderHorizontalInset();
   const session = useStore((state) => state.session);
   const [period, setPeriod] = useState<AdminStatsPeriod>('mtd');
+  const [granularity, setGranularity] = useState<AdminStatsGranularity>('day');
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(
-    async (p: AdminStatsPeriod) => {
+    async (p: AdminStatsPeriod, g: AdminStatsGranularity) => {
       if (!session?.accessToken) {
         return;
       }
       setLoading(true);
       setError(null);
       try {
-        const data = await getAdminStats(session.accessToken, p);
+        const data = await getAdminStats(session.accessToken, p, g);
         setStats(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load stats');
@@ -98,11 +187,16 @@ export default function AdminDashboardScreen() {
   );
 
   useEffect(() => {
-    void load(period);
-  }, [load, period]);
+    void load(period, granularity);
+  }, [load, period, granularity]);
 
   const dailyUsage = useMemo(() => (Array.isArray(stats?.dailyUsage) ? stats.dailyUsage : []), [stats?.dailyUsage]);
   const revenueRows = useMemo(() => (Array.isArray(stats?.revenue) ? stats.revenue : []), [stats?.revenue]);
+  const timeseries = useMemo(() => (Array.isArray(stats?.timeseries) ? stats.timeseries : []), [stats?.timeseries]);
+  const userTierBreakdown = useMemo(
+    () => (Array.isArray(stats?.userTierBreakdown) ? stats.userTierBreakdown : []),
+    [stats?.userTierBreakdown]
+  );
 
   const totalMessages = useMemo(() => sumField(dailyUsage, 'requests'), [dailyUsage]);
   const totalDAU = useMemo(() => {
@@ -120,10 +214,31 @@ export default function AdminDashboardScreen() {
       count: sumField(getTierRows(dailyUsage, tier), 'requests')
     }));
   }, [dailyUsage]);
-  const maxTierCount = useMemo(
+  const maxTierMessageCount = useMemo(
     () => Math.max(1, ...tierMessageCounts.map((t) => t.count)),
     [tierMessageCounts]
   );
+
+  const tierUserCounts = useMemo(() => {
+    const countsByTier = new Map(userTierBreakdown.map((row: AdminTierUserBreakdownRow) => [row.tier, row.users]));
+    return TIERS.map((tier) => ({
+      tier,
+      count: countsByTier.get(tier) ?? 0
+    }));
+  }, [userTierBreakdown]);
+  const maxTierUserCount = useMemo(
+    () => Math.max(1, ...tierUserCounts.map((t) => t.count)),
+    [tierUserCounts]
+  );
+
+  const peakRequests = typeof stats?.peakRequests === 'number' ? stats.peakRequests : 0;
+  const peakActiveUsers = useMemo(
+    () => timeseries.reduce((max, row) => Math.max(max, row.uniqueUsers), 0),
+    [timeseries]
+  );
+  const estimatedClaudeCostCents = typeof stats?.estimatedClaudeCostCents === 'number' ? stats.estimatedClaudeCostCents : 0;
+  const estimatedTtsCostCents = typeof stats?.estimatedTtsCostCents === 'number' ? stats.estimatedTtsCostCents : 0;
+  const estimatedCostCents = typeof stats?.estimatedCostCents === 'number' ? stats.estimatedCostCents : 0;
 
   return (
     <View style={styles.root}>
@@ -141,20 +256,40 @@ export default function AdminDashboardScreen() {
       <ScrollView contentContainerStyle={styles.screen}>
         <Text style={styles.title}>Admin Dashboard</Text>
 
-        {/* Period selector */}
-        <View style={styles.chipRow}>
-          {PERIODS.map(({ label, value }) => (
-            <Pressable
-              key={value}
-              onPress={() => setPeriod(value)}
-              style={[styles.chip, period === value ? styles.chipActive : null]}
-              testID={`admin-period-${value}`}
-            >
-              <Text style={[styles.chipLabel, period === value ? styles.chipLabelActive : null]}>
-                {label}
-              </Text>
-            </Pressable>
-          ))}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Period</Text>
+          <View style={styles.chipRow}>
+            {PERIODS.map(({ label, value }) => (
+              <Pressable
+                key={value}
+                onPress={() => setPeriod(value)}
+                style={[styles.chip, period === value ? styles.chipActive : null]}
+                testID={`admin-period-${value}`}
+              >
+                <Text style={[styles.chipLabel, period === value ? styles.chipLabelActive : null]}>
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Graph Granularity</Text>
+          <View style={styles.chipRow}>
+            {GRANULARITIES.map(({ label, value }) => (
+              <Pressable
+                key={value}
+                onPress={() => setGranularity(value)}
+                style={[styles.chip, granularity === value ? styles.chipActive : null]}
+                testID={`admin-granularity-${value}`}
+              >
+                <Text style={[styles.chipLabel, granularity === value ? styles.chipLabelActive : null]}>
+                  {label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
 
         {loading ? (
@@ -167,7 +302,6 @@ export default function AdminDashboardScreen() {
 
         {stats && !loading ? (
           <>
-            {/* KPI cards */}
             <View style={styles.cardGrid}>
               <StatCard
                 label="Peak DAU"
@@ -177,7 +311,7 @@ export default function AdminDashboardScreen() {
               <StatCard
                 label="Messages"
                 value={formatNumber(totalMessages)}
-                sub="claude requests"
+                sub="all usage events"
               />
               <StatCard
                 label="TTS chars"
@@ -186,25 +320,58 @@ export default function AdminDashboardScreen() {
               />
               <StatCard
                 label="Est. cost"
-                value={formatCad(stats.estimatedCostCents ?? 0)}
-                sub="Claude tokens"
+                value={formatMoney(estimatedCostCents)}
+                sub="Claude + ElevenLabs (USD est.)"
               />
             </View>
 
-            {/* Cost vs Revenue */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Usage Graphs</Text>
+              <ChartCard
+                title="Requests over time"
+                metricLabel="Peak requests"
+                peakValue={peakRequests}
+                valueKey="requests"
+                color={theme.colors.neonBlue}
+                data={timeseries}
+                granularity={granularity}
+              />
+              <ChartCard
+                title="Users connecting over time"
+                metricLabel="Peak users"
+                peakValue={peakActiveUsers}
+                valueKey="uniqueUsers"
+                color={theme.colors.neonRed}
+                data={timeseries}
+                granularity={granularity}
+              />
+            </View>
+
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Cost vs Revenue</Text>
               <View style={styles.costRevenueCard}>
                 <View style={styles.costRevenueRow}>
                   <Text style={styles.costRevenueLabel}>Revenue</Text>
                   <Text style={[styles.costRevenueAmount, styles.amountGreen]}>
-                    {formatCad(totalRevenueCents)}
+                    {formatMoney(totalRevenueCents)}
                   </Text>
                 </View>
                 <View style={styles.costRevenueRow}>
-                  <Text style={styles.costRevenueLabel}>Est. cost</Text>
+                  <Text style={styles.costRevenueLabel}>Est. Claude cost</Text>
                   <Text style={[styles.costRevenueAmount, styles.amountRed]}>
-                    {formatCad(stats.estimatedCostCents ?? 0)}
+                    {formatMoney(estimatedClaudeCostCents)}
+                  </Text>
+                </View>
+                <View style={styles.costRevenueRow}>
+                  <Text style={styles.costRevenueLabel}>Est. ElevenLabs cost</Text>
+                  <Text style={[styles.costRevenueAmount, styles.amountRed]}>
+                    {formatMoney(estimatedTtsCostCents)}
+                  </Text>
+                </View>
+                <View style={styles.costRevenueRow}>
+                  <Text style={styles.costRevenueLabel}>Est. total cost</Text>
+                  <Text style={[styles.costRevenueAmount, styles.amountRed]}>
+                    {formatMoney(estimatedCostCents)}
                   </Text>
                 </View>
                 <View style={styles.divider} />
@@ -214,28 +381,33 @@ export default function AdminDashboardScreen() {
                     style={[
                       styles.costRevenueAmount,
                       styles.amountBold,
-                      totalRevenueCents - (stats.estimatedCostCents ?? 0) >= 0
-                        ? styles.amountGreen
-                        : styles.amountRed
+                      totalRevenueCents - estimatedCostCents >= 0 ? styles.amountGreen : styles.amountRed
                     ]}
                   >
-                    {formatCad(totalRevenueCents - (stats.estimatedCostCents ?? 0))}
+                    {formatMoney(totalRevenueCents - estimatedCostCents)}
                   </Text>
                 </View>
               </View>
             </View>
 
-            {/* Messages by tier */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Messages by tier</Text>
+              <Text style={styles.sectionTitle}>Requests by tier</Text>
               <View style={styles.card}>
                 {tierMessageCounts.map(({ tier, count }) => (
-                  <BarRow key={tier} label={tier} value={count} max={maxTierCount} />
+                  <BarRow key={tier} label={tier} value={count} max={maxTierMessageCount} />
                 ))}
               </View>
             </View>
 
-            {/* Revenue breakdown */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Users by tier</Text>
+              <View style={styles.card}>
+                {tierUserCounts.map(({ tier, count }) => (
+                  <BarRow key={tier} label={tier} value={count} max={maxTierUserCount} />
+                ))}
+              </View>
+            </View>
+
             {revenueRows.length > 0 ? (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Revenue events</Text>
@@ -248,7 +420,7 @@ export default function AdminDashboardScreen() {
                       </View>
                       <View style={styles.revenueRight}>
                         <Text style={styles.revenueEvents}>{row.events}×</Text>
-                        <Text style={styles.revenueAmount}>{formatCad(row.totalCents)}</Text>
+                        <Text style={styles.revenueAmount}>{formatMoney(row.totalCents)}</Text>
                       </View>
                     </View>
                   ))}
@@ -288,6 +460,7 @@ const styles = StyleSheet.create({
   },
   chipRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: theme.spacing.xs
   },
   chip: {
@@ -379,6 +552,51 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 3 },
     elevation: 3
+  },
+  chartHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  chartTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  chartPeak: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600'
+  },
+  chartBars: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 4,
+    minHeight: 120,
+    paddingTop: theme.spacing.sm
+  },
+  chartColumn: {
+    width: 10,
+    justifyContent: 'flex-end'
+  },
+  chartTrack: {
+    height: 104,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surfaceSunken,
+    overflow: 'hidden',
+    justifyContent: 'flex-end'
+  },
+  chartFill: {
+    width: '100%',
+    borderRadius: 999
+  },
+  chartAxis: {
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
+  chartAxisLabel: {
+    color: theme.colors.textMuted,
+    fontSize: 11
   },
   costRevenueCard: {
     borderWidth: 1.4,

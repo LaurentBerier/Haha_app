@@ -1,11 +1,5 @@
 const { normalizeAccountType } = require('./_account-tier');
-
-const DEFAULT_MONTHLY_CAPS = {
-  free: 200,
-  regular: 3_000,
-  premium: 25_000
-  // admin intentionally omitted => unlimited
-};
+const { getEffectiveMonthlyCap } = require('./_monthly-cap');
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -29,18 +23,6 @@ function getNextMonthStartIso() {
 function getRetryAfterUntilNextMonthSeconds() {
   const nextMonthStartMs = Date.parse(getNextMonthStartIso());
   return Math.max(1, Math.ceil((nextMonthStartMs - Date.now()) / 1000));
-}
-
-function getMonthlyCap(accountType) {
-  const normalizedAccountType = normalizeAccountType(accountType);
-  const key = `CLAUDE_MONTHLY_CAP_${normalizedAccountType.toUpperCase()}`;
-  const fromEnv = parsePositiveInt(process.env[key], 0);
-  if (fromEnv > 0) {
-    return fromEnv;
-  }
-
-  const cap = DEFAULT_MONTHLY_CAPS[normalizedAccountType];
-  return cap ?? DEFAULT_MONTHLY_CAPS.free;
 }
 
 function isMissingMonthlyCounterColumnError(error) {
@@ -145,7 +127,7 @@ async function enforceMonthlyQuota({
         ? profileOverride.monthly_cap_override
         : null;
 
-    effectiveCap = override !== null ? override : getMonthlyCap(normalizedAccountType);
+    effectiveCap = getEffectiveMonthlyCap(normalizedAccountType, override);
   }
 
   const profileCounter = await readProfileMonthlyCounter(supabaseAdmin, userId, requestId, logPrefix);

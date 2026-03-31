@@ -125,7 +125,8 @@ describe('api/admin-users', () => {
   const originalEnv = {
     SUPABASE_URL: process.env.SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
-    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS
+    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+    CLAUDE_MONTHLY_CAP_REGULAR: process.env.CLAUDE_MONTHLY_CAP_REGULAR
   };
 
   beforeEach(() => {
@@ -134,6 +135,7 @@ describe('api/admin-users', () => {
     process.env.SUPABASE_URL = 'https://example.supabase.co';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
     delete process.env.ALLOWED_ORIGINS;
+    delete process.env.CLAUDE_MONTHLY_CAP_REGULAR;
   });
 
   afterEach(() => {
@@ -154,6 +156,12 @@ describe('api/admin-users', () => {
       process.env.ALLOWED_ORIGINS = originalEnv.ALLOWED_ORIGINS;
     } else {
       delete process.env.ALLOWED_ORIGINS;
+    }
+
+    if (typeof originalEnv.CLAUDE_MONTHLY_CAP_REGULAR === 'string') {
+      process.env.CLAUDE_MONTHLY_CAP_REGULAR = originalEnv.CLAUDE_MONTHLY_CAP_REGULAR;
+    } else {
+      delete process.env.CLAUDE_MONTHLY_CAP_REGULAR;
     }
   });
 
@@ -267,6 +275,79 @@ describe('api/admin-users', () => {
     expect(res.payload.users[0]).toMatchObject({
       id: 'user-3',
       email: 'target@example.com'
+    });
+  });
+
+  it('returns effectiveCap and remainingCredits for non-admin users', async () => {
+    process.env.CLAUDE_MONTHLY_CAP_REGULAR = '100';
+    const supabase = buildSupabaseMock({
+      rows: [
+        {
+          id: 'regular-1',
+          id_text: 'regular-1',
+          email: 'regular@example.com',
+          auth_created_at: '2026-03-20T00:00:00Z',
+          tier: 'regular',
+          messages_this_month: 30,
+          monthly_cap_override: null,
+          total_events: 7
+        }
+      ]
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+
+    const handler = require('../admin-users');
+    const { req, res } = createReqRes({
+      method: 'GET',
+      headers: { authorization: 'Bearer admin-token' }
+    });
+    req.query = { page: '0', limit: '25' };
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.users[0]).toMatchObject({
+      id: 'regular-1',
+      effectiveCap: 100,
+      remainingCredits: 70
+    });
+  });
+
+  it('returns unlimited remaining credits for admin tier users', async () => {
+    const supabase = buildSupabaseMock({
+      rows: [
+        {
+          id: 'admin-2',
+          id_text: 'admin-2',
+          email: 'admin2@example.com',
+          auth_created_at: '2026-03-20T00:00:00Z',
+          tier: 'admin',
+          messages_this_month: 999,
+          monthly_cap_override: null,
+          total_events: 999
+        }
+      ]
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+
+    const handler = require('../admin-users');
+    const { req, res } = createReqRes({
+      method: 'GET',
+      headers: { authorization: 'Bearer admin-token' }
+    });
+    req.query = { page: '0', limit: '25' };
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.users[0]).toMatchObject({
+      id: 'admin-2',
+      effectiveCap: null,
+      remainingCredits: null
     });
   });
 });

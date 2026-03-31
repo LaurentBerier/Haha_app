@@ -7,6 +7,7 @@ const {
   sendError,
   setCorsHeaders
 } = require('./_utils');
+const { getEffectiveMonthlyCap, getRemainingMonthlyCredits } = require('./_monthly-cap');
 
 const MAX_PAGE_LIMIT = 100;
 const DEFAULT_PAGE_LIMIT = 25;
@@ -211,17 +212,27 @@ module.exports = async function handler(req, res) {
     const users = Array.isArray(rows)
       ? rows
           .filter((row) => isRecord(row) && typeof row.id === 'string')
-          .map((row) => ({
-            id: row.id,
-            email: typeof row.email === 'string' ? row.email : null,
-            createdAt: typeof row.auth_created_at === 'string' ? row.auth_created_at : null,
-            tier: typeof row.tier === 'string' ? row.tier : null,
-            messagesThisMonth: Number(row.messages_this_month ?? 0),
-            capOverride: typeof row.monthly_cap_override === 'number' ? row.monthly_cap_override : null,
-            resetAt: typeof row.monthly_reset_at === 'string' ? row.monthly_reset_at : null,
-            lastActiveAt: typeof row.last_active_at === 'string' ? row.last_active_at : null,
-            totalEvents: Number(row.total_events ?? 0)
-          }))
+          .map((row) => {
+            const tier = typeof row.tier === 'string' ? row.tier : null;
+            const messagesThisMonth = Number(row.messages_this_month ?? 0);
+            const capOverride = typeof row.monthly_cap_override === 'number' ? row.monthly_cap_override : null;
+            const effectiveCap = getEffectiveMonthlyCap(tier ?? 'free', capOverride);
+            const remainingCredits = getRemainingMonthlyCredits(messagesThisMonth, effectiveCap);
+
+            return {
+              id: row.id,
+              email: typeof row.email === 'string' ? row.email : null,
+              createdAt: typeof row.auth_created_at === 'string' ? row.auth_created_at : null,
+              tier,
+              messagesThisMonth,
+              capOverride,
+              effectiveCap,
+              remainingCredits,
+              resetAt: typeof row.monthly_reset_at === 'string' ? row.monthly_reset_at : null,
+              lastActiveAt: typeof row.last_active_at === 'string' ? row.last_active_at : null,
+              totalEvents: Number(row.total_events ?? 0)
+            };
+          })
       : [];
 
     const total = typeof count === 'number' ? count : users.length;
