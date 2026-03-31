@@ -38,6 +38,21 @@ describe('conversationLanguage', () => {
     });
   });
 
+  it('does not parse negated or complaint language phrasing as explicit switch intent', () => {
+    expect(parseExplicitLanguageSwitch('pourquoi tu me reponds en anglais')).toEqual({
+      detected: false,
+      language: null
+    });
+    expect(parseExplicitLanguageSwitch('ne switch pas en anglais')).toEqual({
+      detected: false,
+      language: null
+    });
+    expect(parseExplicitLanguageSwitch("don't switch to english")).toEqual({
+      detected: false,
+      language: null
+    });
+  });
+
   it('detects non-latin scripts for auto language switching', () => {
     expect(detectAutoConversationLanguage('مرحبا كيف حالك اليوم', 'fr-CA')).toBe('ar-SA');
     expect(detectAutoConversationLanguage('Привет, как ты сегодня?', 'fr-CA')).toBe('ru-RU');
@@ -48,6 +63,7 @@ describe('conversationLanguage', () => {
       detectAutoConversationLanguage('Can you give me the weather and latest news today?', 'fr-CA')
     ).toBe('en-CA');
     expect(detectAutoConversationLanguage('bonjour hello merci', 'fr-CA')).toBeNull();
+    expect(detectAutoConversationLanguage('peux tu me dire what time it is', 'fr-CA')).toBeNull();
   });
 
   it('resolves language priority as explicit, then auto, then current', () => {
@@ -57,7 +73,7 @@ describe('conversationLanguage', () => {
         source: 'explicit',
         requestKind: 'explicit_switch',
         persistLanguage: true,
-        requiresConfirmation: false,
+        requiresConfirmation: true,
         explicitDetected: true,
         explicitRecognized: true
       })
@@ -83,6 +99,20 @@ describe('conversationLanguage', () => {
         requiresConfirmation: false,
         explicitDetected: true,
         explicitRecognized: false
+      })
+    );
+  });
+
+  it('does not require confirmation when explicit switch stays in the same language family', () => {
+    expect(resolveLanguageForTurn('Parle en francais stp', 'fr-CA')).toEqual(
+      expect.objectContaining({
+        language: 'fr-CA',
+        source: 'explicit',
+        requestKind: 'explicit_switch',
+        persistLanguage: true,
+        requiresConfirmation: false,
+        explicitDetected: true,
+        explicitRecognized: true
       })
     );
   });

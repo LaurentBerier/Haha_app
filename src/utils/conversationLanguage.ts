@@ -70,6 +70,13 @@ const EXPLICIT_LANGUAGE_WORD_PATTERN = /\b(?:langue|language|idiome)\b/i;
 
 const EXPLICIT_TARGET_PATTERN =
   /\b(?:parle|reponds?|repondre|ecris|continue|change|switch|speak|talk|reply|respond|answer)\b[^.!?\n]{0,72}\b(?:en|in|to)\s+([a-z0-9-]{2,24}(?:\s+[a-z0-9-]{2,24}){0,2})/i;
+const EXPLICIT_SWITCH_NEGATION_PATTERN =
+  /\b(?:ne|pas|non|jamais|annule|annuler|cancel|do\s+not|don\s*t|dont|not|arrete|stop)\b/i;
+const EXPLICIT_LANGUAGE_COMPLAINT_PATTERNS = [
+  /\bpourquoi\b[^.!?\n]{0,96}\b(?:reponds?|parles?|ecris|continues?)\b/i,
+  /\bwhy\b[^.!?\n]{0,96}\b(?:are\s+you|you(?:\s+are|\s+re|re)?)\b[^.!?\n]{0,48}\b(?:speaking|replying|responding|writing|talking)\b/i,
+  /\b(?:pourquoi|why)\b[^.!?\n]{0,96}\b(?:langue|language)\b/i
+];
 
 const ENGLISH_HINT_WORDS = new Set([
   'about',
@@ -225,6 +232,11 @@ const LATIN_LANGUAGE_SCORES = [
     diacriticPattern: /[àèéìíîòóù]/i
   }
 ];
+const LATIN_MIN_WORD_COUNT = 5;
+const LATIN_MIN_BEST_SCORE = 4;
+const LATIN_MIN_SCORE_GAP = 2;
+const ENGLISH_SWITCH_MIN_SCORE_FROM_FRENCH = 5;
+const FRENCH_MAX_COUNTER_SCORE_FOR_ENGLISH_SWITCH = 1;
 
 export interface ExplicitLanguageSwitchResult {
   detected: boolean;
@@ -315,6 +327,26 @@ function extractExplicitTarget(normalizedText: string): string | null {
   return match[1].trim();
 }
 
+function shouldBlockExplicitSwitchDetection(params: {
+  normalizedText: string;
+  resolvedLanguage: string | null;
+  hasExplicitTarget: boolean;
+  hasDirectiveVerb: boolean;
+  hasLanguageWord: boolean;
+}): boolean {
+  const { normalizedText, resolvedLanguage, hasExplicitTarget, hasDirectiveVerb, hasLanguageWord } = params;
+  const hasLanguageCandidate = Boolean(resolvedLanguage) || hasExplicitTarget || hasLanguageWord;
+  if (!hasLanguageCandidate || (!hasDirectiveVerb && !hasExplicitTarget)) {
+    return false;
+  }
+
+  if (EXPLICIT_SWITCH_NEGATION_PATTERN.test(normalizedText)) {
+    return true;
+  }
+
+  return EXPLICIT_LANGUAGE_COMPLAINT_PATTERNS.some((pattern) => pattern.test(normalizedText));
+}
+
 function normalizeLanguageTagParts(language: string): string {
   const normalized = language.trim().replace(/_/g, '-');
   const parts = normalized.split('-').filter(Boolean);
@@ -387,6 +419,20 @@ export function parseExplicitLanguageSwitch(text: string): ExplicitLanguageSwitc
   const isShortLanguageOnlyRequest =
     normalizedText.split(' ').filter(Boolean).length <= 4 && Boolean(aliasLanguage ?? codeLanguage);
   const hasExplicitTarget = Boolean(extractExplicitTarget(normalizedText));
+
+  if (
+    !isShortLanguageOnlyRequest &&
+    shouldBlockExplicitSwitchDetection({
+      normalizedText,
+      resolvedLanguage,
+      hasExplicitTarget,
+      hasDirectiveVerb,
+      hasLanguageWord
+    })
+  ) {
+    return { detected: false, language: null };
+  }
+
   const isExplicit = isShortLanguageOnlyRequest || (Boolean(resolvedLanguage) && (hasDirectiveVerb || hasLanguageWord)) || hasExplicitTarget;
 
   if (!isExplicit) {
@@ -459,9 +505,9 @@ function detectScriptLanguage(text: string): string | null {
   return null;
 }
 
-function detectLatinLanguage(text: string): string | null {
+function detectLatinLanguage(text: string, currentLanguage: string): string | null {
   const tokens = tokenizeLatin(text);
-  if (tokens.length < 3) {
+  if (tokens.length < LATIN_MIN_WORD_COUNT) {
     return null;
   }
 
@@ -477,12 +523,22 @@ function detectLatinLanguage(text: string): string | null {
 
   const best = scored[0];
   const second = scored[1];
-  if (!best || best.score < 2) {
+  if (!best || best.score < LATIN_MIN_BEST_SCORE) {
     return null;
   }
 
-  if (second && best.score - second.score < 1) {
+  if (second && best.score - second.score < LATIN_MIN_SCORE_GAP) {
     return null;
+  }
+
+  if (getLanguagePrefix(currentLanguage) === 'fr' && getLanguagePrefix(best.code) === 'en') {
+    const frenchScore = scored.find((entry) => getLanguagePrefix(entry.code) === 'fr')?.score ?? 0;
+    if (
+      best.score < ENGLISH_SWITCH_MIN_SCORE_FROM_FRENCH ||
+      frenchScore > FRENCH_MAX_COUNTER_SCORE_FOR_ENGLISH_SWITCH
+    ) {
+      return null;
+    }
   }
 
   return best.code;
@@ -499,13 +555,17 @@ export function detectAutoConversationLanguage(text: string, currentLanguage: st
     return getLanguagePrefix(nextLanguage) === getLanguagePrefix(currentLanguage) ? null : nextLanguage;
   }
 
-  const latinLanguage = detectLatinLanguage(text);
+  const latinLanguage = detectLatinLanguage(text, currentLanguage);
   if (!latinLanguage) {
     return null;
   }
 
   const nextLanguage = normalizeConversationLanguage(latinLanguage, latinLanguage);
   return getLanguagePrefix(nextLanguage) === getLanguagePrefix(currentLanguage) ? null : nextLanguage;
+}
+
+function shouldRequireLanguageConfirmation(nextLanguage: string, currentLanguage: string): boolean {
+  return getLanguagePrefix(nextLanguage) !== getLanguagePrefix(currentLanguage);
 }
 
 export function resolveLanguageForTurn(text: string, currentLanguage: string): LanguageResolutionResult {
@@ -538,12 +598,13 @@ export function resolveLanguageForTurn(text: string, currentLanguage: string): L
   const explicit = parseExplicitLanguageSwitch(text);
   if (explicit.detected) {
     if (explicit.language) {
+      const explicitLanguage = normalizeConversationLanguage(explicit.language, fallbackLanguage);
       return {
-        language: normalizeConversationLanguage(explicit.language, fallbackLanguage),
+        language: explicitLanguage,
         source: 'explicit',
         requestKind: 'explicit_switch',
         persistLanguage: true,
-        requiresConfirmation: false,
+        requiresConfirmation: shouldRequireLanguageConfirmation(explicitLanguage, fallbackLanguage),
         explicitDetected: true,
         explicitRecognized: true
       };
@@ -567,7 +628,7 @@ export function resolveLanguageForTurn(text: string, currentLanguage: string): L
       source: 'auto',
       requestKind: 'auto_candidate',
       persistLanguage: true,
-      requiresConfirmation: true,
+      requiresConfirmation: shouldRequireLanguageConfirmation(detected, fallbackLanguage),
       explicitDetected: false,
       explicitRecognized: false
     };

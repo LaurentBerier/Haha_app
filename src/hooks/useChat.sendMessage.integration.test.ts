@@ -369,7 +369,7 @@ describe('useChat sendMessage integration', () => {
     );
   });
 
-  it('switches conversation language on explicit command and keeps LLM flow active', () => {
+  it('asks for confirmation before explicit language switch and replays pending message on yes', () => {
     const conversationId = 'conv-explicit-switch';
     const chat = renderUseChatHook(conversationId);
     const conversation = createConversation(conversationId);
@@ -383,15 +383,67 @@ describe('useChat sendMessage integration', () => {
 
     expect(result).toBeNull();
     expect(state.addMessage).toHaveBeenCalledTimes(2);
-    expect(state.updateConversation).toHaveBeenCalledWith(
-      conversation.id,
+    expect(mockStreamMockReply).not.toHaveBeenCalled();
+
+    const firstArtistMessage =
+      state.messagesByConversation[conversation.id]?.messages.find((message) => message.role === 'artist') ?? null;
+    expect(firstArtistMessage?.content).toContain('oui ou non');
+
+    const firstUpdateCall = state.updateConversation.mock.calls[state.updateConversation.mock.calls.length - 1];
+    expect(firstUpdateCall?.[1]).toEqual(
+      expect.objectContaining({
+        language: 'fr-CA',
+        lastMessagePreview: 'Parle en anglais et donne-moi la meteo.'
+      })
+    );
+
+    const confirmResult = chat.sendMessage({ text: 'oui vas-y stp' });
+    expect(confirmResult).toBeNull();
+    expect(state.addMessage).toHaveBeenCalledTimes(4);
+    expect(mockStreamMockReply).toHaveBeenCalledTimes(1);
+
+    const streamCall = (mockStreamMockReply as jest.Mock).mock.calls[0]?.[0] as { language?: string };
+    expect(streamCall?.language).toBe('en-CA');
+
+    const lastUpdateCall = state.updateConversation.mock.calls[state.updateConversation.mock.calls.length - 1];
+    expect(lastUpdateCall?.[1]).toEqual(
       expect.objectContaining({
         language: 'en-CA',
         lastMessagePreview: 'Parle en anglais et donne-moi la meteo.'
-      }),
-      conversation.artistId
+      })
     );
+  });
+
+  it('asks for confirmation before explicit language switch and replays pending message on no', () => {
+    const conversationId = 'conv-explicit-switch-reject';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const firstResult = chat.sendMessage({ text: 'Parle en anglais et donne-moi la meteo.' });
+    expect(firstResult).toBeNull();
+    expect(state.addMessage).toHaveBeenCalledTimes(2);
+    expect(mockStreamMockReply).not.toHaveBeenCalled();
+
+    const secondResult = chat.sendMessage({ text: 'non reste en francais' });
+    expect(secondResult).toBeNull();
+    expect(state.addMessage).toHaveBeenCalledTimes(4);
     expect(mockStreamMockReply).toHaveBeenCalledTimes(1);
+
+    const streamCall = (mockStreamMockReply as jest.Mock).mock.calls[0]?.[0] as { language?: string };
+    expect(streamCall?.language).toBe('fr-CA');
+
+    const lastUpdateCall = state.updateConversation.mock.calls[state.updateConversation.mock.calls.length - 1];
+    expect(lastUpdateCall?.[1]).toEqual(
+      expect.objectContaining({
+        language: 'fr-CA',
+        lastMessagePreview: 'Parle en anglais et donne-moi la meteo.'
+      })
+    );
   });
 
   it('uses explicit one-off language without persisting conversation language', () => {
@@ -440,7 +492,7 @@ describe('useChat sendMessage integration', () => {
       state.messagesByConversation[conversation.id]?.messages.find((message) => message.role === 'artist') ?? null;
     expect(latestArtistMessage?.content).toContain('oui ou non');
 
-    const secondResult = chat.sendMessage({ text: 'oui' });
+    const secondResult = chat.sendMessage({ text: 'yes please continue' });
     expect(secondResult).toBeNull();
     expect(state.addMessage).toHaveBeenCalledTimes(4);
     expect(mockStreamMockReply).toHaveBeenCalledTimes(1);
@@ -477,7 +529,7 @@ describe('useChat sendMessage integration', () => {
     expect(state.addMessage).toHaveBeenCalledTimes(2);
     expect(mockStreamMockReply).not.toHaveBeenCalled();
 
-    const secondResult = chat.sendMessage({ text: 'non' });
+    const secondResult = chat.sendMessage({ text: 'non garde francais' });
     expect(secondResult).toBeNull();
     expect(state.addMessage).toHaveBeenCalledTimes(4);
     expect(mockStreamMockReply).toHaveBeenCalledTimes(1);

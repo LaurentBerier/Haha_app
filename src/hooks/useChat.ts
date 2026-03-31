@@ -73,7 +73,7 @@ interface InternalSendOptions {
   conversationId?: string;
   _forcedLanguageForTurn?: string;
   _persistLanguageOverride?: boolean;
-  _skipAutoCandidateConfirmation?: boolean;
+  _skipLanguageSwitchConfirmation?: boolean;
   _skipPendingConfirmationFlow?: boolean;
   _skipAddUserMessage?: boolean;
   _existingUserMessageId?: string;
@@ -82,8 +82,8 @@ interface InternalSendOptions {
 const EMPTY_MESSAGES: Message[] = [];
 const MAX_CLAUDE_HISTORY_MESSAGES = 39;
 const VOICE_MAX_CLAUDE_HISTORY_MESSAGES = 8;
-const CONFIRMATION_YES_PATTERN = /^(?:oui|ouais|yes|yeah|yep|sure|ok|okay|d accord|daccord)(?:\s+(?:stp|svp|please|pls))?$/i;
-const CONFIRMATION_NO_PATTERN = /^(?:non|no|nope|nah|annule|annuler|cancel)(?:\s+(?:stp|svp|please|pls))?$/i;
+const CONFIRMATION_YES_PREFIX_PATTERN = /^(?:oui|ouais|yes|yeah|yep|sure|ok|okay|d accord|daccord)\b/i;
+const CONFIRMATION_NO_PREFIX_PATTERN = /^(?:non|no|nope|nah|annule|annuler|cancel)\b/i;
 export {
   buildCathyVoiceNotice,
   resolveTerminalTtsCode,
@@ -121,12 +121,12 @@ function buildLanguageSwitchClarificationMessage(language: string): string {
   return 'Je peux changer de langue. Ecris le code langue (ex: en, es-ES, pt-BR).';
 }
 
-function buildAutoLanguageSwitchConfirmationMessage(language: string, detectedLanguage: string): string {
+function buildLanguageSwitchConfirmationMessage(language: string, requestedLanguage: string): string {
   if (language.toLowerCase().startsWith('en')) {
-    return `I detected another language (${detectedLanguage}). Do you want me to switch this conversation to it? Reply yes or no.`;
+    return `Do you want me to switch this conversation to ${requestedLanguage}? Reply yes or no.`;
   }
 
-  return `J'ai detecte une autre langue (${detectedLanguage}). Veux-tu que je change la conversation vers cette langue? Reponds oui ou non.`;
+  return `Veux-tu que je passe cette conversation en ${requestedLanguage}? Reponds oui ou non.`;
 }
 
 function buildAutoLanguageSwitchConfirmationReminderMessage(language: string): string {
@@ -153,10 +153,12 @@ function resolvePendingLanguageConfirmation(text: string): PendingLanguageConfir
   if (!normalized) {
     return 'unknown';
   }
-  if (CONFIRMATION_YES_PATTERN.test(normalized)) {
+  const confirms = CONFIRMATION_YES_PREFIX_PATTERN.test(normalized);
+  const rejects = CONFIRMATION_NO_PREFIX_PATTERN.test(normalized);
+  if (confirms && !rejects) {
     return 'confirm';
   }
-  if (CONFIRMATION_NO_PATTERN.test(normalized)) {
+  if (rejects && !confirms) {
     return 'reject';
   }
   return 'unknown';
@@ -1447,7 +1449,7 @@ export function useChat(conversationId: string) {
               ? pendingAutoLanguageSwitch.requestedLanguage
               : pendingAutoLanguageSwitch.fallbackLanguage,
           _persistLanguageOverride: true,
-          _skipAutoCandidateConfirmation: true,
+          _skipLanguageSwitchConfirmation: true,
           _skipPendingConfirmationFlow: true,
           _skipAddUserMessage: true,
           _existingUserMessageId: pendingAutoLanguageSwitch.userMessageId
@@ -1486,9 +1488,9 @@ export function useChat(conversationId: string) {
       options?._forcedLanguageForTurn === undefined &&
       languageResolution.explicitDetected &&
       !languageResolution.explicitRecognized;
-    const shouldAskAutoLanguageConfirmation =
+    const shouldAskLanguageSwitchConfirmation =
       options?._forcedLanguageForTurn === undefined &&
-      !options?._skipAutoCandidateConfirmation &&
+      !options?._skipLanguageSwitchConfirmation &&
       languageResolution.requiresConfirmation;
 
     if (shouldAskLanguageClarification) {
@@ -1517,7 +1519,7 @@ export function useChat(conversationId: string) {
       return null;
     }
 
-    if (shouldAskAutoLanguageConfirmation) {
+    if (shouldAskLanguageSwitchConfirmation) {
       pendingAutoLanguageSwitchRef.current.set(targetConversationId, {
         payload: clonePayload(payload),
         userMessageId,
@@ -1528,7 +1530,7 @@ export function useChat(conversationId: string) {
         id: generateId('msg'),
         conversationId: targetConversationId,
         role: 'artist',
-        content: buildAutoLanguageSwitchConfirmationMessage(preferredLanguage, languageForTurn),
+        content: buildLanguageSwitchConfirmationMessage(preferredLanguage, languageForTurn),
         status: 'complete',
         timestamp: now,
         metadata: {
