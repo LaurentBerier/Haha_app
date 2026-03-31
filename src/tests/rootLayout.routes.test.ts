@@ -36,4 +36,16 @@ describe('root layout route registration', () => {
     expect(layoutSource).toContain("const isGameRoute = pathname.startsWith('/games/');");
     expect(layoutSource).toContain('!isGameRoute &&');
   });
+
+  it('uses artist-aware header home navigation and a center artist picker button', () => {
+    const layoutPath = path.resolve(__dirname, '../app/_layout.tsx');
+    const layoutSource = fs.readFileSync(layoutPath, 'utf8');
+
+    expect(layoutSource).toContain(
+      'const headerNavigationArtistId = routeArtistId ?? activeConversationArtistId ?? selectedArtistId ?? null;'
+    );
+    expect(layoutSource).toContain("pathname: '/mode-select/[artistId]'");
+    expect(layoutSource).toContain('router.replace(\'/\');');
+    expect(layoutSource).toContain('testID="header-artist-picker-button"');
+  });
 });

@@ -1,5 +1,5 @@
-import type { Message } from '../../models/Message';
-import { resolveModeNudgeAutoArmDecision } from './chatAutoArm';
+import type { Message } from '../models/Message';
+import { resolveModeNudgeAutoArmDecision } from '../app/chat/chatAutoArm';
 
 function buildArtistModeNudgeMessage(
   status: Message['status'] = 'complete',

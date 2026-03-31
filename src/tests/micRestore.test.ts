@@ -1,4 +1,4 @@
-import { shouldRestoreModeSelectMicAfterBlur } from './micRestore';
+import { shouldRestoreModeSelectMicAfterBlur } from '../app/mode-select/micRestore';
 
 describe('modeSelect mic restore', () => {
   it('restores when conversation mode is enabled and mic was active', () => {

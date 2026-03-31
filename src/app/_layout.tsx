@@ -1,5 +1,5 @@
 import { Stack, router, usePathname, useSegments } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import {
   Image,
@@ -36,6 +36,7 @@ import {
   LAST_USEFUL_ROUTE_STORAGE_KEY,
   resolveRouteToRestoreFromSnapshot
 } from '../utils/routeRestore';
+import { findConversationById } from '../utils/conversationUtils';
 import cleanBackground from '../../assets/branding/Clean_BG.jpg';
 import neonTitleMark from '../../assets/branding/logo-neon-Trans.png';
 
@@ -104,6 +105,13 @@ export default function RootLayout() {
     !isGameRoute &&
     !isChatRoute;
   const routeArtistId = resolveArtistIdFromPath(pathname);
+  const activeConversationArtistId = useMemo(() => {
+    if (!activeConversationId) {
+      return null;
+    }
+    return findConversationById(conversations, activeConversationId)?.artistId ?? null;
+  }, [activeConversationId, conversations]);
+  const headerNavigationArtistId = routeArtistId ?? activeConversationArtistId ?? selectedArtistId ?? null;
   const targetArtistId = routeArtistId ?? selectedArtistId;
   const globalInputDisabled = !showGlobalChatInput || !targetArtistId;
 
@@ -160,8 +168,21 @@ export default function RootLayout() {
     });
   };
 
-  const navigateHome = () => {
+  const navigateArtistPicker = () => {
     closeAccountMenu();
+    router.replace('/');
+  };
+
+  const navigateArtistModeSelect = () => {
+    closeAccountMenu();
+    const normalizedArtistId = headerNavigationArtistId?.trim();
+    if (normalizedArtistId) {
+      router.replace({
+        pathname: '/mode-select/[artistId]',
+        params: { artistId: normalizedArtistId }
+      });
+      return;
+    }
     router.replace('/');
   };
 
@@ -602,20 +623,32 @@ export default function RootLayout() {
                   },
                   headerTitle: showAccountMenu
                     ? () => (
-                        <Image source={neonTitleMark} style={styles.headerTitleLogo as ImageStyle} resizeMode="contain" />
+                        <Pressable
+                          onPress={navigateArtistPicker}
+                          style={({ pressed }) => [
+                            styles.headerArtistPickerButton,
+                            pressed ? styles.headerPressed : null
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityLabel="artist-picker-home-button"
+                          testID="header-artist-picker-button"
+                        >
+                          <Image source={neonTitleMark} style={styles.headerTitleLogo as ImageStyle} resizeMode="contain" />
+                        </Pressable>
                       )
                     : undefined,
                   headerShadowVisible: false,
                   headerLeft: () =>
                     showAccountMenu ? (
                       <Pressable
-                        onPress={navigateHome}
+                        onPress={navigateArtistModeSelect}
                         style={({ pressed }) => [
                           styles.headerBrandButton,
                           { marginLeft: headerHorizontalInset },
                           pressed ? styles.headerPressed : null
                         ]}
                         accessibilityRole="button"
+                        accessibilityLabel="header-artist-mode-select-button"
                         testID="header-home-button"
                       >
                         <BrandMark compact />
@@ -812,6 +845,15 @@ const styles = StyleSheet.create({
   headerPressed: {
     opacity: 0.9,
     transform: [{ scale: 0.98 }]
+  },
+  headerArtistPickerButton: {
+    backgroundColor: 'transparent',
+    borderRadius: 999,
+    width: 74,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible'
   },
   headerHovered: {
     borderColor: theme.colors.neonBlue,
