@@ -54,6 +54,7 @@ import {
   type ModeSelectBoundResolutionReason
 } from '../../../utils/modeSelectConversationBinding';
 import type { ChatSendPayload } from '../../../models/ChatSendPayload';
+import { shouldRestoreModeSelectMicAfterBlur } from '../micRestore';
 
 interface GreetingCoordinates {
   lat: number;
@@ -1092,6 +1093,7 @@ export default function ModeSelectHomeScreen() {
   const lastLoggedEmptyArtistMessageIdRef = useRef<string | null>(null);
   const autoMicTriggeredGreetingIdsRef = useRef<Set<string>>(new Set());
   const autoMicManualOverrideRef = useRef(false);
+  const shouldRestoreMicAfterBlurRef = useRef(false);
   const setModeSelectScreenFocus = useCallback((nextFocused: boolean) => {
     modeSelectScreenFocusedRef.current = nextFocused;
     setIsModeSelectScreenFocused(nextFocused);
@@ -1810,6 +1812,7 @@ export default function ModeSelectHomeScreen() {
     setReplayBarrier(null);
     setTailFollowRequestSignal(0);
     setGreetingOpenCycle(0);
+    shouldRestoreMicAfterBlurRef.current = false;
     autoMicManualOverrideRef.current = false;
     autoMicTriggeredGreetingIdsRef.current.clear();
     greetingCycleFocusStateRef.current = false;
@@ -1906,6 +1909,10 @@ export default function ModeSelectHomeScreen() {
       setModeSelectScreenFocus(true);
     });
     const unsubscribeBlur = navigation.addListener('blur', () => {
+      shouldRestoreMicAfterBlurRef.current = shouldRestoreModeSelectMicAfterBlur(
+        conversationModeEnabled,
+        conversationStatus
+      );
       setModeSelectScreenFocus(false);
       captureReplayBarrierOnBlur();
       stopModeSelectVoiceAndMic();
@@ -1915,7 +1922,32 @@ export default function ModeSelectHomeScreen() {
       unsubscribeFocus();
       unsubscribeBlur();
     };
-  }, [captureReplayBarrierOnBlur, navigation, setModeSelectScreenFocus, stopModeSelectVoiceAndMic]);
+  }, [
+    captureReplayBarrierOnBlur,
+    conversationModeEnabled,
+    conversationStatus,
+    navigation,
+    setModeSelectScreenFocus,
+    stopModeSelectVoiceAndMic
+  ]);
+
+  useEffect(() => {
+    if (!isModeSelectScreenFocused || !shouldRestoreMicAfterBlurRef.current) {
+      return;
+    }
+
+    if (!conversationModeEnabled) {
+      shouldRestoreMicAfterBlurRef.current = false;
+      return;
+    }
+
+    if (isModeSelectComposerDisabled) {
+      return;
+    }
+
+    shouldRestoreMicAfterBlurRef.current = false;
+    resumeListening();
+  }, [conversationModeEnabled, isModeSelectComposerDisabled, isModeSelectScreenFocused, resumeListening]);
 
   useEffect(() => {
     Animated.timing(modeGridCompactProgress, {
@@ -2287,6 +2319,7 @@ export default function ModeSelectHomeScreen() {
   useEffect(() => {
     return () => {
       modeSelectScreenFocusedRef.current = false;
+      shouldRestoreMicAfterBlurRef.current = false;
       stopModeSelectVoiceAndMic();
       clearSendContextRecoveryLock();
     };
