@@ -2,6 +2,8 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
+const DEFAULT_OVERLOAD_RETRY_AFTER_SECONDS = 3;
+const TRANSIENT_UPSTREAM_STATUSES = new Set([429, 500, 502, 503, 504, 529]);
 
 const {
   attachRequestId,
@@ -26,6 +28,70 @@ function isRecord(value) {
 
 function normalizeText(value) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function parseRetryAfterSeconds(value) {
+  const raw = normalizeText(value);
+  if (!raw) {
+    return null;
+  }
+
+  const asInt = Number.parseInt(raw, 10);
+  if (Number.isFinite(asInt) && asInt > 0) {
+    return asInt;
+  }
+
+  const asDateMs = Date.parse(raw);
+  if (!Number.isFinite(asDateMs)) {
+    return null;
+  }
+
+  const deltaSeconds = Math.ceil((asDateMs - Date.now()) / 1000);
+  return deltaSeconds > 0 ? deltaSeconds : null;
+}
+
+function getErrorStatus(error) {
+  if (!isRecord(error)) {
+    return null;
+  }
+
+  const parsed = Number.parseInt(String(error.status ?? ''), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function getErrorRetryAfterSeconds(error) {
+  if (!isRecord(error)) {
+    return null;
+  }
+
+  if (Number.isFinite(error.retryAfterSeconds) && error.retryAfterSeconds > 0) {
+    return Math.ceil(error.retryAfterSeconds);
+  }
+
+  if (typeof error.retryAfter === 'string') {
+    return parseRetryAfterSeconds(error.retryAfter);
+  }
+
+  return null;
+}
+
+function isTransientUpstreamOverload(error) {
+  const status = getErrorStatus(error);
+  if (Number.isFinite(status) && TRANSIENT_UPSTREAM_STATUSES.has(status)) {
+    return true;
+  }
+
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const code = normalizeText(error.code).toLowerCase();
+  if (code.includes('overload')) {
+    return true;
+  }
+
+  const message = normalizeText(error.message).toLowerCase();
+  return message.includes('overloaded') || message.includes('overload');
 }
 
 function normalizeUserProfile(rawProfile) {
@@ -434,6 +500,15 @@ async function callImproThemeModel(input) {
           : 'Impro themes generation failed.';
       const error = new Error(message);
       error.status = response.status;
+      if (isRecord(payload) && isRecord(payload.error) && typeof payload.error.type === 'string') {
+        error.code = payload.error.type;
+      }
+      const retryAfterHeader =
+        response.headers && typeof response.headers.get === 'function' ? response.headers.get('retry-after') : '';
+      const retryAfterSeconds = parseRetryAfterSeconds(retryAfterHeader);
+      if (Number.isFinite(retryAfterSeconds)) {
+        error.retryAfterSeconds = retryAfterSeconds;
+      }
       throw error;
     }
 
@@ -449,6 +524,14 @@ async function callImproThemeModel(input) {
       parseError.code = 'THEMES_PARSE_FAILED';
       throw parseError;
     }
+  } catch (error) {
+    if (isRecord(error) && error.name === 'AbortError') {
+      const timeoutError = new Error('Theme generator timed out.');
+      timeoutError.code = 'UPSTREAM_TIMEOUT';
+      timeoutError.status = 504;
+      throw timeoutError;
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -543,8 +626,30 @@ module.exports = async function handler(req, res) {
       sendError(res, 422, 'Theme output is invalid.', { code: 'THEMES_PARSE_FAILED', requestId });
       return;
     }
+
+    if (isRecord(error) && error.code === 'UPSTREAM_TIMEOUT') {
+      sendError(res, 504, 'Theme generator timed out.', { code: 'UPSTREAM_TIMEOUT', requestId, error });
+      return;
+    }
+
+    if (isTransientUpstreamOverload(error)) {
+      const retryAfterSeconds = getErrorRetryAfterSeconds(error) ?? DEFAULT_OVERLOAD_RETRY_AFTER_SECONDS;
+      res.setHeader('Retry-After', String(Math.max(1, retryAfterSeconds)));
+      sendError(res, 503, 'Theme generator is temporarily overloaded. Please retry.', {
+        code: 'UPSTREAM_OVERLOADED',
+        requestId,
+        capture: false,
+        error
+      });
+      return;
+    }
+
+    const upstreamStatus = getErrorStatus(error);
+    const status = Number.isFinite(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599
+      ? upstreamStatus
+      : 502;
     const message = error instanceof Error && error.message ? error.message : 'Theme generator unavailable.';
-    sendError(res, 502, message, { code: 'UPSTREAM_ERROR', requestId });
+    sendError(res, status, message, { code: 'UPSTREAM_ERROR', requestId, error });
     return;
   }
 
