@@ -21,6 +21,7 @@ import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../../utils/accountTypeUtils';
 import { findConversationById } from '../../utils/conversationUtils';
+import { resolveModeNudgeAutoArmDecision } from './chatAutoArm';
 
 function formatUserDisplayName(displayName: string | null, email: string): string {
   const trimmed = displayName?.trim();
@@ -56,6 +57,7 @@ export default function ChatScreen() {
   const isValidConversation = conversationId.length > 0;
   const [hasTypedDraft, setHasTypedDraft] = useState(false);
   const handledQueuedNonceRef = useRef<string | null>(null);
+  const handledModeNudgeIdsRef = useRef<Set<string>>(new Set());
   const headerHorizontalInset = useHeaderHorizontalInset();
 
   const sessionUser = useStore((state) => state.session?.user ?? null);
@@ -90,7 +92,8 @@ export default function ChatScreen() {
     status: conversationStatus,
     hint: conversationHint,
     pauseListening,
-    resumeListening
+    resumeListening,
+    armListeningActivation
   } =
     useVoiceConversation({
     enabled: conversationModeEnabled && !isChatComposerDisabled,
@@ -113,7 +116,8 @@ export default function ChatScreen() {
 
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? '');
   const artistDisplayName = formatArtistDisplayName(currentArtistName);
-  const isPrimaryThread = normalizeConversationThreadType(currentConversation?.threadType) === 'primary';
+  const conversationThreadType = normalizeConversationThreadType(currentConversation?.threadType);
+  const isPrimaryThread = conversationThreadType === 'primary';
   const activeMode = useMemo(() => {
     if (isPrimaryThread) {
       return null;
@@ -218,6 +222,49 @@ export default function ChatScreen() {
       sendWithFiller(queuedPayload);
     }
   }, [consumeChatSendPayload, conversationId, isValidConversation, queuedNonceParam, sendWithFiller]);
+
+  useEffect(() => {
+    const autoArmDecision = resolveModeNudgeAutoArmDecision({
+      isValidConversation,
+      conversationThreadType,
+      messages,
+      conversationModeEnabled,
+      hasStreaming,
+      isQuotaBlocked,
+      hasTypedDraft,
+      isComposerDisabled: isChatComposerDisabled
+    });
+    const candidateMessageId = autoArmDecision.candidateModeNudgeMessageId;
+    if (!candidateMessageId) {
+      return;
+    }
+
+    if (handledModeNudgeIdsRef.current.has(candidateMessageId)) {
+      return;
+    }
+
+    if (autoArmDecision.consumeCandidateWithoutAutoArm) {
+      handledModeNudgeIdsRef.current.add(candidateMessageId);
+      return;
+    }
+
+    if (!autoArmDecision.shouldAutoArm) {
+      return;
+    }
+
+    armListeningActivation();
+    handledModeNudgeIdsRef.current.add(candidateMessageId);
+  }, [
+    armListeningActivation,
+    conversationModeEnabled,
+    conversationThreadType,
+    hasStreaming,
+    hasTypedDraft,
+    isChatComposerDisabled,
+    isQuotaBlocked,
+    isValidConversation,
+    messages
+  ]);
 
   useAutoReplayLastArtistMessage({
     messages,
