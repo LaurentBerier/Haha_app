@@ -274,7 +274,10 @@ export default function ChatScreen() {
             onToggle: () => {
               setConversationModeEnabled(true);
             },
-            onPauseListening: pauseListening,
+            onPauseListening: () => {
+              setConversationModeEnabled(false);
+              pauseListening();
+            },
             onResumeListening: resumeListening,
             onTypingStateChange: setHasTypedDraft
           }}

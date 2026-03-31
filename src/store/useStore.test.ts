@@ -1,5 +1,5 @@
 import { MODE_IDS } from '../config/constants';
-import { useStore } from './useStore';
+import { selectPersistedSnapshot, useStore } from './useStore';
 
 describe('useStore hydration', () => {
   it('restores legacy on-jase conversations as primary threads when threadType is missing', () => {
@@ -55,6 +55,8 @@ describe('useStore hydration', () => {
   });
 
   it('defaults voice auto-play to true when absent and preserves explicit false', () => {
+    useStore.getState().setConversationModeEnabled(true);
+
     useStore.getState().hydrateStore({
       ownerUserId: null,
       selectedArtistId: 'cathy-gauthier',
@@ -68,6 +70,7 @@ describe('useStore hydration', () => {
     });
 
     expect(useStore.getState().voiceAutoPlay).toBe(true);
+    expect(useStore.getState().conversationModeEnabled).toBe(true);
 
     useStore.getState().hydrateStore({
       ownerUserId: null,
@@ -83,5 +86,43 @@ describe('useStore hydration', () => {
     });
 
     expect(useStore.getState().voiceAutoPlay).toBe(false);
+
+    useStore.getState().hydrateStore({
+      ownerUserId: null,
+      selectedArtistId: 'cathy-gauthier',
+      conversations: {},
+      activeConversationId: null,
+      messagesByConversation: {},
+      preferences: {
+        language: 'fr-CA',
+        displayMode: 'dark',
+        conversationModeEnabled: false
+      }
+    });
+
+    expect(useStore.getState().conversationModeEnabled).toBe(false);
+
+    useStore.getState().hydrateStore({
+      ownerUserId: null,
+      selectedArtistId: 'cathy-gauthier',
+      conversations: {},
+      activeConversationId: null,
+      messagesByConversation: {},
+      preferences: {
+        language: 'fr-CA',
+        displayMode: 'dark',
+        conversationModeEnabled: true
+      }
+    });
+
+    expect(useStore.getState().conversationModeEnabled).toBe(true);
+  });
+
+  it('persists conversation mode preference in snapshot selection', () => {
+    useStore.getState().setConversationModeEnabled(false);
+
+    const snapshot = selectPersistedSnapshot(useStore.getState());
+
+    expect(snapshot.preferences?.conversationModeEnabled).toBe(false);
   });
 });

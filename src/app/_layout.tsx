@@ -718,7 +718,10 @@ export default function RootLayout() {
                 onEnableConversationMode={() => {
                   setConversationModeEnabled(true);
                 }}
-                onPauseListening={pauseGlobalConversation}
+                onPauseListening={() => {
+                  setConversationModeEnabled(false);
+                  pauseGlobalConversation();
+                }}
                 onResumeListening={resumeGlobalConversation}
                 onTypingStateChange={setHasTypedGlobalDraft}
               />

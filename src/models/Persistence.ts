@@ -7,6 +7,7 @@ export interface PersistedUiPreferences {
   displayMode: 'dark' | 'light' | 'system';
   reduceMotion: 'system' | 'on' | 'off';
   voiceAutoPlay: boolean;
+  conversationModeEnabled: boolean;
 }
 
 export type PersistedConversation = Omit<Conversation, 'threadType'> & {

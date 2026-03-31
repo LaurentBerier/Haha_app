@@ -1715,7 +1715,8 @@ export default function ModeSelectHomeScreen() {
     }
 
     if (!conversationModeEnabled) {
-      setConversationModeEnabled(true);
+      setPendingAutoMicGreetingMessageId(null);
+      return;
     }
     armListeningActivation();
     autoMicTriggeredGreetingIdsRef.current.add(targetMessageId);
@@ -1735,6 +1736,7 @@ export default function ModeSelectHomeScreen() {
   ]);
 
   const handlePauseListening = useCallback(() => {
+    setConversationModeEnabled(false);
     const pendingMessageId = pendingAutoMicGreetingMessageId;
     if (pendingMessageId && !autoMicTriggeredGreetingIdsRef.current.has(pendingMessageId)) {
       autoMicManualOverrideRef.current = true;
@@ -1742,7 +1744,7 @@ export default function ModeSelectHomeScreen() {
       setPendingAutoMicGreetingMessageId(null);
     }
     pauseListening();
-  }, [pauseListening, pendingAutoMicGreetingMessageId]);
+  }, [pauseListening, pendingAutoMicGreetingMessageId, setConversationModeEnabled]);
 
   useEffect(() => {
     if (!showGreetingBootingIndicator || isEnglishLanguage) {

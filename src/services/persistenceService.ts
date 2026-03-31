@@ -161,13 +161,22 @@ function isValidPreferences(value: unknown): boolean {
   const displayMode = value.displayMode;
   const reduceMotion = value.reduceMotion;
   const voiceAutoPlay = value.voiceAutoPlay;
+  const conversationModeEnabled = value.conversationModeEnabled;
   const hasValidLanguage =
     language === undefined || language === 'fr-CA' || language === 'en-CA' || language === 'fr-FR' || language === 'en';
   const hasValidDisplayMode = displayMode === undefined || displayMode === 'dark' || displayMode === 'light' || displayMode === 'system';
   const hasValidReduceMotion =
     reduceMotion === undefined || reduceMotion === 'system' || reduceMotion === 'on' || reduceMotion === 'off';
   const hasValidVoiceAutoPlay = voiceAutoPlay === undefined || typeof voiceAutoPlay === 'boolean';
-  return hasValidLanguage && hasValidDisplayMode && hasValidReduceMotion && hasValidVoiceAutoPlay;
+  const hasValidConversationModeEnabled =
+    conversationModeEnabled === undefined || typeof conversationModeEnabled === 'boolean';
+  return (
+    hasValidLanguage &&
+    hasValidDisplayMode &&
+    hasValidReduceMotion &&
+    hasValidVoiceAutoPlay &&
+    hasValidConversationModeEnabled
+  );
 }
 
 function isValidGamification(value: unknown): boolean {

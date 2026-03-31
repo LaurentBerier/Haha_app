@@ -168,4 +168,24 @@ describe('persistenceService', () => {
     expect(snapshot).toBeNull();
     expect(AsyncStorage.removeItem).toHaveBeenCalledWith('ha-ha-store-v1');
   });
+
+  it('rejects snapshots when conversationModeEnabled preference is invalid', async () => {
+    const invalidPreferenceSnapshot = {
+      selectedArtistId: 'cathy-gauthier',
+      conversations: {},
+      activeConversationId: null,
+      messagesByConversation: {},
+      preferences: {
+        language: 'fr-CA',
+        displayMode: 'dark',
+        conversationModeEnabled: 'true'
+      }
+    };
+
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify(invalidPreferenceSnapshot));
+
+    const snapshot = await loadPersistedSnapshot();
+
+    expect(snapshot).toBeNull();
+  });
 });

@@ -753,7 +753,10 @@ export default function ImproChainScreen() {
                   onToggle: () => {
                     setConversationModeEnabled(true);
                   },
-                  onPauseListening: pauseListening,
+                  onPauseListening: () => {
+                    setConversationModeEnabled(false);
+                    pauseListening();
+                  },
                   onResumeListening: resumeListening,
                   onTypingStateChange: setHasTypedDraft
                 }}
