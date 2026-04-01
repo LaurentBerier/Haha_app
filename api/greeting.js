@@ -20,6 +20,7 @@ const MODE_INTRO_TYPE = 'mode_intro';
 const DEFAULT_INTRO_TYPE = 'greeting';
 const MODE_ID_ON_JASE = 'on-jase';
 const MODE_ID_GRILL = 'grill';
+const MODE_ID_MEME_GENERATOR = 'meme-generator';
 const TRANSIENT_UPSTREAM_STATUSES = new Set([429, 500, 502, 503, 504, 529]);
 
 const MODE_ID_COMPAT = {
@@ -429,7 +430,12 @@ function parsePayload(body) {
   if (introType === MODE_INTRO_TYPE && !modeId) {
     throw new Error('modeId is required when introType is mode_intro.');
   }
-  if (introType === MODE_INTRO_TYPE && modeId !== MODE_ID_ON_JASE && modeId !== MODE_ID_GRILL) {
+  if (
+    introType === MODE_INTRO_TYPE &&
+    modeId !== MODE_ID_ON_JASE &&
+    modeId !== MODE_ID_GRILL &&
+    modeId !== MODE_ID_MEME_GENERATOR
+  ) {
     throw new Error(`modeId "${modeId}" is not supported for mode_intro.`);
   }
 
@@ -1232,11 +1238,13 @@ function buildModeIntroVariationCue(language, modeId) {
   const isEnglish = language.toLowerCase().startsWith('en');
   const englishByMode = {
     [MODE_ID_ON_JASE]: ['blunt coach energy', 'complicit reality check', 'direct wake-up call'],
-    [MODE_ID_GRILL]: ['playful fire', 'sharp roast setup', 'high-voltage tease']
+    [MODE_ID_GRILL]: ['playful fire', 'sharp roast setup', 'high-voltage tease'],
+    [MODE_ID_MEME_GENERATOR]: ['quick visual comedy', 'caption lab energy', 'shareable meme setup']
   };
   const frenchByMode = {
     [MODE_ID_ON_JASE]: ['coach cash', 'claque de realite complice', 'franchise utile'],
-    [MODE_ID_GRILL]: ['feu taquin', 'setup de roast mordant', 'attaque theatrale']
+    [MODE_ID_GRILL]: ['feu taquin', 'setup de roast mordant', 'attaque theatrale'],
+    [MODE_ID_MEME_GENERATOR]: ['atelier de caption', 'humour visuel rapide', 'mode meme partageable']
   };
   const source = isEnglish ? englishByMode : frenchByMode;
   const fallbacks = isEnglish ? ['direct opener'] : ['entree directe'];
@@ -1249,6 +1257,21 @@ function buildModeIntroSystemPrompt(language, modeId) {
   const isEnglish = language.toLowerCase().startsWith('en');
 
   if (isEnglish) {
+    if (modeId === MODE_ID_MEME_GENERATOR) {
+      return `You are Cathy Gauthier. You are opening the mode "Meme Generator".
+Write exactly 2 to 3 short sentences, maximum 45 words total.
+Required structure:
+1) Greet the user by first name when available.
+2) Explain that this mode turns their uploaded image into meme options.
+3) End by explicitly asking the user to upload one image now.
+Hard rules:
+- No tutorial/mic instructions.
+- No weather, headlines, or mode list.
+- Keep it welcoming, playful, and concrete.
+- If name style is unusual, add one short positive nod.
+- No markdown, no bullets, no asterisks, no em dash.`;
+    }
+
     if (modeId === MODE_ID_GRILL) {
       return `You are Cathy Gauthier. You are opening the mode "Mets-moi sur le grill".
 Write exactly 2 to 3 short sentences, maximum 45 words total.
@@ -1276,6 +1299,21 @@ Hard rules:
 - Keep it warm, direct, and confident.
 - If name style is unusual, add one short positive nod.
 - No markdown, no bullets, no asterisks, no em dash.`;
+  }
+
+  if (modeId === MODE_ID_MEME_GENERATOR) {
+    return `Tu es Cathy Gauthier. Tu ouvres le mode "Generateur de Meme".
+Ecris exactement 2 a 3 phrases courtes, maximum 45 mots au total.
+Structure obligatoire:
+1) Salue la personne par son prenom si disponible.
+2) Explique que ce mode transforme son image en options de memes.
+3) Termine en demandant explicitement d'uploader une image maintenant.
+Regles absolues:
+- Aucune instruction tutorial/micro.
+- Pas de meteo, pas d'actualites, pas de liste de modes.
+- Ton chaleureux, taquin et concret.
+- Si le style du prenom est inhabituel, ajoute un clin d'oeil positif bref.
+- Pas de markdown, pas de liste, pas d'asterisque, pas de tiret long.`;
   }
 
   if (modeId === MODE_ID_GRILL) {

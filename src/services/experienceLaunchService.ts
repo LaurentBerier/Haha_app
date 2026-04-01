@@ -91,7 +91,10 @@ async function resolveModeIntroMessage(params: {
   const fallbackIntro = generateModeIntro(params.modeId, params.userProfile);
   const token = params.accessToken.trim();
   const shouldAttemptApiIntro =
-    token.length > 0 && (params.modeId === MODE_IDS.ON_JASE || params.modeId === MODE_IDS.GRILL);
+    token.length > 0 &&
+    (params.modeId === MODE_IDS.ON_JASE ||
+      params.modeId === MODE_IDS.GRILL ||
+      params.modeId === MODE_IDS.MEME_GENERATOR);
   const startTs = Date.now();
   let resolvedIntro = fallbackIntro;
 
@@ -242,6 +245,14 @@ function resolveConversationLanguage(
   return artist.defaultLanguage;
 }
 
+function buildMemeUploadPrompt(language: string): string {
+  if (language.toLowerCase().startsWith('en')) {
+    return 'Upload one image and I will cook 3 meme options you can tap to choose.';
+  }
+
+  return "Upload une image et j'te sors 3 options de meme que tu peux choisir en un clic.";
+}
+
 function canLaunchModeForArtist(
   artist: { supportedModeIds: string[] },
   modeId: string
@@ -341,6 +352,32 @@ function launchModeConversation(params: LaunchModeConversationParams): Experienc
       language: nextConversation.language,
       content: resolvedIntro
     });
+
+    if (params.modeId === MODE_IDS.MEME_GENERATOR) {
+      const uploadPrompt = buildMemeUploadPrompt(nextConversation.language);
+      const uploadPromptId = generateId('msg');
+      latestState.addMessage(nextConversation.id, {
+        id: uploadPromptId,
+        conversationId: nextConversation.id,
+        role: 'artist',
+        content: uploadPrompt,
+        status: 'complete',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          injected: true,
+          injectedType: 'mode_nudge',
+          memeType: 'upload_prompt'
+        }
+      });
+      latestState.updateConversation(
+        nextConversation.id,
+        {
+          lastMessagePreview: uploadPrompt.slice(0, 120),
+          title: uploadPrompt.slice(0, 30)
+        },
+        artist.id
+      );
+    }
   })();
 
   return {

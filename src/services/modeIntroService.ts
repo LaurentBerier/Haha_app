@@ -207,7 +207,11 @@ export async function fetchModeIntroFromApi(params: FetchModeIntroFromApiParams)
   }
 
   const canonicalModeId = resolveModeIdCompat(params.modeId);
-  if (canonicalModeId !== MODE_IDS.ON_JASE && canonicalModeId !== MODE_IDS.GRILL) {
+  if (
+    canonicalModeId !== MODE_IDS.ON_JASE &&
+    canonicalModeId !== MODE_IDS.GRILL &&
+    canonicalModeId !== MODE_IDS.MEME_GENERATOR
+  ) {
     return null;
   }
 

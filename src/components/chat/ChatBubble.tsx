@@ -23,6 +23,12 @@ interface ChatBubbleProps {
   artistDisplayName: string;
   onRetryMessage?: (messageId: string) => void;
   onRetryVoice?: (messageId: string) => Promise<void> | void;
+  onChooseMemeOption?: (messageId: string) => Promise<void> | void;
+  onSaveMeme?: (messageId: string) => Promise<void> | void;
+  onShareMeme?: (messageId: string) => Promise<void> | void;
+  activeMemeOptionId?: string | null;
+  activeMemeSaveMessageId?: string | null;
+  activeMemeShareMessageId?: string | null;
   audioPlayer?: AudioPlayerController;
 }
 
@@ -56,6 +62,12 @@ function ChatBubbleBase({
   artistDisplayName,
   onRetryMessage,
   onRetryVoice,
+  onChooseMemeOption,
+  onSaveMeme,
+  onShareMeme,
+  activeMemeOptionId,
+  activeMemeSaveMessageId,
+  activeMemeShareMessageId,
   audioPlayer
 }: ChatBubbleProps) {
   const router = useRouter();
@@ -65,6 +77,9 @@ function ChatBubbleBase({
   const conversation = useStore((state) => findConversationById(state.conversations, message.conversationId));
   const enterOpacity = useRef(new Animated.Value(0)).current;
   const enterTranslateY = useRef(new Animated.Value(6)).current;
+  const memeSelectScale = useRef(new Animated.Value(1)).current;
+  const wasMemeOptionSelectedRef = useRef(false);
+  const didInitMemeSelectionRef = useRef(false);
   const [isVoiceRetryInFlight, setIsVoiceRetryInFlight] = useState(false);
   const isUser = message.role === 'user';
   const imageUri = message.metadata?.imageUri;
@@ -75,6 +90,14 @@ function ChatBubbleBase({
   const safeMessageContent = stripAudioTags(message.content);
   const hasText = safeMessageContent.trim().length > 0;
   const shouldShowPlaceholder = !hasText && !imageUri;
+  const isMemeOption = message.metadata?.memeType === 'option';
+  const isMemeFinal = message.metadata?.memeType === 'final' && Boolean(imageUri);
+  const hasMemeMetadata = typeof message.metadata?.memeType === 'string';
+  const isMemeOptionSelected = Boolean(message.metadata?.memeSelected);
+  const isAnyMemeOptionBusy = Boolean(activeMemeOptionId);
+  const isChoosingMemeOption = activeMemeOptionId === message.id;
+  const isSavingMeme = activeMemeSaveMessageId === message.id;
+  const isSharingMeme = activeMemeShareMessageId === message.id;
   const senderName = isUser ? userDisplayName : artistDisplayName;
   const battleResult = message.metadata?.battleResult;
   const battleBadgeLabel =
@@ -95,6 +118,7 @@ function ChatBubbleBase({
     message.role === 'artist' &&
     message.status === 'complete' &&
     hasText &&
+    !hasMemeMetadata &&
     conversation?.artistId === ARTIST_IDS.CATHY_GAUTHIER &&
     hasVoiceAccessForAccountType(accountType);
   const voiceControlState = resolveChatBubbleVoiceControlState({
@@ -284,6 +308,37 @@ function ChatBubbleBase({
   }, [enterOpacity, enterTranslateY]);
 
   useEffect(() => {
+    if (!didInitMemeSelectionRef.current) {
+      didInitMemeSelectionRef.current = true;
+      wasMemeOptionSelectedRef.current = isMemeOptionSelected;
+      return;
+    }
+
+    const wasSelected = wasMemeOptionSelectedRef.current;
+    wasMemeOptionSelectedRef.current = isMemeOptionSelected;
+
+    if (!isMemeOptionSelected || wasSelected) {
+      return;
+    }
+
+    memeSelectScale.setValue(1);
+    Animated.sequence([
+      Animated.timing(memeSelectScale, {
+        toValue: 1.04,
+        duration: 120,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: USE_NATIVE_DRIVER
+      }),
+      Animated.timing(memeSelectScale, {
+        toValue: 1,
+        duration: 140,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: USE_NATIVE_DRIVER
+      })
+    ]).start();
+  }, [isMemeOptionSelected, memeSelectScale]);
+
+  useEffect(() => {
     if (!shouldHydrateMissingVoice || !conversation) {
       return;
     }
@@ -369,12 +424,24 @@ function ChatBubbleBase({
         >
           {senderName}
         </Text>
-        <View
-          style={[styles.bubble, isUser ? styles.userBubble : styles.artistBubble]}
+        <Animated.View
+          style={[
+            styles.bubble,
+            isUser ? styles.userBubble : styles.artistBubble,
+            isMemeOptionSelected ? styles.memeOptionBubbleSelected : null,
+            { transform: [{ scale: memeSelectScale }] }
+          ]}
           testID={`chat-bubble-${message.role}-${message.id}`}
           accessibilityLabel={`chat-bubble-${message.role}`}
         >
           {imageUri ? <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" /> : null}
+
+          {isMemeOption && typeof message.metadata?.memeOptionRank === 'number' ? (
+            <View style={styles.memeOptionTagRow}>
+              <Text style={styles.memeOptionTag}>{`${t('memeOptionLabel')} ${message.metadata.memeOptionRank}`}</Text>
+              {isMemeOptionSelected ? <Text style={styles.memeOptionSelectedTag}>{t('memeOptionChosen')}</Text> : null}
+            </View>
+          ) : null}
 
           {hasText || shouldShowPlaceholder ? (
             <Text style={styles.content} testID={`chat-bubble-content-${message.id}`}>
@@ -396,6 +463,60 @@ function ChatBubbleBase({
             >
               <Text style={styles.upgradeLabel}>{t('upgradeCtaLabel')}</Text>
             </Pressable>
+          ) : null}
+
+          {isMemeOption && onChooseMemeOption ? (
+            <Pressable
+              onPress={() => {
+                void onChooseMemeOption(message.id);
+              }}
+              style={[styles.memePrimaryAction, (isAnyMemeOptionBusy || isMemeOptionSelected) && styles.disabledButton]}
+              disabled={isAnyMemeOptionBusy || isMemeOptionSelected}
+              testID={`chat-bubble-meme-choose-${message.id}`}
+            >
+              <Text style={styles.memePrimaryActionLabel}>
+                {isChoosingMemeOption
+                  ? t('memeFinalizeLoading')
+                  : isMemeOptionSelected
+                    ? t('memeOptionChosen')
+                    : t('memeChooseOption')}
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {isMemeFinal ? (
+            <View style={styles.memeActionsRow}>
+              <Pressable
+                onPress={() => {
+                  if (!onSaveMeme) {
+                    return;
+                  }
+                  void onSaveMeme(message.id);
+                }}
+                style={[styles.memeSecondaryAction, (isSavingMeme || isSharingMeme || !onSaveMeme) && styles.disabledButton]}
+                disabled={isSavingMeme || isSharingMeme || !onSaveMeme}
+                testID={`chat-bubble-meme-save-${message.id}`}
+              >
+                <Text style={styles.memeSecondaryActionLabel}>
+                  {isSavingMeme ? t('thinking') : t('memeSaveAction')}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  if (!onShareMeme) {
+                    return;
+                  }
+                  void onShareMeme(message.id);
+                }}
+                style={[styles.memeSecondaryAction, (isSavingMeme || isSharingMeme || !onShareMeme) && styles.disabledButton]}
+                disabled={isSavingMeme || isSharingMeme || !onShareMeme}
+                testID={`chat-bubble-meme-share-${message.id}`}
+              >
+                <Text style={styles.memeSecondaryActionLabel}>
+                  {isSharingMeme ? t('thinking') : t('memeShareAction')}
+                </Text>
+              </Pressable>
+            </View>
           ) : null}
 
           {showVoiceControl ? (
@@ -452,7 +573,7 @@ function ChatBubbleBase({
               <Text style={styles.reactionEmoji}>{message.metadata.cathyReaction}</Text>
             </View>
           ) : null}
-        </View>
+        </Animated.View>
       </View>
     </Animated.View>
   );
@@ -520,6 +641,68 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 19
   },
+  memeOptionTag: {
+    color: theme.colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 6
+  },
+  memeOptionTagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing.xs
+  },
+  memeOptionSelectedTag: {
+    marginBottom: 6,
+    color: theme.colors.neonBlue,
+    borderWidth: 1,
+    borderColor: theme.colors.neonBlue,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    fontSize: 10,
+    fontWeight: '700'
+  },
+  memePrimaryAction: {
+    marginTop: theme.spacing.xs,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: theme.colors.neonBlue,
+    borderRadius: 8,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 6,
+    backgroundColor: theme.colors.surfaceRaised
+  },
+  memePrimaryActionLabel: {
+    color: theme.colors.neonBlue,
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  memeActionsRow: {
+    marginTop: theme.spacing.xs,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs
+  },
+  memeSecondaryAction: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 8,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 6,
+    backgroundColor: theme.colors.surfaceRaised
+  },
+  memeSecondaryActionLabel: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700'
+  },
+  memeOptionBubbleSelected: {
+    borderColor: theme.colors.neonBlue,
+    backgroundColor: theme.colors.surfaceRaised
+  },
   error: {
     color: theme.colors.error,
     marginTop: theme.spacing.xs,
@@ -577,6 +760,9 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontSize: 12,
     fontWeight: '700'
+  },
+  disabledButton: {
+    opacity: 0.45
   },
   reactionBadge: {
     position: 'absolute',

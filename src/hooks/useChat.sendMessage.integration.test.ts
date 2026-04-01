@@ -54,6 +54,27 @@ const mockStoreRef: { current: MockStoreState | null } = { current: null };
 const streamMockParams: MockStreamParams[] = [];
 const mockFetchAndCacheVoice = jest.fn<Promise<string | null>, unknown[]>();
 const mockSaveMemoryFacts = jest.fn<Promise<void>, [string, string[]]>(async () => undefined);
+const mockAddScore = jest.fn<Promise<void>, [string]>(async () => undefined);
+const mockProposeMemeOptions = jest.fn<Promise<{
+  draftId: string;
+  options: Array<{
+    optionId: string;
+    caption: string;
+    placement: 'top' | 'bottom';
+    logoPlacement: 'left' | 'right';
+    previewImageBase64: string;
+    mimeType: string;
+  }>;
+}>, unknown[]>();
+const mockFinalizeMemeImage = jest.fn<Promise<{
+  imageBase64: string;
+  mimeType: string;
+  caption: string;
+  placement: 'top' | 'bottom';
+  logoPlacement: 'left' | 'right';
+}>, unknown[]>();
+const mockSaveMemeImage = jest.fn<Promise<{ ok: boolean; code?: string }>, unknown[]>();
+const mockShareMemeImage = jest.fn<Promise<{ ok: boolean; code?: string }>, unknown[]>();
 const mockStreamMockReply: (...args: unknown[]) => () => void = jest.fn((params: unknown) => {
   if (params && typeof params === 'object') {
     const candidate = params as Partial<MockStreamParams>;
@@ -102,11 +123,21 @@ jest.mock('../services/ttsService', () => ({
 }));
 
 jest.mock('../services/scoreManager', () => ({
-  addScore: jest.fn(async () => undefined)
+  addScore: (...args: [string]) => mockAddScore(...args)
 }));
 
 jest.mock('../services/profileService', () => ({
   saveMemoryFacts: (...args: [string, string[]]) => mockSaveMemoryFacts(...args)
+}));
+
+jest.mock('../services/memeGeneratorService', () => ({
+  proposeMemeOptions: (...args: unknown[]) => mockProposeMemeOptions(...args),
+  finalizeMemeImage: (...args: unknown[]) => mockFinalizeMemeImage(...args)
+}));
+
+jest.mock('../services/memeMediaService', () => ({
+  saveMemeImage: (...args: unknown[]) => mockSaveMemeImage(...args),
+  shareMemeImage: (...args: unknown[]) => mockShareMemeImage(...args)
 }));
 
 jest.mock('../store/useStore', () => {
@@ -286,6 +317,45 @@ describe('useChat sendMessage integration', () => {
     streamMockParams.length = 0;
     mockFetchAndCacheVoice.mockResolvedValue(null);
     mockSaveMemoryFacts.mockResolvedValue(undefined);
+    mockAddScore.mockResolvedValue(undefined);
+    mockProposeMemeOptions.mockResolvedValue({
+      draftId: 'draft-1',
+      options: [
+        {
+          optionId: 'opt-1',
+          caption: 'Option 1',
+          placement: 'top',
+          logoPlacement: 'right',
+          previewImageBase64: 'YmFzZTY0MQ==',
+          mimeType: 'image/png'
+        },
+        {
+          optionId: 'opt-2',
+          caption: 'Option 2',
+          placement: 'bottom',
+          logoPlacement: 'left',
+          previewImageBase64: 'YmFzZTY0Mg==',
+          mimeType: 'image/png'
+        },
+        {
+          optionId: 'opt-3',
+          caption: 'Option 3',
+          placement: 'top',
+          logoPlacement: 'right',
+          previewImageBase64: 'YmFzZTY0Mw==',
+          mimeType: 'image/png'
+        }
+      ]
+    });
+    mockFinalizeMemeImage.mockResolvedValue({
+      imageBase64: 'ZmluYWw=',
+      mimeType: 'image/png',
+      caption: 'Option 2',
+      placement: 'bottom',
+      logoPlacement: 'left'
+    });
+    mockSaveMemeImage.mockResolvedValue({ ok: true });
+    mockShareMemeImage.mockResolvedValue({ ok: true });
   });
 
   it('adds messages when render-time context is stale but live store context is valid', () => {
@@ -564,6 +634,105 @@ describe('useChat sendMessage integration', () => {
     expect(latestArtistMessage?.status).toBe('complete');
     expect(latestArtistMessage?.content).toContain('code langue');
     expect(mockStreamMockReply).not.toHaveBeenCalled();
+  });
+
+  it('uses meme pipeline for meme-generator image uploads and returns 3 options without stream', async () => {
+    const conversationId = 'conv-meme-propose';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    conversation.modeId = MODE_IDS.MEME_GENERATOR;
+    state.session.accessToken = 'token-meme';
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const sendResult = chat.sendMessage({
+      text: '',
+      image: {
+        uri: 'file:///tmp/photo.png',
+        mediaType: 'image/png',
+        base64: 'cGhvdG8='
+      }
+    });
+
+    expect(sendResult).toBeNull();
+    expect(mockStreamMockReply).not.toHaveBeenCalled();
+    expect(mockProposeMemeOptions).toHaveBeenCalledTimes(1);
+
+    await flushAsyncWork();
+
+    const allMessages = state.messagesByConversation[conversation.id]?.messages ?? [];
+    const optionMessages = allMessages.filter((message) => message.metadata?.memeType === 'option');
+    expect(optionMessages).toHaveLength(3);
+    expect(optionMessages[0]?.metadata?.imageUri).toContain('data:image/png;base64,');
+    expect(optionMessages[1]?.content).toBe('Option 2');
+  });
+
+  it('nudges upload prompt when meme-generator receives text without an image', () => {
+    const conversationId = 'conv-meme-text-only';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    conversation.modeId = MODE_IDS.MEME_GENERATOR;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const sendResult = chat.sendMessage({ text: 'Fais-moi un meme vite.' });
+    expect(sendResult).toBeNull();
+    expect(mockStreamMockReply).not.toHaveBeenCalled();
+    expect(mockProposeMemeOptions).not.toHaveBeenCalled();
+
+    const lastArtistMessage =
+      state.messagesByConversation[conversation.id]?.messages.find((message) => message.role === 'artist') ?? null;
+    expect(lastArtistMessage?.metadata?.memeType).toBe('upload_prompt');
+    expect(lastArtistMessage?.status).toBe('complete');
+  });
+
+  it('finalizes selected meme option and stores final image metadata', async () => {
+    const conversationId = 'conv-meme-finalize';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    conversation.modeId = MODE_IDS.MEME_GENERATOR;
+    state.session.accessToken = 'token-meme';
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    chat.sendMessage({
+      text: '',
+      image: {
+        uri: 'file:///tmp/photo.png',
+        mediaType: 'image/png',
+        base64: 'cGhvdG8='
+      }
+    });
+    await flushAsyncWork();
+
+    const optionMessage =
+      state.messagesByConversation[conversation.id]?.messages.find((message) => message.metadata?.memeOptionId === 'opt-2') ??
+      null;
+    expect(optionMessage).not.toBeNull();
+
+    await chat.chooseMemeOption(optionMessage?.id ?? '');
+    await flushAsyncWork();
+
+    expect(mockFinalizeMemeImage).toHaveBeenCalledTimes(1);
+    expect(mockAddScore).toHaveBeenCalledWith('meme_generated');
+
+    const finalMessage =
+      state.messagesByConversation[conversation.id]?.messages
+        .slice()
+        .reverse()
+        .find((message) => message.metadata?.memeType === 'final' && message.status === 'complete') ?? null;
+    expect(finalMessage).not.toBeNull();
+    expect(finalMessage?.metadata?.imageUri).toContain('data:image/png;base64,');
+    expect(finalMessage?.metadata?.memeOptionId).toBe('opt-2');
   });
 
   it('marks voice unavailable on TTS failure and recovers to ready on retryVoiceForMessage', async () => {

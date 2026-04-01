@@ -5,6 +5,7 @@ import { ChatInput } from '../../components/chat/ChatInput';
 import { MessageList } from '../../components/chat/MessageList';
 import { StreamingIndicator } from '../../components/chat/StreamingIndicator';
 import { ThreadModeHeader } from '../../components/chat/ThreadModeHeader';
+import { useToast } from '../../components/common/ToastProvider';
 import { BackButton } from '../../components/common/BackButton';
 import { resolveModeIdCompat } from '../../config/modeCompat';
 import { getModeById } from '../../config/modes';
@@ -56,9 +57,13 @@ export default function ChatScreen() {
   const conversationId = conversationIdParam ?? '';
   const isValidConversation = conversationId.length > 0;
   const [hasTypedDraft, setHasTypedDraft] = useState(false);
+  const [activeMemeOptionId, setActiveMemeOptionId] = useState<string | null>(null);
+  const [activeMemeSaveMessageId, setActiveMemeSaveMessageId] = useState<string | null>(null);
+  const [activeMemeShareMessageId, setActiveMemeShareMessageId] = useState<string | null>(null);
   const handledQueuedNonceRef = useRef<string | null>(null);
   const handledModeNudgeIdsRef = useRef<Set<string>>(new Set());
   const headerHorizontalInset = useHeaderHorizontalInset();
+  const toast = useToast();
 
   const sessionUser = useStore((state) => state.session?.user ?? null);
   const accessToken = useStore((state) => state.session?.accessToken ?? '');
@@ -74,6 +79,9 @@ export default function ChatScreen() {
   const {
     messages,
     sendMessage,
+    chooseMemeOption,
+    saveMemeAsset,
+    shareMemeAsset,
     retryMessage,
     retryVoiceForMessage,
     hasStreaming,
@@ -275,6 +283,65 @@ export default function ChatScreen() {
     replayOnFocus: false
   });
 
+  const handleChooseMemeOption = useCallback(
+    async (messageId: string): Promise<void> => {
+      if (activeMemeOptionId) {
+        return;
+      }
+      setActiveMemeOptionId(messageId);
+      try {
+        await chooseMemeOption(messageId);
+      } finally {
+        setActiveMemeOptionId(null);
+      }
+    },
+    [activeMemeOptionId, chooseMemeOption]
+  );
+
+  const handleSaveMeme = useCallback(
+    async (messageId: string): Promise<void> => {
+      if (activeMemeSaveMessageId || activeMemeShareMessageId) {
+        return;
+      }
+      setActiveMemeSaveMessageId(messageId);
+      try {
+        const result = await saveMemeAsset(messageId);
+        if (result === 'saved') {
+          toast.success(t('memeSavedSuccess'));
+          return;
+        }
+        if (result === 'permission_denied') {
+          toast.error(t('memeSavePermissionDenied'));
+          return;
+        }
+        toast.error(t('memeSaveFailed'));
+      } finally {
+        setActiveMemeSaveMessageId(null);
+      }
+    },
+    [activeMemeSaveMessageId, activeMemeShareMessageId, saveMemeAsset, toast]
+  );
+
+  const handleShareMeme = useCallback(
+    async (messageId: string): Promise<void> => {
+      if (activeMemeSaveMessageId || activeMemeShareMessageId) {
+        return;
+      }
+      setActiveMemeShareMessageId(messageId);
+      try {
+        const result = await shareMemeAsset(messageId);
+        if (result === 'shared') {
+          toast.success(t('memeSharedSuccess'));
+          return;
+        }
+        toast.error(t('memeShareFailed'));
+      } finally {
+        setActiveMemeShareMessageId(null);
+      }
+    },
+    [activeMemeSaveMessageId, activeMemeShareMessageId, shareMemeAsset, toast]
+  );
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.select({ ios: 'padding', default: undefined })}
@@ -299,6 +366,12 @@ export default function ChatScreen() {
               artistDisplayName={artistDisplayName}
               onRetryMessage={retryMessage}
               onRetryVoice={retryVoiceForMessage}
+              onChooseMemeOption={handleChooseMemeOption}
+              onSaveMeme={handleSaveMeme}
+              onShareMeme={handleShareMeme}
+              activeMemeOptionId={activeMemeOptionId}
+              activeMemeSaveMessageId={activeMemeSaveMessageId}
+              activeMemeShareMessageId={activeMemeShareMessageId}
               audioPlayer={audioPlayer}
             />
           </>

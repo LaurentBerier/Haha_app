@@ -191,6 +191,32 @@ describe('experienceLaunchService', () => {
     );
   });
 
+  it('injects an explicit meme upload prompt after meme-generator intro', async () => {
+    fetchModeIntroFromApiMock.mockResolvedValue('intro meme');
+
+    launchVisibleModeConversation({
+      artistId: 'cathy-gauthier',
+      modeId: 'meme-generator',
+      fallbackLanguage: 'fr-CA'
+    });
+
+    await settleIntroPipeline(350);
+
+    const addedMessages = addMessageMock.mock.calls.map((call) => call[1] as MockMessage);
+    expect(addedMessages).toHaveLength(2);
+    expect(addedMessages[0]?.status).toBe('pending');
+    expect(addedMessages[1]).toMatchObject({
+      role: 'artist',
+      status: 'complete',
+      metadata: {
+        injected: true,
+        injectedType: 'mode_nudge',
+        memeType: 'upload_prompt'
+      }
+    });
+    expect(addedMessages[1]?.content).toContain('3 options');
+  });
+
   it('re-enables voice auto-play when conversation mode is active during mode launch', () => {
     storeState.conversationModeEnabled = true;
     storeState.voiceAutoPlay = false;

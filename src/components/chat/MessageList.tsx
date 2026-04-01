@@ -17,6 +17,12 @@ interface MessageListProps {
   artistDisplayName: string;
   onRetryMessage?: (messageId: string) => void;
   onRetryVoice?: (messageId: string) => Promise<void> | void;
+  onChooseMemeOption?: (messageId: string) => Promise<void> | void;
+  onSaveMeme?: (messageId: string) => Promise<void> | void;
+  onShareMeme?: (messageId: string) => Promise<void> | void;
+  activeMemeOptionId?: string | null;
+  activeMemeSaveMessageId?: string | null;
+  activeMemeShareMessageId?: string | null;
   audioPlayer?: AudioPlayerController;
   testID?: string;
   listKey?: string;
@@ -38,6 +44,12 @@ function MessageListBase({
   artistDisplayName,
   onRetryMessage,
   onRetryVoice,
+  onChooseMemeOption,
+  onSaveMeme,
+  onShareMeme,
+  activeMemeOptionId,
+  activeMemeSaveMessageId,
+  activeMemeShareMessageId,
   audioPlayer,
   testID = 'message-list',
   listKey,
@@ -76,10 +88,28 @@ function MessageListBase({
         artistDisplayName={artistDisplayName}
         onRetryMessage={onRetryMessage}
         onRetryVoice={onRetryVoice}
+        onChooseMemeOption={onChooseMemeOption}
+        onSaveMeme={onSaveMeme}
+        onShareMeme={onShareMeme}
+        activeMemeOptionId={activeMemeOptionId}
+        activeMemeSaveMessageId={activeMemeSaveMessageId}
+        activeMemeShareMessageId={activeMemeShareMessageId}
         audioPlayer={audioPlayer}
       />
     ),
-    [artistDisplayName, audioPlayer, onRetryMessage, onRetryVoice, userDisplayName]
+    [
+      activeMemeOptionId,
+      activeMemeSaveMessageId,
+      activeMemeShareMessageId,
+      artistDisplayName,
+      audioPlayer,
+      onChooseMemeOption,
+      onRetryMessage,
+      onRetryVoice,
+      onSaveMeme,
+      onShareMeme,
+      userDisplayName
+    ]
   );
 
   return (

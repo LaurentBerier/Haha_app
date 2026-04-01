@@ -100,6 +100,22 @@ function isValidMessageMetadata(value: unknown): boolean {
     value.battleResult === 'light' ||
     value.battleResult === 'solid' ||
     value.battleResult === 'destruction';
+  const memeTypeValid =
+    value.memeType === undefined ||
+    value.memeType === 'upload_prompt' ||
+    value.memeType === 'option' ||
+    value.memeType === 'final';
+  const memeDraftIdValid = value.memeDraftId === undefined || typeof value.memeDraftId === 'string';
+  const memeOptionIdValid = value.memeOptionId === undefined || typeof value.memeOptionId === 'string';
+  const memeOptionRankValid =
+    value.memeOptionRank === undefined ||
+    (typeof value.memeOptionRank === 'number' && Number.isFinite(value.memeOptionRank) && value.memeOptionRank > 0);
+  const memeCaptionValid = value.memeCaption === undefined || typeof value.memeCaption === 'string';
+  const memePlacementValid =
+    value.memePlacement === undefined || value.memePlacement === 'top' || value.memePlacement === 'bottom';
+  const memeLogoPlacementValid =
+    value.memeLogoPlacement === undefined || value.memeLogoPlacement === 'left' || value.memeLogoPlacement === 'right';
+  const memeSelectedValid = value.memeSelected === undefined || typeof value.memeSelected === 'boolean';
   return (
     tokensUsedValid &&
     voiceUrlValid &&
@@ -118,7 +134,15 @@ function isValidMessageMetadata(value: unknown): boolean {
     showUpgradeCtaValid &&
     upgradeFromTierValid &&
     greetingActivitySnapshotValid &&
-    battleResultValid
+    battleResultValid &&
+    memeTypeValid &&
+    memeDraftIdValid &&
+    memeOptionIdValid &&
+    memeOptionRankValid &&
+    memeCaptionValid &&
+    memePlacementValid &&
+    memeLogoPlacementValid &&
+    memeSelectedValid
   );
 }
 

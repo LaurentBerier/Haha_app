@@ -5,12 +5,18 @@ import { USE_MOCK_LLM } from '../config/env';
 import { getAllCathyFewShots, getCathyModeFewShots } from '../data/cathy-gauthier/modeFewShots';
 import { getLanguage } from '../i18n';
 import type { ChatError } from '../models/ChatError';
-import type { ChatSendPayload } from '../models/ChatSendPayload';
+import type { ChatImageAttachment, ChatSendPayload } from '../models/ChatSendPayload';
 import type { Conversation } from '../models/Conversation';
 import type { Message } from '../models/Message';
 import type { ClaudeAvailableExperience, ClaudeContentBlock, ClaudeMessage } from '../services/claudeApiService';
 import { streamClaudeResponse } from '../services/claudeApiService';
 import { detectImageIntent, type ImageIntent } from '../services/imageIntentService';
+import {
+  finalizeMemeImage,
+  proposeMemeOptions,
+  type MemePlacement
+} from '../services/memeGeneratorService';
+import { saveMemeImage, shareMemeImage } from '../services/memeMediaService';
 import { streamMockReply } from '../services/mockLlmService';
 import { buildSystemPromptForArtist, formatConversationHistory } from '../services/personalityEngineService';
 import { saveMemoryFacts } from '../services/profileService';
@@ -60,6 +66,16 @@ interface StreamJob {
   tutorialMode: boolean;
 }
 
+interface MemeDraftState {
+  draftId: string;
+  image: ChatImageAttachment;
+  language: string;
+  optionsById: Record<string, { caption: string; placement: MemePlacement }>;
+  createdAt: number;
+}
+
+type MemeAssetResult = 'saved' | 'shared' | 'permission_denied' | 'share_unavailable' | 'failed';
+
 type PendingLanguageConfirmationDecision = 'confirm' | 'reject' | 'unknown';
 
 interface PendingAutoLanguageSwitch {
@@ -84,6 +100,8 @@ const MAX_CLAUDE_HISTORY_MESSAGES = 39;
 const VOICE_MAX_CLAUDE_HISTORY_MESSAGES = 8;
 const CONFIRMATION_YES_PREFIX_PATTERN = /^(?:oui|ouais|yes|yeah|yep|sure|ok|okay|d accord|daccord)\b/i;
 const CONFIRMATION_NO_PREFIX_PATTERN = /^(?:non|no|nope|nah|annule|annuler|cancel)\b/i;
+const MEME_DRAFT_TTL_MS = 30 * 60_000;
+const MEME_DRAFT_MAX_COUNT = 8;
 export {
   buildCathyVoiceNotice,
   resolveTerminalTtsCode,
@@ -91,6 +109,108 @@ export {
   type TerminalTtsCode,
   type VoiceErrorCode
 };
+
+function isEnglishLanguage(language: string): boolean {
+  return language.toLowerCase().startsWith('en');
+}
+
+function buildMemeUploadPrompt(language: string): string {
+  if (isEnglishLanguage(language)) {
+    return 'Send one image and I will generate 3 meme options right away.';
+  }
+
+  return 'Envoie une image et je te propose 3 memes tout de suite.';
+}
+
+function buildMemeGeneratingMessage(language: string): string {
+  if (isEnglishLanguage(language)) {
+    return 'Preparing 3 meme options...';
+  }
+
+  return 'Je te prepare 3 options de meme...';
+}
+
+function buildMemeOptionsReadyMessage(language: string): string {
+  if (isEnglishLanguage(language)) {
+    return 'Here are 3 options. Tap the one you want.';
+  }
+
+  return 'Voici 3 options. Choisis celle que tu veux.';
+}
+
+function buildMemeFinalizeLoadingMessage(language: string): string {
+  if (isEnglishLanguage(language)) {
+    return 'Finalizing your meme...';
+  }
+
+  return 'Je finalise ton meme...';
+}
+
+function buildMemeFinalReadyMessage(language: string): string {
+  if (isEnglishLanguage(language)) {
+    return 'Perfect. Your final meme is ready.';
+  }
+
+  return 'Parfait. Ton meme final est pret.';
+}
+
+function buildMemeOptionExpiredMessage(language: string): string {
+  if (isEnglishLanguage(language)) {
+    return 'This option expired. Send the image again and I will regenerate.';
+  }
+
+  return "Cette option a expire. Renvoie l'image et je recommence.";
+}
+
+function buildMemeFailureMessage(language: string): string {
+  if (isEnglishLanguage(language)) {
+    return 'Could not generate this meme. Send the image again and I will retry.';
+  }
+
+  return "Impossible de generer ce meme. Renvoie l'image et je recommence.";
+}
+
+function buildMemeDataUri(mimeType: string, base64: string): string {
+  const safeMimeType = mimeType.trim() || 'image/png';
+  return `data:${safeMimeType};base64,${base64}`;
+}
+
+function resolveMemeErrorMessage(error: unknown, language: string): string {
+  const fallback = buildMemeFailureMessage(language);
+  if (!(error instanceof Error)) {
+    return fallback;
+  }
+
+  const normalized = error.message.trim();
+  if (!normalized || normalized.length > 180) {
+    return fallback;
+  }
+
+  return normalized;
+}
+
+function pruneMemeDraftCache(cache: Map<string, MemeDraftState>): void {
+  const now = Date.now();
+  for (const [draftId, draft] of cache.entries()) {
+    if (now - draft.createdAt > MEME_DRAFT_TTL_MS) {
+      cache.delete(draftId);
+    }
+  }
+
+  if (cache.size <= MEME_DRAFT_MAX_COUNT) {
+    return;
+  }
+
+  const ordered = [...cache.values()].sort((a, b) => a.createdAt - b.createdAt);
+  const overflow = cache.size - MEME_DRAFT_MAX_COUNT;
+  for (let index = 0; index < overflow; index += 1) {
+    const candidate = ordered[index];
+    if (!candidate) {
+      continue;
+    }
+    cache.delete(candidate.draftId);
+  }
+}
 
 
 function buildMemoryPrimerMessage(facts: string[], language: string): ClaudeMessage | null {
@@ -285,6 +405,7 @@ export function useChat(conversationId: string) {
   const displayPendingTagRef = useRef('');
   const rawTtsResponseRef = useRef('');
   const pendingAutoLanguageSwitchRef = useRef<Map<string, PendingAutoLanguageSwitch>>(new Map());
+  const memeDraftsRef = useRef<Map<string, MemeDraftState>>(new Map());
   const conversationIdRef = useRef(conversationId);
   conversationIdRef.current = conversationId;
   const audioPlaybackStateRef = useRef({
@@ -1371,6 +1492,239 @@ export function useChat(conversationId: string) {
     [accessToken, audioPlayer, currentAccountType, currentRole, resolveVoiceErrorCode, updateMessage]
   );
 
+  const chooseMemeOption = useCallback(
+    async (optionMessageId: string): Promise<void> => {
+      const targetConversationId = conversationIdRef.current.trim();
+      const normalizedOptionMessageId = optionMessageId.trim();
+      if (!targetConversationId || !normalizedOptionMessageId) {
+        return;
+      }
+
+      const latestState = useStore.getState();
+      const latestMessages = latestState.messagesByConversation[targetConversationId]?.messages ?? [];
+      const targetConversation = findConversationById(latestState.conversations, targetConversationId);
+      const language = targetConversation?.language || getLanguage();
+      const selectedOptionMessage =
+        latestMessages.find((message) => message.id === normalizedOptionMessageId && message.metadata?.memeType === 'option') ??
+        null;
+
+      if (!selectedOptionMessage) {
+        return;
+      }
+
+      const draftId = typeof selectedOptionMessage.metadata?.memeDraftId === 'string'
+        ? selectedOptionMessage.metadata.memeDraftId.trim()
+        : '';
+      const optionId = typeof selectedOptionMessage.metadata?.memeOptionId === 'string'
+        ? selectedOptionMessage.metadata.memeOptionId.trim()
+        : '';
+      if (!draftId || !optionId) {
+        addMessage(targetConversationId, {
+          id: generateId('msg'),
+          conversationId: targetConversationId,
+          role: 'artist',
+          content: buildMemeOptionExpiredMessage(language),
+          status: 'complete',
+          timestamp: new Date().toISOString(),
+          metadata: {
+            injected: true,
+            memeType: 'upload_prompt'
+          }
+        });
+        return;
+      }
+
+      pruneMemeDraftCache(memeDraftsRef.current);
+      const draft = memeDraftsRef.current.get(draftId);
+      const optionState = draft?.optionsById[optionId];
+      if (!draft || !optionState) {
+        addMessage(targetConversationId, {
+          id: generateId('msg'),
+          conversationId: targetConversationId,
+          role: 'artist',
+          content: buildMemeOptionExpiredMessage(language),
+          status: 'complete',
+          timestamp: new Date().toISOString(),
+          metadata: {
+            injected: true,
+            memeType: 'upload_prompt'
+          }
+        });
+        return;
+      }
+
+      if (
+        latestMessages.some(
+          (message) =>
+            message.role === 'artist' &&
+            message.status === 'pending' &&
+            message.metadata?.memeType === 'final' &&
+            message.metadata?.memeDraftId === draftId
+        )
+      ) {
+        return;
+      }
+
+      const optionMessages = latestMessages.filter(
+        (message) =>
+          message.role === 'artist' &&
+          message.metadata?.memeType === 'option' &&
+          message.metadata?.memeDraftId === draftId
+      );
+      optionMessages.forEach((message) => {
+        updateMessage(targetConversationId, message.id, {
+          metadata: {
+            ...(message.metadata ?? {}),
+            memeSelected: message.id === normalizedOptionMessageId
+          }
+        });
+      });
+
+      const finalMessageId = generateId('msg');
+      addMessage(targetConversationId, {
+        id: finalMessageId,
+        conversationId: targetConversationId,
+        role: 'artist',
+        content: buildMemeFinalizeLoadingMessage(language),
+        status: 'pending',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          injected: true,
+          memeType: 'final',
+          memeDraftId: draftId,
+          memeOptionId: optionId,
+          memeCaption: optionState.caption,
+          memePlacement: optionState.placement
+        }
+      });
+
+      const latestAccessToken = latestState.session?.accessToken ?? accessToken;
+      try {
+        const finalized = await finalizeMemeImage({
+          language: draft.language,
+          image: draft.image,
+          caption: optionState.caption,
+          placement: optionState.placement,
+          accessToken: latestAccessToken
+        });
+
+        updateMessage(targetConversationId, finalMessageId, {
+          status: 'complete',
+          content: buildMemeFinalReadyMessage(language),
+          metadata: {
+            injected: true,
+            memeType: 'final',
+            imageUri: buildMemeDataUri(finalized.mimeType, finalized.imageBase64),
+            imageMediaType: finalized.mimeType,
+            memeDraftId: draftId,
+            memeOptionId: optionId,
+            memeCaption: finalized.caption,
+            memePlacement: finalized.placement,
+            memeLogoPlacement: finalized.logoPlacement,
+            memeSelected: true
+          }
+        });
+        updateConversation(
+          targetConversationId,
+          {
+            lastMessagePreview: buildMemeFinalReadyMessage(language),
+            title: buildMemeFinalReadyMessage(language).slice(0, 30)
+          },
+          targetConversation?.artistId ?? ARTIST_IDS.CATHY_GAUTHIER
+        );
+
+        try {
+          await addScore('meme_generated');
+        } catch (error) {
+          applyLocalScoreAction('meme_generated');
+          if (__DEV__) {
+            console.warn('[useChat] meme score action failed', error);
+          }
+        }
+      } catch (error: unknown) {
+        optionMessages.forEach((message) => {
+          updateMessage(targetConversationId, message.id, {
+            metadata: {
+              ...(message.metadata ?? {}),
+              memeSelected: false
+            }
+          });
+        });
+
+        updateMessage(targetConversationId, finalMessageId, {
+          status: 'complete',
+          content: resolveMemeErrorMessage(error, language),
+          metadata: {
+            injected: true,
+            memeType: 'upload_prompt',
+            errorMessage: error instanceof Error ? error.message : undefined
+          }
+        });
+      }
+    },
+    [accessToken, addMessage, applyLocalScoreAction, updateConversation, updateMessage]
+  );
+
+  const saveMemeAsset = useCallback(async (messageId: string): Promise<MemeAssetResult> => {
+    const targetConversationId = conversationIdRef.current.trim();
+    const normalizedMessageId = messageId.trim();
+    if (!targetConversationId || !normalizedMessageId) {
+      return 'failed';
+    }
+
+    const latestState = useStore.getState();
+    const message =
+      latestState.messagesByConversation[targetConversationId]?.messages.find((entry) => entry.id === normalizedMessageId) ??
+      null;
+    const imageUri = typeof message?.metadata?.imageUri === 'string' ? message.metadata.imageUri.trim() : '';
+    if (!imageUri) {
+      return 'failed';
+    }
+
+    const result = await saveMemeImage({
+      imageUri,
+      mimeType: typeof message?.metadata?.imageMediaType === 'string' ? message.metadata.imageMediaType : undefined,
+      fileNameBase: 'haha-meme'
+    });
+    if (result.ok) {
+      return 'saved';
+    }
+    if (result.code === 'permission_denied') {
+      return 'permission_denied';
+    }
+    return 'failed';
+  }, []);
+
+  const shareMemeAsset = useCallback(async (messageId: string): Promise<MemeAssetResult> => {
+    const targetConversationId = conversationIdRef.current.trim();
+    const normalizedMessageId = messageId.trim();
+    if (!targetConversationId || !normalizedMessageId) {
+      return 'failed';
+    }
+
+    const latestState = useStore.getState();
+    const message =
+      latestState.messagesByConversation[targetConversationId]?.messages.find((entry) => entry.id === normalizedMessageId) ??
+      null;
+    const imageUri = typeof message?.metadata?.imageUri === 'string' ? message.metadata.imageUri.trim() : '';
+    if (!imageUri) {
+      return 'failed';
+    }
+
+    const result = await shareMemeImage({
+      imageUri,
+      mimeType: typeof message?.metadata?.imageMediaType === 'string' ? message.metadata.imageMediaType : undefined,
+      dialogTitle: 'Meme'
+    });
+    if (result.ok) {
+      return 'shared';
+    }
+    if (result.code === 'share_unavailable') {
+      return 'share_unavailable';
+    }
+    return 'failed';
+  }, []);
+
   const sendMessageInternal = (payload: ChatSendPayload, options?: InternalSendOptions): ChatError | null => {
     const trimmed = payload.text.trim();
     const hasImage = Boolean(payload.image);
@@ -1551,6 +1905,148 @@ export function useChat(conversationId: string) {
       return null;
     }
 
+    const modeId = targetConversation.modeId || MODE_IDS.DEFAULT;
+    const imageIntent = hasImage ? detectImageIntent(modeId, trimmed.length > 0) : 'default';
+    if (modeId === MODE_IDS.MEME_GENERATOR && !hasImage) {
+      addMessage(targetConversationId, {
+        id: generateId('msg'),
+        conversationId: targetConversationId,
+        role: 'artist',
+        content: buildMemeUploadPrompt(languageForTurn),
+        status: 'complete',
+        timestamp: now,
+        metadata: {
+          injected: true,
+          memeType: 'upload_prompt'
+        }
+      });
+
+      updateConversation(
+        targetConversationId,
+        {
+          language: shouldPersistLanguage ? languageForTurn : preferredLanguage,
+          lastMessagePreview: previewText,
+          title: previewText.slice(0, 30)
+        },
+        targetConversation.artistId
+      );
+      return null;
+    }
+
+    if (modeId === MODE_IDS.MEME_GENERATOR && payload.image) {
+      const artistMessageId = generateId('msg');
+      addMessage(targetConversationId, {
+        id: artistMessageId,
+        conversationId: targetConversationId,
+        role: 'artist',
+        content: buildMemeGeneratingMessage(languageForTurn),
+        status: 'pending',
+        timestamp: now,
+        metadata: {
+          injected: true,
+          memeType: 'upload_prompt'
+        }
+      });
+
+      const latestAccessToken = latestStateForSend.session?.accessToken ?? accessToken;
+      const sourceImage = payload.image;
+      const promptText = trimmed || undefined;
+      void (async () => {
+        try {
+          const proposed = await proposeMemeOptions({
+            language: languageForTurn,
+            image: sourceImage,
+            text: promptText,
+            accessToken: latestAccessToken
+          });
+
+          const optionsById = proposed.options.reduce<Record<string, { caption: string; placement: MemePlacement }>>(
+            (acc, option) => {
+              acc[option.optionId] = {
+                caption: option.caption,
+                placement: option.placement
+              };
+              return acc;
+            },
+            {}
+          );
+
+          memeDraftsRef.current.set(proposed.draftId, {
+            draftId: proposed.draftId,
+            image: sourceImage,
+            language: languageForTurn,
+            optionsById,
+            createdAt: Date.now()
+          });
+          pruneMemeDraftCache(memeDraftsRef.current);
+
+          updateMessage(targetConversationId, artistMessageId, {
+            status: 'complete',
+            content: buildMemeOptionsReadyMessage(languageForTurn),
+            metadata: {
+              injected: true,
+              memeType: 'upload_prompt',
+              memeDraftId: proposed.draftId
+            }
+          });
+
+          proposed.options.forEach((option, index) => {
+            addMessage(targetConversationId, {
+              id: generateId('msg'),
+              conversationId: targetConversationId,
+              role: 'artist',
+              content: option.caption,
+              status: 'complete',
+              timestamp: new Date().toISOString(),
+              metadata: {
+                injected: true,
+                imageUri: buildMemeDataUri(option.mimeType, option.previewImageBase64),
+                imageMediaType: option.mimeType,
+                memeType: 'option',
+                memeDraftId: proposed.draftId,
+                memeOptionId: option.optionId,
+                memeOptionRank: index + 1,
+                memeCaption: option.caption,
+                memePlacement: option.placement,
+                memeLogoPlacement: option.logoPlacement,
+                memeSelected: false
+              }
+            });
+          });
+
+          updateConversation(
+            targetConversationId,
+            {
+              lastMessagePreview: buildMemeOptionsReadyMessage(languageForTurn),
+              title: buildMemeOptionsReadyMessage(languageForTurn).slice(0, 30)
+            },
+            targetConversation.artistId
+          );
+        } catch (error: unknown) {
+          updateMessage(targetConversationId, artistMessageId, {
+            status: 'complete',
+            content: resolveMemeErrorMessage(error, languageForTurn),
+            metadata: {
+              injected: true,
+              memeType: 'upload_prompt',
+              errorMessage: error instanceof Error ? error.message : undefined
+            }
+          });
+        }
+      })();
+
+      updateConversation(
+        targetConversationId,
+        {
+          language: shouldPersistLanguage ? languageForTurn : preferredLanguage,
+          lastMessagePreview: previewText,
+          title: previewText.slice(0, 30)
+        },
+        targetConversation.artistId
+      );
+      return null;
+    }
+
     const artistMessageId = generateId('msg');
     const placeholder: Message = {
       id: artistMessageId,
@@ -1563,9 +2059,7 @@ export function useChat(conversationId: string) {
 
     addMessage(targetConversationId, placeholder);
 
-    const modeId = targetConversation.modeId || MODE_IDS.DEFAULT;
     const availableExperiences = buildAvailableExperiencesForPrompt(targetConversation.artistId, languageForTurn);
-    const imageIntent = hasImage ? detectImageIntent(modeId, trimmed.length > 0) : 'default';
     const imageIntentPromptPrefix = getImageIntentPromptPrefix(imageIntent);
     const latestProfile = latestStateForSend.userProfile ?? userProfile;
     const isVoiceModeTurn = Boolean(latestStateForSend.conversationModeEnabled);
@@ -1681,6 +2175,7 @@ export function useChat(conversationId: string) {
       queueRef.current = [];
       failedJobsRef.current.clear();
       pendingAutoLanguageSwitchRef.current.clear();
+      memeDraftsRef.current.clear();
       isStreamingRef.current = false;
       runNextLockRef.current = false;
       streamingConversationIdRef.current = null;
@@ -1704,6 +2199,9 @@ export function useChat(conversationId: string) {
     sendContextBlockReason,
     currentArtistName: currentArtist?.name ?? null,
     sendMessage,
+    chooseMemeOption,
+    saveMemeAsset,
+    shareMemeAsset,
     retryMessage,
     retryVoiceForMessage,
     audioPlayer

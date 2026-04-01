@@ -659,6 +659,39 @@ describe('api/greeting tutorial behavior', () => {
     expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
   });
 
+  it('supports meme-generator mode_intro and asks for image upload intent', async () => {
+    const supabase = buildSupabaseClient({
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 0 }
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    const fetchMock = installFetchMockWithOptions({
+      anthropicText: 'Upload your image and I will generate three meme options.'
+    });
+
+    const handler = require('../greeting');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        language: 'en-CA',
+        introType: 'mode_intro',
+        modeId: 'meme-generator',
+        isSessionFirstGreeting: false
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const anthropicBody = extractAnthropicRequestBody(fetchMock);
+    expect(anthropicBody.system).toContain('You are opening the mode "Meme Generator".');
+    expect(anthropicBody.messages?.[0]?.content).toContain('Mode ID: meme-generator');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
+  });
+
   it('rejects mode_intro payloads without modeId', async () => {
     const supabase = buildSupabaseClient();
     jest.doMock('@supabase/supabase-js', () => ({

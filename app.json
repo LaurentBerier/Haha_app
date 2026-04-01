@@ -26,6 +26,13 @@
         }
       ],
       [
+        "expo-media-library",
+        {
+          "photosPermission": "Ha-Ha.ai saves generated memes to your photo library.",
+          "savePhotosPermission": "Ha-Ha.ai saves generated memes to your photo library."
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "Ha-Ha.ai uses your location to personalize Cathy's greeting with local weather."
@@ -42,6 +49,7 @@
         "NSMicrophoneUsageDescription": "Ha-Ha.ai uses your microphone to transcribe voice messages.",
         "NSSpeechRecognitionUsageDescription": "Ha-Ha.ai converts your spoken words into text messages.",
         "NSPhotoLibraryUsageDescription": "Ha-Ha.ai uses your photos so you can share images in chat.",
+        "NSPhotoLibraryAddUsageDescription": "Ha-Ha.ai saves generated memes to your photo library.",
         "NSLocationWhenInUseUsageDescription": "Ha-Ha.ai uses your location to personalize Cathy's greeting with local weather."
       }
     },

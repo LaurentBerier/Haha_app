@@ -29,6 +29,14 @@ export interface MessageMetadata {
   showUpgradeCta?: boolean;
   upgradeFromTier?: string;
   greetingActivitySnapshot?: GreetingActivitySnapshot;
+  memeType?: 'upload_prompt' | 'option' | 'final';
+  memeDraftId?: string;
+  memeOptionId?: string;
+  memeOptionRank?: number;
+  memeCaption?: string;
+  memePlacement?: 'top' | 'bottom';
+  memeLogoPlacement?: 'left' | 'right';
+  memeSelected?: boolean;
 }
 
 export interface Message {
