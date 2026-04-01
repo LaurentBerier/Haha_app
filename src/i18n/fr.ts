@@ -174,17 +174,12 @@ export const fr = {
   gameTarotAllRevealed: 'Toutes les cartes révélées !',
   gameTarotSeeVerdict: 'Voir le verdict de Cathy',
   gameLaunchGreetingLoading: 'Cathy prépare ton entrée en jeu...',
-  gameLaunchGreetingTarotExplain:
-    'En gros, tu choisis un thème, je pige trois cartes et je lis ton avenir à ma sauce.',
-  gameLaunchGreetingTarotJoke: 'Promis, mes cartes mentent moins que ton ex un vendredi soir.',
-  gameLaunchGreetingVraiExplain:
-    'Le principe: je te sors trois affirmations, deux vraies et une inventée, puis tu dois flairer le mensonge.',
-  gameLaunchGreetingVraiJoke: "Si tu te plantes, c'est correct, même moi je m'obstine contre mes propres souvenirs.",
-  gameLaunchGreetingImproExplain:
-    'On construit une histoire absurde ensemble: tu lances tes répliques, je monte la sauce et je termine le chaos.',
-  gameLaunchGreetingImproJoke:
-    'C\'est comme une thérapie, mais avec plus de punchlines et moins de remboursement.',
-  gameLaunchGreetingProvocation: 'Clique « On y va! »... ou quoi, t\'as peur de ce qui s\'en vient?',
+  gameLaunchGreetingTarotExplain: 'Tu choisis un thème, je tire 3 cartes et on voit la tendance.',
+  gameLaunchGreetingTarotJoke: 'Si les cartes te roastent, promets-moi de ne pas blâmer Mercure.',
+  gameLaunchGreetingVraiExplain: 'Je te donne 3 affirmations: 2 vraies, 1 inventée. À toi de trouver.',
+  gameLaunchGreetingVraiJoke: "Ton détecteur de mensonge va s'échauffer un peu.",
+  gameLaunchGreetingImproExplain: 'On improvise une histoire ensemble, tour par tour.',
+  gameLaunchGreetingImproJoke: 'Plus c\'est absurde, plus ça marche.',
   gameLaunchGreetingCta: 'On y va!',
   gameExit: 'Quitter',
   gameAbandon: 'Abandonner',

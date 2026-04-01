@@ -174,18 +174,12 @@ export const en = {
   gameTarotAllRevealed: 'All cards revealed!',
   gameTarotSeeVerdict: "See Cathy's verdict",
   gameLaunchGreetingLoading: 'Cathy is warming up your game intro...',
-  gameLaunchGreetingTarotExplain:
-    'Quick version: you pick a theme, I draw three cards, and I read your future with zero filter.',
-  gameLaunchGreetingTarotJoke: 'My cards are still more reliable than your ex saying "I\'ll text you when I get home."',
-  gameLaunchGreetingVraiExplain:
-    'How it works: I drop three statements, two true and one invented, and you have to sniff out the lie.',
-  gameLaunchGreetingVraiJoke:
-    'If you miss, no shame, I argue with my own memories all the time.',
-  gameLaunchGreetingImproExplain:
-    'We build a ridiculous story together: you fire lines, I raise the chaos, and I land the ending.',
-  gameLaunchGreetingImproJoke:
-    'Think of it as therapy, but with more punchlines and fewer insurance claims.',
-  gameLaunchGreetingProvocation: 'Hit "Let\'s go"... unless you\'re scared of what\'s coming.',
+  gameLaunchGreetingTarotExplain: 'Pick a theme, I draw 3 cards, and we read the vibe.',
+  gameLaunchGreetingTarotJoke: "If the cards roast you, don't blame Mercury.",
+  gameLaunchGreetingVraiExplain: 'I give you 3 statements: 2 true, 1 invented. You spot the lie.',
+  gameLaunchGreetingVraiJoke: 'Your lie detector is about to warm up.',
+  gameLaunchGreetingImproExplain: 'We build an impro story together, turn by turn.',
+  gameLaunchGreetingImproJoke: 'The weirder it gets, the better it works.',
   gameLaunchGreetingCta: "Let's go!",
   gameExit: 'Exit',
   gameAbandon: 'Abandon',

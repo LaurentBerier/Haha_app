@@ -113,18 +113,27 @@ describe('useGameLaunchGreeting', () => {
     consoleErrorSpy?.mockRestore();
   });
 
-  it('builds a structured fallback greeting with explain, joke and provocation', () => {
-    const greeting = buildFallbackGameLaunchGreeting({
+  it('builds a concise fallback greeting with emoji and variation', () => {
+    const greetingA = buildFallbackGameLaunchGreeting({
       language: 'fr-CA',
       gameType: 'vrai-ou-invente',
-      gameDescription: '2 vraies, 1 inventée. Trouve le mensonge.'
+      gameDescription: '2 vraies, 1 inventée. Trouve le mensonge.',
+      variantSeed: 11
     });
 
-    expect(greeting).toContain('Le principe:');
-    expect(greeting).toContain('On y va');
-    expect(greeting).not.toContain('Salut');
-    expect(greeting).not.toContain("Moi, c'est");
-    expect(greeting.split('\n\n').length).toBeGreaterThanOrEqual(3);
+    const greetingB = buildFallbackGameLaunchGreeting({
+      language: 'fr-CA',
+      gameType: 'vrai-ou-invente',
+      gameDescription: '2 vraies, 1 inventée. Trouve le mensonge.',
+      variantSeed: 22
+    });
+
+    expect(greetingA).toContain('Je te donne 3 affirmations');
+    expect(greetingA).toContain('détecteur de mensonge');
+    expect(greetingA).not.toContain("t'as peur");
+    expect(greetingA).toMatch(/[\u{1F300}-\u{1FAFF}]/u);
+    expect(greetingA.split('\n\n').length).toBeGreaterThanOrEqual(2);
+    expect(greetingA).not.toBe(greetingB);
   });
 
   it('resolves loading -> ready, sanitizes intro phrases, and keeps intro visible until dismiss', async () => {
@@ -145,9 +154,10 @@ describe('useGameLaunchGreeting', () => {
     await flushAsyncEffects();
 
     expect(latestStateRef.current?.isGreetingLoading).toBe(false);
-    expect(latestStateRef.current?.greetingText).toContain('En gros, tu choisis un thème');
-    expect(latestStateRef.current?.greetingText).toContain('Clique « On y va! »');
+    expect(latestStateRef.current?.greetingText).toContain('Tu choisis un thème');
+    expect(latestStateRef.current?.greetingText).toContain('Mercure');
     expect(latestStateRef.current?.greetingText).not.toContain('Salut API tarot.');
+    expect(latestStateRef.current?.greetingText).not.toContain("t'as peur");
     expect(latestStateRef.current?.isIntroVisible).toBe(true);
 
     act(() => {
@@ -183,6 +193,34 @@ describe('useGameLaunchGreeting', () => {
     expect(latestStateRef.current?.greetingText).toContain('Le principe: tu choisis un thème');
     expect(latestStateRef.current?.greetingText).toContain('Blague: même mes cartes');
     expect(latestStateRef.current?.greetingText).not.toContain('Salut');
+
+    await act(async () => {
+      renderer?.unmount();
+    });
+  });
+
+  it('removes the provocative launch line from API greeting payload', async () => {
+    mockFetchGameGreetingFromApi.mockResolvedValue(
+      "Le principe: on improvise ensemble, tour par tour.\n\nClique « On y va! »... ou quoi, t'as peur de ce qui s'en vient?"
+    );
+
+    const latestStateRef: { current: ReturnType<typeof useGameLaunchGreeting> | null } = { current: null };
+    let renderer: ReturnType<typeof create> | null = null;
+    await act(async () => {
+      renderer = create(
+        React.createElement(HookHarness, {
+          capture: (state) => {
+            latestStateRef.current = state;
+          }
+        })
+      );
+    });
+
+    await flushAsyncEffects();
+
+    expect(latestStateRef.current?.greetingText).toContain('Le principe: on improvise ensemble');
+    expect(latestStateRef.current?.greetingText).not.toContain("t'as peur");
+    expect(latestStateRef.current?.greetingText).not.toContain('Clique « On y va! »');
 
     await act(async () => {
       renderer?.unmount();

@@ -26,6 +26,7 @@ interface BuildFallbackGameLaunchGreetingParams {
   language: string;
   gameType: GameType;
   gameDescription: string;
+  variantSeed?: number;
 }
 
 const FRENCH_INTRO_PATTERNS = [
@@ -51,15 +52,64 @@ const ENGLISH_INTRO_PATTERNS = [
   /\bthis is cathy\b/i
 ];
 
-function resolveIntroPatterns(language: string): RegExp[] {
-  if (language.toLowerCase().startsWith('fr')) {
-    return FRENCH_INTRO_PATTERNS;
+const FRENCH_PROVOCATION_PATTERNS = [
+  /\bou quoi[, ]*t['’]?as peur\b/i,
+  /\bclique\b.*\bon y va\b/i
+];
+
+const ENGLISH_PROVOCATION_PATTERNS = [
+  /\bunless you['’]?re scared\b/i,
+  /\bhit\b.*\blet['’]?s go\b/i
+];
+
+const GREETING_MAX_LENGTH = 320;
+
+function pickBySeed<T>(items: readonly T[], seed: number, offset: number): T {
+  if (items.length === 0) {
+    throw new Error('pickBySeed() received an empty list');
   }
-  return ENGLISH_INTRO_PATTERNS;
+
+  const index = Math.abs((seed + offset) % items.length);
+  const candidate = items[index];
+  if (candidate !== undefined) {
+    return candidate;
+  }
+
+  return items[0] as T;
 }
 
-function containsIntroPhrase(value: string, language: string): boolean {
-  const patterns = resolveIntroPatterns(language);
+function resolveSeed(seed: number | undefined): number {
+  if (typeof seed === 'number' && Number.isFinite(seed)) {
+    return Math.floor(seed);
+  }
+
+  return Math.floor(Date.now() + Math.random() * 1_000_000_000);
+}
+
+function resolveGameEmojiPool(gameType: GameType): string[] {
+  switch (gameType) {
+    case 'tarot-cathy':
+      return ['🔮', '✨', '🃏'];
+    case 'vrai-ou-invente':
+      return ['🕵️', '🎯', '🤫'];
+    case 'impro-chain':
+      return ['🎭', '🔥', '🎤'];
+  }
+}
+
+function hasEmoji(value: string): boolean {
+  return /[\u{1F300}-\u{1FAFF}]/u.test(value);
+}
+
+function resolveBlockedPatterns(language: string): RegExp[] {
+  if (language.toLowerCase().startsWith('fr')) {
+    return [...FRENCH_INTRO_PATTERNS, ...FRENCH_PROVOCATION_PATTERNS];
+  }
+  return [...ENGLISH_INTRO_PATTERNS, ...ENGLISH_PROVOCATION_PATTERNS];
+}
+
+function containsBlockedPhrase(value: string, language: string): boolean {
+  const patterns = resolveBlockedPatterns(language);
   return patterns.some((pattern) => pattern.test(value));
 }
 
@@ -80,14 +130,19 @@ function sanitizeLaunchGreetingContent(content: string | null, language: string)
     .map((paragraph) => paragraph.trim())
     .filter((paragraph) => paragraph.length > 0);
 
-  const withoutIntroParagraphs = paragraphs.filter((paragraph) => !containsIntroPhrase(paragraph, language));
-  if (withoutIntroParagraphs.length === 0) {
+  const filteredParagraphs = paragraphs.filter((paragraph) => !containsBlockedPhrase(paragraph, language));
+  if (filteredParagraphs.length === 0) {
     return '';
   }
 
-  const sanitized = withoutIntroParagraphs.join('\n\n').trim();
-  if (!sanitized || containsIntroPhrase(sanitized, language)) {
+  const reduced = filteredParagraphs.slice(0, 2);
+  let sanitized = reduced.join('\n\n').trim();
+  if (!sanitized || containsBlockedPhrase(sanitized, language)) {
     return '';
+  }
+
+  if (sanitized.length > GREETING_MAX_LENGTH) {
+    sanitized = `${sanitized.slice(0, GREETING_MAX_LENGTH - 3).trimEnd()}...`;
   }
 
   return sanitized;
@@ -116,14 +171,27 @@ function resolveGameJokeLineKey(gameType: GameType): 'gameLaunchGreetingTarotJok
 }
 
 export function buildFallbackGameLaunchGreeting(params: BuildFallbackGameLaunchGreetingParams): string {
+  const seed = resolveSeed(params.variantSeed);
   const explain = t(resolveGameExplainLineKey(params.gameType)).replace('{{description}}', params.gameDescription);
   const joke = t(resolveGameJokeLineKey(params.gameType));
-  const provocation = t('gameLaunchGreetingProvocation');
+  const emoji = pickBySeed(resolveGameEmojiPool(params.gameType), seed, 7);
+  const lead = pickBySeed([explain, joke], seed, 0);
+  const followup = lead === explain ? joke : explain;
 
-  return [explain, joke, provocation]
+  return [`${lead.trim()} ${emoji}`, followup.trim()]
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     .join('\n\n');
+}
+
+function decorateGreetingWithEmoji(text: string, gameType: GameType, seed: number): string {
+  const normalized = text.trim();
+  if (!normalized || hasEmoji(normalized)) {
+    return normalized;
+  }
+
+  const emoji = pickBySeed(resolveGameEmojiPool(gameType), seed, 19);
+  return `${normalized} ${emoji}`;
 }
 
 export function useGameLaunchGreeting(params: UseGameLaunchGreetingParams): UseGameLaunchGreetingResult {
@@ -151,6 +219,7 @@ export function useGameLaunchGreeting(params: UseGameLaunchGreetingParams): UseG
     }
 
     let cancelled = false;
+    const variantSeed = resolveSeed(undefined);
     setIsGreetingLoading(true);
     setGreetingText('');
     setIsIntroVisible(true);
@@ -173,11 +242,16 @@ export function useGameLaunchGreeting(params: UseGameLaunchGreetingParams): UseG
         const fallbackText = buildFallbackGameLaunchGreeting({
           language,
           gameType: params.gameType,
-          gameDescription: params.gameDescription
+          gameDescription: params.gameDescription,
+          variantSeed
         });
 
         const sanitizedApiGreeting = sanitizeLaunchGreetingContent(apiGreeting ?? null, language);
-        setGreetingText(sanitizedApiGreeting || fallbackText);
+        if (sanitizedApiGreeting) {
+          setGreetingText(decorateGreetingWithEmoji(sanitizedApiGreeting, params.gameType, variantSeed));
+        } else {
+          setGreetingText(fallbackText);
+        }
       } catch {
         if (cancelled) {
           return;
@@ -187,7 +261,8 @@ export function useGameLaunchGreeting(params: UseGameLaunchGreetingParams): UseG
           buildFallbackGameLaunchGreeting({
             language,
             gameType: params.gameType,
-            gameDescription: params.gameDescription
+            gameDescription: params.gameDescription,
+            variantSeed
           })
         );
       } finally {
