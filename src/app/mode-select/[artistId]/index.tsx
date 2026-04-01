@@ -653,6 +653,29 @@ function clearGreetingApiBackoff(): void {
 function buildGreetingEndpointCandidates(): string[] {
   const isWebRuntime = typeof window !== 'undefined';
   const candidates: string[] = [];
+  const seen = new Set<string>();
+
+  const canonicalizeCandidate = (candidate: string): string | null => {
+    const normalized = candidate.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    if (!isWebRuntime) {
+      return normalized;
+    }
+
+    if (typeof window.location?.origin !== 'string' || !window.location.origin) {
+      return normalized;
+    }
+
+    try {
+      return new URL(normalized, window.location.origin).toString();
+    } catch {
+      return normalized;
+    }
+  };
+
   const addCandidate = (candidate: string) => {
     const normalized = candidate.trim();
     if (!normalized) {
@@ -661,9 +684,12 @@ function buildGreetingEndpointCandidates(): string[] {
     if (!isWebRuntime && normalized.startsWith('/')) {
       return;
     }
-    if (!candidates.includes(normalized)) {
-      candidates.push(normalized);
+    const canonicalCandidate = canonicalizeCandidate(normalized);
+    if (!canonicalCandidate || seen.has(canonicalCandidate)) {
+      return;
     }
+    seen.add(canonicalCandidate);
+    candidates.push(canonicalCandidate);
   };
 
   if (isWebRuntime && typeof window.location?.origin === 'string' && window.location.origin) {
@@ -759,6 +785,13 @@ async function fetchGreetingFromApi(
   recentExperienceType: 'mode' | 'game' | null = null,
   activityFeedbackCue: string | null = null
 ): Promise<GreetingFetchResult> {
+  if (GREETING_FORCE_TUTORIAL) {
+    return {
+      greeting: null,
+      tutorial: null
+    };
+  }
+
   const token = accessToken.trim();
   if (!token || shouldSkipGreetingApiCall()) {
     return {
@@ -807,6 +840,7 @@ async function fetchGreetingFromApi(
 
   const candidates = buildGreetingEndpointCandidates();
   let shouldBackoff = false;
+  let stopRetries = false;
   for (let attempt = 0; attempt < GREETING_API_MAX_ATTEMPTS; attempt += 1) {
     for (const endpoint of candidates) {
       const controller = new AbortController();
@@ -826,6 +860,9 @@ async function fetchGreetingFromApi(
         if (!response.ok) {
           if (response.status >= 500) {
             shouldBackoff = true;
+            if (response.status === 503 || response.status === 504) {
+              stopRetries = true;
+            }
           }
           continue;
         }
@@ -845,6 +882,10 @@ async function fetchGreetingFromApi(
       } finally {
         clearTimeout(timeoutHandle);
       }
+    }
+
+    if (stopRetries) {
+      break;
     }
 
     if (attempt < GREETING_API_MAX_ATTEMPTS - 1) {

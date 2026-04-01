@@ -1,5 +1,4 @@
-/* eslint-disable-next-line @typescript-eslint/no-require-imports */
-const { create } = require('zustand') as typeof import('zustand');
+import { create } from 'zustand';
 import { MODE_IDS } from '../config/constants';
 import { resolveModeIdCompat } from '../config/modeCompat';
 import { setLanguage as setI18nLanguage } from '../i18n';
