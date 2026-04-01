@@ -2,6 +2,7 @@ const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
+const DEFAULT_IMPRO_THEMES_FETCH_TIMEOUT_MS = 35_000;
 const DEFAULT_OVERLOAD_RETRY_AFTER_SECONDS = 3;
 const TRANSIENT_UPSTREAM_STATUSES = new Set([429, 500, 502, 503, 504, 529]);
 
@@ -466,7 +467,11 @@ function parseThemesPayload(rawText, language = 'fr-CA') {
 
 async function callImproThemeModel(input) {
   const apiKey = process.env.ANTHROPIC_API_KEY ?? '';
-  const timeoutMs = parsePositiveInt(process.env.ANTHROPIC_FETCH_TIMEOUT_MS, DEFAULT_FETCH_TIMEOUT_MS);
+  const sharedAnthropicTimeoutMs = parsePositiveInt(process.env.ANTHROPIC_FETCH_TIMEOUT_MS, DEFAULT_FETCH_TIMEOUT_MS);
+  const timeoutMs = parsePositiveInt(
+    process.env.IMPRO_THEMES_FETCH_TIMEOUT_MS,
+    Math.max(DEFAULT_IMPRO_THEMES_FETCH_TIMEOUT_MS, sharedAnthropicTimeoutMs)
+  );
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -529,6 +534,7 @@ async function callImproThemeModel(input) {
       const timeoutError = new Error('Theme generator timed out.');
       timeoutError.code = 'UPSTREAM_TIMEOUT';
       timeoutError.status = 504;
+      timeoutError.timeoutMs = timeoutMs;
       throw timeoutError;
     }
     throw error;

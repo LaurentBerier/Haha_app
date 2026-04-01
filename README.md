@@ -202,6 +202,7 @@ Notes:
 - `CLAUDE_IP_RATE_LIMIT_MAX_REQUESTS` (optional, default `100`, per client IP)
 - `CLAUDE_IP_RATE_LIMIT_WINDOW_MS` (optional, default `60000`)
 - `ANTHROPIC_FETCH_TIMEOUT_MS` (optional, default `25000`)
+- `IMPRO_THEMES_FETCH_TIMEOUT_MS` (optional; if unset, `/api/impro-themes` uses `max(35000, ANTHROPIC_FETCH_TIMEOUT_MS)`)
 - `CLAUDE_CONTEXT_ENABLED` (optional; set `0` to disable weather/news context injection)
 - `CLAUDE_CONTEXT_FETCH_TIMEOUT_MS` (optional, default `4500`)
 - `CLAUDE_IP_GEO_TIMEOUT_MS` (optional, default `3000`)

@@ -34,6 +34,30 @@ function createAnthropicErrorResponse({ status, message, type, retryAfter }) {
   };
 }
 
+function createAnthropicSuccessResponse() {
+  return {
+    ok: true,
+    status: 200,
+    json: jest.fn().mockResolvedValue({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            themes: [
+              {
+                id: 1,
+                type: 'perso_forte',
+                titre: 'Le party tourne mal',
+                premisse: 'Tu arrives pour une fete tranquille, mais une blague mal comprise te met au centre du chaos.'
+              }
+            ]
+          })
+        }
+      ]
+    })
+  };
+}
+
 function setupModuleMocks() {
   const captureApiException = jest.fn();
   const supabaseClient = buildSupabaseClient();
@@ -71,7 +95,8 @@ describe('api/impro-themes upstream failures', () => {
     SUPABASE_URL: process.env.SUPABASE_URL,
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-    ANTHROPIC_FETCH_TIMEOUT_MS: process.env.ANTHROPIC_FETCH_TIMEOUT_MS
+    ANTHROPIC_FETCH_TIMEOUT_MS: process.env.ANTHROPIC_FETCH_TIMEOUT_MS,
+    IMPRO_THEMES_FETCH_TIMEOUT_MS: process.env.IMPRO_THEMES_FETCH_TIMEOUT_MS
   };
 
   beforeEach(() => {
@@ -80,6 +105,7 @@ describe('api/impro-themes upstream failures', () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
     process.env.ANTHROPIC_API_KEY = 'anthropic-api-key';
     process.env.ANTHROPIC_FETCH_TIMEOUT_MS = '25000';
+    delete process.env.IMPRO_THEMES_FETCH_TIMEOUT_MS;
   });
 
   afterEach(() => {
@@ -108,6 +134,12 @@ describe('api/impro-themes upstream failures', () => {
       process.env.ANTHROPIC_FETCH_TIMEOUT_MS = originalEnv.ANTHROPIC_FETCH_TIMEOUT_MS;
     } else {
       delete process.env.ANTHROPIC_FETCH_TIMEOUT_MS;
+    }
+
+    if (typeof originalEnv.IMPRO_THEMES_FETCH_TIMEOUT_MS === 'string') {
+      process.env.IMPRO_THEMES_FETCH_TIMEOUT_MS = originalEnv.IMPRO_THEMES_FETCH_TIMEOUT_MS;
+    } else {
+      delete process.env.IMPRO_THEMES_FETCH_TIMEOUT_MS;
     }
   });
 
@@ -161,5 +193,48 @@ describe('api/impro-themes upstream failures', () => {
     expect(res.statusCode).toBe(504);
     expect(res.payload.error.code).toBe('UPSTREAM_TIMEOUT');
     expect(captureApiException).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses a safer impro-themes timeout floor when global timeout is lower', async () => {
+    setupModuleMocks();
+    const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+    global.fetch = jest.fn().mockResolvedValue(createAnthropicSuccessResponse());
+
+    const handler = require('../impro-themes');
+    const { req, res } = createReqRes({
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer user-token'
+      },
+      body: {}
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const timeoutCall = setTimeoutSpy.mock.calls.find(([, delay]) => delay === 35000);
+    expect(timeoutCall).toBeDefined();
+  });
+
+  it('honors IMPRO_THEMES_FETCH_TIMEOUT_MS when explicitly set', async () => {
+    setupModuleMocks();
+    process.env.IMPRO_THEMES_FETCH_TIMEOUT_MS = '47000';
+    const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+    global.fetch = jest.fn().mockResolvedValue(createAnthropicSuccessResponse());
+
+    const handler = require('../impro-themes');
+    const { req, res } = createReqRes({
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer user-token'
+      },
+      body: {}
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    const timeoutCall = setTimeoutSpy.mock.calls.find(([, delay]) => delay === 47000);
+    expect(timeoutCall).toBeDefined();
   });
 });
