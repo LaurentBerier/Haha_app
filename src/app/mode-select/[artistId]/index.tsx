@@ -42,6 +42,7 @@ import {
   deriveMessagesAfterReplayBarrier,
   type ModeSelectReplayBarrier
 } from '../../../utils/modeSelectReplayBarrier';
+import { shouldSkipModeSelectGreetingInjection } from '../../../utils/modeSelectGreetingDedup';
 import { stripAudioTags } from '../../../utils/audioTags';
 import { generateId } from '../../../utils/generateId';
 import {
@@ -2037,6 +2038,17 @@ export default function ModeSelectHomeScreen() {
         if (liveActiveConversationId !== introConversation.id) {
           setActiveConversation(introConversation.id);
         }
+        const shouldSkipBeforeApi = shouldSkipModeSelectGreetingInjection(
+          sessionStateBeforeGreeting.messagesByConversation[introConversation.id]?.messages ?? []
+        );
+        if (shouldSkipBeforeApi) {
+          logModeSelectDebugTrace('greeting_skipped_tail_dedupe_pre_api', {
+            artistId: artist.id,
+            conversationId: introConversation.id,
+            cycle: greetingOpenCycle
+          });
+          return;
+        }
 
         const availableModes = buildAvailableModesForGreeting(artist, language);
         const coords = await getOptionalCoords();
@@ -2082,6 +2094,17 @@ export default function ModeSelectHomeScreen() {
             activityFeedbackCue: greetingActivityContext.activityFeedbackCue
           });
         if (isCancelled || !nextGreeting) {
+          return;
+        }
+        const shouldSkipBeforeInsert = shouldSkipModeSelectGreetingInjection(
+          useStore.getState().messagesByConversation[introConversation.id]?.messages ?? []
+        );
+        if (shouldSkipBeforeInsert) {
+          logModeSelectDebugTrace('greeting_skipped_tail_dedupe_pre_insert', {
+            artistId: artist.id,
+            conversationId: introConversation.id,
+            cycle: greetingOpenCycle
+          });
           return;
         }
 
