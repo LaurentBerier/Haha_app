@@ -682,7 +682,7 @@ describe('useChat sendMessage integration', () => {
     };
     state.messagesByConversation[conversation.id] = createEmptyMessagePage();
 
-    let resolvePropose: ((value: Awaited<ReturnType<typeof mockProposeMemeOptions>>) => void) | null = null;
+    let resolvePropose: ((value: Awaited<ReturnType<typeof mockProposeMemeOptions>>) => void) | undefined;
     mockProposeMemeOptions.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
@@ -718,7 +718,11 @@ describe('useChat sendMessage integration', () => {
       state.messagesByConversation[conversation.id]?.messages.filter((message) => message.status === 'pending')
     ).toHaveLength(1);
 
-    resolvePropose?.({
+    if (!resolvePropose) {
+      throw new Error('Expected proposeMemeOptions resolver to be assigned');
+    }
+
+    resolvePropose({
       draftId: 'draft-pending',
       options: [
         {
