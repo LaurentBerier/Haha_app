@@ -191,7 +191,7 @@ describe('experienceLaunchService', () => {
     );
   });
 
-  it('injects an explicit meme upload prompt after meme-generator intro', async () => {
+  it('keeps a single intro message when launching meme-generator mode', async () => {
     fetchModeIntroFromApiMock.mockResolvedValue('intro meme');
 
     launchVisibleModeConversation({
@@ -203,18 +203,10 @@ describe('experienceLaunchService', () => {
     await settleIntroPipeline(350);
 
     const addedMessages = addMessageMock.mock.calls.map((call) => call[1] as MockMessage);
-    expect(addedMessages).toHaveLength(2);
+    expect(addedMessages).toHaveLength(1);
     expect(addedMessages[0]?.status).toBe('pending');
-    expect(addedMessages[1]).toMatchObject({
-      role: 'artist',
-      status: 'complete',
-      metadata: {
-        injected: true,
-        injectedType: 'mode_nudge',
-        memeType: 'upload_prompt'
-      }
-    });
-    expect(addedMessages[1]?.content).toContain('3 options');
+    expect(addedMessages[0]?.metadata?.memeType).toBeUndefined();
+    expect(extractContentUpdates()).toEqual(['intro meme']);
   });
 
   it('re-enables voice auto-play when conversation mode is active during mode launch', () => {

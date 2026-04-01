@@ -15,6 +15,7 @@ import {
   resolveChatBubbleVoiceControlState,
   resolveVoiceUnavailableTranslationKey
 } from './chatBubbleVoiceState';
+import { resolveChatBubbleImageResizeMode, shouldUseMemeImageStyle } from './chatBubbleImageMode';
 import { WaveformButton } from './WaveformButton';
 
 interface ChatBubbleProps {
@@ -93,6 +94,14 @@ function ChatBubbleBase({
   const isMemeOption = message.metadata?.memeType === 'option';
   const isMemeFinal = message.metadata?.memeType === 'final' && Boolean(imageUri);
   const hasMemeMetadata = typeof message.metadata?.memeType === 'string';
+  const imageResizeMode = resolveChatBubbleImageResizeMode({
+    hasImage: Boolean(imageUri),
+    memeType: message.metadata?.memeType
+  });
+  const useMemeImageStyle = shouldUseMemeImageStyle({
+    hasImage: Boolean(imageUri),
+    memeType: message.metadata?.memeType
+  });
   const isMemeOptionSelected = Boolean(message.metadata?.memeSelected);
   const isAnyMemeOptionBusy = Boolean(activeMemeOptionId);
   const isChoosingMemeOption = activeMemeOptionId === message.id;
@@ -434,7 +443,13 @@ function ChatBubbleBase({
           testID={`chat-bubble-${message.role}-${message.id}`}
           accessibilityLabel={`chat-bubble-${message.role}`}
         >
-          {imageUri ? <Image source={{ uri: imageUri }} style={styles.image} resizeMode="cover" /> : null}
+          {imageUri ? (
+            <Image
+              source={{ uri: imageUri }}
+              style={[styles.image, useMemeImageStyle ? styles.memeImage : null]}
+              resizeMode={imageResizeMode ?? 'cover'}
+            />
+          ) : null}
 
           {isMemeOption && typeof message.metadata?.memeOptionRank === 'number' ? (
             <View style={styles.memeOptionTagRow}>
@@ -635,6 +650,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: theme.spacing.xs,
     backgroundColor: theme.colors.surfaceSunken
+  },
+  memeImage: {
+    borderWidth: 1,
+    borderColor: theme.colors.border
   },
   content: {
     color: theme.colors.textPrimary,
