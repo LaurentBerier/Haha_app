@@ -670,6 +670,85 @@ describe('useChat sendMessage integration', () => {
     expect(optionMessages[1]?.content).toBe('Option 2');
   });
 
+  it('ignores duplicate meme uploads while option generation is still pending', () => {
+    const conversationId = 'conv-meme-pending-dedupe';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    conversation.modeId = MODE_IDS.MEME_GENERATOR;
+    state.session.accessToken = 'token-meme';
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    let resolvePropose: ((value: Awaited<ReturnType<typeof mockProposeMemeOptions>>) => void) | null = null;
+    mockProposeMemeOptions.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolvePropose = resolve;
+        })
+    );
+
+    const firstResult = chat.sendMessage({
+      text: '',
+      image: {
+        uri: 'file:///tmp/photo.png',
+        mediaType: 'image/png',
+        base64: 'cGhvdG8='
+      }
+    });
+    const secondResult = chat.sendMessage({
+      text: '',
+      image: {
+        uri: 'file:///tmp/photo-2.png',
+        mediaType: 'image/png',
+        base64: 'cGhvdG8y'
+      }
+    });
+
+    expect(firstResult).toBeNull();
+    expect(secondResult).toBeNull();
+    expect(mockProposeMemeOptions).toHaveBeenCalledTimes(1);
+    expect(state.messagesByConversation[conversation.id]?.messages).toHaveLength(2);
+    expect(
+      state.messagesByConversation[conversation.id]?.messages.filter((message) => message.role === 'user')
+    ).toHaveLength(1);
+    expect(
+      state.messagesByConversation[conversation.id]?.messages.filter((message) => message.status === 'pending')
+    ).toHaveLength(1);
+
+    resolvePropose?.({
+      draftId: 'draft-pending',
+      options: [
+        {
+          optionId: 'opt-1',
+          caption: 'Option 1',
+          placement: 'top',
+          logoPlacement: 'right',
+          previewImageBase64: 'YmFzZTY0MQ==',
+          mimeType: 'image/png'
+        },
+        {
+          optionId: 'opt-2',
+          caption: 'Option 2',
+          placement: 'bottom',
+          logoPlacement: 'left',
+          previewImageBase64: 'YmFzZTY0Mg==',
+          mimeType: 'image/png'
+        },
+        {
+          optionId: 'opt-3',
+          caption: 'Option 3',
+          placement: 'top',
+          logoPlacement: 'right',
+          previewImageBase64: 'YmFzZTY0Mw==',
+          mimeType: 'image/png'
+        }
+      ]
+    });
+  });
+
   it('nudges upload prompt when meme-generator receives text without an image', () => {
     const conversationId = 'conv-meme-text-only';
     const chat = renderUseChatHook(conversationId);

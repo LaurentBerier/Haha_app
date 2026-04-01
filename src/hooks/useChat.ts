@@ -1768,6 +1768,19 @@ export function useChat(conversationId: string) {
     const rawMessagesBeforeSend = getMessages(targetConversationId);
     const historyBeforeSend = formatConversationHistory(rawMessagesBeforeSend);
     const previewText = trimmed || '[Image]';
+    const modeId = targetConversation.modeId || MODE_IDS.DEFAULT;
+    const hasPendingMemeGeneration =
+      modeId === MODE_IDS.MEME_GENERATOR &&
+      hasImage &&
+      rawMessagesBeforeSend.some(
+        (message) =>
+          message.role === 'artist' &&
+          message.status === 'pending' &&
+          message.metadata?.memeType === 'upload_prompt'
+      );
+    if (hasPendingMemeGeneration) {
+      return null;
+    }
     const shouldAddUserMessage = !options?._skipAddUserMessage;
     const userMessageId = options?._existingUserMessageId ?? generateId('msg');
 
@@ -1905,7 +1918,6 @@ export function useChat(conversationId: string) {
       return null;
     }
 
-    const modeId = targetConversation.modeId || MODE_IDS.DEFAULT;
     const imageIntent = hasImage ? detectImageIntent(modeId, trimmed.length > 0) : 'default';
     if (modeId === MODE_IDS.MEME_GENERATOR && !hasImage) {
       addMessage(targetConversationId, {
