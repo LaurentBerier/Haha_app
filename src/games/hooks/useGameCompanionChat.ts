@@ -71,6 +71,13 @@ function toClaudeHistory(messages: Message[]): ClaudeMessage[] {
     .slice(-24);
 }
 
+function resolveSessionGreetingKey(artistId: string, gameType: GameType, gameId: string | null): string {
+  if (gameId) {
+    return `game:${gameType}:${gameId}`;
+  }
+  return `idle:${gameType}:${artistId}`;
+}
+
 export function useGameCompanionChat(params: UseGameCompanionChatParams): UseGameCompanionChatResult {
   const language = useStore((state) => state.language);
   const preferredName = useStore((state) => state.userProfile?.preferredName ?? null);
@@ -88,7 +95,7 @@ export function useGameCompanionChat(params: UseGameCompanionChatParams): UseGam
   const [tailFollowSignal, setTailFollowSignal] = useState(0);
 
   const greetedGameIdsRef = useRef<Set<string>>(new Set());
-  const activeGameIdRef = useRef<string | null>(null);
+  const activeSessionKeyRef = useRef<string | null>(null);
   const streamCancelRef = useRef<null | (() => void)>(null);
   const messagesRef = useRef<Message[]>([]);
   const isStreamingRef = useRef(false);
@@ -121,26 +128,49 @@ export function useGameCompanionChat(params: UseGameCompanionChatParams): UseGam
   );
 
   useEffect(() => {
-    if (!params.enabled || !params.gameId) {
-      activeGameIdRef.current = null;
+    if (!params.enabled) {
+      activeSessionKeyRef.current = null;
       clear();
       return;
     }
 
-    if (activeGameIdRef.current !== params.gameId) {
-      activeGameIdRef.current = params.gameId;
+    const sessionKey = resolveSessionGreetingKey(params.artistId, params.gameType, params.gameId);
+    if (activeSessionKeyRef.current !== sessionKey) {
+      activeSessionKeyRef.current = sessionKey;
       clearStream();
       setMessages([]);
       setTailFollowSignal(0);
     }
 
-    if (greetedGameIdsRef.current.has(params.gameId)) {
+    if (greetedGameIdsRef.current.has(sessionKey)) {
       return;
     }
 
-    greetedGameIdsRef.current.add(params.gameId);
+    greetedGameIdsRef.current.add(sessionKey);
 
     let cancelled = false;
+
+    if (!params.gameId) {
+      const idleGreeting: Message = {
+        id: generateId('msg'),
+        conversationId,
+        role: 'artist',
+        content: buildFallbackGameGreeting(language, params.artistName, preferredName, params.gameLabel),
+        status: 'complete',
+        timestamp: new Date().toISOString(),
+        metadata: {
+          injected: true,
+          injectedType: 'greeting'
+        }
+      };
+      setMessages([idleGreeting]);
+      setTailFollowSignal((previous) => previous + 1);
+      setIsGreetingBooting(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
     setIsGreetingBooting(true);
 
     void (async () => {

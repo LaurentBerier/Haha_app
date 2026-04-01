@@ -83,7 +83,8 @@ export default function VraiOuInventeScreen() {
     clear
   } = useVraiOuInvente(artistId);
 
-  const showCompanion = Boolean(game && game.status !== 'abandoned');
+  const showCompanionUi = Boolean(artistId);
+  const hasActiveGameSession = Boolean(game && game.status !== 'abandoned');
 
   const {
     conversationId: companionConversationId,
@@ -99,10 +100,11 @@ export default function VraiOuInventeScreen() {
     gameId: game?.id ?? null,
     gameType: 'vrai-ou-invente',
     gameLabel: t('gameVraiInventeTitle'),
-    enabled: showCompanion
+    enabled: showCompanionUi
   });
 
-  const isCompanionComposerDisabled = !showCompanion || isLoading || isGreetingBooting || isCompanionStreaming;
+  const isCompanionComposerDisabled =
+    !hasActiveGameSession || isLoading || isGreetingBooting || isCompanionStreaming;
 
   const {
     isListening,
@@ -113,7 +115,7 @@ export default function VraiOuInventeScreen() {
     pauseListening,
     resumeListening
   } = useVoiceConversation({
-    enabled: showCompanion && conversationModeEnabled && !isCompanionComposerDisabled,
+    enabled: showCompanionUi && conversationModeEnabled && !isCompanionComposerDisabled,
     disabled: isCompanionComposerDisabled,
     hasTypedDraft,
     isPlaying: false,
@@ -130,7 +132,7 @@ export default function VraiOuInventeScreen() {
   });
 
   const composerOffset = Platform.select({ ios: 108, default: 96 }) ?? 96;
-  const { conversationOverlayTop, chatWindowMaxHeight, screenPaddingBottom } = useMemo(
+  const { chatWindowMaxHeight, screenPaddingBottom } = useMemo(
     () =>
       resolveGameChatWindowLayout({
         viewportHeight,
@@ -179,7 +181,7 @@ export default function VraiOuInventeScreen() {
     isRevealed,
     measureProtectedAreaBottom,
     score,
-    showCompanion
+    showCompanionUi
   ]);
 
   const navigateBackOrGamesHome = useCallback(() => {
@@ -222,7 +224,7 @@ export default function VraiOuInventeScreen() {
         ? t('gameVraiInventeWinGood')
         : t('gameVraiInventeWinMeh');
 
-  const vraiScreenPaddingBottom = showCompanion ? screenPaddingBottom : theme.spacing.xl * 2;
+  const vraiScreenPaddingBottom = showCompanionUi ? screenPaddingBottom : theme.spacing.xl * 2;
 
   return (
     <KeyboardAvoidingView
@@ -333,12 +335,12 @@ export default function VraiOuInventeScreen() {
           </View>
         </ScrollView>
 
-        {showCompanion ? (
+        {showCompanionUi ? (
           <View
             pointerEvents="box-none"
-            style={[styles.companionOverlay, { top: conversationOverlayTop, bottom: composerOffset }]}
+            style={[styles.companionOverlay, { bottom: composerOffset, height: chatWindowMaxHeight + theme.spacing.xs }]}
           >
-            <View style={[styles.companionWindow, { maxHeight: chatWindowMaxHeight }]}> 
+            <View style={[styles.companionWindow, { maxHeight: chatWindowMaxHeight }]}>
               {isGreetingBooting ? <Text style={styles.companionBooting}>{t('gameCompanionGreetingBooting')}</Text> : null}
               <MessageList
                 testID="vrai-companion-message-list"
@@ -359,7 +361,7 @@ export default function VraiOuInventeScreen() {
           </View>
         ) : null}
 
-        {showCompanion ? (
+        {showCompanionUi ? (
           <View style={styles.composerDock} testID="vrai-game-composer">
             <View style={styles.composerContent}>
               <ChatInput
@@ -527,9 +529,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     paddingHorizontal: theme.spacing.md,
-    overflow: 'hidden'
+    zIndex: 20,
+    elevation: 2
   },
   companionWindow: {
+    flex: 1,
     width: '100%',
     maxWidth: 784,
     minHeight: 90,
@@ -566,7 +570,9 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     width: '100%',
-    paddingBottom: Platform.OS === 'ios' ? theme.spacing.sm : theme.spacing.xs
+    paddingBottom: Platform.OS === 'ios' ? theme.spacing.sm : theme.spacing.xs,
+    zIndex: 30,
+    elevation: 4
   },
   composerContent: {
     width: '100%',
