@@ -1,29 +1,49 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-describe('game companion chat integration', () => {
-  it('wires tarot active screen with integrated composer + message list and dynamic layout helper', () => {
+describe('game launch intro integration', () => {
+  it('wires tarot screen with shared launch intro and no integrated game composer', () => {
     const filePath = path.resolve(__dirname, '../app/games/[artistId]/tarot-cathy.tsx');
     const source = fs.readFileSync(filePath, 'utf8');
 
-    expect(source).toContain('useGameCompanionChat');
-    expect(source).toContain('resolveGameChatWindowLayout');
-    expect(source).toContain('testID="tarot-companion-message-list"');
-    expect(source).toContain('testID="tarot-game-composer"');
-    expect(source).toContain('allowImage={false}');
+    expect(source).toContain('useGameLaunchGreeting');
+    expect(source).toContain('GameLaunchIntro');
+    expect(source).toContain('testIDPrefix="tarot"');
+    expect(source).toContain('if (isIntroVisible)');
+    expect(source).not.toContain('useGameCompanionChat');
+    expect(source).not.toContain('testID="tarot-game-composer"');
+    expect(source).not.toContain('MessageList');
+    expect(source).not.toContain('ChatInput');
     expect(source).not.toContain("pathname: '/chat/[conversationId]'");
     expect(source).not.toContain("router.push('/chat/");
   });
 
-  it('wires vrai-ou-invente active screen with integrated composer + message list and dynamic layout helper', () => {
+  it('wires vrai-ou-invente screen with shared launch intro and no integrated game composer', () => {
     const filePath = path.resolve(__dirname, '../app/games/[artistId]/vrai-ou-invente.tsx');
     const source = fs.readFileSync(filePath, 'utf8');
 
-    expect(source).toContain('useGameCompanionChat');
-    expect(source).toContain('resolveGameChatWindowLayout');
-    expect(source).toContain('testID="vrai-companion-message-list"');
-    expect(source).toContain('testID="vrai-game-composer"');
-    expect(source).toContain('allowImage={false}');
+    expect(source).toContain('useGameLaunchGreeting');
+    expect(source).toContain('GameLaunchIntro');
+    expect(source).toContain('testIDPrefix="vrai"');
+    expect(source).toContain('if (isIntroVisible)');
+    expect(source).not.toContain('useGameCompanionChat');
+    expect(source).not.toContain('testID="vrai-game-composer"');
+    expect(source).not.toContain('MessageList');
+    expect(source).not.toContain('ChatInput');
+    expect(source).not.toContain("pathname: '/chat/[conversationId]'");
+    expect(source).not.toContain("router.push('/chat/");
+  });
+
+  it('wires impro screen with shared launch intro while keeping impro composer gameplay flow', () => {
+    const filePath = path.resolve(__dirname, '../app/games/[artistId]/impro-chain.tsx');
+    const source = fs.readFileSync(filePath, 'utf8');
+
+    expect(source).toContain('useGameLaunchGreeting');
+    expect(source).toContain('GameLaunchIntro');
+    expect(source).toContain('testIDPrefix="impro"');
+    expect(source).toContain('if (isIntroVisible)');
+    expect(source).toContain('ChatInput');
+    expect(source).toContain('testID="impro-message-list"');
     expect(source).not.toContain("pathname: '/chat/[conversationId]'");
     expect(source).not.toContain("router.push('/chat/");
   });

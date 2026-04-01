@@ -15,7 +15,9 @@ import { ChatInput } from '../../../components/chat/ChatInput';
 import { MessageList } from '../../../components/chat/MessageList';
 import { BackButton } from '../../../components/common/BackButton';
 import { ScoreBar } from '../../../components/chat/ScoreBar';
+import { GameLaunchIntro } from '../../../components/games/GameLaunchIntro';
 import { GameResultPanel } from '../../../components/games/GameResultPanel';
+import { useGameLaunchGreeting } from '../../../games/hooks/useGameLaunchGreeting';
 import { useImproChain } from '../../../games/hooks/useImproChain';
 import { ImproThemesService } from '../../../games/services/ImproThemesService';
 import { shouldGuardGameExit, useGameExitGuard } from '../../../hooks/useGameExitGuard';
@@ -443,6 +445,20 @@ export default function ImproChainScreen() {
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
   const accessToken = useStore((state) => state.session?.accessToken ?? '');
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
+  const {
+    isGreetingLoading,
+    greetingText,
+    isIntroVisible,
+    dismissIntro,
+    playGreetingTtsIfEligible
+  } = useGameLaunchGreeting({
+    artistId,
+    artistName: artist?.name ?? null,
+    gameType: 'impro-chain',
+    gameLabel: t('gameImproTitle'),
+    gameDescription: t('gameImproDescription'),
+    enabled: Boolean(artist)
+  });
 
   const {
     game,
@@ -458,6 +474,10 @@ export default function ImproChainScreen() {
     abandon,
     clear
   } = useImproChain(artistId);
+
+  useEffect(() => {
+    void playGreetingTtsIfEligible();
+  }, [playGreetingTtsIfEligible]);
   const gameStatus = game?.status ?? 'none';
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? null);
   const artistDisplayName = formatArtistDisplayName(artist?.name ?? null);
@@ -603,14 +623,6 @@ export default function ImproChainScreen() {
     };
   }, [accessToken, gameStatus, language, themeSuggestionNonce, userProfile]);
 
-  if (!artist) {
-    return (
-      <View style={styles.center} testID="impro-invalid-artist">
-        <Text style={styles.errorText}>{t('invalidConversation')}</Text>
-      </View>
-    );
-  }
-
   const normalizedCustomTheme = useMemo(() => normalizeThemeInput(customTheme), [customTheme]);
   const resolvedTheme = useMemo(
     () =>
@@ -623,7 +635,7 @@ export default function ImproChainScreen() {
   );
   const showLobby = !game || game.status === 'abandoned';
   const showComposer = Boolean(
-    game && !isComplete && game.status !== 'cathy-ending' && userTurnsCount < targetUserTurns
+    !isIntroVisible && game && !isComplete && game.status !== 'cathy-ending' && userTurnsCount < targetUserTurns
   );
   const showActiveGameView = Boolean(game && !showLobby && !isComplete);
   const sendFromImproComposer = useCallback(
@@ -677,6 +689,34 @@ export default function ImproChainScreen() {
     () => Math.max(0, targetUserTurns - userTurnsCount),
     [targetUserTurns, userTurnsCount]
   );
+
+  if (!artist) {
+    return (
+      <View style={styles.center} testID="impro-invalid-artist">
+        <Text style={styles.errorText}>{t('invalidConversation')}</Text>
+      </View>
+    );
+  }
+
+  if (isIntroVisible) {
+    return (
+      <View style={styles.screen}>
+        <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
+          <BackButton testID="impro-back" onPress={handleBack} />
+        </View>
+        <GameLaunchIntro
+          title={t('gameImproTitle')}
+          subtitle={t('gameImproDescription')}
+          greetingText={greetingText}
+          isLoading={isGreetingLoading}
+          loadingLabel={t('gameLaunchGreetingLoading')}
+          ctaLabel={t('gameLaunchGreetingCta')}
+          onPressCta={dismissIntro}
+          testIDPrefix="impro"
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>

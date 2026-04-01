@@ -173,11 +173,19 @@ export const fr = {
   gameTarotReplay: 'Nouveau tirage',
   gameTarotAllRevealed: 'Toutes les cartes révélées !',
   gameTarotSeeVerdict: 'Voir le verdict de Cathy',
-  gameCompanionGreetingFallback:
-    "Je suis {{artist}} et le side-chat de {{game}} est ouvert. Envoie-moi une courte phrase et j'embarque.",
-  gameCompanionGreetingBooting: 'Cathy se branche au chat du jeu...',
-  gameCompanionThinking: 'Cathy répond...',
-  gameCompanionErrorGeneric: "J'ai buggé une seconde. Renvoie-moi ça et je repars.",
+  gameLaunchGreetingLoading: 'Cathy prépare ton entrée en jeu...',
+  gameLaunchGreetingTarotExplain:
+    'En gros, tu choisis un thème, je pige trois cartes et je lis ton avenir à ma sauce.',
+  gameLaunchGreetingTarotJoke: 'Promis, mes cartes mentent moins que ton ex un vendredi soir.',
+  gameLaunchGreetingVraiExplain:
+    'Le principe: je te sors trois affirmations, deux vraies et une inventée, puis tu dois flairer le mensonge.',
+  gameLaunchGreetingVraiJoke: "Si tu te plantes, c'est correct, même moi je m'obstine contre mes propres souvenirs.",
+  gameLaunchGreetingImproExplain:
+    'On construit une histoire absurde ensemble: tu lances tes répliques, je monte la sauce et je termine le chaos.',
+  gameLaunchGreetingImproJoke:
+    'C\'est comme une thérapie, mais avec plus de punchlines et moins de remboursement.',
+  gameLaunchGreetingProvocation: 'Clique « On y va! »... ou quoi, t\'as peur de ce qui s\'en vient?',
+  gameLaunchGreetingCta: 'On y va!',
   gameExit: 'Quitter',
   gameAbandon: 'Abandonner',
   gameErrorGeneric: 'Une erreur est survenue.',
@@ -266,7 +274,6 @@ export const fr = {
   voiceRetryLabel: 'Réessayer la voix',
   messageTooLong: 'Message trop long',
   imageNotSupportedInImpro: "Les images ne sont pas encore prises en charge dans Impro.",
-  imageNotSupportedInGames: "Les images ne sont pas encore prises en charge dans le chat des jeux.",
   newConversation: 'Nouvelle conversation',
   noMessages: 'Commence la conversation',
   chatEmptyHeadline: 'La scène est à toi.',

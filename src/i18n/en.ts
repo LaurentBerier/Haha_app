@@ -173,11 +173,20 @@ export const en = {
   gameTarotReplay: 'New reading',
   gameTarotAllRevealed: 'All cards revealed!',
   gameTarotSeeVerdict: "See Cathy's verdict",
-  gameCompanionGreetingFallback:
-    "I'm {{artist}} and your {{game}} side-chat is live. Drop one short line and I'll riff with you.",
-  gameCompanionGreetingBooting: 'Cathy is joining the game chat...',
-  gameCompanionThinking: 'Cathy is replying...',
-  gameCompanionErrorGeneric: "I glitched for a second. Send me that again and I'll clap back.",
+  gameLaunchGreetingLoading: 'Cathy is warming up your game intro...',
+  gameLaunchGreetingTarotExplain:
+    'Quick version: you pick a theme, I draw three cards, and I read your future with zero filter.',
+  gameLaunchGreetingTarotJoke: 'My cards are still more reliable than your ex saying "I\'ll text you when I get home."',
+  gameLaunchGreetingVraiExplain:
+    'How it works: I drop three statements, two true and one invented, and you have to sniff out the lie.',
+  gameLaunchGreetingVraiJoke:
+    'If you miss, no shame, I argue with my own memories all the time.',
+  gameLaunchGreetingImproExplain:
+    'We build a ridiculous story together: you fire lines, I raise the chaos, and I land the ending.',
+  gameLaunchGreetingImproJoke:
+    'Think of it as therapy, but with more punchlines and fewer insurance claims.',
+  gameLaunchGreetingProvocation: 'Hit "Let\'s go"... unless you\'re scared of what\'s coming.',
+  gameLaunchGreetingCta: "Let's go!",
   gameExit: 'Exit',
   gameAbandon: 'Abandon',
   gameErrorGeneric: 'Something went wrong.',
@@ -266,7 +275,6 @@ export const en = {
   voiceRetryLabel: 'Retry voice',
   messageTooLong: 'Message is too long',
   imageNotSupportedInImpro: 'Images are not supported in Impro yet.',
-  imageNotSupportedInGames: 'Images are not supported in game chat yet.',
   newConversation: 'New conversation',
   noMessages: 'Start the conversation',
   chatEmptyHeadline: 'The stage is yours.',

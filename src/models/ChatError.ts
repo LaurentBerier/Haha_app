@@ -7,8 +7,5 @@ export type ChatError =
       code: 'imageNotSupportedInImpro';
     }
   | {
-      code: 'imageNotSupportedInGames';
-    }
-  | {
       code: 'invalidConversation';
     };

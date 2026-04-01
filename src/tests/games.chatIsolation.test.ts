@@ -5,7 +5,7 @@ const ISOLATED_GAME_MODULES = [
   '../app/games/[artistId]/impro-chain.tsx',
   '../app/games/[artistId]/tarot-cathy.tsx',
   '../app/games/[artistId]/vrai-ou-invente.tsx',
-  '../games/hooks/useGameCompanionChat.ts',
+  '../games/hooks/useGameLaunchGreeting.ts',
   '../games/hooks/useImproChain.ts',
   '../games/hooks/useTarotCathy.ts',
   '../games/hooks/useVraiOuInvente.ts'
