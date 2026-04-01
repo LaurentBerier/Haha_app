@@ -474,6 +474,7 @@ Vercel functions require project dependencies at runtime; `.vercelignore` must i
 - API tests: `api/__tests__/`
 - Store slice tests: `src/store/slices/*.test.ts`
 - Command: `npm run test:unit`
+- Latest full baseline (2026-04-01): `82` suites, `442` tests, plus PASS on `typecheck`, `lint`, `verify:profile-prompt`, `smoke:auth`, and `smoke:voice`
 
 ## Repos and Hosting Topology
 

@@ -1,6 +1,6 @@
 # Phase 4 Status (Conversation Naturelle)
 
-Last updated: **2026-03-28**
+Last updated: **2026-04-01**
 
 ## Scope
 
@@ -118,6 +118,15 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
 
 ## QA Status
 
+Full regression validation on **2026-04-01** (full code review + docs alignment):
+
+- `npm run typecheck` -> PASS
+- `npm run lint` -> PASS
+- `npm run test:unit` -> PASS (`82` suites, `442` tests)
+- `npm run verify:profile-prompt` -> PASS
+- `npm run smoke:auth` -> PASS
+- `npm run smoke:voice` -> PASS
+
 Incremental validation on **2026-03-28** (language confirmation update):
 
 - `npm run test:unit -- src/utils/conversationLanguage.test.ts src/hooks/useChat.sendMessage.integration.test.ts` -> PASS
@@ -140,6 +149,7 @@ Prior targeted mode-select layout baseline remains available from **2026-03-23**
 
 Detailed run logs:
 
+- [`docs/qa-run-2026-04-01.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-01.md)
 - [`docs/qa-run-2026-03-27.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-27.md)
 - [`docs/qa-run-2026-03-24.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-24.md)
 - [`docs/qa-run-2026-03-23.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-23.md)
@@ -147,7 +157,7 @@ Detailed run logs:
 - [`docs/qa-run-2026-03-19.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-19.md)
 - [`docs/qa-run-2026-03-18.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-18.md)
 - [`docs/qa-run-2026-03-17.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-17.md)
-- Latest code review snapshot: [`docs/code-review-2026-03-27.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-03-27.md)
+- Latest code review snapshot: [`docs/code-review-2026-04-01.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-01.md)
 
 ## Games & Prompt Quality (2026-03-25)
 
