@@ -44,14 +44,46 @@ interface FinalizePayload {
 interface ApiError extends Error {
   code?: string;
   status?: number;
+  requestId?: string;
 }
+
+const MAX_ATTEMPTS = 2;
+const RETRY_DELAY_MS = 180;
 
 function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
 }
 
+function getWebOrigin(): string | null {
+  if (typeof window === 'undefined' || typeof window.location?.origin !== 'string') {
+    return null;
+  }
+
+  const origin = normalizeUrl(window.location.origin);
+  return origin || null;
+}
+
+function canonicalizeEndpoint(candidate: string, webOrigin: string | null): string {
+  const normalized = candidate.trim();
+  if (!normalized) {
+    return '';
+  }
+
+  if (webOrigin) {
+    try {
+      const absolute = normalized.startsWith('/') ? new URL(normalized, webOrigin) : new URL(normalized);
+      return normalizeUrl(absolute.toString());
+    } catch {
+      return normalized;
+    }
+  }
+
+  return normalized;
+}
+
 function buildEndpointCandidates(): string[] {
   const isWebRuntime = typeof window !== 'undefined';
+  const webOrigin = getWebOrigin();
   const candidates: string[] = [];
 
   const addCandidate = (candidate: string) => {
@@ -62,16 +94,19 @@ function buildEndpointCandidates(): string[] {
     if (!isWebRuntime && normalized.startsWith('/')) {
       return;
     }
-    if (!candidates.includes(normalized)) {
-      candidates.push(normalized);
+
+    const canonical = canonicalizeEndpoint(normalized, webOrigin);
+    if (!canonical) {
+      return;
+    }
+
+    if (!candidates.includes(canonical)) {
+      candidates.push(canonical);
     }
   };
 
-  if (isWebRuntime && typeof window.location?.origin === 'string' && window.location.origin) {
-    const origin = normalizeUrl(window.location.origin);
-    if (origin) {
-      addCandidate(`${origin}/api/meme-generator`);
-    }
+  if (isWebRuntime && webOrigin) {
+    addCandidate(`${webOrigin}/api/meme-generator`);
     addCandidate('/api/meme-generator');
   }
 
@@ -88,9 +123,58 @@ function buildEndpointCandidates(): string[] {
   return candidates;
 }
 
-function toError(payload: unknown, status: number): ApiError {
+function resolveHeaderValue(headers: unknown, name: string): string | null {
+  if (!headers || typeof headers !== 'object' || typeof (headers as { get?: unknown }).get !== 'function') {
+    return null;
+  }
+
+  const value = (headers as { get: (key: string) => string | null }).get(name);
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function parseResponseRequestId(payload: unknown, headers: unknown): string | null {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'error' in payload &&
+    payload.error &&
+    typeof payload.error === 'object' &&
+    'requestId' in payload.error &&
+    typeof (payload.error as { requestId?: unknown }).requestId === 'string'
+  ) {
+    const candidate = ((payload.error as { requestId: string }).requestId ?? '').trim();
+    if (candidate) {
+      return candidate;
+    }
+  }
+
+  return resolveHeaderValue(headers, 'x-request-id') ?? resolveHeaderValue(headers, 'X-Request-Id');
+}
+
+async function parseResponsePayload(response: { text: () => Promise<string> }): Promise<unknown> {
+  const rawText = await response.text().catch(() => '');
+  if (!rawText.trim()) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return rawText;
+  }
+}
+
+function toError(payload: unknown, status: number, requestId: string | null): ApiError {
   const error = new Error('Meme generation failed.') as ApiError;
   error.status = status;
+  if (requestId) {
+    error.requestId = requestId;
+  }
 
   if (
     payload &&
@@ -106,9 +190,42 @@ function toError(payload: unknown, status: number): ApiError {
     if (typeof source.code === 'string' && source.code.trim()) {
       error.code = source.code.trim();
     }
+
+    return error;
+  }
+
+  if (typeof payload === 'string') {
+    const normalizedPayload = payload.trim();
+    if (normalizedPayload && !normalizedPayload.startsWith('<!DOCTYPE') && !normalizedPayload.startsWith('<html')) {
+      error.message = normalizedPayload.slice(0, 180);
+    }
   }
 
   return error;
+}
+
+function isNetworkFailure(error: Error): boolean {
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('network request failed') ||
+    message.includes('failed to fetch') ||
+    message.includes('networkerror') ||
+    message.includes('load failed') ||
+    message.includes('timeout')
+  );
+}
+
+function isTransientApiError(error: ApiError): boolean {
+  if (typeof error.status === 'number' && [500, 502, 503, 504].includes(error.status)) {
+    return true;
+  }
+
+  const normalizedCode = typeof error.code === 'string' ? error.code.trim().toUpperCase() : '';
+  if (normalizedCode === 'UPSTREAM_TIMEOUT' || normalizedCode === 'RENDERER_UNAVAILABLE') {
+    return true;
+  }
+
+  return isNetworkFailure(error);
 }
 
 function normalizeMemePlacement(value: unknown): MemePlacement {
@@ -190,11 +307,24 @@ function normalizeFinalizeResponse(payload: unknown): MemeFinalizeResult {
   };
 }
 
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function toApiError(error: unknown): ApiError {
+  const normalized = (error instanceof Error ? error : new Error('Meme API request failed.')) as ApiError;
+  if (!normalized.code && isNetworkFailure(normalized)) {
+    normalized.code = 'NETWORK_ERROR';
+  }
+  return normalized;
+}
+
 async function callMemeApi<T>(accessToken: string, body: Record<string, unknown>, parser: (payload: unknown) => T): Promise<T> {
   const token = accessToken.trim();
   if (!token) {
     const error = new Error('Unauthorized.') as ApiError;
     error.code = 'UNAUTHORIZED';
+    error.status = 401;
     throw error;
   }
 
@@ -205,28 +335,62 @@ async function callMemeApi<T>(accessToken: string, body: Record<string, unknown>
 
   let lastError: ApiError | null = null;
 
-  for (const endpoint of endpointCandidates) {
-    try {
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body)
-      });
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    let sawTransientError = false;
 
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        lastError = toError(payload, response.status);
-        continue;
+    for (const endpoint of endpointCandidates) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body)
+        });
+
+        const payload = await parseResponsePayload(response);
+        const requestId = parseResponseRequestId(payload, response.headers);
+
+        if (!response.ok) {
+          const endpointError = toError(payload, response.status, requestId);
+          lastError = endpointError;
+          if (isTransientApiError(endpointError)) {
+            sawTransientError = true;
+          }
+          continue;
+        }
+
+        try {
+          return parser(payload);
+        } catch (error: unknown) {
+          const parseError = toApiError(error);
+          parseError.code = parseError.code ?? 'INVALID_RESPONSE';
+          parseError.status = typeof parseError.status === 'number' ? parseError.status : response.status;
+          if (requestId) {
+            parseError.requestId = requestId;
+          }
+          throw parseError;
+        }
+      } catch (error: unknown) {
+        const normalized = toApiError(error);
+        lastError = normalized;
+        if (isTransientApiError(normalized)) {
+          sawTransientError = true;
+          continue;
+        }
       }
-
-      return parser(payload);
-    } catch (error: unknown) {
-      const normalized = error instanceof Error ? error : new Error('Meme API request failed.');
-      lastError = normalized as ApiError;
     }
+
+    if (lastError && !isTransientApiError(lastError)) {
+      throw lastError;
+    }
+
+    if (!sawTransientError || attempt >= MAX_ATTEMPTS - 1) {
+      break;
+    }
+
+    await sleep(RETRY_DELAY_MS);
   }
 
   if (lastError) {

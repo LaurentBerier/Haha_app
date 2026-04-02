@@ -2,12 +2,18 @@ const { createReqRes } = require('./testHelpers');
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 
-function setupModuleMocks({ authOk = true, authThrows = false } = {}) {
-  const renderMemeImage = jest.fn(async ({ caption, placement }) => ({
-    mimeType: 'image/png',
-    base64: Buffer.from(`${caption}-${placement}`).toString('base64'),
-    logoPlacement: placement === 'bottom' ? 'left' : 'right'
-  }));
+function setupModuleMocks({ authOk = true, authThrows = false, rendererUnavailable = false, renderError = null } = {}) {
+  const renderMemeImage = jest.fn(async ({ caption, placement }) => {
+    if (renderError) {
+      throw renderError;
+    }
+
+    return {
+      mimeType: 'image/png',
+      base64: Buffer.from(`${caption}-${placement}`).toString('base64'),
+      logoPlacement: placement === 'bottom' ? 'left' : 'right'
+    };
+  });
   const normalizeImageInput = jest.fn((rawImage) => {
     if (!rawImage || typeof rawImage !== 'object') {
       throw new Error('Image payload is required.');
@@ -55,14 +61,20 @@ function setupModuleMocks({ authOk = true, authThrows = false } = {}) {
     }))
   }));
 
-  jest.doMock('../_meme-render', () => ({
-    ALLOWED_IMAGE_MEDIA_TYPES: new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']),
-    MAX_IMAGE_BYTES: 3_000_000,
-    normalizeImageInput,
-    normalizeCaption,
-    normalizePlacement,
-    renderMemeImage
-  }));
+  if (rendererUnavailable) {
+    jest.doMock('../_meme-render', () => {
+      throw new Error('Cannot find module @napi-rs/canvas');
+    });
+  } else {
+    jest.doMock('../_meme-render', () => ({
+      ALLOWED_IMAGE_MEDIA_TYPES: new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']),
+      MAX_IMAGE_BYTES: 3_000_000,
+      normalizeImageInput,
+      normalizeCaption,
+      normalizePlacement,
+      renderMemeImage
+    }));
+  }
 
   return {
     renderMemeImage,
@@ -484,5 +496,68 @@ describe('api/meme-generator', () => {
     expect(normalizeImageInput).toHaveBeenCalled();
     expect(res.statusCode).toBe(400);
     expect(res.payload?.error?.code).toBe('INVALID_REQUEST');
+  });
+
+  it('returns 503 with requestId when renderer cannot be loaded at runtime', async () => {
+    setupModuleMocks({ rendererUnavailable: true });
+    global.fetch = jest.fn();
+    const handler = require('../meme-generator');
+    const { req, res } = createReqRes({
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer token'
+      },
+      body: {
+        action: 'propose',
+        language: 'fr-CA',
+        image: {
+          mediaType: 'image/png',
+          base64: 'cGhvdG8='
+        }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.payload?.error?.code).toBe('RENDERER_UNAVAILABLE');
+    expect(typeof res.payload?.error?.requestId).toBe('string');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('returns 500 for unexpected render failures', async () => {
+    setupModuleMocks({ renderError: new Error('render exploded') });
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        createAnthropicSuccessResponse(
+          '{"sceneSummary":"Souper entre amis","environment":"restaurant","mood":"taquin","people":["trois personnes"],"animals":[],"notableObjects":["table en bois"],"famousPeopleCandidates":[],"contextHooks":["silence avant la commande"]}'
+        )
+      )
+      .mockResolvedValueOnce(
+        createAnthropicSuccessResponse('{"captions":["Option A","Option B","Option C"]}')
+      );
+
+    const handler = require('../meme-generator');
+    const { req, res } = createReqRes({
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer token'
+      },
+      body: {
+        action: 'propose',
+        language: 'fr-CA',
+        image: {
+          mediaType: 'image/png',
+          base64: 'cGhvdG8='
+        }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(500);
+    expect(res.payload?.error?.code).toBe('INTERNAL_ERROR');
+    expect(typeof res.payload?.error?.requestId).toBe('string');
   });
 });

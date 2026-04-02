@@ -162,12 +162,47 @@ function buildMemeOptionExpiredMessage(language: string): string {
   return "Cette option a expire. Renvoie l'image et je recommence.";
 }
 
-function buildMemeFailureMessage(language: string): string {
-  if (isEnglishLanguage(language)) {
-    return 'Could not generate this meme. Send the image again and I will retry.';
+function toMemeSupportCode(requestId: string | null | undefined): string | null {
+  if (typeof requestId !== 'string') {
+    return null;
   }
 
-  return "Impossible de generer ce meme. Renvoie l'image et je recommence.";
+  const normalized = requestId.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const [firstSegment] = normalized.split('-');
+  const candidate = (firstSegment || normalized).trim().slice(0, 8).toUpperCase();
+  return candidate || null;
+}
+
+function appendMemeSupportCode(baseMessage: string, supportCode: string | null, language: string): string {
+  if (!supportCode) {
+    return baseMessage;
+  }
+
+  if (isEnglishLanguage(language)) {
+    return `${baseMessage} Support code: ${supportCode}.`;
+  }
+
+  return `${baseMessage} Code support : ${supportCode}.`;
+}
+
+function buildMemeFailureMessage(language: string, supportCode: string | null = null): string {
+  if (isEnglishLanguage(language)) {
+    return appendMemeSupportCode('Could not generate this meme right now. Please try again.', supportCode, language);
+  }
+
+  return appendMemeSupportCode("Impossible de generer ce meme pour le moment. Reessaie dans un instant.", supportCode, language);
+}
+
+function buildMemeServiceUnavailableMessage(language: string, supportCode: string | null = null): string {
+  if (isEnglishLanguage(language)) {
+    return appendMemeSupportCode('Meme service is temporarily unavailable. Please try again.', supportCode, language);
+  }
+
+  return appendMemeSupportCode('Le service meme est temporairement indisponible. Reessaie dans un instant.', supportCode, language);
 }
 
 function buildMemeUnauthorizedMessage(language: string): string {
@@ -189,10 +224,11 @@ function resolveMemeErrorMessage(error: unknown, language: string): string {
     return fallback;
   }
 
-  const apiError = error as Error & { code?: string; status?: number };
+  const apiError = error as Error & { code?: string; status?: number; requestId?: string };
   const normalizedCode = typeof apiError.code === 'string' ? apiError.code.trim().toUpperCase() : '';
   const normalizedStatus = typeof apiError.status === 'number' ? apiError.status : 0;
   const normalizedMessage = error.message.trim().toLowerCase();
+  const supportCode = toMemeSupportCode(apiError.requestId);
   if (
     normalizedStatus === 401 ||
     normalizedCode === 'UNAUTHORIZED' ||
@@ -202,12 +238,15 @@ function resolveMemeErrorMessage(error: unknown, language: string): string {
     return buildMemeUnauthorizedMessage(language);
   }
 
-  const normalized = error.message.trim();
-  if (!normalized || normalized.length > 180) {
-    return fallback;
+  if (
+    normalizedStatus === 503 ||
+    normalizedCode === 'UPSTREAM_TIMEOUT' ||
+    normalizedCode === 'RENDERER_UNAVAILABLE'
+  ) {
+    return buildMemeServiceUnavailableMessage(language, supportCode);
   }
 
-  return normalized;
+  return buildMemeFailureMessage(language, supportCode);
 }
 
 function pruneMemeDraftCache(cache: Map<string, MemeDraftState>): void {

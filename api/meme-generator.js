@@ -7,12 +7,6 @@ const {
   setCorsHeaders,
   attachRequestId
 } = require('./_utils');
-const {
-  normalizeImageInput,
-  normalizeCaption,
-  normalizePlacement,
-  renderMemeImage
-} = require('./_meme-render');
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -22,7 +16,13 @@ const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
 const DEFAULT_MAX_CAPTION_TOKENS = 160;
 const DEFAULT_MAX_ANALYSIS_TOKENS = 300;
 const MAX_INPUT_TEXT_CHARS = 280;
+const MAX_RENDER_CAPTION_CHARS = 120;
 const HIGH_CONFIDENCE_CELEBRITY_THRESHOLD = 0.85;
+const INVALID_REQUEST_CODE = 'INVALID_REQUEST';
+const UNAUTHORIZED_CODE = 'UNAUTHORIZED';
+const UPSTREAM_TIMEOUT_CODE = 'UPSTREAM_TIMEOUT';
+const RENDERER_UNAVAILABLE_CODE = 'RENDERER_UNAVAILABLE';
+const INTERNAL_ERROR_CODE = 'INTERNAL_ERROR';
 const FRENCH_ACCENT_WORD_MAP = new Map([
   ['meme', 'mème'],
   ['memes', 'mèmes'],
@@ -36,8 +36,74 @@ const FRENCH_ACCENT_WORD_MAP = new Map([
   ['droles', 'drôles']
 ]);
 
+let memeRenderModuleCache = null;
+
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
+}
+
+function getMemeRenderModule() {
+  if (memeRenderModuleCache) {
+    return {
+      ok: true,
+      module: memeRenderModuleCache
+    };
+  }
+
+  try {
+    const loaded = require('./_meme-render');
+    if (
+      !loaded ||
+      typeof loaded.normalizeImageInput !== 'function' ||
+      typeof loaded.normalizePlacement !== 'function' ||
+      typeof loaded.renderMemeImage !== 'function'
+    ) {
+      throw new Error('Meme renderer module is invalid.');
+    }
+
+    memeRenderModuleCache = loaded;
+    return {
+      ok: true,
+      module: loaded
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error
+    };
+  }
+}
+
+function toErrorMessage(error, fallback) {
+  return error instanceof Error && typeof error.message === 'string' && error.message.trim()
+    ? error.message.trim()
+    : fallback;
+}
+
+function createApiError({ status, code, message, phase, cause }) {
+  const error = new Error(message);
+  error.status = status;
+  error.code = code;
+  error.phase = phase;
+  if (cause !== undefined) {
+    error.cause = cause;
+  }
+  return error;
+}
+
+function withErrorPhase(error, phase, fallbackMessage) {
+  if (isRecord(error)) {
+    error.phase = phase;
+    return error;
+  }
+
+  return createApiError({
+    status: 500,
+    code: INTERNAL_ERROR_CODE,
+    phase,
+    message: fallbackMessage,
+    cause: error
+  });
 }
 
 function normalizeLanguage(value) {
@@ -72,8 +138,21 @@ function normalizeOptionalText(value) {
     .slice(0, MAX_INPUT_TEXT_CHARS);
 }
 
+function normalizeRenderCaption(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  const compact = value.replace(/\s+/g, ' ').trim();
+  if (!compact) {
+    return '';
+  }
+
+  return compact.slice(0, MAX_RENDER_CAPTION_CHARS);
+}
+
 function sanitizeCaption(value) {
-  const normalized = normalizeCaption(value);
+  const normalized = normalizeRenderCaption(value);
   if (!normalized) {
     return '';
   }
@@ -467,7 +546,8 @@ async function callAnthropicMemePass({
     if (isRecord(error) && error.name === 'AbortError') {
       const timeoutError = new Error(`${passLabel} timed out.`);
       timeoutError.code = 'UPSTREAM_TIMEOUT';
-      timeoutError.status = 504;
+      timeoutError.status = 503;
+      timeoutError.phase = passLabel === 'Image analysis' ? 'analysis' : 'captions';
       throw timeoutError;
     }
 
@@ -593,13 +673,30 @@ Regles:
   return parsed;
 }
 
-function parseProposePayload(body) {
+function parseProposePayload(body, memeRender) {
   if (!isRecord(body)) {
-    throw new Error('JSON body is required.');
+    throw createApiError({
+      status: 400,
+      code: INVALID_REQUEST_CODE,
+      message: 'JSON body is required.',
+      phase: 'validation'
+    });
   }
 
   const language = normalizeLanguage(body.language);
-  const image = normalizeImageInput(body.image);
+  let image;
+  try {
+    image = memeRender.normalizeImageInput(body.image);
+  } catch (error) {
+    throw createApiError({
+      status: 400,
+      code: INVALID_REQUEST_CODE,
+      message: toErrorMessage(error, 'Invalid image payload.'),
+      phase: 'validation',
+      cause: error
+    });
+  }
+
   const promptText = normalizeOptionalText(body.text);
 
   return {
@@ -609,24 +706,173 @@ function parseProposePayload(body) {
   };
 }
 
-function parseFinalizePayload(body) {
+function parseFinalizePayload(body, memeRender) {
   if (!isRecord(body)) {
-    throw new Error('JSON body is required.');
+    throw createApiError({
+      status: 400,
+      code: INVALID_REQUEST_CODE,
+      message: 'JSON body is required.',
+      phase: 'validation'
+    });
   }
 
   const language = normalizeLanguage(body.language);
-  const image = normalizeImageInput(body.image);
+  let image;
+  try {
+    image = memeRender.normalizeImageInput(body.image);
+  } catch (error) {
+    throw createApiError({
+      status: 400,
+      code: INVALID_REQUEST_CODE,
+      message: toErrorMessage(error, 'Invalid image payload.'),
+      phase: 'validation',
+      cause: error
+    });
+  }
+
   const normalizedCaption = normalizeCaptionOrthography(body.caption, language);
   if (!normalizedCaption) {
-    throw new Error('caption is required for finalize.');
+    throw createApiError({
+      status: 400,
+      code: INVALID_REQUEST_CODE,
+      message: 'caption is required for finalize.',
+      phase: 'validation'
+    });
+  }
+
+  let placement;
+  try {
+    placement = memeRender.normalizePlacement(body.placement);
+  } catch (error) {
+    throw createApiError({
+      status: 400,
+      code: INVALID_REQUEST_CODE,
+      message: toErrorMessage(error, 'Invalid placement.'),
+      phase: 'validation',
+      cause: error
+    });
   }
 
   return {
     language,
     image,
     caption: normalizedCaption,
-    placement: normalizePlacement(body.placement)
+    placement
   };
+}
+
+function isLikelyInvalidRequestMessage(normalizedMessage) {
+  return (
+    normalizedMessage.includes('json body is required') ||
+    normalizedMessage.includes('action must be') ||
+    normalizedMessage.includes('image payload is required') ||
+    normalizedMessage.includes('unsupported image media type') ||
+    normalizedMessage.includes('image base64 is required') ||
+    normalizedMessage.includes('image too large') ||
+    normalizedMessage.includes('invalid image payload') ||
+    normalizedMessage.includes('could not decode source image') ||
+    normalizedMessage.includes('caption is required')
+  );
+}
+
+function isLikelyRendererUnavailableError(error) {
+  const normalized = toErrorMessage(error, '').toLowerCase();
+  return (
+    normalized.includes('@napi-rs/canvas') ||
+    normalized.includes('cannot find module') ||
+    normalized.includes('module not found') ||
+    normalized.includes('meme renderer module is invalid') ||
+    normalized.includes('meme logo file is unavailable') ||
+    normalized.includes('meme logo file is missing') ||
+    normalized.includes('globalfonts')
+  );
+}
+
+function classifyMemeError(error) {
+  const message = toErrorMessage(error, 'Unable to generate meme right now.');
+  const normalizedMessage = message.toLowerCase();
+  const status = isRecord(error) && typeof error.status === 'number' ? error.status : null;
+  const code = isRecord(error) && typeof error.code === 'string' ? error.code.trim().toUpperCase() : '';
+  const phase =
+    isRecord(error) && typeof error.phase === 'string' && error.phase.trim()
+      ? error.phase.trim().toLowerCase()
+      : 'runtime';
+
+  if (
+    code === UNAUTHORIZED_CODE ||
+    status === 401 ||
+    normalizedMessage === 'unauthorized.' ||
+    normalizedMessage === 'unauthorized'
+  ) {
+    return {
+      status: 401,
+      code: UNAUTHORIZED_CODE,
+      message: 'Unauthorized.',
+      phase: phase || 'auth'
+    };
+  }
+
+  if (
+    code === INVALID_REQUEST_CODE ||
+    status === 400 ||
+    (status !== null && status >= 400 && status < 500) ||
+    isLikelyInvalidRequestMessage(normalizedMessage)
+  ) {
+    return {
+      status: 400,
+      code: INVALID_REQUEST_CODE,
+      message,
+      phase: phase || 'validation'
+    };
+  }
+
+  if (code === UPSTREAM_TIMEOUT_CODE || normalizedMessage.includes('timed out')) {
+    return {
+      status: 503,
+      code: UPSTREAM_TIMEOUT_CODE,
+      message: 'Meme generation timed out. Please retry.',
+      phase
+    };
+  }
+
+  if (code === RENDERER_UNAVAILABLE_CODE || status === 503 || isLikelyRendererUnavailableError(error)) {
+    return {
+      status: 503,
+      code: RENDERER_UNAVAILABLE_CODE,
+      message: 'Meme renderer temporarily unavailable. Please retry.',
+      phase: phase || 'render'
+    };
+  }
+
+  if (status !== null && status >= 500) {
+    return {
+      status: 500,
+      code: INTERNAL_ERROR_CODE,
+      message: 'Unable to generate meme right now.',
+      phase
+    };
+  }
+
+  return {
+    status: 500,
+    code: INTERNAL_ERROR_CODE,
+    message: 'Unable to generate meme right now.',
+    phase
+  };
+}
+
+function sendMemeError(res, requestId, error) {
+  const classified = classifyMemeError(error);
+  const telemetryError = withErrorPhase(error, classified.phase, classified.message);
+  telemetryError.classifiedCode = classified.code;
+  telemetryError.classifiedStatus = classified.status;
+
+  sendError(res, classified.status, classified.message, {
+    code: classified.code,
+    requestId,
+    error: telemetryError,
+    scope: `api/meme-generator/${classified.phase}`
+  });
 }
 
 async function validateAuthToken(supabaseAdmin, authorizationHeader, requestId) {
@@ -701,16 +947,40 @@ module.exports = async function handler(req, res) {
   try {
     action = normalizeAction(req.body?.action);
   } catch (error) {
-    sendError(res, 400, error instanceof Error ? error.message : 'Invalid payload.', {
-      code: 'INVALID_REQUEST',
-      requestId
-    });
+    sendMemeError(
+      res,
+      requestId,
+      createApiError({
+        status: 400,
+        code: INVALID_REQUEST_CODE,
+        message: toErrorMessage(error, 'Invalid payload.'),
+        phase: 'validation',
+        cause: error
+      })
+    );
     return;
   }
 
+  const memeRenderLookup = getMemeRenderModule();
+  if (!memeRenderLookup.ok) {
+    sendMemeError(
+      res,
+      requestId,
+      createApiError({
+        status: 503,
+        code: RENDERER_UNAVAILABLE_CODE,
+        message: 'Meme renderer temporarily unavailable. Please retry.',
+        phase: 'render_init',
+        cause: memeRenderLookup.error
+      })
+    );
+    return;
+  }
+  const memeRender = memeRenderLookup.module;
+
   try {
     if (action === 'propose') {
-      const payload = parseProposePayload(req.body);
+      const payload = parseProposePayload(req.body, memeRender);
       const imageContext = await analyzeImageForMemeContext({
         image: payload.image,
         language: payload.language,
@@ -731,11 +1001,16 @@ module.exports = async function handler(req, res) {
       for (let index = 0; index < captions.length; index += 1) {
         const caption = captions[index];
         const placement = placements[index] ?? 'top';
-        const rendered = await renderMemeImage({
-          image: payload.image,
-          caption,
-          placement
-        });
+        let rendered;
+        try {
+          rendered = await memeRender.renderMemeImage({
+            image: payload.image,
+            caption,
+            placement
+          });
+        } catch (error) {
+          throw withErrorPhase(error, 'render', 'Unable to render meme option.');
+        }
 
         options.push({
           optionId: `meme_opt_${index + 1}`,
@@ -755,12 +1030,17 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const payload = parseFinalizePayload(req.body);
-    const rendered = await renderMemeImage({
-      image: payload.image,
-      caption: payload.caption,
-      placement: payload.placement
-    });
+    const payload = parseFinalizePayload(req.body, memeRender);
+    let rendered;
+    try {
+      rendered = await memeRender.renderMemeImage({
+        image: payload.image,
+        caption: payload.caption,
+        placement: payload.placement
+      });
+    } catch (error) {
+      throw withErrorPhase(error, 'render', 'Unable to render final meme.');
+    }
 
     res.status(200).json({
       imageBase64: rendered.base64,
@@ -770,26 +1050,6 @@ module.exports = async function handler(req, res) {
       logoPlacement: rendered.logoPlacement
     });
   } catch (error) {
-    if (isRecord(error) && error.code === 'UPSTREAM_TIMEOUT') {
-      sendError(res, 504, 'Caption generation timed out.', {
-        code: 'UPSTREAM_TIMEOUT',
-        requestId,
-        error
-      });
-      return;
-    }
-
-    const status =
-      isRecord(error) && typeof error.status === 'number' && error.status >= 400 && error.status <= 599
-        ? error.status
-        : 400;
-    const message = error instanceof Error && error.message ? error.message : 'Unable to generate meme.';
-    const code = status >= 500 ? 'UPSTREAM_ERROR' : 'INVALID_REQUEST';
-
-    sendError(res, status, message, {
-      code,
-      requestId,
-      error
-    });
+    sendMemeError(res, requestId, error);
   }
 };

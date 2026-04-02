@@ -15,6 +15,9 @@
     "api/game-questions.js": {
       "maxDuration": 60
     },
+    "api/meme-generator.js": {
+      "maxDuration": 60
+    },
     "api/stripe-webhook.js": {
       "maxDuration": 60
     },

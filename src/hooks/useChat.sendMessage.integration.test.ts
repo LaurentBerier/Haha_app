@@ -775,6 +775,82 @@ describe('useChat sendMessage integration', () => {
     expect(lastArtistMessage?.status).toBe('complete');
   });
 
+  it('shows a strict meme service error with support code when requestId is available', async () => {
+    const conversationId = 'conv-meme-error-support-code';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    conversation.modeId = MODE_IDS.MEME_GENERATOR;
+    state.session.accessToken = 'token-meme';
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const serviceError = Object.assign(new Error('renderer crash'), {
+      status: 503,
+      code: 'RENDERER_UNAVAILABLE',
+      requestId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
+    });
+    mockProposeMemeOptions.mockRejectedValueOnce(serviceError);
+
+    const sendResult = chat.sendMessage({
+      text: '',
+      image: {
+        uri: 'file:///tmp/photo.png',
+        mediaType: 'image/png',
+        base64: 'cGhvdG8='
+      }
+    });
+
+    expect(sendResult).toBeNull();
+    await flushAsyncWork();
+
+    const allMessages = state.messagesByConversation[conversation.id]?.messages ?? [];
+    const failureMessage = allMessages.find(
+      (message) => message.role === 'artist' && message.metadata?.memeType === 'upload_prompt' && message.status === 'complete'
+    );
+    expect(failureMessage?.content).toContain('Code support : F47AC10B');
+    expect(failureMessage?.content).toContain('temporairement indisponible');
+  });
+
+  it('keeps dedicated unauthorized message for meme generation', async () => {
+    const conversationId = 'conv-meme-error-unauthorized';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    conversation.modeId = MODE_IDS.MEME_GENERATOR;
+    state.session.accessToken = 'token-meme';
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const unauthorizedError = Object.assign(new Error('Unauthorized.'), {
+      status: 401,
+      code: 'UNAUTHORIZED'
+    });
+    mockProposeMemeOptions.mockRejectedValueOnce(unauthorizedError);
+
+    const sendResult = chat.sendMessage({
+      text: '',
+      image: {
+        uri: 'file:///tmp/photo.png',
+        mediaType: 'image/png',
+        base64: 'cGhvdG8='
+      }
+    });
+
+    expect(sendResult).toBeNull();
+    await flushAsyncWork();
+
+    const allMessages = state.messagesByConversation[conversation.id]?.messages ?? [];
+    const failureMessage = allMessages.find(
+      (message) => message.role === 'artist' && message.metadata?.memeType === 'upload_prompt' && message.status === 'complete'
+    );
+    expect(failureMessage?.content).toContain('Session expiree');
+  });
+
   it('finalizes selected meme option and stores final image metadata', async () => {
     const conversationId = 'conv-meme-finalize';
     const chat = renderUseChatHook(conversationId);
