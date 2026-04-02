@@ -1,6 +1,6 @@
 # Phase 4 Status (Conversation Naturelle)
 
-Last updated: **2026-04-01**
+Last updated: **2026-04-02**
 
 ## Scope
 
@@ -61,6 +61,12 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
 - Forced mode nudges removed:
   - no automatic `mode_nudge` injection after N user replies
   - mode-select conversation now keeps natural flow without forced "try modes" interjections
+- Meme mode reliability hardening:
+  - launch path now inserts only one initial meme intro bubble (no extra `upload_prompt` message)
+  - intro wording explicitly points users to the small `+` on the left of the composer for image upload
+  - renderer now uses embedded caption font registration and deterministic white-on-black caption drawing
+  - bottom caption lane avoids overlap with the Ha-Ha.ai logo, with logo size kept small/stable
+  - web share degrades gracefully from native share to browser download/mailto fallback
 - Tutorial-mode bound to first completed user turn only:
   - first user turn after tutorial greeting => `tutorialMode=true`
   - all following turns => `tutorialMode=false` (weather/news context allowed again)
@@ -118,6 +124,13 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
 
 ## QA Status
 
+Targeted meme reliability validation on **2026-04-02**:
+
+- `npm run test:unit -- api/__tests__/_meme-render.test.js api/__tests__/greeting.test.js src/services/experienceLaunchService.test.ts src/services/modeIntroService.test.ts src/services/memeMediaService.test.ts src/services/memeMediaService.web.test.ts` -> PASS
+- `npm run typecheck` -> PASS
+- `npm run lint` -> PASS
+- `npm run test:unit` -> PASS (`85` suites, `457` tests)
+
 Full regression validation on **2026-04-01** (full code review + docs alignment):
 
 - `npm run typecheck` -> PASS
@@ -149,6 +162,7 @@ Prior targeted mode-select layout baseline remains available from **2026-03-23**
 
 Detailed run logs:
 
+- [`docs/qa-run-2026-04-02.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-02.md)
 - [`docs/qa-run-2026-04-01.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-01.md)
 - [`docs/qa-run-2026-03-27.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-27.md)
 - [`docs/qa-run-2026-03-24.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-24.md)

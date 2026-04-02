@@ -50,6 +50,13 @@ Implemented in this repository:
   - mode-select conversation binding is stabilized with explicit `boundConversationId` ownership, send-time target recovery, and no silent send drops on transient context mismatch
   - mode-select web message list rendering is hardened for longer sessions (wider render window + no clipping/virtualization in inline overlay)
   - Cathy voice controls now use explicit states (`ready`, `generating`, `unavailable`) with inline retry instead of silent playback-button disappearance
+- Meme generator reliability hardening:
+  - meme mode launch now inserts a single Cathy intro message (no duplicate upload prompt injection)
+  - meme intros explicitly mention using the small `+` button on the left of the composer to upload an image
+  - meme images in chat bubbles keep full-frame visibility (`contain`) for option/final assets so top/bottom caption bands stay visible
+  - meme renderer enforces deterministic white captions on black bands with embedded font registration in serverless runtime
+  - meme logo is rendered at a stable small size with reserved lane spacing to avoid overlap with bottom captions
+  - web meme share now falls back to browser download/mailto when native share API is unavailable or throws
 - Root stack now registers `admin` as nested entry only (child admin screens stay in `src/app/admin/_layout.tsx`) to avoid `No route named "admin/index"` console warnings.
 - Subscription screen includes current plan, next billing cycle, and cancel-at-period-end for Stripe subscriptions.
 - User profile model and profile personalization injection in system prompts.
@@ -81,7 +88,7 @@ Implemented in this repository:
 - [`docs/phase3-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase3-status.md)
 - [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
 - Admin dashboard status: [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md)
-- Latest QA run: [`docs/qa-run-2026-04-01.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-01.md)
+- Latest QA run: [`docs/qa-run-2026-04-02.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-02.md)
 - Latest code-review snapshot: [`docs/code-review-2026-04-01.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-01.md)
 
 ## Repos and Vercel Projects
@@ -567,6 +574,7 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/qa-run-2026-03-27.md`
 - `docs/qa-run-2026-03-28.md`
 - `docs/qa-run-2026-04-01.md`
+- `docs/qa-run-2026-04-02.md`
 - `docs/code-review-2026-03-15.md`
 - `docs/code-review-2026-03-16.md`
 - `docs/code-review-2026-03-17.md`

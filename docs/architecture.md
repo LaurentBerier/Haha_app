@@ -155,6 +155,7 @@ Store-level account isolation:
 - Greeting behavior:
   - once per artist per app session (`uiSlice.greetedArtistIds`, memory-only)
   - greeting message is inserted as an artist message in a fresh `on-jase` conversation
+  - meme-generator launch keeps a single intro message (no additional `upload_prompt` injection) and ensures explicit composer `+` upload guidance in API/fallback copy
   - best-effort voice playback via TTS (with web speech fallback)
   - greeting/tutorial message injection triggers one-time auto-mic arming for that `messageId` in mode-select (`armListeningActivation`)
   - manual user pause during greeting cancels forced auto-start for that greeting message
@@ -446,6 +447,24 @@ Display mode note:
 
 For image-enabled chats, `imageIntent` (`photo-roast`, `meme-generator`, `screenshot-analyzer`) is passed to the backend so prompt assembly can specialize behavior even when the same mode is reused.
 
+### Meme Rendering and Share Flow
+
+- Chat bubble image fit policy (`src/components/chat/ChatBubble.tsx` + helper tests in `src/components/chat/chatBubbleImageMode.test.ts`):
+  - `memeType=option|final` images use `resizeMode="contain"` to keep full meme frame (including caption bands)
+  - non-meme images keep `resizeMode="cover"` behavior
+- Meme intro orchestration (`src/services/experienceLaunchService.ts`, `src/services/modeIntroService.ts`, `api/greeting.js`):
+  - only one initial Cathy intro bubble is inserted for meme mode
+  - intro text explicitly tells user to tap the small `+` on the left of the composer to upload an image
+- Meme renderer (`api/_meme-render.js`):
+  - registers embedded caption font from `assets/fonts/Anton-Regular.ttf` for deterministic serverless rendering
+  - caption fill is explicitly enforced as white (`#FFFFFF`) with opaque alpha above black bands
+  - bottom-caption layout reserves a dedicated text lane that avoids the logo area
+  - logo dimensions are normalized to a stable small target size instead of scaling with source image dimensions
+- Meme share fallback (`src/services/memeMediaService.ts`):
+  - web share first attempts `expo-sharing`
+  - if unavailable/failing, falls back to browser file download
+  - final fallback remains `mailto` before returning `share_unavailable`
+
 Conversation language behavior:
 - Conversation language is resolved per turn from user text with explicit intent classes:
   - `explicit_switch`: immediate conversation-language switch
@@ -474,7 +493,8 @@ Vercel functions require project dependencies at runtime; `.vercelignore` must i
 - API tests: `api/__tests__/`
 - Store slice tests: `src/store/slices/*.test.ts`
 - Command: `npm run test:unit`
-- Latest full baseline (2026-04-01): `82` suites, `442` tests, plus PASS on `typecheck`, `lint`, `verify:profile-prompt`, `smoke:auth`, and `smoke:voice`
+- Latest unit/lint/type baseline (2026-04-02): `85` suites, `457` tests, plus PASS on `typecheck` and `lint`
+- Latest full cross-check including `verify:profile-prompt` + smoke remains 2026-04-01 (see `docs/qa-run-2026-04-01.md`)
 
 ## Repos and Hosting Topology
 

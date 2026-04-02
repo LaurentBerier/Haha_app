@@ -996,3 +996,47 @@ Checks:
 1. Re-test in a clean profile/incognito window with extensions disabled.
 2. If error disappears with extensions off, treat it as external noise (non-blocking for app debugging).
 3. Keep focus on app-owned traces (`[mode-select] trace`, `[useVoiceConversation]`, network `/api/*`).
+
+## 38) Meme generated image shows black bands + logo but no caption text
+
+Symptoms:
+
+- Generated meme includes top/bottom black bands and Ha-Ha.ai logo.
+- Caption text is missing or barely visible.
+
+Current expected behavior:
+
+- Caption text is rendered in white (`#FFFFFF`) on black bands (`#000000`).
+- Renderer uses embedded font loading from `assets/fonts/Anton-Regular.ttf` for serverless consistency.
+
+Checks:
+
+1. Confirm deployment includes font asset path used by renderer:
+   - `assets/fonts/Anton-Regular.ttf`
+2. Confirm meme renderer bundle is current (`api/_meme-render.js`) and includes explicit font registration + white fill enforcement before `fillText`.
+3. Generate memes with both placements:
+   - top caption
+   - bottom caption
+4. On client, ensure meme bubbles are rendered with non-cropping fit for meme assets (`contain` for `memeType=option|final`).
+5. Force-refresh web app (cache bypass) to avoid stale image/renderer behavior.
+
+## 39) "Partage indisponible pour ce meme" appears on web share
+
+Symptoms:
+
+- Tapping `Partager` on a meme shows a red error toast saying sharing is unavailable.
+
+Current expected behavior:
+
+- Web share flow should try:
+  1. native share (`expo-sharing`) when available
+  2. browser download fallback
+  3. `mailto` fallback
+- Error toast should appear only if all fallbacks fail.
+
+Checks:
+
+1. Verify latest `src/services/memeMediaService.ts` is deployed (includes share exception fallback path).
+2. Verify browser is not blocking synthetic download clicks/popups.
+3. Verify generated meme URI is valid (data URI or reachable URL).
+4. If running in constrained webview, confirm `window.location` mailto fallback is permitted.
