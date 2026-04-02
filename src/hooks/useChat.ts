@@ -170,6 +170,14 @@ function buildMemeFailureMessage(language: string): string {
   return "Impossible de generer ce meme. Renvoie l'image et je recommence.";
 }
 
+function buildMemeUnauthorizedMessage(language: string): string {
+  if (isEnglishLanguage(language)) {
+    return 'Session expired. Sign in again, then send the image one more time.';
+  }
+
+  return "Session expiree. Reconnecte-toi, puis renvoie l'image.";
+}
+
 function buildMemeDataUri(mimeType: string, base64: string): string {
   const safeMimeType = mimeType.trim() || 'image/png';
   return `data:${safeMimeType};base64,${base64}`;
@@ -179,6 +187,19 @@ function resolveMemeErrorMessage(error: unknown, language: string): string {
   const fallback = buildMemeFailureMessage(language);
   if (!(error instanceof Error)) {
     return fallback;
+  }
+
+  const apiError = error as Error & { code?: string; status?: number };
+  const normalizedCode = typeof apiError.code === 'string' ? apiError.code.trim().toUpperCase() : '';
+  const normalizedStatus = typeof apiError.status === 'number' ? apiError.status : 0;
+  const normalizedMessage = error.message.trim().toLowerCase();
+  if (
+    normalizedStatus === 401 ||
+    normalizedCode === 'UNAUTHORIZED' ||
+    normalizedMessage === 'unauthorized.' ||
+    normalizedMessage === 'unauthorized'
+  ) {
+    return buildMemeUnauthorizedMessage(language);
   }
 
   const normalized = error.message.trim();

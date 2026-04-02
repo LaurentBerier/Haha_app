@@ -567,14 +567,23 @@ Regles:
       ? `Image analysis:\n${contextBlock}\nCreate 3 meme captions from this image.`
       : `Analyse image:\n${contextBlock}\nCree 3 captions de meme pour cette image.`;
 
-  const rawText = await callAnthropicMemePass({
-    image,
-    requestId,
-    systemPrompt,
-    userText,
-    maxTokens: DEFAULT_MAX_CAPTION_TOKENS,
-    passLabel: 'Caption generation'
-  });
+  let rawText = '';
+  try {
+    rawText = await callAnthropicMemePass({
+      image,
+      requestId,
+      systemPrompt,
+      userText,
+      maxTokens: DEFAULT_MAX_CAPTION_TOKENS,
+      passLabel: 'Caption generation'
+    });
+  } catch (error) {
+    console.warn(
+      `[api/meme-generator][${requestId}] Caption generation unavailable, using local fallback captions.`,
+      error
+    );
+    return fallbackCaptions(language).map((caption) => normalizeCaptionOrthography(caption, language));
+  }
 
   const parsed = parseCaptionCandidates(rawText, language);
   if (parsed.length < 3) {
@@ -620,25 +629,30 @@ function parseFinalizePayload(body) {
   };
 }
 
-async function validateAuthToken(supabaseAdmin, authorizationHeader) {
+async function validateAuthToken(supabaseAdmin, authorizationHeader, requestId) {
   const token = extractBearerToken(authorizationHeader);
   if (!token) {
     return { ok: false };
   }
 
-  const {
-    data: { user },
-    error
-  } = await supabaseAdmin.auth.getUser(token);
+  try {
+    const {
+      data: { user },
+      error
+    } = await supabaseAdmin.auth.getUser(token);
 
-  if (error || !user) {
+    if (error || !user) {
+      return { ok: false };
+    }
+
+    return {
+      ok: true,
+      userId: user.id
+    };
+  } catch (error) {
+    console.warn(`[api/meme-generator][${requestId}] Auth validation failed unexpectedly.`, error);
     return { ok: false };
   }
-
-  return {
-    ok: true,
-    userId: user.id
-  };
 }
 
 module.exports = async function handler(req, res) {
@@ -677,7 +691,7 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const auth = await validateAuthToken(supabaseAdmin, req.headers.authorization);
+  const auth = await validateAuthToken(supabaseAdmin, req.headers.authorization, requestId);
   if (!auth.ok) {
     sendError(res, 401, 'Unauthorized.', { code: 'UNAUTHORIZED', requestId });
     return;
@@ -691,11 +705,6 @@ module.exports = async function handler(req, res) {
       code: 'INVALID_REQUEST',
       requestId
     });
-    return;
-  }
-
-  if (action === 'propose' && getMissingEnv(['ANTHROPIC_API_KEY']).length > 0) {
-    sendError(res, 500, 'Server misconfigured.', { code: 'SERVER_MISCONFIGURED', requestId });
     return;
   }
 

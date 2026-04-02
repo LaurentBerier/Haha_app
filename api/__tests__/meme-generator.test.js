@@ -2,7 +2,7 @@ const { createReqRes } = require('./testHelpers');
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 
-function setupModuleMocks({ authOk = true } = {}) {
+function setupModuleMocks({ authOk = true, authThrows = false } = {}) {
   const renderMemeImage = jest.fn(async ({ caption, placement }) => ({
     mimeType: 'image/png',
     base64: Buffer.from(`${caption}-${placement}`).toString('base64'),
@@ -37,8 +37,11 @@ function setupModuleMocks({ authOk = true } = {}) {
   jest.doMock('@supabase/supabase-js', () => ({
     createClient: jest.fn(() => ({
       auth: {
-        getUser: jest.fn().mockResolvedValue(
-          authOk
+        getUser: jest.fn().mockImplementation(async () => {
+          if (authThrows) {
+            throw new Error('auth provider unavailable');
+          }
+          return authOk
             ? {
                 data: { user: { id: 'user-1' } },
                 error: null
@@ -46,8 +49,8 @@ function setupModuleMocks({ authOk = true } = {}) {
             : {
                 data: { user: null },
                 error: { message: 'invalid jwt' }
-              }
-        )
+              };
+        })
       }
     }))
   }));
@@ -141,6 +144,32 @@ describe('api/meme-generator', () => {
 
     expect(res.statusCode).toBe(401);
     expect(res.payload?.error?.code).toBe('UNAUTHORIZED');
+  });
+
+  it('returns 401 when auth validation throws unexpectedly', async () => {
+    setupModuleMocks({ authThrows: true });
+    global.fetch = jest.fn();
+    const handler = require('../meme-generator');
+    const { req, res } = createReqRes({
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer token'
+      },
+      body: {
+        action: 'propose',
+        language: 'fr-CA',
+        image: {
+          mediaType: 'image/png',
+          base64: 'cGhvdG8='
+        }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(401);
+    expect(res.payload?.error?.code).toBe('UNAUTHORIZED');
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('returns exactly 3 branded options for propose requests', async () => {
@@ -320,6 +349,78 @@ describe('api/meme-generator', () => {
     expect(res.statusCode).toBe(200);
     expect(res.payload?.options).toHaveLength(3);
     expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses fallback captions when caption generation upstream fails', async () => {
+    const { renderMemeImage } = setupModuleMocks();
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        createAnthropicSuccessResponse(
+          '{"sceneSummary":"Souper entre amis","environment":"restaurant","mood":"taquin","people":["trois personnes"],"animals":[],"notableObjects":["table en bois"],"famousPeopleCandidates":[],"contextHooks":["silence avant la commande"]}'
+        )
+      )
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: jest.fn().mockResolvedValue({
+          error: {
+            message: 'caption generation unavailable'
+          }
+        })
+      });
+
+    const handler = require('../meme-generator');
+    const { req, res } = createReqRes({
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer token'
+      },
+      body: {
+        action: 'propose',
+        language: 'fr-CA',
+        image: {
+          mediaType: 'image/png',
+          base64: 'cGhvdG8='
+        }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload?.options).toHaveLength(3);
+    expect(renderMemeImage).toHaveBeenCalledTimes(3);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses local fallback captions when ANTHROPIC_API_KEY is missing', async () => {
+    const { renderMemeImage } = setupModuleMocks();
+    delete process.env.ANTHROPIC_API_KEY;
+    global.fetch = jest.fn();
+
+    const handler = require('../meme-generator');
+    const { req, res } = createReqRes({
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer token'
+      },
+      body: {
+        action: 'propose',
+        language: 'fr-CA',
+        image: {
+          mediaType: 'image/png',
+          base64: 'cGhvdG8='
+        }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload?.options).toHaveLength(3);
+    expect(renderMemeImage).toHaveBeenCalledTimes(3);
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('finalize renders selected caption without calling Anthropic', async () => {
