@@ -56,6 +56,7 @@ import {
 } from '../../../utils/modeSelectConversationBinding';
 import type { ChatSendPayload } from '../../../models/ChatSendPayload';
 import { shouldRestoreModeSelectMicAfterBlur } from '../micRestore';
+import { resolveGreetingAutoMicDecision } from '../greetingAutoMic';
 
 interface GreetingCoordinates {
   lat: number;
@@ -1871,40 +1872,41 @@ export default function ModeSelectHomeScreen() {
 
   useEffect(() => {
     const targetMessageId = pendingAutoMicGreetingMessageId;
-    if (!targetMessageId) {
-      return;
-    }
-
-    if (autoMicTriggeredGreetingIdsRef.current.has(targetMessageId)) {
-      setPendingAutoMicGreetingMessageId(null);
-      return;
-    }
-
-    if (autoMicManualOverrideRef.current) {
-      autoMicTriggeredGreetingIdsRef.current.add(targetMessageId);
-      setPendingAutoMicGreetingMessageId(null);
-      return;
-    }
-
     const targetMessage =
-      messages.find((message) => message.id === targetMessageId && message.role === 'artist' && message.status === 'complete') ??
-      null;
-    const injectedType = targetMessage?.metadata?.injectedType;
-    const isEligibleGreeting = injectedType === 'greeting' || injectedType === 'tutorial_greeting';
-    if (!isEligibleGreeting) {
+      targetMessageId
+        ? messages.find(
+            (message) => message.id === targetMessageId && message.role === 'artist' && message.status === 'complete'
+          ) ?? null
+        : null;
+
+    const decision = resolveGreetingAutoMicDecision({
+      hasPendingGreetingMessageId: Boolean(targetMessageId),
+      hasAlreadyTriggered: Boolean(targetMessageId && autoMicTriggeredGreetingIdsRef.current.has(targetMessageId)),
+      hasManualOverride: autoMicManualOverrideRef.current,
+      injectedType: targetMessage?.metadata?.injectedType,
+      isModeSelectScreenFocused,
+      isValidConversation,
+      isQuotaBlocked,
+      hasTypedDraft,
+      hasStreaming,
+      isGreetingVoiceActive,
+      conversationModeEnabled
+    });
+
+    if (decision === 'skip') {
       return;
     }
 
-    if (!isModeSelectScreenFocused || !isValidConversation || isQuotaBlocked || hasTypedDraft || hasStreaming || isGreetingVoiceActive) {
-      return;
+    if (decision === 'arm_listening') {
+      armListeningActivation();
+    } else if (decision === 'force_enable_and_resume') {
+      setConversationModeEnabled(true);
+      resumeListening();
     }
 
-    if (!conversationModeEnabled) {
-      setPendingAutoMicGreetingMessageId(null);
-      return;
+    if (targetMessageId) {
+      autoMicTriggeredGreetingIdsRef.current.add(targetMessageId);
     }
-    armListeningActivation();
-    autoMicTriggeredGreetingIdsRef.current.add(targetMessageId);
     setPendingAutoMicGreetingMessageId(null);
   }, [
     armListeningActivation,
@@ -1917,6 +1919,7 @@ export default function ModeSelectHomeScreen() {
     isValidConversation,
     messages,
     pendingAutoMicGreetingMessageId,
+    resumeListening,
     setConversationModeEnabled
   ]);
 
