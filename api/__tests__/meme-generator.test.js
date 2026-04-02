@@ -92,6 +92,7 @@ describe('api/meme-generator', () => {
   beforeEach(() => {
     jest.resetModules();
     jest.spyOn(console, 'error').mockImplementation(() => {});
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
     process.env.SUPABASE_URL = 'https://example.supabase.co';
     process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-key';
     process.env.ANTHROPIC_API_KEY = 'anthropic-api-key';
@@ -146,7 +147,12 @@ describe('api/meme-generator', () => {
     const { renderMemeImage } = setupModuleMocks();
     global.fetch = jest
       .fn()
-      .mockResolvedValue(
+      .mockResolvedValueOnce(
+        createAnthropicSuccessResponse(
+          '{"sceneSummary":"Trois amis en pause","environment":"cabane en bois","mood":"taquin","people":["trois adultes","lunettes"],"animals":[],"notableObjects":["bol de soupe"],"famousPeopleCandidates":[{"name":"Ryan Gosling","confidence":0.92,"description":"acteur canadien"}],"contextHooks":["attente du repas"]}'
+        )
+      )
+      .mockResolvedValueOnce(
         createAnthropicSuccessResponse('{"captions":["Option A","Option B","Option C"]}')
       );
     const handler = require('../meme-generator');
@@ -182,8 +188,93 @@ describe('api/meme-generator', () => {
       })
     );
     expect(renderMemeImage).toHaveBeenCalledTimes(3);
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
     expect(String(global.fetch.mock.calls[0]?.[0] ?? '')).toBe(ANTHROPIC_API_URL);
+    expect(String(global.fetch.mock.calls[1]?.[0] ?? '')).toBe(ANTHROPIC_API_URL);
+    const analysisBody = JSON.parse(String(global.fetch.mock.calls[0]?.[1]?.body ?? '{}'));
+    const captionsBody = JSON.parse(String(global.fetch.mock.calls[1]?.[1]?.body ?? '{}'));
+    expect(analysisBody.system).toContain('famousPeopleCandidates');
+    expect(String(captionsBody.messages?.[0]?.content?.[0]?.text ?? '')).toContain('bol de soupe');
+    expect(String(captionsBody.messages?.[0]?.content?.[0]?.text ?? '')).toContain('Ryan Gosling');
+  });
+
+  it('does not expose low-confidence celebrity names in caption prompt', async () => {
+    setupModuleMocks();
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        createAnthropicSuccessResponse(
+          '{"sceneSummary":"Souper entre amis","environment":"restaurant","mood":"poker face","people":["trois personnes"],"animals":[],"notableObjects":["table en bois"],"famousPeopleCandidates":[{"name":"Brad Pitt","confidence":0.45,"description":"acteur hollywoodien"}],"contextHooks":["silence avant la commande"]}'
+        )
+      )
+      .mockResolvedValueOnce(
+        createAnthropicSuccessResponse('{"captions":["Option A","Option B","Option C"]}')
+      );
+
+    const handler = require('../meme-generator');
+    const { req, res } = createReqRes({
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer token'
+      },
+      body: {
+        action: 'propose',
+        language: 'fr-CA',
+        image: {
+          mediaType: 'image/png',
+          base64: 'cGhvdG8='
+        }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    const captionsBody = JSON.parse(String(global.fetch.mock.calls[1]?.[1]?.body ?? '{}'));
+    const captionsUserText = String(captionsBody.messages?.[0]?.content?.[0]?.text ?? '');
+    expect(captionsUserText).not.toContain('Brad Pitt');
+    expect(captionsUserText).toContain('acteur hollywoodien');
+  });
+
+  it('continues caption generation when analysis pass fails', async () => {
+    setupModuleMocks();
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: jest.fn().mockResolvedValue({
+          error: {
+            message: 'analysis unavailable'
+          }
+        })
+      })
+      .mockResolvedValueOnce(
+        createAnthropicSuccessResponse('{"captions":["Option A","Option B","Option C"]}')
+      );
+
+    const handler = require('../meme-generator');
+    const { req, res } = createReqRes({
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer token'
+      },
+      body: {
+        action: 'propose',
+        language: 'fr-CA',
+        image: {
+          mediaType: 'image/png',
+          base64: 'cGhvdG8='
+        }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload?.options).toHaveLength(3);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
   });
 
   it('finalize renders selected caption without calling Anthropic', async () => {

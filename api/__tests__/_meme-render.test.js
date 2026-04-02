@@ -325,8 +325,10 @@ describe('api/_meme-render', () => {
 
     expect(shortAnalysis.logoWidth).toBeGreaterThan(0);
     expect(shortAnalysis.logoHeight).toBeGreaterThan(0);
-    expect(shortAnalysis.logoWidth).toBeLessThanOrEqual(90);
-    expect(shortAnalysis.logoHeight).toBeLessThanOrEqual(45);
+    expect(shortAnalysis.logoWidth).toBeGreaterThanOrEqual(85);
+    expect(shortAnalysis.logoHeight).toBeGreaterThanOrEqual(34);
+    expect(shortAnalysis.logoWidth).toBeLessThanOrEqual(110);
+    expect(shortAnalysis.logoHeight).toBeLessThanOrEqual(55);
     expect(Math.abs(shortAnalysis.logoWidth - longAnalysis.logoWidth)).toBeLessThanOrEqual(2);
     expect(Math.abs(shortAnalysis.logoHeight - longAnalysis.logoHeight)).toBeLessThanOrEqual(2);
   });

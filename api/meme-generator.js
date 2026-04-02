@@ -19,7 +19,9 @@ const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_CAPTION_MODEL = 'claude-haiku-4-5-20251001';
 const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
 const DEFAULT_MAX_CAPTION_TOKENS = 160;
+const DEFAULT_MAX_ANALYSIS_TOKENS = 300;
 const MAX_INPUT_TEXT_CHARS = 280;
+const HIGH_CONFIDENCE_CELEBRITY_THRESHOLD = 0.9;
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -119,8 +121,147 @@ function fallbackCaptions(language) {
     : [
         "Moi qui fais semblant d'avoir la situation en main",
         'Quand ton cerveau ouvre 37 onglets en meme temps',
-        'POV: confiante en public, chaos a la maison'
+      'POV: confiante en public, chaos a la maison'
       ];
+}
+
+function normalizeLooseText(value, maxLength) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+
+  return value
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function normalizeStringList(value, maxItems, maxLength) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const normalized = [];
+  for (const entry of value) {
+    const cleaned = normalizeLooseText(entry, maxLength);
+    if (!cleaned || normalized.includes(cleaned)) {
+      continue;
+    }
+    normalized.push(cleaned);
+    if (normalized.length >= maxItems) {
+      break;
+    }
+  }
+
+  return normalized;
+}
+
+function createEmptyMemeImageContext() {
+  return {
+    sceneSummary: '',
+    environment: '',
+    mood: '',
+    people: [],
+    animals: [],
+    notableObjects: [],
+    contextHooks: [],
+    highConfidenceCelebrities: [],
+    publicFigureHints: []
+  };
+}
+
+function normalizeMemeImageContext(rawContext, language) {
+  const fallback = createEmptyMemeImageContext();
+  if (!isRecord(rawContext)) {
+    return fallback;
+  }
+
+  const isEnglish = language.toLowerCase().startsWith('en');
+  const genericPublicFigureHint = isEnglish ? 'a recognizable public figure' : 'une personne connue';
+
+  const highConfidenceCelebrities = [];
+  const publicFigureHints = [];
+  const rawCandidates = Array.isArray(rawContext.famousPeopleCandidates) ? rawContext.famousPeopleCandidates : [];
+
+  for (const candidate of rawCandidates) {
+    let name = '';
+    let description = '';
+    let confidence = 0;
+
+    if (typeof candidate === 'string') {
+      name = normalizeLooseText(candidate, 80);
+    } else if (isRecord(candidate)) {
+      name = normalizeLooseText(
+        candidate.name ?? candidate.fullName ?? candidate.person ?? candidate.celebrity ?? '',
+        80
+      );
+      description = normalizeLooseText(
+        candidate.description ?? candidate.reason ?? candidate.lookalike ?? candidate.label ?? '',
+        100
+      );
+      const rawConfidence = Number.parseFloat(String(candidate.confidence ?? ''));
+      confidence = Number.isFinite(rawConfidence)
+        ? Math.min(1, Math.max(0, rawConfidence))
+        : 0;
+    }
+
+    if (name && confidence >= HIGH_CONFIDENCE_CELEBRITY_THRESHOLD) {
+      if (!highConfidenceCelebrities.includes(name)) {
+        highConfidenceCelebrities.push(name);
+      }
+      continue;
+    }
+
+    const genericHint = description || (name ? genericPublicFigureHint : '');
+    if (genericHint && !publicFigureHints.includes(genericHint)) {
+      publicFigureHints.push(genericHint);
+    }
+  }
+
+  return {
+    sceneSummary: normalizeLooseText(rawContext.sceneSummary, 180),
+    environment: normalizeLooseText(rawContext.environment, 160),
+    mood: normalizeLooseText(rawContext.mood, 100),
+    people: normalizeStringList(rawContext.people, 6, 80),
+    animals: normalizeStringList(rawContext.animals, 6, 80),
+    notableObjects: normalizeStringList(rawContext.notableObjects, 8, 80),
+    contextHooks: normalizeStringList(rawContext.contextHooks, 8, 120),
+    highConfidenceCelebrities: highConfidenceCelebrities.slice(0, 3),
+    publicFigureHints: publicFigureHints.slice(0, 4)
+  };
+}
+
+function buildImageContextBlock(imageContext, language) {
+  const context = isRecord(imageContext) ? imageContext : createEmptyMemeImageContext();
+  const isEnglish = language.toLowerCase().startsWith('en');
+  const emptyValue = isEnglish ? 'none' : 'aucun';
+  const joinOrEmpty = (items) => (items.length > 0 ? items.join(' | ') : emptyValue);
+
+  if (isEnglish) {
+    return [
+      `Scene summary: ${context.sceneSummary || emptyValue}`,
+      `Environment: ${context.environment || emptyValue}`,
+      `Mood: ${context.mood || emptyValue}`,
+      `People: ${joinOrEmpty(context.people)}`,
+      `Animals: ${joinOrEmpty(context.animals)}`,
+      `Notable objects: ${joinOrEmpty(context.notableObjects)}`,
+      `Context hooks: ${joinOrEmpty(context.contextHooks)}`,
+      `High-confidence public figures: ${joinOrEmpty(context.highConfidenceCelebrities)}`,
+      `Public figure hints (describe, do not name): ${joinOrEmpty(context.publicFigureHints)}`
+    ].join('\n');
+  }
+
+  return [
+    `Resume scene: ${context.sceneSummary || emptyValue}`,
+    `Environnement: ${context.environment || emptyValue}`,
+    `Ambiance: ${context.mood || emptyValue}`,
+    `Personnes: ${joinOrEmpty(context.people)}`,
+    `Animaux: ${joinOrEmpty(context.animals)}`,
+    `Objets notables: ${joinOrEmpty(context.notableObjects)}`,
+    `Angles comiques: ${joinOrEmpty(context.contextHooks)}`,
+    `Personnalites publiques haute confiance: ${joinOrEmpty(context.highConfidenceCelebrities)}`,
+    `Indices personnalites (decrire sans nommer): ${joinOrEmpty(context.publicFigureHints)}`
+  ].join('\n');
 }
 
 function parseCaptionCandidates(rawText, language) {
@@ -182,37 +323,18 @@ function resolvePlacements() {
   return ['top', 'bottom', 'top'];
 }
 
-async function generateCaptionOptions({ image, language, promptText, requestId }) {
+async function callAnthropicMemePass({
+  image,
+  requestId,
+  systemPrompt,
+  userText,
+  maxTokens,
+  passLabel
+}) {
   const apiKey = (process.env.ANTHROPIC_API_KEY ?? '').trim();
   if (!apiKey) {
     throw new Error('Server misconfigured: ANTHROPIC_API_KEY missing.');
   }
-
-  const systemPrompt = language.toLowerCase().startsWith('en')
-    ? `You are Cathy Gauthier writing meme captions.
-Return STRICT JSON only, no prose:
-{"captions":["caption 1","caption 2","caption 3"]}
-Rules:
-- Exactly 3 captions
-- Max 80 characters each
-- Short, funny, sharable, and grounded in the uploaded image
-- No numbering, no emojis-only answers, no markdown`
-    : `Tu es Cathy Gauthier et tu crees des captions de meme.
-Retourne STRICTEMENT du JSON, sans texte autour :
-{"captions":["caption 1","caption 2","caption 3"]}
-Regles:
-- Exactement 3 captions
-- Maximum 80 caracteres chacune
-- Courtes, droles, partageables, liees a l'image
-- Aucune numerotation, aucun markdown`;
-
-  const userText = promptText
-    ? language.toLowerCase().startsWith('en')
-      ? `User context: ${promptText}`
-      : `Contexte utilisateur: ${promptText}`
-    : language.toLowerCase().startsWith('en')
-      ? 'Create 3 meme captions from this image.'
-      : 'Cree 3 captions de meme pour cette image.';
 
   const controller = new AbortController();
   const timeoutMs = Number.parseInt(process.env.ANTHROPIC_FETCH_TIMEOUT_MS ?? '', 10);
@@ -229,7 +351,7 @@ Regles:
       },
       body: JSON.stringify({
         model: (process.env.MEME_CAPTION_MODEL ?? '').trim() || DEFAULT_CAPTION_MODEL,
-        max_tokens: DEFAULT_MAX_CAPTION_TOKENS,
+        max_tokens: maxTokens,
         temperature: 0.55,
         stream: false,
         system: systemPrompt,
@@ -261,31 +383,121 @@ Regles:
       const upstreamMessage =
         isRecord(payload) && isRecord(payload.error) && typeof payload.error.message === 'string'
           ? payload.error.message
-          : 'Caption generation failed.';
+          : `${passLabel} failed.`;
       const error = new Error(upstreamMessage);
       error.status = response.status;
       throw error;
     }
 
-    const parsed = parseCaptionCandidates(extractAnthropicText(payload), language);
-    if (parsed.length < 3) {
-      throw new Error('Caption generation returned insufficient options.');
-    }
-
-    return parsed;
+    return extractAnthropicText(payload);
   } catch (error) {
     if (isRecord(error) && error.name === 'AbortError') {
-      const timeoutError = new Error('Caption generation timed out.');
+      const timeoutError = new Error(`${passLabel} timed out.`);
       timeoutError.code = 'UPSTREAM_TIMEOUT';
       timeoutError.status = 504;
       throw timeoutError;
     }
 
-    console.error(`[api/meme-generator][${requestId}] Caption generation failed`, error);
+    console.error(`[api/meme-generator][${requestId}] ${passLabel} failed`, error);
     throw error;
   } finally {
     clearTimeout(timeoutHandle);
   }
+}
+
+async function analyzeImageForMemeContext({ image, language, promptText, requestId }) {
+  const isEnglish = language.toLowerCase().startsWith('en');
+  const systemPrompt = isEnglish
+    ? `You analyze one image for meme writing context.
+Return STRICT JSON only:
+{"sceneSummary":"","environment":"","mood":"","people":[],"animals":[],"notableObjects":[],"famousPeopleCandidates":[{"name":"","confidence":0.0,"description":""}],"contextHooks":[]}
+Rules:
+- Keep it factual and grounded only in visible content.
+- Use confidence from 0 to 1 for possible famous people.
+- If uncertain, leave names empty and keep arrays concise.
+- No markdown, no commentary.`
+    : `Tu analyses une image pour aider a ecrire des captions de meme.
+Retourne STRICTEMENT du JSON:
+{"sceneSummary":"","environment":"","mood":"","people":[],"animals":[],"notableObjects":[],"famousPeopleCandidates":[{"name":"","confidence":0.0,"description":""}],"contextHooks":[]}
+Regles:
+- Reste factuel, base sur ce qui est visible.
+- Utilise une confiance de 0 a 1 pour les personnalites possibles.
+- Si ce n'est pas clair, laisse les noms vides et garde les listes courtes.
+- Aucun markdown, aucun texte autour.`;
+
+  const userText = promptText
+    ? isEnglish
+      ? `User context: ${promptText}\nAnalyze this image for meme context.`
+      : `Contexte utilisateur: ${promptText}\nAnalyse cette image pour le contexte meme.`
+    : isEnglish
+      ? 'Analyze this image for meme context.'
+      : 'Analyse cette image pour le contexte meme.';
+
+  try {
+    const rawText = await callAnthropicMemePass({
+      image,
+      requestId,
+      systemPrompt,
+      userText,
+      maxTokens: DEFAULT_MAX_ANALYSIS_TOKENS,
+      passLabel: 'Image analysis'
+    });
+    const parsedContext = extractJsonFromText(rawText);
+    return normalizeMemeImageContext(parsedContext, language);
+  } catch (error) {
+    console.warn(`[api/meme-generator][${requestId}] Image analysis unavailable, using neutral fallback.`, error);
+    return createEmptyMemeImageContext();
+  }
+}
+
+async function generateCaptionOptions({ image, language, promptText, imageContext, requestId }) {
+  const isEnglish = language.toLowerCase().startsWith('en');
+  const systemPrompt = isEnglish
+    ? `You are Cathy Gauthier writing meme captions.
+Return STRICT JSON only, no prose:
+{"captions":["caption 1","caption 2","caption 3"]}
+Rules:
+- Exactly 3 captions
+- Max 80 characters each
+- Short, funny, sharable, grounded in the uploaded image context
+- You may use celebrity names ONLY from "High-confidence public figures"
+- Never invent celebrity names; for uncertain public figures, stay descriptive
+- No numbering, no emojis-only answers, no markdown`
+    : `Tu es Cathy Gauthier et tu crees des captions de meme.
+Retourne STRICTEMENT du JSON, sans texte autour :
+{"captions":["caption 1","caption 2","caption 3"]}
+Regles:
+- Exactement 3 captions
+- Maximum 80 caracteres chacune
+- Courtes, droles, partageables, ancrees dans le contexte visuel
+- Tu peux nommer une personnalite SEULEMENT si elle est dans "Personnalites publiques haute confiance"
+- N'invente jamais de nom; si c'est incertain, reste descriptif
+- Aucune numerotation, aucun markdown`;
+
+  const contextBlock = buildImageContextBlock(imageContext, language);
+  const userText = promptText
+    ? isEnglish
+      ? `User context: ${promptText}\nImage analysis:\n${contextBlock}\nCreate 3 meme captions.`
+      : `Contexte utilisateur: ${promptText}\nAnalyse image:\n${contextBlock}\nCree 3 captions de meme.`
+    : isEnglish
+      ? `Image analysis:\n${contextBlock}\nCreate 3 meme captions from this image.`
+      : `Analyse image:\n${contextBlock}\nCree 3 captions de meme pour cette image.`;
+
+  const rawText = await callAnthropicMemePass({
+    image,
+    requestId,
+    systemPrompt,
+    userText,
+    maxTokens: DEFAULT_MAX_CAPTION_TOKENS,
+    passLabel: 'Caption generation'
+  });
+
+  const parsed = parseCaptionCandidates(rawText, language);
+  if (parsed.length < 3) {
+    throw new Error('Caption generation returned insufficient options.');
+  }
+
+  return parsed;
 }
 
 function parseProposePayload(body) {
@@ -406,10 +618,17 @@ module.exports = async function handler(req, res) {
   try {
     if (action === 'propose') {
       const payload = parseProposePayload(req.body);
+      const imageContext = await analyzeImageForMemeContext({
+        image: payload.image,
+        language: payload.language,
+        promptText: payload.promptText,
+        requestId
+      });
       const captions = await generateCaptionOptions({
         image: payload.image,
         language: payload.language,
         promptText: payload.promptText,
+        imageContext,
         requestId
       });
       const placements = resolvePlacements();
