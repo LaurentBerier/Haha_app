@@ -1,4 +1,4 @@
-import { resolveChatBubbleImageResizeMode, shouldUseMemeImageStyle } from './chatBubbleImageMode';
+import { resolveChatBubbleImageDisplayVariant, resolveChatBubbleImageResizeMode } from './chatBubbleImageMode';
 
 describe('chatBubbleImageMode', () => {
   it('returns contain for meme option images', () => {
@@ -36,10 +36,34 @@ describe('chatBubbleImageMode', () => {
       })
     ).toBeNull();
     expect(
-      shouldUseMemeImageStyle({
+      resolveChatBubbleImageDisplayVariant({
         hasImage: false,
         memeType: 'final'
       })
-    ).toBe(false);
+    ).toBe('default');
+  });
+
+  it('resolves meme display variant for meme options and finals', () => {
+    expect(
+      resolveChatBubbleImageDisplayVariant({
+        hasImage: true,
+        memeType: 'option'
+      })
+    ).toBe('meme');
+    expect(
+      resolveChatBubbleImageDisplayVariant({
+        hasImage: true,
+        memeType: 'final'
+      })
+    ).toBe('meme');
+  });
+
+  it('resolves default variant for non-meme images', () => {
+    expect(
+      resolveChatBubbleImageDisplayVariant({
+        hasImage: true,
+        memeType: undefined
+      })
+    ).toBe('default');
   });
 });

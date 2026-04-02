@@ -3,6 +3,7 @@ import type { MessageMetadata } from '../../models/Message';
 type MemeType = MessageMetadata['memeType'];
 
 export type ChatBubbleImageResizeMode = 'cover' | 'contain';
+export type ChatBubbleImageDisplayVariant = 'default' | 'meme';
 
 function isMemeImageType(memeType: MemeType | undefined): boolean {
   return memeType === 'option' || memeType === 'final';
@@ -19,13 +20,13 @@ export function resolveChatBubbleImageResizeMode(params: {
   return isMemeImageType(params.memeType) ? 'contain' : 'cover';
 }
 
-export function shouldUseMemeImageStyle(params: {
+export function resolveChatBubbleImageDisplayVariant(params: {
   hasImage: boolean;
   memeType: MemeType | undefined;
-}): boolean {
+}): ChatBubbleImageDisplayVariant {
   if (!params.hasImage) {
-    return false;
+    return 'default';
   }
 
-  return isMemeImageType(params.memeType);
+  return isMemeImageType(params.memeType) ? 'meme' : 'default';
 }

@@ -15,7 +15,7 @@ import {
   resolveChatBubbleVoiceControlState,
   resolveVoiceUnavailableTranslationKey
 } from './chatBubbleVoiceState';
-import { resolveChatBubbleImageResizeMode, shouldUseMemeImageStyle } from './chatBubbleImageMode';
+import { resolveChatBubbleImageDisplayVariant, resolveChatBubbleImageResizeMode } from './chatBubbleImageMode';
 import { WaveformButton } from './WaveformButton';
 
 interface ChatBubbleProps {
@@ -98,7 +98,7 @@ function ChatBubbleBase({
     hasImage: Boolean(imageUri),
     memeType: message.metadata?.memeType
   });
-  const useMemeImageStyle = shouldUseMemeImageStyle({
+  const imageDisplayVariant = resolveChatBubbleImageDisplayVariant({
     hasImage: Boolean(imageUri),
     memeType: message.metadata?.memeType
   });
@@ -446,7 +446,7 @@ function ChatBubbleBase({
           {imageUri ? (
             <Image
               source={{ uri: imageUri }}
-              style={[styles.image, useMemeImageStyle ? styles.memeImage : null]}
+              style={[styles.image, imageDisplayVariant === 'meme' ? styles.memeImage : null]}
               resizeMode={imageResizeMode ?? 'cover'}
             />
           ) : null}
@@ -652,6 +652,10 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceSunken
   },
   memeImage: {
+    width: 260,
+    height: 390,
+    maxWidth: '100%',
+    backgroundColor: '#000000',
     borderWidth: 1,
     borderColor: theme.colors.border
   },
