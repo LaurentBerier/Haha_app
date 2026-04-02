@@ -39,45 +39,19 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
-function buildMemeComposerHint(language: string): string {
+function buildMemeLaunchInstruction(language: string, preferredName?: string | null): string {
+  const safeName = typeof preferredName === 'string' ? preferredName.trim() : '';
+  const namePrefix = safeName ? `${safeName}, ` : '';
+
   if (language.toLowerCase().startsWith('en')) {
-    return 'Tap the small + on the left of the text box to add your image.';
+    return `${namePrefix}tap the small + on the left of the text box to add your image, and share a bit of context if you can, it helps me make funnier memes!`;
   }
 
-  return 'Clique sur le petit + a gauche du champ texte pour ajouter ton image.';
+  return `${namePrefix}clique sur le petit + a gauche du champ texte pour ajouter ton image et donne moi un peu de contexte si tu peux, ca aide pour des memes plus droles!`;
 }
 
-function buildMemeContextHint(language: string): string {
-  if (language.toLowerCase().startsWith('en')) {
-    return 'Add a short text context too, it helps me make funnier memes.';
-  }
-
-  return 'Ajoute aussi un petit contexte en texte, ca m aide a faire des memes plus droles.';
-}
-
-function ensureMemeLaunchHints(content: string, language: string): string {
-  const trimmed = content.trim();
-  if (!trimmed) {
-    return `${buildMemeContextHint(language)} ${buildMemeComposerHint(language)}`.trim();
-  }
-
-  const normalized = trimmed.toLowerCase();
-  const hasContextHint = normalized.includes('context') || normalized.includes('contexte');
-  let enriched = trimmed;
-
-  if (!hasContextHint) {
-    enriched = `${enriched} ${buildMemeContextHint(language)}`.trim();
-  }
-
-  if (
-    normalized.includes('petit +') ||
-    normalized.includes('small +') ||
-    (normalized.includes('+') && (normalized.includes('gauche') || normalized.includes('left')))
-  ) {
-    return enriched;
-  }
-
-  return `${enriched} ${buildMemeComposerHint(language)}`.trim();
+function ensureMemeLaunchHints(language: string, preferredName?: string | null): string {
+  return buildMemeLaunchInstruction(language, preferredName);
 }
 
 function resolveVoiceErrorCode(error: unknown): string {
@@ -169,7 +143,7 @@ async function resolveModeIntroMessage(params: {
   }
 
   if (params.modeId === MODE_IDS.MEME_GENERATOR) {
-    return ensureMemeLaunchHints(resolvedIntro, params.language);
+    return ensureMemeLaunchHints(params.language, params.preferredName);
   }
 
   return resolvedIntro;

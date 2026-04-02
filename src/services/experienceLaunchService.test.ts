@@ -206,11 +206,9 @@ describe('experienceLaunchService', () => {
     expect(addedMessages).toHaveLength(1);
     expect(addedMessages[0]?.status).toBe('pending');
     expect(addedMessages[0]?.metadata?.memeType).toBeUndefined();
-    expect(extractContentUpdates()).toEqual([
-      expect.stringContaining('intro meme')
-    ]);
+    expect(extractContentUpdates()).toHaveLength(1);
+    expect(extractContentUpdates()[0]).toContain('Laurent, clique sur le petit +');
     expect(extractContentUpdates()[0]?.toLowerCase()).toContain('contexte');
-    expect(extractContentUpdates()[0]).toContain('petit +');
   });
 
   it('re-enables voice auto-play when conversation mode is active during mode launch', () => {

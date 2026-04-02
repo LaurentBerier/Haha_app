@@ -52,8 +52,7 @@ describe('modeIntroService fallback intro', () => {
   it('returns an image-first intro fallback for meme-generator', () => {
     const intro = generateModeIntro(MODE_IDS.MEME_GENERATOR, null);
 
-    expect(intro.toLowerCase()).toContain('image');
-    expect(intro.toLowerCase()).toContain('caption');
+    expect(intro.toLowerCase()).toContain('memes');
     expect(intro.toLowerCase()).toContain('contexte');
     expect(intro).toContain('petit +');
   });

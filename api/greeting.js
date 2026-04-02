@@ -1259,11 +1259,10 @@ function buildModeIntroSystemPrompt(language, modeId) {
   if (isEnglish) {
     if (modeId === MODE_ID_MEME_GENERATOR) {
       return `You are Cathy Gauthier. You are opening the mode "Meme Generator".
-Write exactly 2 to 3 short sentences, maximum 45 words total.
+Write exactly 1 to 2 short sentences, maximum 32 words total.
 Required structure:
-1) Greet the user by first name when available.
-2) Explain that this mode turns their uploaded image into meme options and that one short text context helps make them funnier.
-3) End by explicitly asking the user to tap the small + on the left of the text composer to upload one image now.
+1) Start with the user's first name when available.
+2) Ask them to tap the small + on the left of the text composer to upload one image now, and add a short text context because it helps make funnier memes.
 Hard rules:
 - No tutorial/mic instructions.
 - No weather, headlines, or mode list.
@@ -1303,11 +1302,10 @@ Hard rules:
 
   if (modeId === MODE_ID_MEME_GENERATOR) {
     return `Tu es Cathy Gauthier. Tu ouvres le mode "Generateur de Meme".
-Ecris exactement 2 a 3 phrases courtes, maximum 45 mots au total.
+Ecris exactement 1 a 2 phrases courtes, maximum 32 mots au total.
 Structure obligatoire:
-1) Salue la personne par son prenom si disponible.
-2) Explique que ce mode transforme son image en options de memes et qu'un court contexte texte aide a les rendre plus droles.
-3) Termine en demandant explicitement de cliquer sur le petit + a gauche du champ texte pour uploader une image maintenant.
+1) Commence avec le prenom de la personne si disponible.
+2) Demande de cliquer sur le petit + a gauche du champ texte pour uploader une image maintenant, et d'ajouter un court contexte texte car ca aide a faire des memes plus droles.
 Regles absolues:
 - Aucune instruction tutorial/micro.
 - Pas de meteo, pas d'actualites, pas de liste de modes.
