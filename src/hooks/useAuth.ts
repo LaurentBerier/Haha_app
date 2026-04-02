@@ -82,6 +82,19 @@ export function useAuth(options: UseAuthOptions = {}) {
           return;
         }
 
+        const bootstrapAccessToken = storedSession.accessToken.trim();
+        if (!bootstrapAccessToken) {
+          void clearVoiceCacheOnSessionResetSafely();
+          clearSession();
+          clearUserProfile();
+          if (hasLocalChatData()) {
+            clearAccountScopedState();
+          }
+          resetQuota();
+          resetGamification();
+          return;
+        }
+
         const currentOwnerUserId = useStore.getState().persistedOwnerUserId;
         if (currentOwnerUserId !== storedSession.user.id && hasLocalChatData()) {
           clearAccountScopedState();
@@ -89,7 +102,7 @@ export function useAuth(options: UseAuthOptions = {}) {
 
         const accountType = resolveEffectiveAccountType(storedSession.user.accountType, storedSession.user.role);
         try {
-          const usageSummary = await getUsageSummary(storedSession.accessToken);
+          const usageSummary = await getUsageSummary(bootstrapAccessToken);
           if (!isRunCurrent(runId)) {
             return;
           }
@@ -101,7 +114,7 @@ export function useAuth(options: UseAuthOptions = {}) {
         }
 
         try {
-          await getUserStats(storedSession.accessToken);
+          await getUserStats(bootstrapAccessToken);
           if (!isRunCurrent(runId)) {
             return;
           }
@@ -165,6 +178,17 @@ export function useAuth(options: UseAuthOptions = {}) {
           return;
         }
 
+        const nextAccessToken = nextSession.accessToken.trim();
+        if (!nextAccessToken) {
+          void clearVoiceCacheOnSessionResetSafely();
+          clearSession();
+          clearUserProfile();
+          clearAccountScopedState();
+          resetQuota();
+          resetGamification();
+          return;
+        }
+
         const hasLocalChatData =
           Object.keys(useStore.getState().conversations).length > 0 ||
           Object.keys(useStore.getState().messagesByConversation).length > 0 ||
@@ -181,7 +205,7 @@ export function useAuth(options: UseAuthOptions = {}) {
 
         const accountType = resolveEffectiveAccountType(nextSession.user.accountType, nextSession.user.role);
         try {
-          const usageSummary = await getUsageSummary(nextSession.accessToken);
+          const usageSummary = await getUsageSummary(nextAccessToken);
           if (!isRunCurrent(runId)) {
             return;
           }
@@ -193,7 +217,7 @@ export function useAuth(options: UseAuthOptions = {}) {
         }
 
         try {
-          await getUserStats(nextSession.accessToken);
+          await getUserStats(nextAccessToken);
           if (!isRunCurrent(runId)) {
             return;
           }

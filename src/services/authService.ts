@@ -20,6 +20,8 @@ export interface UsageSummary {
   economyMode?: boolean;
 }
 
+const SESSION_REFRESH_LEEWAY_SECONDS = 30;
+
 function isNetworkFailure(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
@@ -27,6 +29,70 @@ function isNetworkFailure(error: unknown): boolean {
 
   const message = error.message.toLowerCase();
   return message.includes('network request failed') || message.includes('failed to fetch');
+}
+
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error && typeof error.message === 'string') {
+    return error.message.toLowerCase();
+  }
+
+  if (
+    error &&
+    typeof error === 'object' &&
+    'message' in error &&
+    typeof (error as { message?: unknown }).message === 'string'
+  ) {
+    return ((error as { message: string }).message ?? '').toLowerCase();
+  }
+
+  return '';
+}
+
+function isInvalidRefreshTokenError(error: unknown): boolean {
+  const message = extractErrorMessage(error);
+  if (!message) {
+    return false;
+  }
+
+  return (
+    message.includes('invalid refresh token') ||
+    message.includes('refresh token not found') ||
+    message.includes('refresh_token_not_found')
+  );
+}
+
+async function clearPersistedSupabaseSession(): Promise<void> {
+  try {
+    await supabase.auth.signOut({ scope: 'local' });
+    return;
+  } catch {
+    // Fall through to generic sign-out fallback.
+  }
+
+  try {
+    await supabase.auth.signOut();
+  } catch {
+    // Best effort: stale local auth state might already be gone.
+  }
+}
+
+async function recoverFromInvalidRefreshToken(error: unknown): Promise<boolean> {
+  if (!isInvalidRefreshTokenError(error)) {
+    return false;
+  }
+
+  await clearPersistedSupabaseSession();
+  return true;
+}
+
+function isSessionExpiringSoon(session: Session): boolean {
+  const expiresAt = session.expires_at;
+  if (typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)) {
+    return false;
+  }
+
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  return expiresAt <= nowSeconds + SESSION_REFRESH_LEEWAY_SECONDS;
 }
 
 async function withNetworkRetry<T>(operation: () => Promise<T>): Promise<T> {
@@ -342,6 +408,9 @@ export async function refreshSession(): Promise<AuthSession> {
   assertSupabaseConfigured();
   const { data, error } = await supabase.auth.refreshSession();
   if (error) {
+    if (await recoverFromInvalidRefreshToken(error)) {
+      return null;
+    }
     throw error;
   }
   return toAuthSession(data.session);
@@ -351,9 +420,39 @@ export async function getStoredSession(): Promise<AuthSession> {
   assertSupabaseConfigured();
   const { data, error } = await supabase.auth.getSession();
   if (error) {
+    if (await recoverFromInvalidRefreshToken(error)) {
+      return null;
+    }
     throw error;
   }
-  return toAuthSession(data.session);
+
+  const session = data.session;
+  if (!session) {
+    return null;
+  }
+
+  const hasAccessToken = typeof session.access_token === 'string' && session.access_token.trim().length > 0;
+  const hasRefreshToken = typeof session.refresh_token === 'string' && session.refresh_token.trim().length > 0;
+  if (!hasAccessToken || !hasRefreshToken) {
+    await clearPersistedSupabaseSession();
+    return null;
+  }
+
+  if (!isSessionExpiringSoon(session)) {
+    return toAuthSession(session);
+  }
+
+  const { data: refreshedData, error: refreshError } = await supabase.auth.refreshSession({
+    refresh_token: session.refresh_token
+  });
+  if (refreshError) {
+    if (await recoverFromInvalidRefreshToken(refreshError)) {
+      return null;
+    }
+    throw refreshError;
+  }
+
+  return toAuthSession(refreshedData.session);
 }
 
 export function onAuthStateChange(callback: AuthStateChangeCallback): () => void {

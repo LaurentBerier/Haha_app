@@ -36,7 +36,24 @@ jest.mock('react-native', () => ({
   }
 }));
 
-import { deleteAccount, getUsageSummary, signUpWithEmail } from './authService';
+import { deleteAccount, getStoredSession, getUsageSummary, signUpWithEmail } from './authService';
+import { supabase } from './supabaseClient';
+
+function buildSession(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    access_token: 'access-token',
+    refresh_token: 'refresh-token',
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    user: {
+      id: 'user-123',
+      email: 'user@example.com',
+      app_metadata: {},
+      user_metadata: {},
+      created_at: '2026-01-01T00:00:00.000Z'
+    },
+    ...overrides
+  };
+}
 
 describe('authService', () => {
   const originalFetch = global.fetch;
@@ -118,5 +135,50 @@ describe('authService', () => {
     }) as unknown as typeof fetch;
 
     await expect(deleteAccount('access-token')).rejects.toThrow('Delete failed upstream.');
+  });
+
+  it('clears local auth state when stored session refresh token is invalid', async () => {
+    (supabase.auth.getSession as jest.Mock).mockResolvedValue({
+      data: { session: null },
+      error: new Error('Invalid Refresh Token: Refresh Token Not Found')
+    });
+    (supabase.auth.signOut as jest.Mock).mockResolvedValue({ error: null });
+
+    const session = await getStoredSession();
+
+    expect(session).toBeNull();
+    expect(supabase.auth.signOut).toHaveBeenCalledWith({ scope: 'local' });
+  });
+
+  it('refreshes an expiring stored session before returning auth tokens', async () => {
+    (supabase.auth.getSession as jest.Mock).mockResolvedValue({
+      data: {
+        session: buildSession({
+          access_token: 'stale-access-token',
+          refresh_token: 'refresh-token',
+          expires_at: Math.floor(Date.now() / 1000) - 5
+        })
+      },
+      error: null
+    });
+    (supabase.auth.refreshSession as jest.Mock).mockResolvedValue({
+      data: {
+        session: buildSession({
+          access_token: 'fresh-access-token',
+          refresh_token: 'fresh-refresh-token'
+        })
+      },
+      error: null
+    });
+
+    const session = await getStoredSession();
+
+    expect(supabase.auth.refreshSession).toHaveBeenCalledWith({ refresh_token: 'refresh-token' });
+    expect(session).toEqual(
+      expect.objectContaining({
+        accessToken: 'fresh-access-token',
+        refreshToken: 'fresh-refresh-token'
+      })
+    );
   });
 });
