@@ -1,17 +1,50 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { createCanvas, loadImage } = require('@napi-rs/canvas');
+const { createCanvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 
 const ALLOWED_IMAGE_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const MAX_IMAGE_BYTES = 3_000_000;
 const MAX_CAPTION_CHARS = 120;
 const DEFAULT_PLACEMENT = 'top';
 const MAX_RENDER_WIDTH = 1_080;
+const CAPTION_FONT_FAMILY = 'Anton Meme';
+const CAPTION_FONT_PATH = path.join(process.cwd(), 'assets', 'fonts', 'Anton-Regular.ttf');
+const CAPTION_FONT_FALLBACK = 'sans-serif';
 
 const LOGO_PATH = path.join(process.cwd(), 'assets', 'branding', 'logo-neon-Trans.png');
 
 let logoBufferCache = null;
 let logoLoadFailure = null;
+let captionFontLoadState = 'idle';
+let captionFontLoadWarningShown = false;
+
+function ensureCaptionFontLoaded() {
+  if (captionFontLoadState === 'loaded' || captionFontLoadState === 'failed') {
+    return;
+  }
+
+  try {
+    const registered = GlobalFonts.registerFromPath(CAPTION_FONT_PATH, CAPTION_FONT_FAMILY);
+    if (!registered) {
+      throw new Error('GlobalFonts.registerFromPath returned null.');
+    }
+    captionFontLoadState = 'loaded';
+  } catch (error) {
+    captionFontLoadState = 'failed';
+    if (!captionFontLoadWarningShown) {
+      captionFontLoadWarningShown = true;
+      console.warn('[api/_meme-render] Caption font registration failed. Falling back to sans-serif.', error);
+    }
+  }
+}
+
+function resolveCaptionFont(sizePx) {
+  const normalizedSize = Math.max(1, Math.round(Number(sizePx) || 1));
+  if (captionFontLoadState === 'loaded') {
+    return `700 ${normalizedSize}px "${CAPTION_FONT_FAMILY}", ${CAPTION_FONT_FALLBACK}`;
+  }
+  return `700 ${normalizedSize}px ${CAPTION_FONT_FALLBACK}`;
+}
 
 function getApproxBase64Bytes(base64Data) {
   const data = String(base64Data ?? '').replace(/\s+/g, '');
@@ -155,6 +188,7 @@ function ellipsizeLineToWidth(ctx, line, maxWidth) {
 }
 
 function layoutCaption({ caption, imageWidth }) {
+  ensureCaptionFontLoaded();
   const measureCtx = createMeasureContext();
   const maxLines = 3;
   const horizontalPadding = Math.max(24, Math.round(imageWidth * 0.06));
@@ -165,7 +199,7 @@ function layoutCaption({ caption, imageWidth }) {
   let winning = null;
 
   for (let fontSize = maxFont; fontSize >= minFont; fontSize -= 2) {
-    measureCtx.font = `700 ${fontSize}px Impact, Arial Black, sans-serif`;
+    measureCtx.font = resolveCaptionFont(fontSize);
     const wrapped = wrapCaptionLines(measureCtx, caption, maxTextWidth, maxLines);
     if (wrapped.length > maxLines) {
       continue;
@@ -194,7 +228,7 @@ function layoutCaption({ caption, imageWidth }) {
     return winning;
   }
 
-  measureCtx.font = `700 ${minFont}px Impact, Arial Black, sans-serif`;
+  measureCtx.font = resolveCaptionFont(minFont);
   const collapsed = ellipsizeLineToWidth(measureCtx, normalizeCaption(caption), maxTextWidth);
   return {
     fontSize: minFont,
@@ -230,12 +264,14 @@ function resolveLogoSize({ imageWidth, bottomBandHeight, logoImage }) {
 }
 
 function drawCaptionInBand({ ctx, layout, yStart, bandHeight, imageWidth }) {
+  ensureCaptionFontLoaded();
   const lineHeight = Math.ceil(layout.fontSize * 1.2);
   const totalTextHeight = layout.lines.length * lineHeight;
   const textTop = Math.round(yStart + (bandHeight - totalTextHeight) / 2 + lineHeight * 0.82);
 
-  ctx.font = `700 ${layout.fontSize}px Impact, Arial Black, sans-serif`;
-  ctx.fillStyle = '#ffffff';
+  ctx.font = resolveCaptionFont(layout.fontSize);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#FFFFFF';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
 
