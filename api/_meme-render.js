@@ -15,12 +15,14 @@ const CAPTION_FONT_FAMILY = 'Anton Meme';
 const CAPTION_FONT_PATH = path.join(process.cwd(), 'assets', 'fonts', 'Anton-Regular.ttf');
 const CAPTION_FONT_FALLBACK = 'sans-serif';
 
-const LOGO_PATH = path.join(process.cwd(), 'assets', 'branding', 'logo-simple-neon-Trans.png');
+const PRIMARY_LOGO_PATH = path.join(process.cwd(), 'assets', 'branding', 'logo-simple-neon-Trans.png');
+const FALLBACK_LOGO_PATH = path.join(process.cwd(), 'assets', 'branding', 'logo-neon-Trans.png');
 
-let logoBufferCache = null;
-let logoLoadFailure = null;
+const logoBufferCacheByPath = new Map();
+const logoLoadFailureByPath = new Map();
 let captionFontLoadState = 'idle';
 let captionFontLoadWarningShown = false;
+let logoFallbackWarningShown = false;
 
 function ensureCaptionFontLoaded() {
   if (captionFontLoadState === 'loaded' || captionFontLoadState === 'failed') {
@@ -109,24 +111,51 @@ function decodeImageBuffer(image) {
   return Buffer.from(image.base64, 'base64');
 }
 
-function loadLogoBuffer() {
-  if (logoBufferCache) {
-    return logoBufferCache;
+function loadLogoBuffer(logoPath) {
+  if (logoBufferCacheByPath.has(logoPath)) {
+    return logoBufferCacheByPath.get(logoPath);
   }
 
-  if (logoLoadFailure) {
-    throw logoLoadFailure;
+  if (logoLoadFailureByPath.has(logoPath)) {
+    throw logoLoadFailureByPath.get(logoPath);
   }
 
   try {
-    logoBufferCache = fs.readFileSync(LOGO_PATH);
-    return logoBufferCache;
+    const logoBuffer = fs.readFileSync(logoPath);
+    logoBufferCacheByPath.set(logoPath, logoBuffer);
+    return logoBuffer;
   } catch (error) {
-    const failure = new Error('Meme logo file is missing or unreadable.');
+    const failure = new Error(`Meme logo file is missing or unreadable (${path.basename(logoPath)}).`);
     failure.cause = error;
-    logoLoadFailure = failure;
+    logoLoadFailureByPath.set(logoPath, failure);
     throw failure;
   }
+}
+
+async function loadLogoImage() {
+  const logoCandidates = [PRIMARY_LOGO_PATH, FALLBACK_LOGO_PATH];
+  let lastError = null;
+
+  for (let index = 0; index < logoCandidates.length; index += 1) {
+    const logoPath = logoCandidates[index];
+    try {
+      const logoBuffer = loadLogoBuffer(logoPath);
+      return await loadImage(logoBuffer);
+    } catch (error) {
+      lastError = error;
+      if (index === 0 && !logoFallbackWarningShown) {
+        logoFallbackWarningShown = true;
+        console.warn(
+          '[api/_meme-render] Primary logo failed to load; falling back to legacy logo asset.',
+          error
+        );
+      }
+    }
+  }
+
+  const failure = new Error('Meme logo file is unavailable or cannot be decoded.');
+  failure.cause = lastError;
+  throw failure;
 }
 
 function createMeasureContext() {
@@ -370,7 +399,7 @@ async function renderMemeImage({ image, caption, placement = DEFAULT_PLACEMENT }
   const sourceBuffer = decodeImageBuffer(image);
   const [sourceImage, logoImage] = await Promise.all([
     loadImage(sourceBuffer),
-    loadImage(loadLogoBuffer())
+    loadLogoImage()
   ]);
 
   const sourceWidth = sourceImage.width;
