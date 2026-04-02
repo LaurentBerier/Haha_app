@@ -65,7 +65,10 @@ describe('sentry service', () => {
 
   it('drops known web instrumentation noise in beforeSend', async () => {
     const initMock = jest.fn();
-    const browserReplayIntegrationMock = jest.fn((_options?: unknown) => ({ name: 'Replay' }));
+    const browserReplayIntegrationMock = jest.fn((options?: unknown) => {
+      void options;
+      return { name: 'Replay' };
+    });
 
     jest.doMock('../config/env', () => ({
       SENTRY_DSN: 'https://public@example.ingest.sentry.io/1'
