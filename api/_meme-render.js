@@ -15,7 +15,7 @@ const CAPTION_FONT_FAMILY = 'Anton Meme';
 const CAPTION_FONT_PATH = path.join(process.cwd(), 'assets', 'fonts', 'Anton-Regular.ttf');
 const CAPTION_FONT_FALLBACK = 'sans-serif';
 
-const LOGO_PATH = path.join(process.cwd(), 'assets', 'branding', 'logo-neon-Trans.png');
+const LOGO_PATH = path.join(process.cwd(), 'assets', 'branding', 'logo-simple-neon-Trans.png');
 
 let logoBufferCache = null;
 let logoLoadFailure = null;
@@ -469,9 +469,7 @@ async function renderMemeImage({ image, caption, placement = DEFAULT_PLACEMENT }
       : imageWidth - logoSize.width - logoSize.safePadding;
   const logoY = topBandHeight + imageHeight + Math.round((bottomBandHeight - logoSize.height) / 2);
 
-  ctx.globalAlpha = 0.9;
   ctx.drawImage(logoImage, logoX, logoY, logoSize.width, logoSize.height);
-  ctx.globalAlpha = 1;
 
   return {
     mimeType: 'image/png',
