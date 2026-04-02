@@ -149,7 +149,7 @@ describe('api/meme-generator', () => {
       .fn()
       .mockResolvedValueOnce(
         createAnthropicSuccessResponse(
-          '{"sceneSummary":"Trois amis en pause","environment":"cabane en bois","mood":"taquin","people":["trois adultes","lunettes"],"animals":[],"notableObjects":["bol de soupe"],"famousPeopleCandidates":[{"name":"Ryan Gosling","confidence":0.92,"description":"acteur canadien"}],"contextHooks":["attente du repas"]}'
+          '{"sceneSummary":"Trois amis en pause","environment":"cabane en bois au Quebec","mood":"taquin","people":[{"label":"trois adultes"},{"description":"lunettes"}],"animals":[{"species":"singe capucin"}],"notableObjects":["bol de soupe"],"famousPeopleCandidates":[{"name":"Justin Trudeau","confidence":0.88,"description":"politicien canadien"}],"contextHooks":["attente du repas"]}'
         )
       )
       .mockResolvedValueOnce(
@@ -194,8 +194,11 @@ describe('api/meme-generator', () => {
     const analysisBody = JSON.parse(String(global.fetch.mock.calls[0]?.[1]?.body ?? '{}'));
     const captionsBody = JSON.parse(String(global.fetch.mock.calls[1]?.[1]?.body ?? '{}'));
     expect(analysisBody.system).toContain('famousPeopleCandidates');
+    expect(analysisBody.system).toContain('Quebec/Canada');
+    expect(analysisBody.system).toContain('singe');
     expect(String(captionsBody.messages?.[0]?.content?.[0]?.text ?? '')).toContain('bol de soupe');
-    expect(String(captionsBody.messages?.[0]?.content?.[0]?.text ?? '')).toContain('Ryan Gosling');
+    expect(String(captionsBody.messages?.[0]?.content?.[0]?.text ?? '')).toContain('singe capucin');
+    expect(String(captionsBody.messages?.[0]?.content?.[0]?.text ?? '')).toContain('Justin Trudeau');
   });
 
   it('does not expose low-confidence celebrity names in caption prompt', async () => {

@@ -17,11 +17,12 @@ const {
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_CAPTION_MODEL = 'claude-haiku-4-5-20251001';
+const DEFAULT_ANALYSIS_MODEL = DEFAULT_CAPTION_MODEL;
 const DEFAULT_FETCH_TIMEOUT_MS = 25_000;
 const DEFAULT_MAX_CAPTION_TOKENS = 160;
 const DEFAULT_MAX_ANALYSIS_TOKENS = 300;
 const MAX_INPUT_TEXT_CHARS = 280;
-const HIGH_CONFIDENCE_CELEBRITY_THRESHOLD = 0.9;
+const HIGH_CONFIDENCE_CELEBRITY_THRESHOLD = 0.85;
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -121,7 +122,7 @@ function fallbackCaptions(language) {
     : [
         "Moi qui fais semblant d'avoir la situation en main",
         'Quand ton cerveau ouvre 37 onglets en meme temps',
-      'POV: confiante en public, chaos a la maison'
+        'POV: confiante en public, chaos a la maison'
       ];
 }
 
@@ -143,7 +144,19 @@ function normalizeStringList(value, maxItems, maxLength) {
 
   const normalized = [];
   for (const entry of value) {
-    const cleaned = normalizeLooseText(entry, maxLength);
+    let cleaned = normalizeLooseText(entry, maxLength);
+    if (!cleaned && isRecord(entry)) {
+      cleaned = normalizeLooseText(
+        entry.name ??
+          entry.label ??
+          entry.species ??
+          entry.type ??
+          entry.description ??
+          entry.text ??
+          '',
+        maxLength
+      );
+    }
     if (!cleaned || normalized.includes(cleaned)) {
       continue;
     }
@@ -329,6 +342,8 @@ async function callAnthropicMemePass({
   systemPrompt,
   userText,
   maxTokens,
+  model,
+  temperature = 0.55,
   passLabel
 }) {
   const apiKey = (process.env.ANTHROPIC_API_KEY ?? '').trim();
@@ -350,9 +365,9 @@ async function callAnthropicMemePass({
         'anthropic-version': ANTHROPIC_VERSION
       },
       body: JSON.stringify({
-        model: (process.env.MEME_CAPTION_MODEL ?? '').trim() || DEFAULT_CAPTION_MODEL,
+        model: model || (process.env.MEME_CAPTION_MODEL ?? '').trim() || DEFAULT_CAPTION_MODEL,
         max_tokens: maxTokens,
-        temperature: 0.55,
+        temperature,
         stream: false,
         system: systemPrompt,
         messages: [
@@ -413,16 +428,22 @@ Return STRICT JSON only:
 {"sceneSummary":"","environment":"","mood":"","people":[],"animals":[],"notableObjects":[],"famousPeopleCandidates":[{"name":"","confidence":0.0,"description":""}],"contextHooks":[]}
 Rules:
 - Keep it factual and grounded only in visible content.
-- Use confidence from 0 to 1 for possible famous people.
-- If uncertain, leave names empty and keep arrays concise.
+- Detect specific animal species when possible (example: capuchin monkey, macaque, husky, tabby cat).
+- For primates, prefer explicit labels like "monkey" or "ape" when visually plausible.
+- Prioritize recognition of Quebec/Canada public figures (politicians, actors, comedians, athletes, media) when visual evidence supports it.
+- Use confidence from 0 to 1 for possible famous people and keep descriptions short.
+- If uncertain, keep names empty or low confidence and rely on descriptive labels.
 - No markdown, no commentary.`
     : `Tu analyses une image pour aider a ecrire des captions de meme.
 Retourne STRICTEMENT du JSON:
 {"sceneSummary":"","environment":"","mood":"","people":[],"animals":[],"notableObjects":[],"famousPeopleCandidates":[{"name":"","confidence":0.0,"description":""}],"contextHooks":[]}
 Regles:
 - Reste factuel, base sur ce qui est visible.
-- Utilise une confiance de 0 a 1 pour les personnalites possibles.
-- Si ce n'est pas clair, laisse les noms vides et garde les listes courtes.
+- Detecte l'espece animale precise si possible (ex: singe capucin, macaque, husky, chat tigré).
+- Pour les primates, priorise des labels explicites comme "singe" ou "grand singe" quand c'est plausible.
+- Priorise la reconnaissance des personnalites du Quebec/Canada (politiciens, humoristes, acteurs, athletes, medias) si les indices visuels sont suffisants.
+- Utilise une confiance de 0 a 1 pour les personnalites possibles et garde des descriptions courtes.
+- Si ce n'est pas clair, mets un nom vide ou une confiance basse et reste descriptif.
 - Aucun markdown, aucun texte autour.`;
 
   const userText = promptText
@@ -440,6 +461,8 @@ Regles:
       systemPrompt,
       userText,
       maxTokens: DEFAULT_MAX_ANALYSIS_TOKENS,
+      model: (process.env.MEME_ANALYSIS_MODEL ?? '').trim() || DEFAULT_ANALYSIS_MODEL,
+      temperature: 0.25,
       passLabel: 'Image analysis'
     });
     const parsedContext = extractJsonFromText(rawText);
@@ -460,6 +483,7 @@ Rules:
 - Exactly 3 captions
 - Max 80 characters each
 - Short, funny, sharable, grounded in the uploaded image context
+- Prefer precise context from scene/environment/animals over generic jokes
 - You may use celebrity names ONLY from "High-confidence public figures"
 - Never invent celebrity names; for uncertain public figures, stay descriptive
 - No numbering, no emojis-only answers, no markdown`
@@ -470,6 +494,7 @@ Regles:
 - Exactement 3 captions
 - Maximum 80 caracteres chacune
 - Courtes, droles, partageables, ancrees dans le contexte visuel
+- Priorise les details precis (scene/environnement/animaux) plutot que des blagues generiques
 - Tu peux nommer une personnalite SEULEMENT si elle est dans "Personnalites publiques haute confiance"
 - N'invente jamais de nom; si c'est incertain, reste descriptif
 - Aucune numerotation, aucun markdown`;
