@@ -54,6 +54,7 @@ describe('modeIntroService fallback intro', () => {
 
     expect(intro.toLowerCase()).toContain('image');
     expect(intro.toLowerCase()).toContain('caption');
+    expect(intro.toLowerCase()).toContain('contexte');
     expect(intro).toContain('petit +');
   });
 });

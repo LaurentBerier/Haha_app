@@ -201,6 +201,48 @@ describe('api/meme-generator', () => {
     expect(String(captionsBody.messages?.[0]?.content?.[0]?.text ?? '')).toContain('Justin Trudeau');
   });
 
+  it('normalizes common missing accents in french caption options', async () => {
+    setupModuleMocks();
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        createAnthropicSuccessResponse(
+          '{"sceneSummary":"Trois amis en pause","environment":"cabane en bois au Quebec","mood":"taquin","people":["trois adultes"],"animals":[],"notableObjects":["bol de soupe"],"famousPeopleCandidates":[],"contextHooks":["attente du repas"]}'
+        )
+      )
+      .mockResolvedValueOnce(
+        createAnthropicSuccessResponse(
+          '{"captions":["Quand ton cerveau ouvre 37 onglets en meme temps","Tres efficace, deja fatigue","Voila, ca devient drole"]}'
+        )
+      );
+
+    const handler = require('../meme-generator');
+    const { req, res } = createReqRes({
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer token'
+      },
+      body: {
+        action: 'propose',
+        language: 'fr-CA',
+        image: {
+          mediaType: 'image/png',
+          base64: 'cGhvdG8='
+        }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload?.options).toHaveLength(3);
+    expect(res.payload?.options?.map((option) => option.caption)).toEqual([
+      'Quand ton cerveau ouvre 37 onglets en mème temps',
+      'Très efficace, déjà fatigue',
+      'Voilà, ça devient drôle'
+    ]);
+  });
+
   it('does not expose low-confidence celebrity names in caption prompt', async () => {
     setupModuleMocks();
     global.fetch = jest

@@ -183,8 +183,8 @@ export function generateModeIntro(modeId: string, userProfile?: UserProfile | nu
         : 'Bataille de roast commence. Tu lances, je replique, puis je donne le verdict final.';
     case MODE_IDS.MEME_GENERATOR:
       return preferredName
-        ? `${preferredName}, envoie une image et je te propose des captions qui font rire en une seconde. Clique sur le petit + a gauche du champ texte pour ajouter ton image.`
-        : 'Envoie une image et je te propose des captions qui font rire en une seconde. Clique sur le petit + a gauche du champ texte pour ajouter ton image.';
+        ? `${preferredName}, envoie une image et je te propose des captions qui font rire vite. Ajoute un peu de contexte en texte, ca aide pour des memes plus droles. Clique sur le petit + a gauche du champ texte pour ajouter ton image.`
+        : 'Envoie une image et je te propose des captions qui font rire vite. Ajoute un peu de contexte en texte, ca aide pour des memes plus droles. Clique sur le petit + a gauche du champ texte pour ajouter ton image.';
     case MODE_IDS.SCREENSHOT_ANALYZER:
       return preferredName
         ? `${preferredName}, envoie ton screenshot ou colle le texto. Je juge l'histoire, puis je te donne une replique utile.`

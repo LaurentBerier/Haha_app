@@ -23,6 +23,18 @@ const DEFAULT_MAX_CAPTION_TOKENS = 160;
 const DEFAULT_MAX_ANALYSIS_TOKENS = 300;
 const MAX_INPUT_TEXT_CHARS = 280;
 const HIGH_CONFIDENCE_CELEBRITY_THRESHOLD = 0.85;
+const FRENCH_ACCENT_WORD_MAP = new Map([
+  ['meme', 'mème'],
+  ['memes', 'mèmes'],
+  ['tres', 'très'],
+  ['deja', 'déjà'],
+  ['apres', 'après'],
+  ['voila', 'voilà'],
+  ['etre', 'être'],
+  ['ca', 'ça'],
+  ['drole', 'drôle'],
+  ['droles', 'drôles']
+]);
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -67,6 +79,52 @@ function sanitizeCaption(value) {
   }
 
   return normalized.slice(0, 80);
+}
+
+function applyWordCase(referenceWord, replacementWord) {
+  const safeReference = String(referenceWord ?? '');
+  const safeReplacement = String(replacementWord ?? '');
+  if (!safeReference || !safeReplacement) {
+    return safeReplacement;
+  }
+
+  if (safeReference === safeReference.toUpperCase()) {
+    return safeReplacement.toUpperCase();
+  }
+
+  const startsUppercase = safeReference[0] === safeReference[0].toUpperCase();
+  if (startsUppercase) {
+    return safeReplacement[0].toUpperCase() + safeReplacement.slice(1);
+  }
+
+  return safeReplacement;
+}
+
+function applyFrenchAccentCorrections(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return '';
+  }
+
+  return value.replace(/\b([A-Za-z]+)\b/g, (word) => {
+    const replacement = FRENCH_ACCENT_WORD_MAP.get(word.toLowerCase());
+    if (!replacement) {
+      return word;
+    }
+    return applyWordCase(word, replacement);
+  });
+}
+
+function normalizeCaptionOrthography(value, language) {
+  const normalized = sanitizeCaption(value);
+  if (!normalized) {
+    return '';
+  }
+
+  if (!String(language ?? '').toLowerCase().startsWith('fr')) {
+    return normalized;
+  }
+
+  return applyFrenchAccentCorrections(normalized);
 }
 
 function extractAnthropicText(payload) {
@@ -121,8 +179,8 @@ function fallbackCaptions(language) {
       ]
     : [
         "Moi qui fais semblant d'avoir la situation en main",
-        'Quand ton cerveau ouvre 37 onglets en meme temps',
-        'POV: confiante en public, chaos a la maison'
+        'Quand ton cerveau ouvre 37 onglets en même temps',
+        'POV: confiante en public, chaos à la maison'
       ];
 }
 
@@ -289,7 +347,7 @@ function parseCaptionCandidates(rawText, language) {
       if (typeof item !== 'string') {
         continue;
       }
-      const cleaned = sanitizeCaption(item.replace(/^\s*(?:\d+[.)]|[-*])\s*/, ''));
+      const cleaned = normalizeCaptionOrthography(item.replace(/^\s*(?:\d+[.)]|[-*])\s*/, ''), language);
       if (!cleaned || normalized.includes(cleaned)) {
         continue;
       }
@@ -303,7 +361,7 @@ function parseCaptionCandidates(rawText, language) {
   if (normalized.length < 3) {
     const loose = rawText
       .split(/\n+/)
-      .map((line) => sanitizeCaption(line.replace(/^\s*(?:\d+[.)]|[-*])\s*/, '')))
+      .map((line) => normalizeCaptionOrthography(line.replace(/^\s*(?:\d+[.)]|[-*])\s*/, ''), language))
       .filter(Boolean);
     for (const candidate of loose) {
       if (normalized.includes(candidate)) {
@@ -318,7 +376,7 @@ function parseCaptionCandidates(rawText, language) {
 
   if (normalized.length < 3) {
     for (const fallback of fallbackCaptions(language)) {
-      const cleaned = sanitizeCaption(fallback);
+      const cleaned = normalizeCaptionOrthography(fallback, language);
       if (!cleaned || normalized.includes(cleaned)) {
         continue;
       }
@@ -497,6 +555,7 @@ Regles:
 - Priorise les details precis (scene/environnement/animaux) plutot que des blagues generiques
 - Tu peux nommer une personnalite SEULEMENT si elle est dans "Personnalites publiques haute confiance"
 - N'invente jamais de nom; si c'est incertain, reste descriptif
+- Ecris en francais correct avec accents quand necessaire
 - Aucune numerotation, aucun markdown`;
 
   const contextBlock = buildImageContextBlock(imageContext, language);
@@ -548,15 +607,15 @@ function parseFinalizePayload(body) {
 
   const language = normalizeLanguage(body.language);
   const image = normalizeImageInput(body.image);
-  const caption = sanitizeCaption(body.caption);
-  if (!caption) {
+  const normalizedCaption = normalizeCaptionOrthography(body.caption, language);
+  if (!normalizedCaption) {
     throw new Error('caption is required for finalize.');
   }
 
   return {
     language,
     image,
-    caption,
+    caption: normalizedCaption,
     placement: normalizePlacement(body.placement)
   };
 }

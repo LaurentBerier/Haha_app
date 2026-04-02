@@ -209,6 +209,7 @@ describe('experienceLaunchService', () => {
     expect(extractContentUpdates()).toEqual([
       expect.stringContaining('intro meme')
     ]);
+    expect(extractContentUpdates()[0]?.toLowerCase()).toContain('contexte');
     expect(extractContentUpdates()[0]).toContain('petit +');
   });
 
