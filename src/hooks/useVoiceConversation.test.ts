@@ -17,11 +17,13 @@ import {
   getVoiceConversationHint,
   getVoiceRecoveryPlan,
   getVoiceRecoveryDelayMs,
+  normalizeVoiceTranscriptForDedup,
   shouldResumeMicAfterWebFocusGain,
   shouldArmBusyWhileQueuedResume,
   shouldDeferQueuedManualResume,
   shouldQueueManualResume,
   shouldResumeMicAfterTypedDraft,
+  shouldSuppressDuplicateVoiceTranscript,
   shouldSuspendMicForWebFocusLoss,
   shouldAttemptAutoListen,
   shouldConsumeVoiceRecoveryBudget
@@ -343,6 +345,47 @@ describe('useVoiceConversation helpers', () => {
         hasActiveSession: false,
         hasRecoveryTimer: false,
         startInFlight: false
+      })
+    ).toBe(false);
+  });
+
+  it('normalizes voice transcript for duplicate matching (case, accents, spaces)', () => {
+    expect(normalizeVoiceTranscriptForDedup('  Ça   va   FORT  ')).toBe('ca va fort');
+    expect(normalizeVoiceTranscriptForDedup('HELLO   À   toi')).toBe('hello a toi');
+  });
+
+  it('suppresses duplicate transcript when repeated within 3 seconds', () => {
+    expect(
+      shouldSuppressDuplicateVoiceTranscript({
+        normalizedTranscript: 'ca va fort',
+        lastNormalizedTranscript: 'ca va fort',
+        nowMs: 2_999,
+        lastSentAtMs: 0,
+        windowMs: 3_000
+      })
+    ).toBe(true);
+  });
+
+  it('allows same transcript when repeated at or after 3 seconds', () => {
+    expect(
+      shouldSuppressDuplicateVoiceTranscript({
+        normalizedTranscript: 'ca va fort',
+        lastNormalizedTranscript: 'ca va fort',
+        nowMs: 3_000,
+        lastSentAtMs: 0,
+        windowMs: 3_000
+      })
+    ).toBe(false);
+  });
+
+  it('allows immediate send when normalized transcript differs', () => {
+    expect(
+      shouldSuppressDuplicateVoiceTranscript({
+        normalizedTranscript: 'ca va fort',
+        lastNormalizedTranscript: 'ca va moins fort',
+        nowMs: 500,
+        lastSentAtMs: 0,
+        windowMs: 3_000
       })
     ).toBe(false);
   });

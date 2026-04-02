@@ -13,6 +13,7 @@ const parsedSilenceTimeout = Number.parseInt(process.env.EXPO_PUBLIC_SILENCE_TIM
 const SILENCE_TIMEOUT_MS =
   Number.isFinite(parsedSilenceTimeout) && parsedSilenceTimeout >= 1200 ? parsedSilenceTimeout : 1800;
 const RECOVERY_DELAYS_MS = [250, 800, 2000] as const;
+export const VOICE_DUPLICATE_SEND_WINDOW_MS = 3_000;
 
 export type VoiceConversationStatus =
   | 'off'
@@ -112,6 +113,14 @@ interface WebFocusResumeState {
   startInFlight: boolean;
 }
 
+export interface VoiceTranscriptDedupState {
+  normalizedTranscript: string;
+  lastNormalizedTranscript: string;
+  nowMs: number;
+  lastSentAtMs: number | null;
+  windowMs?: number;
+}
+
 type VoiceConversationAction =
   | { type: 'set_off' }
   | { type: 'starting' }
@@ -196,6 +205,45 @@ function isRecoverableEndReason(reason: VoiceSessionEndReason): boolean {
 
 export function shouldConsumeVoiceRecoveryBudget(reason: VoiceSessionEndReason): boolean {
   return reason === 'aborted' || reason === 'transient';
+}
+
+export function normalizeVoiceTranscriptForDedup(transcript: string): string {
+  if (typeof transcript !== 'string') {
+    return '';
+  }
+
+  return transcript
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function shouldSuppressDuplicateVoiceTranscript(state: VoiceTranscriptDedupState): boolean {
+  if (!state.normalizedTranscript || !state.lastNormalizedTranscript) {
+    return false;
+  }
+
+  if (state.normalizedTranscript !== state.lastNormalizedTranscript) {
+    return false;
+  }
+
+  if (typeof state.lastSentAtMs !== 'number' || !Number.isFinite(state.lastSentAtMs)) {
+    return false;
+  }
+
+  const windowMs =
+    typeof state.windowMs === 'number' && Number.isFinite(state.windowMs) && state.windowMs > 0
+      ? state.windowMs
+      : VOICE_DUPLICATE_SEND_WINDOW_MS;
+  const elapsedMs = state.nowMs - state.lastSentAtMs;
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) {
+    return false;
+  }
+
+  return elapsedMs < windowMs;
 }
 
 function voiceConversationReducer(
@@ -407,6 +455,8 @@ export function useVoiceConversation({
   const onStopAudioRef = useRef(onStopAudio);
   const languageRef = useRef(language);
   const fallbackLanguageRef = useRef(fallbackLanguage);
+  const lastSentTranscriptNormalizedRef = useRef('');
+  const lastSentTranscriptAtMsRef = useRef<number | null>(null);
   const shouldAutoListen = Platform.OS !== 'web' || autoStartOnWeb;
 
   useEffect(() => {
@@ -563,8 +613,33 @@ export function useVoiceConversation({
         return;
       }
 
+      const normalizedTranscript = normalizeVoiceTranscriptForDedup(textToSend);
+      const nowMs = Date.now();
+      if (
+        shouldSuppressDuplicateVoiceTranscript({
+          normalizedTranscript,
+          lastNormalizedTranscript: lastSentTranscriptNormalizedRef.current,
+          nowMs,
+          lastSentAtMs: lastSentTranscriptAtMsRef.current,
+          windowMs: VOICE_DUPLICATE_SEND_WINDOW_MS
+        })
+      ) {
+        if (__DEV__) {
+          const lastSentAtMs = lastSentTranscriptAtMsRef.current;
+          const elapsedMs = typeof lastSentAtMs === 'number' ? nowMs - lastSentAtMs : null;
+          logVoiceDebug('duplicate_transcript_suppressed', {
+            elapsedMs,
+            windowMs: VOICE_DUPLICATE_SEND_WINDOW_MS
+          });
+        }
+        clearTranscript();
+        return;
+      }
+
       try {
         onSendRef.current(textToSend);
+        lastSentTranscriptNormalizedRef.current = normalizedTranscript;
+        lastSentTranscriptAtMsRef.current = nowMs;
         clearTranscript();
       } catch (sendError) {
         const message =
