@@ -135,14 +135,14 @@ describe('api/_meme-render', () => {
   it('falls back to sans-serif and does not crash when font registration fails', async () => {
     const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const actualCanvas = jest.requireActual('@napi-rs/canvas');
-    const registerFromPath = jest.fn(() => {
+    const register = jest.fn(() => {
       throw new Error('font registration failed');
     });
 
     jest.doMock('@napi-rs/canvas', () => ({
       ...actualCanvas,
       GlobalFonts: {
-        registerFromPath
+        register
       }
     }));
 
@@ -159,7 +159,7 @@ describe('api/_meme-render', () => {
         base64: expect.any(String)
       })
     );
-    expect(registerFromPath).toHaveBeenCalledTimes(1);
+    expect(register).toHaveBeenCalledTimes(1);
     expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 });

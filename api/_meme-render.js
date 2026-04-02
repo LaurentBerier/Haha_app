@@ -24,9 +24,10 @@ function ensureCaptionFontLoaded() {
   }
 
   try {
-    const registered = GlobalFonts.registerFromPath(CAPTION_FONT_PATH, CAPTION_FONT_FAMILY);
+    const fontBuffer = fs.readFileSync(CAPTION_FONT_PATH);
+    const registered = GlobalFonts.register(fontBuffer, CAPTION_FONT_FAMILY);
     if (!registered) {
-      throw new Error('GlobalFonts.registerFromPath returned null.');
+      throw new Error('GlobalFonts.register returned null.');
     }
     captionFontLoadState = 'loaded';
   } catch (error) {
