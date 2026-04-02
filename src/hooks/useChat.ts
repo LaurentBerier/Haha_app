@@ -74,7 +74,7 @@ interface MemeDraftState {
   createdAt: number;
 }
 
-type MemeAssetResult = 'saved' | 'shared' | 'permission_denied' | 'share_unavailable' | 'failed';
+type MemeAssetResult = 'saved' | 'shared' | 'permission_denied' | 'share_unavailable' | 'share_cancelled' | 'failed';
 
 type PendingLanguageConfirmationDecision = 'confirm' | 'reject' | 'unknown';
 
@@ -1718,6 +1718,9 @@ export function useChat(conversationId: string) {
     });
     if (result.ok) {
       return 'shared';
+    }
+    if (result.code === 'share_cancelled') {
+      return 'share_cancelled';
     }
     if (result.code === 'share_unavailable') {
       return 'share_unavailable';

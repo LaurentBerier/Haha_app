@@ -334,6 +334,9 @@ export default function ChatScreen() {
           toast.success(t('memeSharedSuccess'));
           return;
         }
+        if (result === 'share_cancelled') {
+          return;
+        }
         toast.error(t('memeShareFailed'));
       } finally {
         setActiveMemeShareMessageId(null);

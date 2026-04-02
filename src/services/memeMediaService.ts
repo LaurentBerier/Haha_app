@@ -8,6 +8,7 @@ export type MemeMediaErrorCode =
   | 'missing_cache_directory'
   | 'permission_denied'
   | 'share_unavailable'
+  | 'share_cancelled'
   | 'save_failed'
   | 'share_failed';
 
@@ -118,6 +119,105 @@ function triggerWebDownload(uri: string, fileName: string): void {
   document.body.removeChild(anchor);
 }
 
+function decodeBase64ToBytes(base64: string): Uint8Array | null {
+  if (typeof globalThis.atob !== 'function') {
+    return null;
+  }
+
+  try {
+    const binary = globalThis.atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+function createWebShareFile(params: ShareMemeParams): File | null {
+  if (typeof File !== 'function') {
+    return null;
+  }
+
+  const normalizedUri = params.imageUri.trim();
+  if (!normalizedUri) {
+    return null;
+  }
+
+  const dataInfo = parseDataUri(normalizedUri);
+  if (!dataInfo) {
+    return null;
+  }
+
+  const bytes = decodeBase64ToBytes(dataInfo.base64);
+  if (!bytes) {
+    return null;
+  }
+
+  const mimeType = dataInfo.mimeType || params.mimeType || 'image/png';
+  const fileName = buildFileName('meme-share', mimeType);
+  return new File([bytes], fileName, { type: mimeType });
+}
+
+function isShareCancelError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const code = 'code' in error && typeof error.code === 'string' ? error.code.trim() : '';
+  if (code === 'ERR_SHARING_CANCELED') {
+    return true;
+  }
+
+  const name = 'name' in error && typeof error.name === 'string' ? error.name.trim() : '';
+  return name === 'AbortError' || name === 'NotAllowedError';
+}
+
+async function tryWebNativeShare(params: ShareMemeParams): Promise<MemeMediaResult | null> {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') {
+    return null;
+  }
+
+  const title = params.dialogTitle?.trim() || 'Meme';
+  const webShareFile = createWebShareFile(params);
+
+  try {
+    if (webShareFile) {
+      const canShareFiles =
+        typeof navigator.canShare !== 'function' || navigator.canShare({ files: [webShareFile] });
+      if (canShareFiles) {
+        await navigator.share({
+          title,
+          files: [webShareFile]
+        });
+        return { ok: true };
+      }
+    }
+
+    const normalizedUri = params.imageUri.trim();
+    if (normalizedUri.startsWith('http://') || normalizedUri.startsWith('https://')) {
+      await navigator.share({
+        title,
+        url: normalizedUri
+      });
+      return { ok: true };
+    }
+
+    await navigator.share({
+      title,
+      text: title
+    });
+    return { ok: true };
+  } catch (error) {
+    if (isShareCancelError(error)) {
+      return { ok: false, code: 'share_cancelled' };
+    }
+    return null;
+  }
+}
+
 export async function saveMemeImage(params: SaveMemeParams): Promise<MemeMediaResult> {
   try {
     const normalizedUri = params.imageUri.trim();
@@ -172,11 +272,27 @@ export async function shareMemeImage(params: ShareMemeParams): Promise<MemeMedia
         return { ok: false, code: 'share_unavailable' };
       }
 
-      await Sharing.shareAsync(localFile.fileUri, {
-        mimeType: localFile.mimeType,
-        dialogTitle: params.dialogTitle
-      });
-      return { ok: true };
+      try {
+        await Sharing.shareAsync(localFile.fileUri, {
+          mimeType: localFile.mimeType,
+          dialogTitle: params.dialogTitle
+        });
+        return { ok: true };
+      } catch (error) {
+        if (isShareCancelError(error)) {
+          return { ok: false, code: 'share_cancelled' };
+        }
+        throw error;
+      }
+    }
+
+    const webNativeShareResult = await tryWebNativeShare({
+      imageUri: normalizedUri,
+      mimeType: params.mimeType,
+      dialogTitle: params.dialogTitle
+    });
+    if (webNativeShareResult) {
+      return webNativeShareResult;
     }
 
     const canShare = await Sharing.isAvailableAsync();
@@ -186,24 +302,15 @@ export async function shareMemeImage(params: ShareMemeParams): Promise<MemeMedia
           dialogTitle: params.dialogTitle
         });
         return { ok: true };
-      } catch {
+      } catch (error) {
+        if (isShareCancelError(error)) {
+          return { ok: false, code: 'share_cancelled' };
+        }
         // Continue with resilient web fallbacks below.
       }
     }
 
     if (typeof window !== 'undefined') {
-      try {
-        if (typeof document !== 'undefined') {
-          const dataInfo = parseDataUri(normalizedUri);
-          const mimeType = dataInfo?.mimeType ?? params.mimeType ?? 'image/png';
-          const fileName = buildFileName('meme-share', mimeType);
-          triggerWebDownload(normalizedUri, fileName);
-          return { ok: true };
-        }
-      } catch {
-        // Last fallback below.
-      }
-
       try {
         window.location.href = `mailto:?subject=${encodeURIComponent('Meme')}`;
         return { ok: true };

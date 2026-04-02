@@ -89,4 +89,17 @@ describe('memeMediaService', () => {
     expect(mockWriteAsStringAsync).toHaveBeenCalledTimes(1);
     expect(mockShareAsync).toHaveBeenCalledTimes(1);
   });
+
+  it('returns share_cancelled when native share is cancelled', async () => {
+    mockShareAsync.mockRejectedValueOnce({ code: 'ERR_SHARING_CANCELED' });
+
+    const result = await shareMemeImage({
+      imageUri: 'data:image/png;base64,YWJj'
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      code: 'share_cancelled'
+    });
+  });
 });
