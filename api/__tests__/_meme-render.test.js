@@ -307,7 +307,7 @@ describe('api/_meme-render', () => {
     expect(bottomAnalysis.brightOutsideLogoRect).toBeLessThanOrEqual(topAnalysis.brightOutsideLogoRect + 40);
   });
 
-  it('keeps logo small and stable across captions', async () => {
+  it('keeps logo size stable across captions', async () => {
     const memeRender = require('../_meme-render');
     const shortTop = await memeRender.renderMemeImage({
       image: createInputImage(memeRender),
@@ -325,10 +325,10 @@ describe('api/_meme-render', () => {
 
     expect(shortAnalysis.logoWidth).toBeGreaterThan(0);
     expect(shortAnalysis.logoHeight).toBeGreaterThan(0);
-    expect(shortAnalysis.logoWidth).toBeGreaterThanOrEqual(85);
-    expect(shortAnalysis.logoHeight).toBeGreaterThanOrEqual(34);
-    expect(shortAnalysis.logoWidth).toBeLessThanOrEqual(110);
-    expect(shortAnalysis.logoHeight).toBeLessThanOrEqual(55);
+    expect(shortAnalysis.logoWidth).toBeGreaterThanOrEqual(110);
+    expect(shortAnalysis.logoHeight).toBeGreaterThanOrEqual(44);
+    expect(shortAnalysis.logoWidth).toBeLessThanOrEqual(135);
+    expect(shortAnalysis.logoHeight).toBeLessThanOrEqual(65);
     expect(Math.abs(shortAnalysis.logoWidth - longAnalysis.logoWidth)).toBeLessThanOrEqual(2);
     expect(Math.abs(shortAnalysis.logoHeight - longAnalysis.logoHeight)).toBeLessThanOrEqual(2);
   });
