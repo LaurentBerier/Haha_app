@@ -39,6 +39,32 @@ function sleep(ms: number): Promise<void> {
   });
 }
 
+function buildMemeComposerHint(language: string): string {
+  if (language.toLowerCase().startsWith('en')) {
+    return 'Tap the small + on the left of the text box to add your image.';
+  }
+
+  return 'Clique sur le petit + a gauche du champ texte pour ajouter ton image.';
+}
+
+function ensureMemeComposerHint(content: string, language: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return buildMemeComposerHint(language);
+  }
+
+  const normalized = trimmed.toLowerCase();
+  if (
+    normalized.includes('petit +') ||
+    normalized.includes('small +') ||
+    (normalized.includes('+') && (normalized.includes('gauche') || normalized.includes('left')))
+  ) {
+    return trimmed;
+  }
+
+  return `${trimmed} ${buildMemeComposerHint(language)}`.trim();
+}
+
 function resolveVoiceErrorCode(error: unknown): string {
   if (error && typeof error === 'object') {
     const explicitCode = 'code' in error && typeof error.code === 'string' ? error.code.trim() : '';
@@ -125,6 +151,10 @@ async function resolveModeIntroMessage(params: {
   const remainingLoadingMs = MODE_INTRO_MIN_LOADING_MS - elapsedMs;
   if (remainingLoadingMs > 0) {
     await sleep(remainingLoadingMs);
+  }
+
+  if (params.modeId === MODE_IDS.MEME_GENERATOR) {
+    return ensureMemeComposerHint(resolvedIntro, params.language);
   }
 
   return resolvedIntro;

@@ -88,6 +88,128 @@ async function analyzeRenderedBands(base64Png) {
   };
 }
 
+async function analyzeBottomLogoExclusion(base64Png, referenceLogoSize = null) {
+  const { createCanvas, loadImage } = jest.requireActual('@napi-rs/canvas');
+  const decoded = Buffer.from(base64Png, 'base64');
+  const image = await loadImage(decoded);
+  const canvas = createCanvas(image.width, image.height);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(image, 0, 0, image.width, image.height);
+  const data = ctx.getImageData(0, 0, image.width, image.height).data;
+
+  const rowStats = [];
+  for (let y = 0; y < image.height; y += 1) {
+    let nonBlackPixels = 0;
+    for (let x = 0; x < image.width; x += 1) {
+      const offset = (y * image.width + x) * 4;
+      const r = data[offset];
+      const g = data[offset + 1];
+      const b = data[offset + 2];
+      if (r + g + b > 30) {
+        nonBlackPixels += 1;
+      }
+    }
+    rowStats.push(nonBlackPixels);
+  }
+
+  const imageRowThreshold = Math.floor(image.width * 0.9);
+  let lastImageRow = -1;
+  rowStats.forEach((nonBlackPixels, rowIndex) => {
+    if (nonBlackPixels > imageRowThreshold) {
+      lastImageRow = rowIndex;
+    }
+  });
+  const bottomBandStart = lastImageRow + 1;
+
+  let logoWidth =
+    referenceLogoSize && typeof referenceLogoSize.width === 'number'
+      ? Math.round(referenceLogoSize.width)
+      : 0;
+  let logoHeight =
+    referenceLogoSize && typeof referenceLogoSize.height === 'number'
+      ? Math.round(referenceLogoSize.height)
+      : 0;
+
+  if (logoWidth <= 0 || logoHeight <= 0) {
+    const rightRegionStartX = Math.floor(image.width * 0.6);
+    let detectedMinX = image.width;
+    let detectedMinY = image.height;
+    let detectedMaxX = -1;
+    let detectedMaxY = -1;
+    for (let y = bottomBandStart; y < image.height; y += 1) {
+      for (let x = rightRegionStartX; x < image.width; x += 1) {
+        const offset = (y * image.width + x) * 4;
+        const r = data[offset];
+        const g = data[offset + 1];
+        const b = data[offset + 2];
+        const isBrightWhite = r > 205 && g > 205 && b > 205;
+        const isLogoLikePixel = r + g + b > 70 && !isBrightWhite;
+        if (!isLogoLikePixel) {
+          continue;
+        }
+        if (x < detectedMinX) {
+          detectedMinX = x;
+        }
+        if (y < detectedMinY) {
+          detectedMinY = y;
+        }
+        if (x > detectedMaxX) {
+          detectedMaxX = x;
+        }
+        if (y > detectedMaxY) {
+          detectedMaxY = y;
+        }
+      }
+    }
+    if (detectedMaxX < detectedMinX || detectedMaxY < detectedMinY) {
+      return {
+        brightInsideLogoRect: 0,
+        brightOutsideLogoRect: 0,
+        logoWidth: 0,
+        logoHeight: 0
+      };
+    }
+    logoWidth = detectedMaxX - detectedMinX + 1;
+    logoHeight = detectedMaxY - detectedMinY + 1;
+  }
+
+  const LOGO_SAFE_PADDING_FOR_TEST = 12;
+  const bottomBandHeight = image.height - bottomBandStart;
+  const logoMinX = image.width - logoWidth - LOGO_SAFE_PADDING_FOR_TEST;
+  const logoMaxX = logoMinX + logoWidth - 1;
+  const logoMinY = bottomBandStart + Math.round((bottomBandHeight - logoHeight) / 2);
+  const logoMaxY = logoMinY + logoHeight - 1;
+  const outsideScanStartX = Math.max(0, logoMinX - 10);
+  let brightInsideLogoRect = 0;
+  let brightOutsideLogoRect = 0;
+
+  for (let y = bottomBandStart; y < image.height; y += 1) {
+    for (let x = outsideScanStartX; x < image.width; x += 1) {
+      const offset = (y * image.width + x) * 4;
+      const r = data[offset];
+      const g = data[offset + 1];
+      const b = data[offset + 2];
+      const isBright = r > 205 && g > 205 && b > 205;
+      if (!isBright) {
+        continue;
+      }
+      const inLogoRect = x >= logoMinX && x <= logoMaxX && y >= logoMinY && y <= logoMaxY;
+      if (inLogoRect) {
+        brightInsideLogoRect += 1;
+      } else {
+        brightOutsideLogoRect += 1;
+      }
+    }
+  }
+
+  return {
+    brightInsideLogoRect,
+    brightOutsideLogoRect,
+    logoWidth,
+    logoHeight
+  };
+}
+
 describe('api/_meme-render', () => {
   beforeEach(() => {
     jest.resetModules();
@@ -161,5 +283,51 @@ describe('api/_meme-render', () => {
     );
     expect(register).toHaveBeenCalledTimes(1);
     expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps bottom caption out of the logo exclusion lane', async () => {
+    const memeRender = require('../_meme-render');
+    const topRendered = await memeRender.renderMemeImage({
+      image: createInputImage(memeRender),
+      caption: 'Moi attendant que quelqu un commande pour enfin manger',
+      placement: 'top'
+    });
+    const bottomRendered = await memeRender.renderMemeImage({
+      image: createInputImage(memeRender),
+      caption: 'Moi attendant que quelqu un commande pour enfin manger',
+      placement: 'bottom'
+    });
+
+    const topAnalysis = await analyzeBottomLogoExclusion(topRendered.base64);
+    const bottomAnalysis = await analyzeBottomLogoExclusion(bottomRendered.base64, {
+      width: topAnalysis.logoWidth,
+      height: topAnalysis.logoHeight
+    });
+    expect(bottomAnalysis.brightInsideLogoRect).toBeGreaterThan(100);
+    expect(bottomAnalysis.brightOutsideLogoRect).toBeLessThanOrEqual(topAnalysis.brightOutsideLogoRect + 40);
+  });
+
+  it('keeps logo small and stable across captions', async () => {
+    const memeRender = require('../_meme-render');
+    const shortTop = await memeRender.renderMemeImage({
+      image: createInputImage(memeRender),
+      caption: 'Caption court',
+      placement: 'top'
+    });
+    const longTop = await memeRender.renderMemeImage({
+      image: createInputImage(memeRender),
+      caption: 'Caption super long pour pousser le wrapping au maximum dans la bande du haut',
+      placement: 'top'
+    });
+
+    const shortAnalysis = await analyzeBottomLogoExclusion(shortTop.base64);
+    const longAnalysis = await analyzeBottomLogoExclusion(longTop.base64);
+
+    expect(shortAnalysis.logoWidth).toBeGreaterThan(0);
+    expect(shortAnalysis.logoHeight).toBeGreaterThan(0);
+    expect(shortAnalysis.logoWidth).toBeLessThanOrEqual(90);
+    expect(shortAnalysis.logoHeight).toBeLessThanOrEqual(45);
+    expect(Math.abs(shortAnalysis.logoWidth - longAnalysis.logoWidth)).toBeLessThanOrEqual(2);
+    expect(Math.abs(shortAnalysis.logoHeight - longAnalysis.logoHeight)).toBeLessThanOrEqual(2);
   });
 });

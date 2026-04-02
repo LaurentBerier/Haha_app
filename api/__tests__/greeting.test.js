@@ -687,6 +687,7 @@ describe('api/greeting tutorial behavior', () => {
     expect(res.statusCode).toBe(200);
     const anthropicBody = extractAnthropicRequestBody(fetchMock);
     expect(anthropicBody.system).toContain('You are opening the mode "Meme Generator".');
+    expect(anthropicBody.system).toContain('small + on the left of the text composer');
     expect(anthropicBody.messages?.[0]?.content).toContain('Mode ID: meme-generator');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();

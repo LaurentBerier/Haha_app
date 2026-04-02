@@ -181,15 +181,35 @@ export async function shareMemeImage(params: ShareMemeParams): Promise<MemeMedia
 
     const canShare = await Sharing.isAvailableAsync();
     if (canShare) {
-      await Sharing.shareAsync(normalizedUri, {
-        dialogTitle: params.dialogTitle
-      });
-      return { ok: true };
+      try {
+        await Sharing.shareAsync(normalizedUri, {
+          dialogTitle: params.dialogTitle
+        });
+        return { ok: true };
+      } catch {
+        // Continue with resilient web fallbacks below.
+      }
     }
 
     if (typeof window !== 'undefined') {
-      window.location.href = `mailto:?subject=${encodeURIComponent('Meme')}`;
-      return { ok: true };
+      try {
+        if (typeof document !== 'undefined') {
+          const dataInfo = parseDataUri(normalizedUri);
+          const mimeType = dataInfo?.mimeType ?? params.mimeType ?? 'image/png';
+          const fileName = buildFileName('meme-share', mimeType);
+          triggerWebDownload(normalizedUri, fileName);
+          return { ok: true };
+        }
+      } catch {
+        // Last fallback below.
+      }
+
+      try {
+        window.location.href = `mailto:?subject=${encodeURIComponent('Meme')}`;
+        return { ok: true };
+      } catch {
+        return { ok: false, code: 'share_unavailable' };
+      }
     }
 
     return { ok: false, code: 'share_unavailable' };

@@ -7,6 +7,10 @@ const MAX_IMAGE_BYTES = 3_000_000;
 const MAX_CAPTION_CHARS = 120;
 const DEFAULT_PLACEMENT = 'top';
 const MAX_RENDER_WIDTH = 1_080;
+const LOGO_SAFE_PADDING_PX = 12;
+const LOGO_TARGET_HEIGHT_PX = 30;
+const LOGO_MIN_WIDTH_PX = 40;
+const LOGO_MIN_HEIGHT_PX = 16;
 const CAPTION_FONT_FAMILY = 'Anton Meme';
 const CAPTION_FONT_PATH = path.join(process.cwd(), 'assets', 'fonts', 'Anton-Regular.ttf');
 const CAPTION_FONT_FALLBACK = 'sans-serif';
@@ -188,12 +192,17 @@ function ellipsizeLineToWidth(ctx, line, maxWidth) {
   return `${current}...`;
 }
 
-function layoutCaption({ caption, imageWidth }) {
+function layoutCaption({ caption, imageWidth, textMaxWidth }) {
   ensureCaptionFontLoaded();
   const measureCtx = createMeasureContext();
   const maxLines = 3;
   const horizontalPadding = Math.max(24, Math.round(imageWidth * 0.06));
-  const maxTextWidth = Math.max(120, imageWidth - horizontalPadding * 2);
+  const defaultMaxTextWidth = Math.max(120, imageWidth - horizontalPadding * 2);
+  const boundedTextWidth =
+    typeof textMaxWidth === 'number' && Number.isFinite(textMaxWidth)
+      ? Math.max(60, Math.round(textMaxWidth))
+      : defaultMaxTextWidth;
+  const maxTextWidth = Math.min(defaultMaxTextWidth, boundedTextWidth);
   const maxFont = Math.min(72, Math.max(26, Math.round(imageWidth * 0.095)));
   const minFont = Math.max(18, Math.round(imageWidth * 0.05));
 
@@ -252,16 +261,20 @@ function computeBandHeight(layout, imageWidth, includeCaption) {
 }
 
 function resolveLogoSize({ imageWidth, bottomBandHeight, logoImage }) {
-  const safePadding = Math.max(14, Math.round(imageWidth * 0.03));
-  const maxLogoWidth = Math.max(74, Math.round(imageWidth * 0.21));
-  const maxLogoHeight = Math.max(28, bottomBandHeight - safePadding * 2);
-  const scale = Math.min(maxLogoWidth / logoImage.width, maxLogoHeight / logoImage.height);
+  const safePadding = LOGO_SAFE_PADDING_PX;
+  const targetScale = LOGO_TARGET_HEIGHT_PX / logoImage.height;
+  let width = Math.max(1, Math.round(logoImage.width * targetScale));
+  let height = Math.max(1, Math.round(logoImage.height * targetScale));
 
-  return {
-    width: Math.max(44, Math.round(logoImage.width * scale)),
-    height: Math.max(18, Math.round(logoImage.height * scale)),
-    safePadding
-  };
+  const maxWidth = Math.max(LOGO_MIN_WIDTH_PX, imageWidth - safePadding * 2);
+  const maxHeight = Math.max(LOGO_MIN_HEIGHT_PX, bottomBandHeight - safePadding * 2);
+  if (width > maxWidth || height > maxHeight) {
+    const fitScale = Math.min(maxWidth / width, maxHeight / height);
+    width = Math.max(LOGO_MIN_WIDTH_PX, Math.round(width * fitScale));
+    height = Math.max(LOGO_MIN_HEIGHT_PX, Math.round(height * fitScale));
+  }
+
+  return { width, height, safePadding };
 }
 
 function drawCaptionInBand({ ctx, layout, yStart, bandHeight, imageWidth }) {
@@ -269,6 +282,11 @@ function drawCaptionInBand({ ctx, layout, yStart, bandHeight, imageWidth }) {
   const lineHeight = Math.ceil(layout.fontSize * 1.2);
   const totalTextHeight = layout.lines.length * lineHeight;
   const textTop = Math.round(yStart + (bandHeight - totalTextHeight) / 2 + lineHeight * 0.82);
+  const textCenterX = Math.round(
+    typeof layout.textCenterX === 'number' && Number.isFinite(layout.textCenterX)
+      ? layout.textCenterX
+      : imageWidth / 2
+  );
 
   ctx.font = resolveCaptionFont(layout.fontSize);
   ctx.globalAlpha = 1;
@@ -283,15 +301,44 @@ function drawCaptionInBand({ ctx, layout, yStart, bandHeight, imageWidth }) {
     if (width > maxLineWidth) {
       maxLineWidth = width;
     }
-    ctx.fillText(line, Math.round(imageWidth / 2), y);
+    ctx.fillText(line, textCenterX, y);
   });
 
-  const centerX = imageWidth / 2;
+  const centerX = textCenterX;
   const halfWidth = maxLineWidth / 2;
 
   return {
     minX: Math.max(0, centerX - halfWidth),
     maxX: Math.min(imageWidth, centerX + halfWidth)
+  };
+}
+
+function resolveBottomCaptionLane({
+  imageWidth,
+  safePadding,
+  logoWidth,
+  logoPlacement,
+  gutter
+}) {
+  const effectiveGutter = Math.max(8, Math.round(gutter));
+  if (logoPlacement === 'left') {
+    const minX = safePadding + logoWidth + effectiveGutter;
+    const maxX = imageWidth - safePadding;
+    return {
+      minX,
+      maxX,
+      width: Math.max(60, maxX - minX),
+      centerX: Math.round((minX + maxX) / 2)
+    };
+  }
+
+  const minX = safePadding;
+  const maxX = imageWidth - safePadding - logoWidth - effectiveGutter;
+  return {
+    minX,
+    maxX,
+    width: Math.max(60, maxX - minX),
+    centerX: Math.round((minX + maxX) / 2)
   };
 }
 
@@ -337,7 +384,7 @@ async function renderMemeImage({ image, caption, placement = DEFAULT_PLACEMENT }
   const imageHeight = Math.max(1, Math.round(sourceHeight * scale));
 
   const resolvedPlacement = normalizePlacement(placement);
-  const layout = layoutCaption({ caption: normalizedCaption, imageWidth });
+  let layout = layoutCaption({ caption: normalizedCaption, imageWidth });
 
   let topBandHeight = computeBandHeight(layout, imageWidth, resolvedPlacement === 'top');
   let bottomBandHeight = computeBandHeight(layout, imageWidth, resolvedPlacement === 'bottom');
@@ -346,6 +393,38 @@ async function renderMemeImage({ image, caption, placement = DEFAULT_PLACEMENT }
   if (logoSize.height + logoSize.safePadding * 2 > bottomBandHeight) {
     bottomBandHeight = logoSize.height + logoSize.safePadding * 2;
     logoSize = resolveLogoSize({ imageWidth, bottomBandHeight, logoImage });
+  }
+
+  let logoPlacement = 'right';
+  if (resolvedPlacement === 'bottom') {
+    logoPlacement = 'right';
+    const withConstrainedLane = () => {
+      const lane = resolveBottomCaptionLane({
+        imageWidth,
+        safePadding: logoSize.safePadding,
+        logoWidth: logoSize.width,
+        logoPlacement,
+        gutter: Math.max(logoSize.safePadding * 2, Math.round(logoSize.width * 0.55))
+      });
+      layout = {
+        ...layoutCaption({
+          caption: normalizedCaption,
+          imageWidth,
+          textMaxWidth: lane.width
+        }),
+        textCenterX: lane.centerX
+      };
+      bottomBandHeight = computeBandHeight(layout, imageWidth, true);
+      logoSize = resolveLogoSize({ imageWidth, bottomBandHeight, logoImage });
+      if (logoSize.height + logoSize.safePadding * 2 > bottomBandHeight) {
+        bottomBandHeight = logoSize.height + logoSize.safePadding * 2;
+        logoSize = resolveLogoSize({ imageWidth, bottomBandHeight, logoImage });
+      }
+    };
+
+    // Two passes to stabilize lane width after logo size updates.
+    withConstrainedLane();
+    withConstrainedLane();
   }
 
   const outputHeight = topBandHeight + imageHeight + bottomBandHeight;
@@ -357,7 +436,6 @@ async function renderMemeImage({ image, caption, placement = DEFAULT_PLACEMENT }
   ctx.fillRect(0, 0, imageWidth, outputHeight);
   ctx.drawImage(sourceImage, 0, topBandHeight, imageWidth, imageHeight);
 
-  let bottomCaptionBounds = null;
   if (resolvedPlacement === 'top') {
     drawCaptionInBand({
       ctx,
@@ -367,7 +445,7 @@ async function renderMemeImage({ image, caption, placement = DEFAULT_PLACEMENT }
       imageWidth
     });
   } else {
-    bottomCaptionBounds = drawCaptionInBand({
+    drawCaptionInBand({
       ctx,
       layout,
       yStart: topBandHeight + imageHeight,
@@ -376,12 +454,14 @@ async function renderMemeImage({ image, caption, placement = DEFAULT_PLACEMENT }
     });
   }
 
-  const logoPlacement = resolveAutoLogoPlacement({
-    imageWidth,
-    safePadding: logoSize.safePadding,
-    logoWidth: logoSize.width,
-    captionBounds: resolvedPlacement === 'bottom' ? bottomCaptionBounds : null
-  });
+  if (resolvedPlacement !== 'bottom') {
+    logoPlacement = resolveAutoLogoPlacement({
+      imageWidth,
+      safePadding: logoSize.safePadding,
+      logoWidth: logoSize.width,
+      captionBounds: null
+    });
+  }
 
   const logoX =
     logoPlacement === 'left'

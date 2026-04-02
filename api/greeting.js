@@ -1263,7 +1263,7 @@ Write exactly 2 to 3 short sentences, maximum 45 words total.
 Required structure:
 1) Greet the user by first name when available.
 2) Explain that this mode turns their uploaded image into meme options.
-3) End by explicitly asking the user to upload one image now.
+3) End by explicitly asking the user to tap the small + on the left of the text composer to upload one image now.
 Hard rules:
 - No tutorial/mic instructions.
 - No weather, headlines, or mode list.
@@ -1307,7 +1307,7 @@ Ecris exactement 2 a 3 phrases courtes, maximum 45 mots au total.
 Structure obligatoire:
 1) Salue la personne par son prenom si disponible.
 2) Explique que ce mode transforme son image en options de memes.
-3) Termine en demandant explicitement d'uploader une image maintenant.
+3) Termine en demandant explicitement de cliquer sur le petit + a gauche du champ texte pour uploader une image maintenant.
 Regles absolues:
 - Aucune instruction tutorial/micro.
 - Pas de meteo, pas d'actualites, pas de liste de modes.
