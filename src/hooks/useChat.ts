@@ -20,6 +20,7 @@ import { saveMemeImage, shareMemeImage } from '../services/memeMediaService';
 import { streamMockReply } from '../services/mockLlmService';
 import { buildSystemPromptForArtist, formatConversationHistory } from '../services/personalityEngineService';
 import { saveMemoryFacts } from '../services/profileService';
+import { syncPrimaryThreadArtist } from '../services/primaryThreadSyncService';
 import {
   fetchRelationshipMemory,
   getCachedRelationshipMemory,
@@ -1204,6 +1205,12 @@ export function useChat(conversationId: string) {
                 });
             }
           }
+
+          void syncPrimaryThreadArtist(latestUserId, artistId).catch((error: unknown) => {
+            if (__DEV__) {
+              console.warn('[useChat] syncPrimaryThreadArtist failed', error);
+            }
+          });
         }
         const latestState = useStore.getState();
         const latestQuota = latestState.quota;

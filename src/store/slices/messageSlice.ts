@@ -7,6 +7,10 @@ export interface MessageSlice {
   addMessage: (conversationId: string, message: Message) => void;
   updateMessage: (conversationId: string, messageId: string, updates: Partial<Message>) => void;
   appendMessageContent: (conversationId: string, messageId: string, token: string) => void;
+  mergePrimaryMessagesFromCloud: (
+    conversationId: string,
+    cloudMessages: Array<Pick<Message, 'id' | 'role' | 'content' | 'timestamp' | 'status' | 'metadata'>>
+  ) => void;
   getMessages: (conversationId: string) => Message[];
 }
 
@@ -54,6 +58,14 @@ function updateMessageByIndex(
   const clone = messages.slice();
   clone[index] = next;
   return clone;
+}
+
+function normalizeMessageTimestamp(value: string): string {
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    return new Date().toISOString();
+  }
+  return new Date(parsed).toISOString();
 }
 
 export const createMessageSlice: StateCreator<StoreState, [], [], MessageSlice> = (set, get) => ({
@@ -125,6 +137,84 @@ export const createMessageSlice: StateCreator<StoreState, [], [], MessageSlice> 
             ...page,
             messages: nextMessages,
             messageIndexById: indexById
+          }
+        }
+      };
+    }),
+  mergePrimaryMessagesFromCloud: (conversationId, cloudMessages) =>
+    set((state) => {
+      const normalizedConversationId = conversationId.trim();
+      if (!normalizedConversationId || cloudMessages.length === 0) {
+        return state;
+      }
+
+      const page = getMessagePage(state, normalizedConversationId);
+      const nextById = new Map<string, Message>();
+
+      for (const message of page.messages) {
+        const normalizedId = message.id.trim();
+        if (!normalizedId) {
+          continue;
+        }
+        nextById.set(normalizedId, message);
+      }
+
+      let hasChanges = false;
+
+      for (const cloudMessage of cloudMessages) {
+        const normalizedId = cloudMessage.id.trim();
+        const normalizedRole = cloudMessage.role === 'user' || cloudMessage.role === 'artist' ? cloudMessage.role : null;
+        if (!normalizedId || !normalizedRole || cloudMessage.status !== 'complete') {
+          continue;
+        }
+
+        const normalizedCloudMessage: Message = {
+          id: normalizedId,
+          conversationId: normalizedConversationId,
+          role: normalizedRole,
+          content: cloudMessage.content,
+          status: 'complete',
+          timestamp: normalizeMessageTimestamp(cloudMessage.timestamp),
+          metadata: cloudMessage.metadata
+        };
+        const existing = nextById.get(normalizedId);
+        if (!existing) {
+          nextById.set(normalizedId, normalizedCloudMessage);
+          hasChanges = true;
+          continue;
+        }
+
+        if (existing.status !== 'complete') {
+          nextById.set(normalizedId, {
+            ...existing,
+            ...normalizedCloudMessage
+          });
+          hasChanges = true;
+        }
+      }
+
+      if (!hasChanges) {
+        return state;
+      }
+
+      const nextMessages = Array.from(nextById.values()).sort((left, right) => {
+        const leftTime = Date.parse(left.timestamp);
+        const rightTime = Date.parse(right.timestamp);
+        const safeLeft = Number.isFinite(leftTime) ? leftTime : 0;
+        const safeRight = Number.isFinite(rightTime) ? rightTime : 0;
+        if (safeLeft !== safeRight) {
+          return safeLeft - safeRight;
+        }
+        return left.id.localeCompare(right.id);
+      });
+
+      return {
+        messagesByConversation: {
+          ...state.messagesByConversation,
+          [normalizedConversationId]: {
+            ...page,
+            messages: nextMessages,
+            messageIndexById: buildMessageIndexById(nextMessages)
           }
         }
       };

@@ -19,6 +19,7 @@ import { ToastProvider } from '../components/common/ToastProvider';
 import { MODE_IDS } from '../config/constants';
 import { useAuth } from '../hooks/useAuth';
 import { useLayoutAuthGate } from '../hooks/useLayoutAuthGate';
+import { usePrimaryThreadCloudSync } from '../hooks/usePrimaryThreadCloudSync';
 import { useVoiceConversation } from '../hooks/useVoiceConversation';
 import { useStorePersistence } from '../hooks/useStorePersistence';
 import { t } from '../i18n';
@@ -114,6 +115,11 @@ export default function RootLayout() {
   const headerNavigationArtistId = routeArtistId ?? activeConversationArtistId ?? selectedArtistId ?? null;
   const targetArtistId = routeArtistId ?? selectedArtistId;
   const globalInputDisabled = !showGlobalChatInput || !targetArtistId;
+
+  usePrimaryThreadCloudSync({
+    pathname,
+    hasHydrated
+  });
 
   const accountMenuItems: AccountMenuItem[] = [
     { label: t('settingsProfile'), route: '/settings' as const },
