@@ -107,7 +107,7 @@ export default function ChatScreen() {
     enabled: conversationModeEnabled && !isChatComposerDisabled,
     disabled: isChatComposerDisabled,
     hasTypedDraft,
-    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading,
+    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
     onSend: (text) => {
       const normalized = text.trim();
       if (!normalized) {

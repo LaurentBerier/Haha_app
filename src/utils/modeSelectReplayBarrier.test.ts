@@ -46,6 +46,33 @@ describe('modeSelectReplayBarrier', () => {
     expect(captureModeSelectReplayBarrier('conv-primary', messages)).toBeNull();
   });
 
+  it('captures the previous replayable message when active playback message is excluded', () => {
+    const messages: Message[] = [
+      createMessage({
+        id: 'artist-1',
+        metadata: {
+          voiceQueue: ['https://cdn.example.com/a.mp3']
+        }
+      }),
+      createMessage({ id: 'user-1', role: 'user' }),
+      createMessage({
+        id: 'artist-2',
+        metadata: {
+          voiceUrl: 'https://cdn.example.com/b.mp3'
+        }
+      })
+    ];
+
+    expect(
+      captureModeSelectReplayBarrier('conv-primary', messages, {
+        excludeMessageId: 'artist-2'
+      })
+    ).toEqual({
+      conversationId: 'conv-primary',
+      messageId: 'artist-1'
+    });
+  });
+
   it('excludes messages up to the barrier and keeps newer messages only', () => {
     const messages: Message[] = [
       createMessage({

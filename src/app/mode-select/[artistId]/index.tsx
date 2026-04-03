@@ -1485,7 +1485,7 @@ export default function ModeSelectHomeScreen() {
     enabled: isValidConversation && isSendContextReady && conversationModeEnabled && !isQuotaBlocked,
     disabled: isModeSelectComposerDisabled,
     hasTypedDraft,
-    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading,
+    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
     onSend: (text) => {
       const normalized = text.trim();
       if (!normalized) {
@@ -1649,8 +1649,18 @@ export default function ModeSelectHomeScreen() {
     }
 
     const liveMessages = useStore.getState().messagesByConversation[liveConversationId]?.messages ?? [];
-    setReplayBarrier(captureModeSelectReplayBarrier(liveConversationId, liveMessages));
-  }, []);
+    const shouldExcludePlayingMessage = audioPlayer.isPlaying || audioPlayer.isLoading;
+    const playingMessageId =
+      shouldExcludePlayingMessage && audioPlayer.currentMessageId
+        ? audioPlayer.currentMessageId.trim()
+        : '';
+
+    setReplayBarrier(
+      captureModeSelectReplayBarrier(liveConversationId, liveMessages, {
+        excludeMessageId: playingMessageId || null
+      })
+    );
+  }, [audioPlayer.currentMessageId, audioPlayer.isLoading, audioPlayer.isPlaying]);
 
   const pulseGreetingSpeechHint = useCallback((durationMs: number) => {
     clearGreetingSpeechHint();

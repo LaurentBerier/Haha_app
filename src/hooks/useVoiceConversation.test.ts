@@ -354,6 +354,12 @@ describe('useVoiceConversation helpers', () => {
     expect(normalizeVoiceTranscriptForDedup('HELLO   À   toi')).toBe('hello a toi');
   });
 
+  it('normalizes punctuation and apostrophes while preserving unicode letters/numbers', () => {
+    expect(normalizeVoiceTranscriptForDedup("C'est l'heure!!!")).toBe('c est l heure');
+    expect(normalizeVoiceTranscriptForDedup('c est l heure')).toBe('c est l heure');
+    expect(normalizeVoiceTranscriptForDedup('Привет, мир! １２３')).toBe('привет мир １２３');
+  });
+
   it('suppresses duplicate transcript when repeated within 3 seconds', () => {
     expect(
       shouldSuppressDuplicateVoiceTranscript({

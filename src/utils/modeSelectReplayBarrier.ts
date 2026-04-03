@@ -12,16 +12,23 @@ interface DeriveMessagesAfterReplayBarrierParams {
   barrier: ModeSelectReplayBarrier | null;
 }
 
+interface CaptureModeSelectReplayBarrierOptions {
+  excludeMessageId?: string | null;
+}
+
 export function captureModeSelectReplayBarrier(
   conversationId: string,
-  messages: Message[]
+  messages: Message[],
+  options?: CaptureModeSelectReplayBarrierOptions
 ): ModeSelectReplayBarrier | null {
   const normalizedConversationId = conversationId.trim();
   if (!normalizedConversationId || messages.length === 0) {
     return null;
   }
 
-  const latestReplayable = findLatestReplayableArtistMessage(messages);
+  const latestReplayable = findLatestReplayableArtistMessage(messages, {
+    excludeMessageId: options?.excludeMessageId
+  });
   if (!latestReplayable) {
     return null;
   }

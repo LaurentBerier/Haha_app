@@ -5,6 +5,10 @@ export interface ReplayableArtistMessage {
   uris: string[];
 }
 
+interface FindLatestReplayableArtistMessageOptions {
+  excludeMessageId?: string | null;
+}
+
 function normalizeVoiceQueue(input: unknown): string[] {
   if (!Array.isArray(input)) {
     return [];
@@ -13,28 +17,70 @@ function normalizeVoiceQueue(input: unknown): string[] {
   return input.map((entry) => (typeof entry === 'string' ? entry.trim() : '')).filter(Boolean);
 }
 
-export function findLatestReplayableArtistMessage(messages: Message[]): ReplayableArtistMessage | null {
+function toReplayableArtistMessage(message: Message | null | undefined): ReplayableArtistMessage | null {
+  if (!message || message.role !== 'artist' || message.status !== 'complete') {
+    return null;
+  }
+
+  const voiceQueue = normalizeVoiceQueue(message.metadata?.voiceQueue);
+  if (voiceQueue.length > 0) {
+    return {
+      messageId: message.id,
+      uris: voiceQueue
+    };
+  }
+
+  const voiceUrl = typeof message.metadata?.voiceUrl === 'string' ? message.metadata.voiceUrl.trim() : '';
+  if (!voiceUrl) {
+    return null;
+  }
+
+  return {
+    messageId: message.id,
+    uris: [voiceUrl]
+  };
+}
+
+export function findLatestReplayableArtistMessage(
+  messages: Message[],
+  options?: FindLatestReplayableArtistMessageOptions
+): ReplayableArtistMessage | null {
+  const excludedMessageId =
+    typeof options?.excludeMessageId === 'string' ? options.excludeMessageId.trim() : '';
+
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (!message || message.role !== 'artist' || message.status !== 'complete') {
+    if (!message) {
+      continue;
+    }
+    if (excludedMessageId && message.id === excludedMessageId) {
       continue;
     }
 
-    const voiceQueue = normalizeVoiceQueue(message.metadata?.voiceQueue);
-    if (voiceQueue.length > 0) {
-      return {
-        messageId: message.id,
-        uris: voiceQueue
-      };
+    const replayable = toReplayableArtistMessage(message);
+    if (replayable) {
+      return replayable;
     }
+  }
 
-    const voiceUrl = typeof message.metadata?.voiceUrl === 'string' ? message.metadata.voiceUrl.trim() : '';
-    if (voiceUrl) {
-      return {
-        messageId: message.id,
-        uris: [voiceUrl]
-      };
+  return null;
+}
+
+export function findReplayableArtistMessageById(
+  messages: Message[],
+  messageId: string | null | undefined
+): ReplayableArtistMessage | null {
+  const normalizedMessageId = typeof messageId === 'string' ? messageId.trim() : '';
+  if (!normalizedMessageId) {
+    return null;
+  }
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || message.id !== normalizedMessageId) {
+      continue;
     }
+    return toReplayableArtistMessage(message);
   }
 
   return null;
