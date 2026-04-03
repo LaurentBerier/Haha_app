@@ -1064,7 +1064,6 @@ export default function ModeSelectHomeScreen() {
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
   const voiceAutoPlay = useStore((state) => state.voiceAutoPlay);
   const createConversation = useStore((state) => state.createConversation);
-  const createAndPromotePrimaryConversation = useStore((state) => state.createAndPromotePrimaryConversation);
   const setActiveConversation = useStore((state) => state.setActiveConversation);
   const addMessage = useStore((state) => state.addMessage);
   const updateMessage = useStore((state) => state.updateMessage);
@@ -1206,17 +1205,6 @@ export default function ModeSelectHomeScreen() {
     setModeSelectSessionHubConversation(artist.id, nextConversation.id);
     return nextConversation;
   }, [artist, createConversation, language, setModeSelectSessionHubConversation]);
-  const startNewDiscussion = useCallback(() => {
-    if (!artist) {
-      return;
-    }
-
-    const nextConversation = createAndPromotePrimaryConversation(
-      artist.id,
-      resolveGreetingConversationLanguage(artist, language)
-    );
-    router.push(`/chat/${nextConversation.id}`);
-  }, [artist, createAndPromotePrimaryConversation, language]);
   const recoverModeSelectBoundConversation = useCallback(
     (reason: 'send_recovery' | 'missing_context' | 'audio_mismatch'): string | null => {
       if (!artist) {
@@ -2436,15 +2424,6 @@ export default function ModeSelectHomeScreen() {
         <AmbientGlow variant="mode" />
         <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
           <BackButton testID="mode-select-back" />
-          <Pressable
-            testID="mode-select-new-discussion-button"
-            style={({ pressed }) => [styles.newDiscussionButton, pressed ? styles.newDiscussionButtonPressed : null]}
-            onPress={startNewDiscussion}
-            accessibilityRole="button"
-            accessibilityLabel={t('newDiscussionCta')}
-          >
-            <Text style={styles.newDiscussionButtonText}>{t('newDiscussionCta')}</Text>
-          </Pressable>
         </View>
         <ScrollView
           testID="mode-select-screen"
@@ -2580,27 +2559,10 @@ const styles = StyleSheet.create({
   topRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: theme.spacing.sm,
+    justifyContent: 'flex-start',
     paddingHorizontal: theme.spacing.md,
     paddingTop: theme.spacing.sm,
     paddingBottom: theme.spacing.xs
-  },
-  newDiscussionButton: {
-    borderWidth: 1,
-    borderColor: theme.colors.neonBlueSoft,
-    borderRadius: 999,
-    backgroundColor: theme.colors.surfaceSunken,
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 6
-  },
-  newDiscussionButtonPressed: {
-    opacity: 0.94
-  },
-  newDiscussionButtonText: {
-    color: theme.colors.neonBlue,
-    fontSize: 12,
-    fontWeight: '700'
   },
   content: {
     padding: theme.spacing.md,
