@@ -1,8 +1,11 @@
-export type ConversationThreadType = 'primary' | 'mode';
+export type ConversationThreadType = 'primary' | 'secondary' | 'mode';
 export const DEFAULT_CONVERSATION_THREAD_TYPE: ConversationThreadType = 'mode';
 
 export function normalizeConversationThreadType(value: unknown): ConversationThreadType {
-  return value === 'primary' ? 'primary' : DEFAULT_CONVERSATION_THREAD_TYPE;
+  if (value === 'primary' || value === 'secondary') {
+    return value;
+  }
+  return DEFAULT_CONVERSATION_THREAD_TYPE;
 }
 
 export interface Conversation {

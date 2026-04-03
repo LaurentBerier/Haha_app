@@ -6,7 +6,7 @@ import { getAllCathyFewShots, getCathyModeFewShots } from '../data/cathy-gauthie
 import { getLanguage } from '../i18n';
 import type { ChatError } from '../models/ChatError';
 import type { ChatImageAttachment, ChatSendPayload } from '../models/ChatSendPayload';
-import type { Conversation } from '../models/Conversation';
+import { normalizeConversationThreadType, type Conversation, type ConversationThreadType } from '../models/Conversation';
 import type { Message } from '../models/Message';
 import type { ClaudeAvailableExperience, ClaudeContentBlock, ClaudeMessage } from '../services/claudeApiService';
 import { streamClaudeResponse } from '../services/claudeApiService';
@@ -20,6 +20,13 @@ import { saveMemeImage, shareMemeImage } from '../services/memeMediaService';
 import { streamMockReply } from '../services/mockLlmService';
 import { buildSystemPromptForArtist, formatConversationHistory } from '../services/personalityEngineService';
 import { saveMemoryFacts } from '../services/profileService';
+import {
+  fetchRelationshipMemory,
+  getCachedRelationshipMemory,
+  summarizeRelationshipMemory,
+  type RelationshipMemoryExcerptMessage,
+  type RelationshipMemorySnapshot
+} from '../services/relationshipMemoryService';
 import { addScore } from '../services/scoreManager';
 import { fetchAndCacheVoice } from '../services/ttsService';
 import { useStore } from '../store/useStore';
@@ -54,6 +61,7 @@ interface StreamJob {
   artistMessageId: string;
   userMessageId: string;
   artistId: string;
+  conversationThreadType: ConversationThreadType;
   mockUserTurn: string;
   claudeUserMessage: ClaudeMessage;
   systemPrompt: string;
@@ -102,6 +110,10 @@ const CONFIRMATION_YES_PREFIX_PATTERN = /^(?:oui|ouais|yes|yeah|yep|sure|ok|okay
 const CONFIRMATION_NO_PREFIX_PATTERN = /^(?:non|no|nope|nah|annule|annuler|cancel)\b/i;
 const MEME_DRAFT_TTL_MS = 30 * 60_000;
 const MEME_DRAFT_MAX_COUNT = 8;
+const RELATIONSHIP_MEMORY_UPDATE_MIN_USER_TURNS = 20;
+const RELATIONSHIP_MEMORY_UPDATE_COOLDOWN_MS = 30 * 60_000;
+const RELATIONSHIP_MEMORY_EXCERPT_MAX_MESSAGES = 28;
+const RELATIONSHIP_MEMORY_EXCERPT_MAX_CHARS = 280;
 export {
   buildCathyVoiceNotice,
   resolveTerminalTtsCode,
@@ -272,25 +284,59 @@ function pruneMemeDraftCache(cache: Map<string, MemeDraftState>): void {
   }
 }
 
+function buildRelationshipMemoryPrimerMessage(
+  memory: RelationshipMemorySnapshot | null,
+  language: string
+): ClaudeMessage | null {
+  if (!memory) {
+    return null;
+  }
 
-function buildMemoryPrimerMessage(facts: string[], language: string): ClaudeMessage | null {
-  if (!facts.length) {
+  const summary = memory.summary.trim();
+  const facts = memory.keyFacts.filter((entry) => entry.trim().length > 0);
+  if (!summary && facts.length === 0) {
     return null;
   }
 
   const isEnglish = language.toLowerCase().startsWith('en');
+  const summarySection = summary
+    ? isEnglish
+      ? `Relationship summary:\n${summary}`
+      : `Resume relationnel:\n${summary}`
+    : isEnglish
+      ? 'Relationship summary:\n(none)'
+      : 'Resume relationnel:\n(aucun)';
+  const factsSection = facts.length > 0 ? facts.map((fact) => `- ${fact}`).join('\n') : '- (none)';
   const content = isEnglish
-    ? `MEMORY HINTS ABOUT USER (shared earlier, reuse only when relevant):\n${facts
-        .map((fact) => `- ${fact}`)
-        .join('\n')}\nUse at most 1-2 hints per reply and avoid repeating the same one every turn.`
-    : `RAPPEL MEMOIRE UTILISATEUR (infos deja partagees, a reutiliser seulement si pertinent) :\n${facts
-        .map((fact) => `- ${fact}`)
-        .join('\n')}\nUtilise 1-2 rappels max par reponse et evite de repeter la meme info a chaque tour.`;
+    ? `${summarySection}\n\nKey facts to reuse only when relevant:\n${factsSection}\nUse at most 1-2 reminders per response. Avoid repetitive callbacks.`
+    : `${summarySection}\n\nFaits cles a reutiliser seulement si pertinent:\n${factsSection}\nUtilise 1-2 rappels max par reponse. Evite les callbacks repetitifs.`;
 
   return {
     role: 'assistant',
     content
   };
+}
+
+function countCompleteUserTurns(messages: Message[]): number {
+  return messages.reduce((count, message) => {
+    if (message.role === 'user' && message.status === 'complete' && message.content.trim()) {
+      return count + 1;
+    }
+    return count;
+  }, 0);
+}
+
+function buildRelationshipMemoryExcerpt(messages: Message[]): RelationshipMemoryExcerptMessage[] {
+  const excerpt = messages
+    .filter((message) => message.status === 'complete' && message.content.trim())
+    .slice(-RELATIONSHIP_MEMORY_EXCERPT_MAX_MESSAGES)
+    .map<RelationshipMemoryExcerptMessage>((message) => ({
+      role: message.role === 'user' ? 'user' : 'assistant',
+      content: normalizeSpeechText(message.content, { trim: true }).slice(0, RELATIONSHIP_MEMORY_EXCERPT_MAX_CHARS)
+    }))
+    .filter((message) => message.content.length > 0);
+
+  return excerpt;
 }
 
 function buildLanguageSwitchClarificationMessage(language: string): string {
@@ -423,6 +469,7 @@ export function useChat(conversationId: string) {
   const updateConversation = useStore((state) => state.updateConversation);
   const userProfile = useStore((state) => state.userProfile);
   const sessionDisplayName = useStore((state) => state.session?.user.displayName ?? null);
+  const sessionUserId = useStore((state) => state.session?.user.id ?? '');
   const currentAccountType = useStore((state) => state.session?.user.accountType ?? 'free');
   const currentRole = useStore((state) => state.session?.user.role ?? null);
   const accessToken = useStore((state) => state.session?.accessToken ?? '');
@@ -466,6 +513,8 @@ export function useChat(conversationId: string) {
   const rawTtsResponseRef = useRef('');
   const pendingAutoLanguageSwitchRef = useRef<Map<string, PendingAutoLanguageSwitch>>(new Map());
   const memeDraftsRef = useRef<Map<string, MemeDraftState>>(new Map());
+  const relationshipMemorySyncInFlightRef = useRef<Set<string>>(new Set());
+  const relationshipMemoryLastAttemptByKeyRef = useRef<Map<string, number>>(new Map());
   const conversationIdRef = useRef(conversationId);
   conversationIdRef.current = conversationId;
   const audioPlaybackStateRef = useRef({
@@ -488,6 +537,20 @@ export function useChat(conversationId: string) {
   }, [conversationId, currentArtist, currentConversation]);
 
   const isSendContextReady = sendContextBlockReason === null;
+
+  useEffect(() => {
+    const normalizedUserId = sessionUserId.trim();
+    const artistId = currentConversation?.artistId?.trim() ?? '';
+    if (!normalizedUserId || !artistId) {
+      return;
+    }
+
+    void fetchRelationshipMemory(normalizedUserId, artistId).catch((error: unknown) => {
+      if (__DEV__) {
+        console.warn('[useChat] fetchRelationshipMemory failed', error);
+      }
+    });
+  }, [currentConversation?.artistId, sessionUserId]);
 
   useEffect(() => {
     audioPlaybackStateRef.current = {
@@ -519,6 +582,7 @@ export function useChat(conversationId: string) {
         artistMessageId,
         userMessageId,
         artistId,
+        conversationThreadType,
         mockUserTurn,
         claudeUserMessage,
         systemPrompt,
@@ -1083,7 +1147,14 @@ export function useChat(conversationId: string) {
         incrementUsage();
         const latestStateAfterReply = useStore.getState();
         const latestUserId = latestStateAfterReply.session?.user.id ?? '';
-        if (latestUserId) {
+        const liveConversationAfterReply = findConversationById(
+          latestStateAfterReply.conversations,
+          jobConversationId
+        );
+        const shouldPersistPrimaryMemory =
+          conversationThreadType === 'primary' &&
+          normalizeConversationThreadType(liveConversationAfterReply?.threadType) === 'primary';
+        if (latestUserId && shouldPersistPrimaryMemory) {
           const latestMemoryFacts = collectArtistMemoryFacts(latestStateAfterReply, artistId, jobConversationId);
           if (latestMemoryFacts.length > 0) {
             void saveMemoryFacts(latestUserId, latestMemoryFacts).catch((error: unknown) => {
@@ -1091,6 +1162,47 @@ export function useChat(conversationId: string) {
                 console.warn('[useChat] saveMemoryFacts failed', error);
               }
             });
+          }
+
+          const primaryMessages = latestStateAfterReply.messagesByConversation[jobConversationId]?.messages ?? [];
+          const sourceUserTurnCount = countCompleteUserTurns(primaryMessages);
+          const cachedRelationshipMemory = getCachedRelationshipMemory(latestUserId, artistId);
+          const previousUserTurnCount = cachedRelationshipMemory?.sourceUserTurnCount ?? 0;
+          const turnsDelta = sourceUserTurnCount - previousUserTurnCount;
+          const relationshipMemoryKey = `${latestUserId}:${artistId}`;
+          const nowMs = Date.now();
+          const lastAttemptMs = relationshipMemoryLastAttemptByKeyRef.current.get(relationshipMemoryKey) ?? 0;
+          const hasCooldownElapsed = nowMs - lastAttemptMs >= RELATIONSHIP_MEMORY_UPDATE_COOLDOWN_MS;
+          if (
+            turnsDelta >= RELATIONSHIP_MEMORY_UPDATE_MIN_USER_TURNS &&
+            hasCooldownElapsed &&
+            !relationshipMemorySyncInFlightRef.current.has(relationshipMemoryKey)
+          ) {
+            const excerptMessages = buildRelationshipMemoryExcerpt(primaryMessages);
+            if (excerptMessages.length > 0) {
+              relationshipMemorySyncInFlightRef.current.add(relationshipMemoryKey);
+              relationshipMemoryLastAttemptByKeyRef.current.set(relationshipMemoryKey, nowMs);
+              const memoryLanguage =
+                liveConversationAfterReply?.language?.trim() ? liveConversationAfterReply.language : language;
+              void summarizeRelationshipMemory({
+                userId: latestUserId,
+                artistId,
+                language: memoryLanguage,
+                accessToken: latestStateAfterReply.session?.accessToken ?? accessToken,
+                currentSummary: cachedRelationshipMemory?.summary ?? '',
+                currentKeyFacts: cachedRelationshipMemory?.keyFacts ?? [],
+                sourceUserTurnCount,
+                excerptMessages
+              })
+                .catch((error: unknown) => {
+                  if (__DEV__) {
+                    console.warn('[useChat] summarizeRelationshipMemory failed', error);
+                  }
+                })
+                .finally(() => {
+                  relationshipMemorySyncInFlightRef.current.delete(relationshipMemoryKey);
+                });
+            }
           }
         }
         const latestState = useStore.getState();
@@ -2154,8 +2266,18 @@ export function useChat(conversationId: string) {
       ? `${imageIntentPromptPrefix}\n\n${baseSystemPrompt}`
       : baseSystemPrompt + voiceModeAddendum;
     const tutorialMode = computeTutorialModeForRequest(rawMessagesBeforeSend);
-    const memoryFacts = collectArtistMemoryFacts(latestStateForSend, targetConversation.artistId, targetConversationId);
-    const memoryMessage = buildMemoryPrimerMessage(memoryFacts, languageForTurn);
+    const latestSessionUserId = (latestStateForSend.session?.user.id ?? '').trim();
+    const relationshipMemory = latestSessionUserId
+      ? getCachedRelationshipMemory(latestSessionUserId, targetConversation.artistId)
+      : null;
+    if (latestSessionUserId && !relationshipMemory) {
+      void fetchRelationshipMemory(latestSessionUserId, targetConversation.artistId).catch((error: unknown) => {
+        if (__DEV__) {
+          console.warn('[useChat] fetchRelationshipMemory on send failed', error);
+        }
+      });
+    }
+    const relationshipMemoryMessage = buildRelationshipMemoryPrimerMessage(relationshipMemory, languageForTurn);
     const pendingProfileHints = popProfileChangeHints();
     const profileHintHistory: ClaudeMessage[] =
       pendingProfileHints.length > 0
@@ -2172,7 +2294,7 @@ export function useChat(conversationId: string) {
         : [];
     const historyForRequest = [
       ...historyBeforeSend,
-      ...(memoryMessage ? [memoryMessage] : []),
+      ...(relationshipMemoryMessage ? [relationshipMemoryMessage] : []),
       ...profileHintHistory,
       ...(isVoiceModeTurn
         ? [
@@ -2192,6 +2314,7 @@ export function useChat(conversationId: string) {
       artistMessageId,
       userMessageId,
       artistId: targetConversation.artistId,
+      conversationThreadType: normalizeConversationThreadType(targetConversation.threadType),
       mockUserTurn: createMockUserTurn(trimmed, hasImage),
       claudeUserMessage: {
         role: 'user',
@@ -2251,6 +2374,8 @@ export function useChat(conversationId: string) {
       failedJobsRef.current.clear();
       pendingAutoLanguageSwitchRef.current.clear();
       memeDraftsRef.current.clear();
+      relationshipMemorySyncInFlightRef.current.clear();
+      relationshipMemoryLastAttemptByKeyRef.current.clear();
       isStreamingRef.current = false;
       runNextLockRef.current = false;
       streamingConversationIdRef.current = null;

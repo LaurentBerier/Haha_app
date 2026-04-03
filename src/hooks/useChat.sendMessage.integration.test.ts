@@ -970,6 +970,7 @@ describe('useChat sendMessage integration', () => {
     const conversationId = 'conv-memory-save';
     const chat = renderUseChatHook(conversationId);
     const conversation = createConversation(conversationId);
+    conversation.threadType = 'primary';
     const state = mockStoreRef.current as MockStoreState;
     state.conversations = {
       [conversation.artistId]: [conversation]
@@ -988,6 +989,29 @@ describe('useChat sendMessage integration', () => {
     expect(mockSaveMemoryFacts).toHaveBeenCalledTimes(1);
     expect(mockSaveMemoryFacts.mock.calls[0]?.[0]).toBe('user-1');
     expect(mockSaveMemoryFacts.mock.calls[0]?.[1]).toEqual(expect.arrayContaining(["Je vis a Quebec et j'aime le cafe noir"]));
+  });
+
+  it('does not persist memory facts when the active thread is secondary', async () => {
+    const conversationId = 'conv-memory-secondary';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    conversation.threadType = 'secondary';
+    const state = mockStoreRef.current as MockStoreState;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const sendResult = chat.sendMessage({ text: 'Je prefere les reponses courtes.' });
+    expect(sendResult).toBeNull();
+    expect(streamMockParams).toHaveLength(1);
+
+    const stream = streamMockParams[0] as MockStreamParams;
+    stream.onToken('Compris, je vais faire court.');
+    stream.onComplete({ tokensUsed: 6 });
+    await flushAsyncWork();
+
+    expect(mockSaveMemoryFacts).not.toHaveBeenCalled();
   });
 
   it('keeps replayable voice queue when first chunk succeeds and a later chunk fails terminally', async () => {

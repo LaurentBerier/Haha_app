@@ -1,4 +1,5 @@
 import type { StateCreator } from 'zustand';
+import { MODE_IDS } from '../../config/constants';
 import { t } from '../../i18n';
 import {
   DEFAULT_CONVERSATION_THREAD_TYPE,
@@ -20,8 +21,17 @@ export interface ConversationSlice {
     modeId: string,
     options?: { threadType?: ConversationThreadType }
   ) => Conversation;
+  createAndPromotePrimaryConversation: (artistId: string, language: string) => Conversation;
   setActiveConversation: (id: string) => void;
   updateConversation: (id: string, updates: Partial<Conversation>, artistId: string) => void;
+}
+
+function capConversationsByArtist(conversations: Conversation[]): Conversation[] {
+  if (conversations.length <= MAX_CONVERSATIONS_PER_ARTIST) {
+    return conversations;
+  }
+
+  return conversations.slice(conversations.length - MAX_CONVERSATIONS_PER_ARTIST);
 }
 
 export const createConversationSlice: StateCreator<StoreState, [], [], ConversationSlice> = (set, get) => ({
@@ -44,23 +54,41 @@ export const createConversationSlice: StateCreator<StoreState, [], [], Conversat
 
     set((state) => {
       const existing = state.conversations[artistId] ?? [];
-      const updated = [...existing, conversation];
-      const capped =
-        updated.length > MAX_CONVERSATIONS_PER_ARTIST
-          ? updated.slice(updated.length - MAX_CONVERSATIONS_PER_ARTIST)
-          : updated;
+      const currentHubMap = state.modeSelectSessionHubConversationByArtist ?? {};
+      const updatedBeforeInsert =
+        threadType === 'primary'
+          ? existing.map((entry) =>
+              normalizeConversationThreadType(entry.threadType) === 'primary'
+                ? {
+                    ...entry,
+                    threadType: 'secondary' as const
+                  }
+                : entry
+            )
+          : existing;
+      const updated = [...updatedBeforeInsert, conversation];
+      const capped = capConversationsByArtist(updated);
 
       return {
         conversations: {
           ...state.conversations,
           [artistId]: capped
         },
-        activeConversationId: conversation.id
+        activeConversationId: conversation.id,
+        modeSelectSessionHubConversationByArtist:
+          threadType === 'primary'
+            ? {
+                ...currentHubMap,
+                [artistId]: conversation.id
+              }
+            : currentHubMap
       };
     });
 
     return conversation;
   },
+  createAndPromotePrimaryConversation: (artistId, language) =>
+    get().createConversation(artistId, language, MODE_IDS.ON_JASE, { threadType: 'primary' }),
   setActiveConversation: (id) => set({ activeConversationId: id }),
   updateConversation: (id, updates, artistId) => {
     const current = get().conversations;

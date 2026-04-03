@@ -172,6 +172,26 @@ describe('modeSelectConversationBinding', () => {
     ).toBeNull();
   });
 
+  it('treats secondary threads as non-primary for rebinding and validity checks', () => {
+    const conversations = [
+      createConversation({ id: 'conv-primary', modeId: MODE_IDS.ON_JASE, threadType: 'primary' }),
+      createConversation({ id: 'conv-secondary', modeId: MODE_IDS.ON_JASE, threadType: 'secondary' })
+    ];
+    const messagesByConversation: Record<string, MessagePage> = {
+      'conv-primary': createMessagePage(['msg-primary']),
+      'conv-secondary': createMessagePage(['msg-secondary'])
+    };
+
+    expect(isValidBoundModeSelectConversation('conv-secondary', conversations)).toBe(false);
+    expect(
+      findArtistConversationIdForMessageId({
+        conversationsForArtist: conversations,
+        messagesByConversation,
+        messageId: 'msg-secondary'
+      })
+    ).toBeNull();
+  });
+
   it('prefers active primary conversation over mode threads', () => {
     const conversations = [
       createConversation({ id: 'active-primary', threadType: 'primary', updatedAt: '2026-03-22T10:00:00.000Z' }),

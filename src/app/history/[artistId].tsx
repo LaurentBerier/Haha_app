@@ -5,6 +5,7 @@ import { BackButton } from '../../components/common/BackButton';
 import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
 import { getModeById } from '../../config/modes';
 import { t } from '../../i18n';
+import { normalizeConversationThreadType } from '../../models/Conversation';
 import type { Conversation } from '../../models/Conversation';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
@@ -93,6 +94,8 @@ export default function HistoryScreen() {
   const artists = useStore((state) => state.artists);
   const conversationsByArtist = useStore((state) => state.conversations);
   const setActiveConversation = useStore((state) => state.setActiveConversation);
+  const createAndPromotePrimaryConversation = useStore((state) => state.createAndPromotePrimaryConversation);
+  const language = useStore((state) => state.language);
   const hasHydrated = useStore((state) => state.hasHydrated);
 
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
@@ -117,12 +120,24 @@ export default function HistoryScreen() {
     router.push(`/games/${artistId}`);
   }, [artistId]);
 
+  const startNewDiscussion = useCallback(() => {
+    if (!artist) {
+      return;
+    }
+
+    const nextConversation = createAndPromotePrimaryConversation(artist.id, language);
+    router.push(`/chat/${nextConversation.id}`);
+  }, [artist, createAndPromotePrimaryConversation, language]);
+
   const renderItem = useCallback(
     ({ item }: { item: Conversation }) => {
       const mode = getModeById(item.modeId);
       const modeName = mode?.name ?? item.modeId;
       const modeEmoji = mode?.emoji ?? '💬';
       const preview = item.lastMessagePreview?.trim() || t('newConversation');
+      const threadType = normalizeConversationThreadType(item.threadType);
+      const isPrimaryThread = threadType === 'primary';
+      const threadBadgeLabel = isPrimaryThread ? t('historyThreadPrimaryBadge') : t('historyThreadSecondaryBadge');
 
       return (
         <Pressable
@@ -135,6 +150,9 @@ export default function HistoryScreen() {
           <View style={styles.modeRow}>
             <Text style={styles.modeEmoji}>{modeEmoji}</Text>
             <Text style={styles.modeName}>{modeName}</Text>
+            <View style={[styles.threadBadge, isPrimaryThread ? styles.threadBadgePrimary : styles.threadBadgeSecondary]}>
+              <Text style={styles.threadBadgeText}>{threadBadgeLabel}</Text>
+            </View>
           </View>
           <Text style={styles.preview}>{truncate(preview, 60)}</Text>
           <Text style={styles.timestamp}>{formatDate(item.updatedAt)}</Text>
@@ -159,6 +177,15 @@ export default function HistoryScreen() {
         <View style={styles.headerWrap}>
           <Text style={styles.subtitle}>{artist.name}</Text>
         </View>
+        <Pressable
+          testID="history-new-discussion-button"
+          style={({ pressed }) => [styles.newDiscussionButton, pressed ? styles.newDiscussionButtonPressed : null]}
+          onPress={startNewDiscussion}
+          accessibilityRole="button"
+          accessibilityLabel={t('newDiscussionCta')}
+        >
+          <Text style={styles.newDiscussionButtonText}>{t('newDiscussionCta')}</Text>
+        </Pressable>
       </View>
 
       <SectionList
@@ -229,6 +256,22 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: 13,
     fontWeight: '600'
+  },
+  newDiscussionButton: {
+    borderWidth: 1,
+    borderColor: theme.colors.neonBlueSoft,
+    borderRadius: 999,
+    backgroundColor: theme.colors.surfaceSunken,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 6
+  },
+  newDiscussionButtonPressed: {
+    opacity: 0.94
+  },
+  newDiscussionButtonText: {
+    color: theme.colors.neonBlue,
+    fontSize: 12,
+    fontWeight: '700'
   },
   list: {
     width: '100%',
@@ -308,6 +351,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: theme.spacing.sm
+  },
+  threadBadge: {
+    marginLeft: 'auto',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1
+  },
+  threadBadgePrimary: {
+    borderColor: theme.colors.neonBlueSoft,
+    backgroundColor: 'rgba(45, 156, 255, 0.12)'
+  },
+  threadBadgeSecondary: {
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceSunken
+  },
+  threadBadgeText: {
+    color: theme.colors.textMuted,
+    fontSize: 11,
+    fontWeight: '700'
   },
   modeEmoji: {
     fontSize: 18

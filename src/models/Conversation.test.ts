@@ -8,6 +8,10 @@ describe('Conversation threadType normalization', () => {
     expect(normalizeConversationThreadType('primary')).toBe('primary');
   });
 
+  it('keeps secondary thread type when explicitly provided', () => {
+    expect(normalizeConversationThreadType('secondary')).toBe('secondary');
+  });
+
   it('falls back to mode for legacy or invalid values', () => {
     expect(normalizeConversationThreadType(undefined)).toBe(DEFAULT_CONVERSATION_THREAD_TYPE);
     expect(normalizeConversationThreadType(null)).toBe(DEFAULT_CONVERSATION_THREAD_TYPE);
