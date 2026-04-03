@@ -19,7 +19,7 @@ import { BackButton } from '../../../components/common/BackButton';
 import { MODE_IDS } from '../../../config/constants';
 import { getVisibleModeNamesForGreeting } from '../../../config/experienceCatalog';
 import { MODE_CATEGORY_META, MODE_CATEGORY_ORDER, type ModeCategoryId } from '../../../config/modeCategories';
-import { API_BASE_URL, CLAUDE_PROXY_URL, E2E_AUTH_BYPASS, GREETING_FORCE_TUTORIAL } from '../../../config/env';
+import { E2E_AUTH_BYPASS, GREETING_FORCE_TUTORIAL } from '../../../config/env';
 import { useAutoReplayLastArtistMessage } from '../../../hooks/useAutoReplayLastArtistMessage';
 import { resolveChatSendContextFromState } from '../../../hooks/chatSendContext';
 import { useChat } from '../../../hooks/useChat';
@@ -59,27 +59,7 @@ import {
 import type { ChatSendPayload } from '../../../models/ChatSendPayload';
 import { shouldRestoreModeSelectMicAfterBlur } from '../micRestore';
 import { resolveGreetingAutoMicDecision } from '../greetingAutoMic';
-
-interface GreetingCoordinates {
-  lat: number;
-  lon: number;
-}
-
-interface GreetingEndpointResponse {
-  greeting?: unknown;
-  tutorial?: unknown;
-}
-
-interface GreetingTutorialInfo {
-  active: boolean;
-  sessionIndex: number;
-  connectionLimit: number;
-}
-
-interface GreetingFetchResult {
-  greeting: string | null;
-  tutorial: GreetingTutorialInfo | null;
-}
+import { fetchModeSelectGreetingFromApi, type GreetingCoordinates } from '../greetingService';
 
 interface PendingGreetingAudio {
   uri: string;
@@ -108,11 +88,6 @@ interface OptionalLocationModule {
 
 let cachedLocationModule: OptionalLocationModule | null | undefined;
 const DEFAULT_GREETING_TYPING_DURATION_MS = 4_200;
-const GREETING_API_BACKOFF_MS = 5 * 60_000;
-const GREETING_API_REQUEST_TIMEOUT_MS = 12_000;
-const GREETING_API_MAX_ATTEMPTS = 2;
-const GREETING_API_RETRY_DELAY_MS = 850;
-const DEFAULT_TUTORIAL_CONNECTION_LIMIT = 3;
 const GREETING_BOOTING_ROTATION_MS = 1_200;
 const GREETING_BOOTING_FR_LINES = [
   "Chargement du cerveau de Cathy... attention, y'a du trafic",
@@ -122,7 +97,6 @@ const GREETING_BOOTING_FR_LINES = [
 ] as const;
 const MODE_SELECT_DEBUG_TOGGLE_KEY = 'HAHA_MODE_SELECT_DEBUG';
 const TERMINAL_TTS_CODES = new Set(['TTS_QUOTA_EXCEEDED', 'RATE_LIMIT_EXCEEDED', 'TTS_FORBIDDEN']);
-let greetingApiBackoffUntilTs = 0;
 
 type TerminalTtsCode = 'TTS_QUOTA_EXCEEDED' | 'RATE_LIMIT_EXCEEDED' | 'TTS_FORBIDDEN';
 
@@ -602,125 +576,6 @@ function buildAvailableModesForGreeting(artist: ArtistModeSource, language: stri
   return getVisibleModeNamesForGreeting(artist.id, language).slice(0, 10);
 }
 
-function parseGreetingTutorialInfo(value: unknown): GreetingTutorialInfo | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const raw = value as Record<string, unknown>;
-  const active = raw.active === true;
-  const sessionIndex = typeof raw.sessionIndex === 'number' && Number.isFinite(raw.sessionIndex)
-    ? Math.max(0, Math.floor(raw.sessionIndex))
-    : 0;
-  const connectionLimit =
-    typeof raw.connectionLimit === 'number' && Number.isFinite(raw.connectionLimit)
-      ? Math.max(1, Math.floor(raw.connectionLimit))
-      : DEFAULT_TUTORIAL_CONNECTION_LIMIT;
-
-  return {
-    active,
-    sessionIndex,
-    connectionLimit
-  };
-}
-
-function normalizeUrl(value: string): string {
-  return value.trim().replace(/\/+$/, '');
-}
-
-function isLocalWebHost(): boolean {
-  if (Platform.OS !== 'web' || typeof window === 'undefined') {
-    return false;
-  }
-
-  const host = window.location.hostname.toLowerCase();
-  return host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0' || host === '::1';
-}
-
-function shouldSkipGreetingApiCall(): boolean {
-  if (isLocalWebHost()) {
-    return true;
-  }
-
-  return Date.now() < greetingApiBackoffUntilTs;
-}
-
-function markGreetingApiBackoff(): void {
-  greetingApiBackoffUntilTs = Date.now() + GREETING_API_BACKOFF_MS;
-}
-
-function clearGreetingApiBackoff(): void {
-  greetingApiBackoffUntilTs = 0;
-}
-
-function buildGreetingEndpointCandidates(): string[] {
-  const isWebRuntime = typeof window !== 'undefined';
-  const candidates: string[] = [];
-  const seen = new Set<string>();
-
-  const canonicalizeCandidate = (candidate: string): string | null => {
-    const normalized = candidate.trim();
-    if (!normalized) {
-      return null;
-    }
-
-    if (!isWebRuntime) {
-      return normalized;
-    }
-
-    if (typeof window.location?.origin !== 'string' || !window.location.origin) {
-      return normalized;
-    }
-
-    try {
-      return new URL(normalized, window.location.origin).toString();
-    } catch {
-      return normalized;
-    }
-  };
-
-  const addCandidate = (candidate: string) => {
-    const normalized = candidate.trim();
-    if (!normalized) {
-      return;
-    }
-    if (!isWebRuntime && normalized.startsWith('/')) {
-      return;
-    }
-    const canonicalCandidate = canonicalizeCandidate(normalized);
-    if (!canonicalCandidate || seen.has(canonicalCandidate)) {
-      return;
-    }
-    seen.add(canonicalCandidate);
-    candidates.push(canonicalCandidate);
-  };
-
-  if (isWebRuntime && typeof window.location?.origin === 'string' && window.location.origin) {
-    const origin = normalizeUrl(window.location.origin);
-    if (origin) {
-      addCandidate(`${origin}/api/greeting`);
-    }
-    addCandidate('/api/greeting');
-  }
-
-  const apiBase = normalizeUrl(API_BASE_URL);
-  if (apiBase) {
-    addCandidate(`${apiBase}/greeting`);
-  }
-
-  const claudeProxy = normalizeUrl(CLAUDE_PROXY_URL);
-  if (claudeProxy) {
-    addCandidate(claudeProxy.replace(/\/claude$/, '/greeting'));
-  }
-  return candidates;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
 async function getOptionalCoords(): Promise<GreetingCoordinates | null> {
   if (Platform.OS === 'web') {
     return null;
@@ -770,140 +625,6 @@ async function getOptionalCoords(): Promise<GreetingCoordinates | null> {
   } catch {
     return null;
   }
-}
-
-async function fetchGreetingFromApi(
-  artistId: string,
-  language: string,
-  accessToken: string,
-  coords: GreetingCoordinates | null,
-  availableModes: string[],
-  preferredName: string | null,
-  isSessionFirstGreeting: boolean,
-  memoryFacts: string[] = [],
-  recentActivityFacts: string[] = [],
-  askActivityFeedback = false,
-  lastGreetingSnippet: string | null = null,
-  recentExperienceName: string | null = null,
-  recentExperienceType: 'mode' | 'game' | null = null,
-  activityFeedbackCue: string | null = null
-): Promise<GreetingFetchResult> {
-  if (GREETING_FORCE_TUTORIAL) {
-    return {
-      greeting: null,
-      tutorial: null
-    };
-  }
-
-  const token = accessToken.trim();
-  if (!token || shouldSkipGreetingApiCall()) {
-    return {
-      greeting: null,
-      tutorial: null
-    };
-  }
-
-  const payload: Record<string, unknown> = {
-    artistId,
-    language,
-    availableModes,
-    isSessionFirstGreeting
-  };
-  if (memoryFacts.length > 0) {
-    payload.memoryFacts = memoryFacts;
-  }
-  if (recentActivityFacts.length > 0) {
-    payload.recentActivityFacts = recentActivityFacts
-      .filter((entry): entry is string => typeof entry === 'string')
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-      .slice(0, 2);
-  }
-  if (askActivityFeedback) {
-    payload.askActivityFeedback = true;
-  }
-  if (typeof lastGreetingSnippet === 'string' && lastGreetingSnippet.trim()) {
-    payload.lastGreetingSnippet = lastGreetingSnippet.trim().slice(0, 180);
-  }
-  if (typeof recentExperienceName === 'string' && recentExperienceName.trim()) {
-    payload.recentExperienceName = recentExperienceName.trim().slice(0, 80);
-  }
-  if (recentExperienceType === 'mode' || recentExperienceType === 'game') {
-    payload.recentExperienceType = recentExperienceType;
-  }
-  if (typeof activityFeedbackCue === 'string' && activityFeedbackCue.trim()) {
-    payload.activityFeedbackCue = activityFeedbackCue.trim().slice(0, 180);
-  }
-  if (preferredName) {
-    payload.preferredName = preferredName;
-  }
-  if (coords) {
-    payload.coords = coords;
-  }
-
-  const candidates = buildGreetingEndpointCandidates();
-  let shouldBackoff = false;
-  let stopRetries = false;
-  for (let attempt = 0; attempt < GREETING_API_MAX_ATTEMPTS; attempt += 1) {
-    for (const endpoint of candidates) {
-      const controller = new AbortController();
-      const timeoutHandle = setTimeout(() => controller.abort(), GREETING_API_REQUEST_TIMEOUT_MS);
-
-      try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(payload),
-          signal: controller.signal
-        });
-
-        if (!response.ok) {
-          if (response.status >= 500) {
-            shouldBackoff = true;
-            if (response.status === 503 || response.status === 504) {
-              stopRetries = true;
-            }
-          }
-          continue;
-        }
-
-        const data = (await response.json()) as GreetingEndpointResponse;
-        const greeting = typeof data.greeting === 'string' ? data.greeting.trim() : '';
-        if (greeting) {
-          clearGreetingApiBackoff();
-          return {
-            greeting,
-            tutorial: parseGreetingTutorialInfo(data.tutorial)
-          };
-        }
-      } catch {
-        shouldBackoff = true;
-        // Try next endpoint candidate.
-      } finally {
-        clearTimeout(timeoutHandle);
-      }
-    }
-
-    if (stopRetries) {
-      break;
-    }
-
-    if (attempt < GREETING_API_MAX_ATTEMPTS - 1) {
-      await delay(GREETING_API_RETRY_DELAY_MS);
-    }
-  }
-
-  if (shouldBackoff) {
-    markGreetingApiBackoff();
-  }
-
-  return {
-    greeting: null,
-    tutorial: null
-  };
 }
 
 interface CategoryMenuButtonProps {
@@ -1286,6 +1007,12 @@ export default function ModeSelectHomeScreen() {
     isSendContextReady,
     audioPlayer
   } = useChat(modeSelectConversationId);
+  const audioPlayerRef = useRef(audioPlayer);
+  const greetingRunSequenceRef = useRef(0);
+  const activeGreetingRunIdRef = useRef(0);
+  useEffect(() => {
+    audioPlayerRef.current = audioPlayer;
+  }, [audioPlayer]);
   const stopGreetingAudio = audioPlayer.stop;
   const isValidConversation = modeSelectConversationId.length > 0;
   const isModeSelectComposerDisabled = !isValidConversation || isQuotaBlocked || !isSendContextReady;
@@ -1595,6 +1322,36 @@ export default function ModeSelectHomeScreen() {
     }
     sendContextRecoveryLockRef.current = false;
   }, []);
+
+  const finalizeGreetingRun = useCallback(
+    (params: {
+      runId: number;
+      cycleKey: string;
+      hasInsertedGreetingMessage: boolean;
+      allowCycleReopen: boolean;
+      reason: string;
+    }) => {
+      const { runId, cycleKey, hasInsertedGreetingMessage, allowCycleReopen, reason } = params;
+
+      if (activeGreetingRunIdRef.current === runId) {
+        activeGreetingRunIdRef.current = 0;
+        setIsGreetingBooting(false);
+      }
+
+      if (
+        allowCycleReopen &&
+        !hasInsertedGreetingMessage &&
+        lastInjectedGreetingCycleRef.current === cycleKey
+      ) {
+        lastInjectedGreetingCycleRef.current = '';
+        logModeSelectDebugTrace('greeting_cycle_reopened', {
+          cycleKey,
+          reason
+        });
+      }
+    },
+    []
+  );
 
   const stopModeSelectGreetingPlayback = useCallback(() => {
     clearGreetingSpeechHint();
@@ -2054,11 +1811,17 @@ export default function ModeSelectHomeScreen() {
 
     clearGreetingSpeechHint();
 
+    const runId = greetingRunSequenceRef.current + 1;
+    greetingRunSequenceRef.current = runId;
+    activeGreetingRunIdRef.current = runId;
+
     let isCancelled = false;
+    let hasInsertedGreetingMessage = false;
+    const isRunActive = (): boolean => !isCancelled && activeGreetingRunIdRef.current === runId;
+
     const runGreeting = async () => {
       const sessionStateBeforeGreeting = useStore.getState();
       setIsGreetingBooting(true);
-      let hasInsertedGreetingMessage = false;
 
       try {
         const greetedArtistCount = sessionStateBeforeGreeting.greetedArtistIds.size;
@@ -2086,28 +1849,48 @@ export default function ModeSelectHomeScreen() {
 
         const availableModes = buildAvailableModesForGreeting(artist, language);
         const coords = await getOptionalCoords();
-        if (isCancelled) {
+        if (!isRunActive()) {
           return;
         }
 
         const greetingMemoryFacts = collectArtistMemoryFacts(sessionStateBeforeGreeting, artist.id, introConversation.id);
         const greetingActivityContext = deriveGreetingActivityContext(sessionStateBeforeGreeting, artist.id, language);
-        const fetchedResult = await fetchGreetingFromApi(
-          artist.id,
-          language,
-          accessToken,
-          coords,
-          availableModes,
-          preferredName,
-          isSessionFirstGreeting,
-          greetingMemoryFacts,
-          greetingActivityContext.recentActivityFacts,
-          greetingActivityContext.askActivityFeedback,
-          greetingActivityContext.lastGreetingSnippet,
-          greetingActivityContext.recentExperienceName,
-          greetingActivityContext.recentExperienceType,
-          greetingActivityContext.activityFeedbackCue
+        const fetchedResult = await fetchModeSelectGreetingFromApi(
+          {
+            artistId: artist.id,
+            language,
+            accessToken,
+            coords,
+            availableModes,
+            preferredName,
+            isSessionFirstGreeting,
+            memoryFacts: greetingMemoryFacts,
+            recentActivityFacts: greetingActivityContext.recentActivityFacts,
+            askActivityFeedback: greetingActivityContext.askActivityFeedback,
+            lastGreetingSnippet: greetingActivityContext.lastGreetingSnippet,
+            recentExperienceName: greetingActivityContext.recentExperienceName,
+            recentExperienceType: greetingActivityContext.recentExperienceType,
+            activityFeedbackCue: greetingActivityContext.activityFeedbackCue
+          },
+          {
+            onTrace: (event, payload) => {
+              logModeSelectDebugTrace(`greeting_api_${event}`, {
+                artistId: artist.id,
+                cycle: greetingOpenCycle,
+                ...(payload ?? {})
+              });
+            }
+          }
         );
+        if (!isRunActive()) {
+          return;
+        }
+        if (fetchedResult.timedOut) {
+          logModeSelectDebugTrace('greeting_api_timeout_fallback', {
+            artistId: artist.id,
+            cycle: greetingOpenCycle
+          });
+        }
         const fallbackTutorialMode = isSessionFirstGreeting;
         const isTutorialConversationForMetadata = fetchedResult.tutorial?.active ?? fallbackTutorialMode;
         const isTutorialGreetingCopy = isTutorialConversationForMetadata || GREETING_FORCE_TUTORIAL;
@@ -2127,7 +1910,7 @@ export default function ModeSelectHomeScreen() {
             recentExperienceType: greetingActivityContext.recentExperienceType,
             activityFeedbackCue: greetingActivityContext.activityFeedbackCue
           });
-        if (isCancelled || !nextGreeting) {
+        if (!isRunActive() || !nextGreeting) {
           return;
         }
         const shouldSkipBeforeInsert = shouldSkipModeSelectGreetingInjection(
@@ -2157,7 +1940,6 @@ export default function ModeSelectHomeScreen() {
         autoMicManualOverrideRef.current = false;
         setPendingAutoMicGreetingMessageId(greetingMessageId);
         hasInsertedGreetingMessage = true;
-        setIsGreetingBooting(false);
         updateConversation(
           introConversation.id,
           {
@@ -2206,7 +1988,7 @@ export default function ModeSelectHomeScreen() {
           const greetingAudioUri = await synthesizeVoice(nextGreeting, artist.id, language, accessToken, {
             purpose: 'greeting'
           });
-          if (isCancelled) {
+          if (!isRunActive()) {
             return;
           }
 
@@ -2223,7 +2005,7 @@ export default function ModeSelectHomeScreen() {
           }
 
           const autoplayState = await attemptVoiceAutoplayUri({
-            audioPlayer,
+            audioPlayer: audioPlayerRef.current,
             uri: greetingAudioUri,
             messageId: greetingMessageId,
             onWebUnlockRetry: () => {
@@ -2234,7 +2016,7 @@ export default function ModeSelectHomeScreen() {
               setPendingGreetingSpeechText(null);
               clearGreetingSpeechHint();
               void attemptVoiceAutoplayUri({
-                audioPlayer,
+                audioPlayer: audioPlayerRef.current,
                 uri: greetingAudioUri,
                 messageId: greetingMessageId
               });
@@ -2269,97 +2051,114 @@ export default function ModeSelectHomeScreen() {
             }
           }
         } catch (error) {
-          if (!isCancelled) {
-            const resolvedVoiceErrorCode = resolveVoiceErrorCode(error);
-            updateMessage(introConversation.id, greetingMessageId, {
-              metadata: {
-                ...greetingMetadata,
-                voiceStatus: 'unavailable',
-                voiceErrorCode: resolvedVoiceErrorCode,
-                voiceUrl: undefined,
-                voiceQueue: undefined,
-                voiceChunkBoundaries: undefined
-              }
-            });
+          if (!isRunActive()) {
+            return;
+          }
 
-            const terminalTtsCode = resolveTerminalTtsCode(error);
-            if (terminalTtsCode) {
-              const latestSessionUser = useStore.getState().session?.user;
-              const latestAccountType = resolveEffectiveAccountType(
-                latestSessionUser?.accountType ?? null,
-                latestSessionUser?.role ?? null
-              );
-              const showUpgradeCta = shouldShowUpgradeForTtsCode(terminalTtsCode) && latestAccountType !== 'admin';
-              const noticeMetadata: NonNullable<Message['metadata']> = {
-                injected: true,
-                errorCode: terminalTtsCode
-              };
-              if (showUpgradeCta) {
-                noticeMetadata.showUpgradeCta = true;
-                noticeMetadata.upgradeFromTier = latestAccountType;
-              }
-              addMessage(introConversation.id, {
-                id: generateId('msg'),
-                conversationId: introConversation.id,
-                role: 'artist',
-                content: buildCathyVoiceNotice(terminalTtsCode),
-                status: 'complete',
-                timestamp: new Date().toISOString(),
-                metadata: noticeMetadata
-              });
+          const resolvedVoiceErrorCode = resolveVoiceErrorCode(error);
+          updateMessage(introConversation.id, greetingMessageId, {
+            metadata: {
+              ...greetingMetadata,
+              voiceStatus: 'unavailable',
+              voiceErrorCode: resolvedVoiceErrorCode,
+              voiceUrl: undefined,
+              voiceQueue: undefined,
+              voiceChunkBoundaries: undefined
             }
+          });
 
-            // Keep Cathy identity: do not switch to generic Web Speech when TTS is quota/rate-limited.
-            if (Platform.OS === 'web' && !terminalTtsCode && modeSelectScreenFocusedRef.current) {
-              if (!speakGreetingWithWebFallback(nextGreeting, language)) {
-                setPendingGreetingSpeechText(nextGreeting);
-                queueLatestWebAutoplayUnlockRetry(() => {
-                  if (!modeSelectScreenFocusedRef.current) {
-                    return;
-                  }
-                  const speechText = nextGreeting.trim();
-                  if (!speechText) {
-                    return;
-                  }
-                  if (speakGreetingWithWebFallback(speechText, language)) {
-                    setPendingGreetingSpeechText(null);
-                    pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(speechText));
-                  }
-                });
-              } else {
-                pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
-              }
+          const terminalTtsCode = resolveTerminalTtsCode(error);
+          if (terminalTtsCode) {
+            const latestSessionUser = useStore.getState().session?.user;
+            const latestAccountType = resolveEffectiveAccountType(
+              latestSessionUser?.accountType ?? null,
+              latestSessionUser?.role ?? null
+            );
+            const showUpgradeCta = shouldShowUpgradeForTtsCode(terminalTtsCode) && latestAccountType !== 'admin';
+            const noticeMetadata: NonNullable<Message['metadata']> = {
+              injected: true,
+              errorCode: terminalTtsCode
+            };
+            if (showUpgradeCta) {
+              noticeMetadata.showUpgradeCta = true;
+              noticeMetadata.upgradeFromTier = latestAccountType;
+            }
+            addMessage(introConversation.id, {
+              id: generateId('msg'),
+              conversationId: introConversation.id,
+              role: 'artist',
+              content: buildCathyVoiceNotice(terminalTtsCode),
+              status: 'complete',
+              timestamp: new Date().toISOString(),
+              metadata: noticeMetadata
+            });
+          }
+
+          // Keep Cathy identity: do not switch to generic Web Speech when TTS is quota/rate-limited.
+          if (Platform.OS === 'web' && !terminalTtsCode && modeSelectScreenFocusedRef.current) {
+            if (!speakGreetingWithWebFallback(nextGreeting, language)) {
+              setPendingGreetingSpeechText(nextGreeting);
+              queueLatestWebAutoplayUnlockRetry(() => {
+                if (!modeSelectScreenFocusedRef.current) {
+                  return;
+                }
+                const speechText = nextGreeting.trim();
+                if (!speechText) {
+                  return;
+                }
+                if (speakGreetingWithWebFallback(speechText, language)) {
+                  setPendingGreetingSpeechText(null);
+                  pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(speechText));
+                }
+              });
+            } else {
+              pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
             }
           }
         }
       } catch {
-        if (!isCancelled) {
-          setIsGreetingBooting(false);
-        }
+        // Finalization handles all loading state transitions.
       } finally {
-        if (!isCancelled && !hasInsertedGreetingMessage) {
-          setIsGreetingBooting(false);
-        }
+        finalizeGreetingRun({
+          runId,
+          cycleKey,
+          hasInsertedGreetingMessage,
+          allowCycleReopen: !hasInsertedGreetingMessage && !isRunActive(),
+          reason: isCancelled
+            ? 'cancelled'
+            : activeGreetingRunIdRef.current === runId
+              ? hasInsertedGreetingMessage
+                ? 'completed'
+                : 'completed_without_insert'
+              : 'superseded'
+        });
       }
     };
 
     void runGreeting();
     return () => {
       isCancelled = true;
+      finalizeGreetingRun({
+        runId,
+        cycleKey,
+        hasInsertedGreetingMessage,
+        allowCycleReopen: !hasInsertedGreetingMessage,
+        reason: 'cleanup'
+      });
     };
   }, [
     accessToken,
     addMessage,
     artist,
-    audioPlayer,
     clearGreetingSpeechHint,
+    commitBoundConversationId,
+    finalizeGreetingRun,
     greetingOpenCycle,
     isModeSelectScreenFocused,
     language,
     markArtistGreeted,
     preferredName,
     pulseGreetingSpeechHint,
-    commitBoundConversationId,
     resolveModeSelectSessionHubConversation,
     setActiveConversation,
     updateMessage,
@@ -2383,7 +2182,7 @@ export default function ModeSelectHomeScreen() {
       }
       if (pendingAudio) {
         void attemptVoiceAutoplayUri({
-          audioPlayer,
+          audioPlayer: audioPlayerRef.current,
           uri: pendingAudio.uri,
           messageId: pendingAudio.messageId
         });
@@ -2396,7 +2195,6 @@ export default function ModeSelectHomeScreen() {
       }
     });
   }, [
-    audioPlayer,
     isModeSelectScreenFocused,
     language,
     pendingGreetingAudio,
@@ -2408,6 +2206,7 @@ export default function ModeSelectHomeScreen() {
     return () => {
       modeSelectScreenFocusedRef.current = false;
       shouldRestoreMicAfterBlurRef.current = false;
+      activeGreetingRunIdRef.current = 0;
       stopModeSelectVoiceAndMic();
       clearSendContextRecoveryLock();
     };
