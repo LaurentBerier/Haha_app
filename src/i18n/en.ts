@@ -267,6 +267,10 @@ export const en = {
     "I can keep chatting by text, but voice credits are exhausted on your current plan. Upgrade and we'll continue in voice.",
   cathyVoiceRateLimitMessage:
     "I can keep chatting by text for now: we hit a temporary voice rate limit. Try again in a minute.",
+  cathyVoiceAuthRequiredMessage:
+    "I can keep chatting by text for now: I cannot start my voice without an active session. Reload the page and we'll continue in voice.",
+  cathyVoiceUnavailableMessage:
+    "I can keep chatting by text for now: I could not start my voice this time. Try again and we'll continue in voice.",
   voiceUnavailableRateLimit: 'Voice temporarily rate-limited. Try again in a minute.',
   voiceUnavailableQuota: 'Voice unavailable: quota reached for this plan.',
   voiceUnavailableForbidden: 'Voice is not allowed for this account.',

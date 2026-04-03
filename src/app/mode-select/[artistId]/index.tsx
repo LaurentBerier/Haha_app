@@ -24,6 +24,7 @@ import { useAutoReplayLastArtistMessage } from '../../../hooks/useAutoReplayLast
 import { resolveChatSendContextFromState } from '../../../hooks/chatSendContext';
 import { useChat } from '../../../hooks/useChat';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
+import type { TerminalTtsCode as SharedTerminalTtsCode } from '../../../hooks/useTtsPlayback';
 import { useVoiceConversation } from '../../../hooks/useVoiceConversation';
 import { t } from '../../../i18n';
 import type { ChatError } from '../../../models/ChatError';
@@ -62,6 +63,7 @@ import { resolveGreetingAutoMicDecision } from '../greetingAutoMic';
 import { fetchModeSelectGreetingFromApi, type GreetingCoordinates } from '../greetingService';
 
 interface PendingGreetingAudio {
+  conversationId: string;
   uri: string;
   messageId: string;
 }
@@ -87,7 +89,6 @@ interface OptionalLocationModule {
 }
 
 let cachedLocationModule: OptionalLocationModule | null | undefined;
-const DEFAULT_GREETING_TYPING_DURATION_MS = 4_200;
 const GREETING_BOOTING_ROTATION_MS = 1_200;
 const GREETING_BOOTING_FR_LINES = [
   "Chargement du cerveau de Cathy... attention, y'a du trafic",
@@ -98,7 +99,8 @@ const GREETING_BOOTING_FR_LINES = [
 const MODE_SELECT_DEBUG_TOGGLE_KEY = 'HAHA_MODE_SELECT_DEBUG';
 const TERMINAL_TTS_CODES = new Set(['TTS_QUOTA_EXCEEDED', 'RATE_LIMIT_EXCEEDED', 'TTS_FORBIDDEN']);
 
-type TerminalTtsCode = 'TTS_QUOTA_EXCEEDED' | 'RATE_LIMIT_EXCEEDED' | 'TTS_FORBIDDEN';
+type TerminalTtsCode = SharedTerminalTtsCode;
+type GreetingVoiceNoticeCode = TerminalTtsCode | 'UNAUTHORIZED' | 'TTS_PROVIDER_ERROR' | 'TTS_AUTOPLAY_FAILED';
 
 function parseDebugToggleValue(value: unknown): boolean | null {
   if (typeof value === 'boolean') {
@@ -210,6 +212,30 @@ function buildCathyVoiceNotice(code: TerminalTtsCode): string {
     return t('cathyVoiceRateLimitMessage');
   }
   return t('cathyVoiceQuotaExceededMessage');
+}
+
+function buildCathyVoiceUnavailableNotice(code: GreetingVoiceNoticeCode): string {
+  if (code === 'RATE_LIMIT_EXCEEDED' || code === 'TTS_QUOTA_EXCEEDED' || code === 'TTS_FORBIDDEN') {
+    return buildCathyVoiceNotice(code);
+  }
+  if (code === 'UNAUTHORIZED') {
+    return t('cathyVoiceAuthRequiredMessage');
+  }
+  return t('cathyVoiceUnavailableMessage');
+}
+
+function resolveGreetingVoiceNoticeCode(errorCode: string): GreetingVoiceNoticeCode {
+  const normalized = errorCode.trim();
+  if (isTerminalTtsCode(normalized)) {
+    return normalized;
+  }
+  if (normalized === 'UNAUTHORIZED') {
+    return 'UNAUTHORIZED';
+  }
+  if (normalized === 'TTS_AUTOPLAY_FAILED') {
+    return 'TTS_AUTOPLAY_FAILED';
+  }
+  return 'TTS_PROVIDER_ERROR';
 }
 
 function resolveVoiceErrorCode(error: unknown): string {
@@ -355,56 +381,6 @@ function formatArtistDisplayName(artistName: string | null): string {
   }
 
   return artistName;
-}
-
-function speakGreetingWithWebFallback(text: string, language: string): boolean {
-  if (Platform.OS !== 'web') {
-    return false;
-  }
-
-  const normalized = text.trim();
-  if (!normalized) {
-    return false;
-  }
-
-  const speechScope = globalThis as {
-    speechSynthesis?: {
-      cancel: () => void;
-      speak: (utterance: unknown) => void;
-      getVoices?: () => Array<{ lang?: string; name?: string }>;
-    };
-    SpeechSynthesisUtterance?: new (text: string) => {
-      lang: string;
-      rate: number;
-      pitch: number;
-      voice?: unknown;
-    };
-  };
-
-  if (!speechScope.speechSynthesis || typeof speechScope.SpeechSynthesisUtterance !== 'function') {
-    return false;
-  }
-
-  try {
-    const synth = speechScope.speechSynthesis;
-    const utterance = new speechScope.SpeechSynthesisUtterance(normalized);
-    const targetLang = language.toLowerCase().startsWith('en') ? 'en' : 'fr';
-    utterance.lang = targetLang === 'en' ? 'en-CA' : 'fr-CA';
-    utterance.rate = 1;
-    utterance.pitch = 1;
-
-    const voices = synth.getVoices?.() ?? [];
-    const matchingVoice = voices.find((voice) => voice.lang?.toLowerCase().startsWith(targetLang));
-    if (matchingVoice) {
-      utterance.voice = matchingVoice;
-    }
-
-    synth.cancel();
-    synth.speak(utterance);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function pickRandom<T>(values: T[]): T {
@@ -559,17 +535,6 @@ function buildFallbackGreetingText(
   ]
     .filter(Boolean)
     .join(' ');
-}
-
-function estimateGreetingSpeechDurationMs(text: string): number {
-  const normalized = text.trim();
-  if (!normalized) {
-    return DEFAULT_GREETING_TYPING_DURATION_MS;
-  }
-
-  const words = normalized.split(/\s+/).filter(Boolean).length;
-  const estimated = Math.round((words / 2.8) * 1000);
-  return Math.max(2_200, Math.min(estimated, 9_000));
 }
 
 function buildAvailableModesForGreeting(artist: ArtistModeSource, language: string): string[] {
@@ -842,16 +807,14 @@ export default function ModeSelectHomeScreen() {
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? null);
   const artistDisplayName = formatArtistDisplayName(artist?.name ?? null);
   const [pendingGreetingAudio, setPendingGreetingAudio] = useState<PendingGreetingAudio | null>(null);
-  const [pendingGreetingSpeechText, setPendingGreetingSpeechText] = useState<string | null>(null);
-  const [isWebSpeechFallbackActive, setIsWebSpeechFallbackActive] = useState(false);
   const [tailFollowRequestSignal, setTailFollowRequestSignal] = useState(0);
   const modeGridCompactProgress = useRef(new Animated.Value(0)).current;
   const rootLayoutRef = useRef<View>(null);
   const categoryGridRef = useRef<View>(null);
   const lastLoggedRenderedMessageCountRef = useRef(0);
-  const greetingSpeechHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingCycleFocusStateRef = useRef(false);
   const lastInjectedGreetingCycleRef = useRef('');
+  const greetingVoiceNoticeKeysRef = useRef<Set<string>>(new Set());
   const sendContextRecoveryLockRef = useRef(false);
   const sendContextRecoveryResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastLoggedEmptyArtistMessageIdRef = useRef<string | null>(null);
@@ -1229,7 +1192,7 @@ export default function ModeSelectHomeScreen() {
     fallbackLanguage: language
   });
   const resolvedArtistDisplayName = formatArtistDisplayName(currentArtistName ?? artistDisplayName);
-  const isGreetingVoicePendingGesture = Boolean(pendingGreetingAudio || pendingGreetingSpeechText);
+  const isGreetingVoicePendingGesture = Boolean(pendingGreetingAudio);
   const hasVisibleConversationText = messages.some(
     (message) => message.status === 'complete' && message.content.trim().length > 0
   );
@@ -1245,7 +1208,7 @@ export default function ModeSelectHomeScreen() {
       ((Platform.OS === 'ios' || Platform.OS === 'android') && isInputFocused));
   const isGreetingVoiceActive =
     greeting !== null &&
-    (audioPlayer.isLoading || audioPlayer.isPlaying || isGreetingVoicePendingGesture || isWebSpeechFallbackActive);
+    (audioPlayer.isLoading || audioPlayer.isPlaying || isGreetingVoicePendingGesture);
   const greetingVoiceLabel = isEnglishLanguage
     ? isGreetingVoicePendingGesture
       ? 'Tap anywhere to enable Cathy audio.'
@@ -1307,14 +1270,6 @@ export default function ModeSelectHomeScreen() {
     });
   }, []);
 
-  const clearGreetingSpeechHint = useCallback(() => {
-    if (greetingSpeechHintTimeoutRef.current) {
-      clearTimeout(greetingSpeechHintTimeoutRef.current);
-      greetingSpeechHintTimeoutRef.current = null;
-    }
-    setIsWebSpeechFallbackActive(false);
-  }, []);
-
   const clearSendContextRecoveryLock = useCallback(() => {
     if (sendContextRecoveryResetTimeoutRef.current) {
       clearTimeout(sendContextRecoveryResetTimeoutRef.current);
@@ -1353,22 +1308,59 @@ export default function ModeSelectHomeScreen() {
     []
   );
 
+  const enqueueGreetingVoiceNotice = useCallback(
+    (params: {
+      conversationId: string;
+      greetingMessageId: string;
+      errorCode: string;
+    }) => {
+      const normalizedConversationId = params.conversationId.trim();
+      const normalizedMessageId = params.greetingMessageId.trim();
+      const normalizedCode = params.errorCode.trim() || 'TTS_PROVIDER_ERROR';
+      if (!normalizedConversationId || !normalizedMessageId) {
+        return;
+      }
+
+      const noticeKey = `${normalizedMessageId}:${normalizedCode}`;
+      if (greetingVoiceNoticeKeysRef.current.has(noticeKey)) {
+        return;
+      }
+      greetingVoiceNoticeKeysRef.current.add(noticeKey);
+
+      const terminalCode = isTerminalTtsCode(normalizedCode) ? normalizedCode : null;
+      const latestSessionUser = useStore.getState().session?.user;
+      const latestAccountType = resolveEffectiveAccountType(
+        latestSessionUser?.accountType ?? null,
+        latestSessionUser?.role ?? null
+      );
+      const noticeMetadata: NonNullable<Message['metadata']> = {
+        injected: true,
+        errorCode: normalizedCode
+      };
+      if (terminalCode && shouldShowUpgradeForTtsCode(terminalCode) && latestAccountType !== 'admin') {
+        noticeMetadata.showUpgradeCta = true;
+        noticeMetadata.upgradeFromTier = latestAccountType;
+      }
+
+      addMessage(normalizedConversationId, {
+        id: generateId('msg'),
+        conversationId: normalizedConversationId,
+        role: 'artist',
+        content: buildCathyVoiceUnavailableNotice(resolveGreetingVoiceNoticeCode(normalizedCode)),
+        status: 'complete',
+        timestamp: new Date().toISOString(),
+        metadata: noticeMetadata
+      });
+    },
+    [addMessage]
+  );
+
   const stopModeSelectGreetingPlayback = useCallback(() => {
-    clearGreetingSpeechHint();
     setPendingGreetingAudio(null);
-    setPendingGreetingSpeechText(null);
     setPendingAutoMicGreetingMessageId(null);
     autoMicManualOverrideRef.current = false;
     void stopGreetingAudio();
-    if (Platform.OS === 'web') {
-      const speechScope = globalThis as {
-        speechSynthesis?: {
-          cancel?: () => void;
-        };
-      };
-      speechScope.speechSynthesis?.cancel?.();
-    }
-  }, [clearGreetingSpeechHint, stopGreetingAudio]);
+  }, [stopGreetingAudio]);
 
   const stopModeSelectVoiceAndMic = useCallback(() => {
     stopModeSelectGreetingPlayback();
@@ -1395,15 +1387,6 @@ export default function ModeSelectHomeScreen() {
       })
     );
   }, [audioPlayer.currentMessageId, audioPlayer.isLoading, audioPlayer.isPlaying]);
-
-  const pulseGreetingSpeechHint = useCallback((durationMs: number) => {
-    clearGreetingSpeechHint();
-    setIsWebSpeechFallbackActive(true);
-    greetingSpeechHintTimeoutRef.current = setTimeout(() => {
-      setIsWebSpeechFallbackActive(false);
-      greetingSpeechHintTimeoutRef.current = null;
-    }, Math.max(800, durationMs));
-  }, [clearGreetingSpeechHint]);
 
   useEffect(() => {
     const currentMessageId = audioPlayer.currentMessageId?.trim() ?? '';
@@ -1809,8 +1792,6 @@ export default function ModeSelectHomeScreen() {
     }
     lastInjectedGreetingCycleRef.current = cycleKey;
 
-    clearGreetingSpeechHint();
-
     const runId = greetingRunSequenceRef.current + 1;
     greetingRunSequenceRef.current = runId;
     activeGreetingRunIdRef.current = runId;
@@ -1951,30 +1932,24 @@ export default function ModeSelectHomeScreen() {
 
         setGreeting(nextGreeting);
         setPendingGreetingAudio(null);
-        setPendingGreetingSpeechText(null);
-        clearGreetingSpeechHint();
 
         if (!accessToken.trim()) {
-          if (Platform.OS === 'web' && modeSelectScreenFocusedRef.current) {
-            if (!speakGreetingWithWebFallback(nextGreeting, language)) {
-              setPendingGreetingSpeechText(nextGreeting);
-              queueLatestWebAutoplayUnlockRetry(() => {
-                if (!modeSelectScreenFocusedRef.current) {
-                  return;
-                }
-                const speechText = nextGreeting.trim();
-                if (!speechText) {
-                  return;
-                }
-                if (speakGreetingWithWebFallback(speechText, language)) {
-                  setPendingGreetingSpeechText(null);
-                  pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(speechText));
-                }
-              });
-            } else {
-              pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
+          const unresolvedErrorCode = 'UNAUTHORIZED';
+          updateMessage(introConversation.id, greetingMessageId, {
+            metadata: {
+              ...greetingMetadata,
+              voiceStatus: 'unavailable',
+              voiceErrorCode: unresolvedErrorCode,
+              voiceUrl: undefined,
+              voiceQueue: undefined,
+              voiceChunkBoundaries: undefined
             }
-          }
+          });
+          enqueueGreetingVoiceNotice({
+            conversationId: introConversation.id,
+            greetingMessageId,
+            errorCode: unresolvedErrorCode
+          });
           return;
         }
 
@@ -2007,48 +1982,33 @@ export default function ModeSelectHomeScreen() {
           const autoplayState = await attemptVoiceAutoplayUri({
             audioPlayer: audioPlayerRef.current,
             uri: greetingAudioUri,
-            messageId: greetingMessageId,
-            onWebUnlockRetry: () => {
-              if (!modeSelectScreenFocusedRef.current) {
-                return;
-              }
-              setPendingGreetingAudio(null);
-              setPendingGreetingSpeechText(null);
-              clearGreetingSpeechHint();
-              void attemptVoiceAutoplayUri({
-                audioPlayer: audioPlayerRef.current,
-                uri: greetingAudioUri,
-                messageId: greetingMessageId
-              });
-            }
+            messageId: greetingMessageId
           });
           if (autoplayState === 'pending_web_unlock') {
             setPendingGreetingAudio({
+              conversationId: introConversation.id,
               uri: greetingAudioUri,
               messageId: greetingMessageId
             });
-            setPendingGreetingSpeechText(nextGreeting);
             return;
           }
-          if (autoplayState === 'failed' && Platform.OS === 'web' && modeSelectScreenFocusedRef.current) {
-            if (!speakGreetingWithWebFallback(nextGreeting, language)) {
-              setPendingGreetingSpeechText(nextGreeting);
-              queueLatestWebAutoplayUnlockRetry(() => {
-                if (!modeSelectScreenFocusedRef.current) {
-                  return;
-                }
-                const speechText = nextGreeting.trim();
-                if (!speechText) {
-                  return;
-                }
-                if (speakGreetingWithWebFallback(speechText, language)) {
-                  setPendingGreetingSpeechText(null);
-                  pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(speechText));
-                }
-              });
-            } else {
-              pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
-            }
+          if (autoplayState === 'failed') {
+            const failedAutoplayCode = 'TTS_AUTOPLAY_FAILED';
+            updateMessage(introConversation.id, greetingMessageId, {
+              metadata: {
+                ...greetingMetadata,
+                voiceStatus: 'unavailable',
+                voiceErrorCode: failedAutoplayCode,
+                voiceUrl: undefined,
+                voiceQueue: undefined,
+                voiceChunkBoundaries: undefined
+              }
+            });
+            enqueueGreetingVoiceNotice({
+              conversationId: introConversation.id,
+              greetingMessageId,
+              errorCode: failedAutoplayCode
+            });
           }
         } catch (error) {
           if (!isRunActive()) {
@@ -2067,54 +2027,11 @@ export default function ModeSelectHomeScreen() {
             }
           });
 
-          const terminalTtsCode = resolveTerminalTtsCode(error);
-          if (terminalTtsCode) {
-            const latestSessionUser = useStore.getState().session?.user;
-            const latestAccountType = resolveEffectiveAccountType(
-              latestSessionUser?.accountType ?? null,
-              latestSessionUser?.role ?? null
-            );
-            const showUpgradeCta = shouldShowUpgradeForTtsCode(terminalTtsCode) && latestAccountType !== 'admin';
-            const noticeMetadata: NonNullable<Message['metadata']> = {
-              injected: true,
-              errorCode: terminalTtsCode
-            };
-            if (showUpgradeCta) {
-              noticeMetadata.showUpgradeCta = true;
-              noticeMetadata.upgradeFromTier = latestAccountType;
-            }
-            addMessage(introConversation.id, {
-              id: generateId('msg'),
-              conversationId: introConversation.id,
-              role: 'artist',
-              content: buildCathyVoiceNotice(terminalTtsCode),
-              status: 'complete',
-              timestamp: new Date().toISOString(),
-              metadata: noticeMetadata
-            });
-          }
-
-          // Keep Cathy identity: do not switch to generic Web Speech when TTS is quota/rate-limited.
-          if (Platform.OS === 'web' && !terminalTtsCode && modeSelectScreenFocusedRef.current) {
-            if (!speakGreetingWithWebFallback(nextGreeting, language)) {
-              setPendingGreetingSpeechText(nextGreeting);
-              queueLatestWebAutoplayUnlockRetry(() => {
-                if (!modeSelectScreenFocusedRef.current) {
-                  return;
-                }
-                const speechText = nextGreeting.trim();
-                if (!speechText) {
-                  return;
-                }
-                if (speakGreetingWithWebFallback(speechText, language)) {
-                  setPendingGreetingSpeechText(null);
-                  pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(speechText));
-                }
-              });
-            } else {
-              pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
-            }
-          }
+          enqueueGreetingVoiceNotice({
+            conversationId: introConversation.id,
+            greetingMessageId,
+            errorCode: resolvedVoiceErrorCode
+          });
         }
       } catch {
         // Finalization handles all loading state transitions.
@@ -2150,15 +2067,14 @@ export default function ModeSelectHomeScreen() {
     accessToken,
     addMessage,
     artist,
-    clearGreetingSpeechHint,
     commitBoundConversationId,
+    enqueueGreetingVoiceNotice,
     finalizeGreetingRun,
     greetingOpenCycle,
     isModeSelectScreenFocused,
     language,
     markArtistGreeted,
     preferredName,
-    pulseGreetingSpeechHint,
     resolveModeSelectSessionHubConversation,
     setActiveConversation,
     updateMessage,
@@ -2166,40 +2082,61 @@ export default function ModeSelectHomeScreen() {
   ]);
 
   useEffect(() => {
-    if (
-      Platform.OS !== 'web' ||
-      !isModeSelectScreenFocused ||
-      (!pendingGreetingAudio && !pendingGreetingSpeechText)
-    ) {
+    if (Platform.OS !== 'web' || !isModeSelectScreenFocused || !pendingGreetingAudio) {
       return;
     }
 
     const pendingAudio = pendingGreetingAudio;
-    const speechText = pendingGreetingSpeechText?.trim() ?? '';
     queueLatestWebAutoplayUnlockRetry(() => {
-      if (!modeSelectScreenFocusedRef.current) {
-        return;
-      }
-      if (pendingAudio) {
-        void attemptVoiceAutoplayUri({
+      void (async () => {
+        if (!modeSelectScreenFocusedRef.current) {
+          return;
+        }
+
+        const autoplayState = await attemptVoiceAutoplayUri({
           audioPlayer: audioPlayerRef.current,
           uri: pendingAudio.uri,
           messageId: pendingAudio.messageId
         });
-        setPendingGreetingAudio(null);
-      }
+        if (!modeSelectScreenFocusedRef.current) {
+          return;
+        }
 
-      if (speechText && speakGreetingWithWebFallback(speechText, language)) {
-        setPendingGreetingSpeechText(null);
-        pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(speechText));
-      }
+        if (autoplayState === 'started' || autoplayState === 'failed') {
+          setPendingGreetingAudio(null);
+        }
+
+        if (autoplayState === 'failed') {
+          const failedAutoplayCode = 'TTS_AUTOPLAY_FAILED';
+          const existingMessage =
+            useStore
+              .getState()
+              .messagesByConversation[pendingAudio.conversationId]
+              ?.messages.find((message) => message.id === pendingAudio.messageId) ?? null;
+          const existingMetadata = existingMessage?.metadata ?? {};
+          updateMessage(pendingAudio.conversationId, pendingAudio.messageId, {
+            metadata: {
+              ...existingMetadata,
+              voiceStatus: 'unavailable',
+              voiceErrorCode: failedAutoplayCode,
+              voiceUrl: undefined,
+              voiceQueue: undefined,
+              voiceChunkBoundaries: undefined
+            }
+          });
+          enqueueGreetingVoiceNotice({
+            conversationId: pendingAudio.conversationId,
+            greetingMessageId: pendingAudio.messageId,
+            errorCode: failedAutoplayCode
+          });
+        }
+      })();
     });
   }, [
+    enqueueGreetingVoiceNotice,
     isModeSelectScreenFocused,
-    language,
     pendingGreetingAudio,
-    pendingGreetingSpeechText,
-    pulseGreetingSpeechHint
+    updateMessage
   ]);
 
   useEffect(() => {
