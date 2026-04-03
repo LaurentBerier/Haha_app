@@ -1,6 +1,6 @@
 # Phase 4 Status (Conversation Naturelle)
 
-Last updated: **2026-04-02**
+Last updated: **2026-04-03**
 
 ## Scope
 
@@ -37,6 +37,8 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
   - mic visuals driven by explicit `micState` + `hint`
   - off/paused/unsupported states use `Mic_Icon_off.png`
   - pause/recovery hints rendered above composer, aligned near mic/input bar
+  - image attachment source picker now offers explicit `library` / `camera` flows with per-source permission handling
+  - heavy image attachments now pass through adaptive client optimization before send (`10MB` source cap, `<=3MB` upload payload target)
 - Mode-select conversation integration (`src/app/mode-select/[artistId]/index.tsx`):
   - inline message stack above bottom composer
   - no forced route navigation for intro conversation replies
@@ -58,6 +60,18 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
     - `send_dispatched`
     - `send_result`
     - `messages_rendered`
+  - greeting run lifecycle hardening:
+    - each greeting cycle now owns a run token (`runId`) so stale async runs are ignored
+    - `finalizeGreetingRun(...)` closes `isGreetingBooting` on all exits (success, cancellation, timeout fallback, cleanup/unmount)
+    - cancelled runs that did not insert a message can reopen the cycle lock to avoid locked loading state
+  - greeting API retry policy:
+    - prolonged retries within a bounded global budget (`25s`)
+    - when budget is exhausted, fallback greeting text is injected and loading closes deterministically
+- Primary-thread cross-device sync (`src/services/primaryThreadSyncService.ts`, `src/hooks/usePrimaryThreadCloudSync.ts`):
+  - root layout bootstraps remote primary-thread index and merges artist-level metadata
+  - active mode-select/chat artist pulls remote primary-thread messages with cooldown/in-flight guards
+  - app foreground/web focus triggers refresh to keep local primary threads aligned across devices
+  - post-reply sync in `useChat` uploads latest local primary-thread state to Supabase
 - Forced mode nudges removed:
   - no automatic `mode_nudge` injection after N user replies
   - mode-select conversation now keeps natural flow without forced "try modes" interjections
@@ -124,6 +138,12 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
 
 ## QA Status
 
+Full regression validation on **2026-04-03** (mode-select loading lock fix + cloud sync/image pipeline refresh):
+
+- `npm run typecheck` -> PASS
+- `npm run lint` -> PASS
+- `npm run test:unit` -> PASS (`97` suites, `534` tests)
+
 Targeted meme reliability validation on **2026-04-02**:
 
 - `npm run test:unit -- api/__tests__/_meme-render.test.js api/__tests__/greeting.test.js src/services/experienceLaunchService.test.ts src/services/modeIntroService.test.ts src/services/memeMediaService.test.ts src/services/memeMediaService.web.test.ts` -> PASS
@@ -162,6 +182,7 @@ Prior targeted mode-select layout baseline remains available from **2026-03-23**
 
 Detailed run logs:
 
+- [`docs/qa-run-2026-04-03.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-03.md)
 - [`docs/qa-run-2026-04-02.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-02.md)
 - [`docs/qa-run-2026-04-01.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-01.md)
 - [`docs/qa-run-2026-03-27.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-27.md)
@@ -171,7 +192,7 @@ Detailed run logs:
 - [`docs/qa-run-2026-03-19.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-19.md)
 - [`docs/qa-run-2026-03-18.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-18.md)
 - [`docs/qa-run-2026-03-17.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-17.md)
-- Latest code review snapshot: [`docs/code-review-2026-04-01.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-01.md)
+- Latest code review snapshot: [`docs/code-review-2026-04-03.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-03.md)
 
 ## Games & Prompt Quality (2026-03-25)
 
@@ -189,7 +210,7 @@ Game flow:
 New files: `src/app/games/[artistId]/tarot-cathy.tsx`, `src/games/hooks/useTarotCathy.ts`, `src/games/services/TarotService.ts`, `src/components/games/TarotCard.tsx`, `src/utils/memoryFacts.ts`, `api/tarot-reading.js`
 
 Fixes applied post-launch:
-- Route restore excludes `/games/` routes (no stale-game refresh on reload)
+- Web route restore keeps `/games/` routes eligible (with auth/home filtering and max-age guard)
 - Last card no longer auto-completes; added "Voir le verdict de Cathy" button after all 3 cards flipped
 - API retry logic (2 attempts on JSON parse failure) + `max_tokens` 800→600 (conciseness)
 - CI lint fixes: unused imports in `useChat.ts`, redeclared function in `claude.js`

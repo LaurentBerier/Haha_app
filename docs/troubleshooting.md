@@ -234,6 +234,32 @@ Fix (already applied in `src/app/mode-select/[artistId]/index.tsx`):
 - Use compact-only bottom padding instead of chat-height-derived spacer.
 - Keep the overlay message `FlatList` scroll enabled (single intended scrollbar).
 
+## 8b) Loading bloqué sur `mode-select` juste après création de compte
+
+Symptoms:
+
+- Premier passage sur `/mode-select/[artistId]` après signup/onboarding: l’UI reste en état de chargement et la conversation ne démarre pas.
+
+Root cause (historique):
+
+- Un cycle greeting pouvait être annulé (rerender/focus/state churn) avant insertion du message, tout en laissant un verrou actif et un booting non finalisé.
+
+Current expected behavior:
+
+- Le cycle greeting est run-scopé (`runId`), les runs obsolètes sont ignorés.
+- `finalizeGreetingRun(...)` ferme toujours `isGreetingBooting` (succès, annulation, timeout fallback, cleanup/unmount).
+- Si un run est annulé avant insertion, le verrou de cycle est rouvert pour permettre un relancement propre.
+- Les retries API greeting sont prolongés dans un budget global de `25s`; si dépassé, un fallback local est injecté et le loading se ferme.
+
+Checks:
+
+1. Hard refresh bundle web (or reinstall/rebuild native app) to ensure latest mode-select code is loaded.
+2. Validate first-run path with a newly created account:
+   - onboarding completed
+   - open `/mode-select/[artistId]`
+   - greeting message (API or fallback) appears without infinite loading.
+3. On web/dev, inspect mode-select traces and verify greeting events progress to completion (`greeting_api_*`, `greeting_cycle_reopened` when applicable).
+
 ## 9) SQL error `relation "account_types" does not exist`
 
 Fix:
@@ -382,7 +408,7 @@ Checks:
 
 Notes:
 
-- Client applies short backoff after greeting API server/network failures.
+- Client retries greeting API inside a bounded global budget (`25s`) and then forces local fallback greeting text when budget is exhausted.
 - Weather uses Open-Meteo and news uses RSS feeds (no weather/news API keys required).
 
 ## 15) `POST /api/stripe-webhook` returns 401

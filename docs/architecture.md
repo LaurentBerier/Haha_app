@@ -99,6 +99,9 @@ Store-level account isolation:
 - `subscriptionService.ts`: Stripe checkout launcher (regular/premium), subscription summary fetch, and cancel-at-period-end action
 - `adminService.ts`: admin stats/users/quota/account-type requests with normalized backend base URL resolution
 - `persistenceService.ts`: local cache persistence (conversations/messages/ui selections)
+- `greetingService.ts`: mode-select greeting API orchestration (endpoint candidates, retries, timeout budgeting, and API-fallback coordination)
+- `imageUploadPreparation.ts`: image attachment preparation (media-type validation, source-size guardrails, adaptive compression/resize pipeline for upload budget)
+- `primaryThreadSyncService.ts`: Supabase-backed primary-thread metadata/message sync for cross-device continuity
 - `ttsService.ts`: multi-endpoint TTS fetch/cache (`same-origin /api/tts` first on web, timeout + failover across candidates, with no failover on terminal `401/403/429`)
 - `voiceEngine.ts`: session-based STT engine abstraction (web/native), restart handling, stale-session isolation
 - `sentry.ts`: app-side Sentry bootstrap/capture wrapper (`EXPO_PUBLIC_SENTRY_DSN`, disabled automatically when DSN is unset)
@@ -129,6 +132,8 @@ Store-level account isolation:
 - Voice/text conversation mode is globally controlled by `uiSlice.conversationModeEnabled` (default: `true`).
 - `ChatInput` is the single shared composer UI across chat contexts (chat screen + global composer + mode-select composer), including:
   - image attachment support (`+`)
+  - explicit image source selection (`library` vs `camera`) with source-specific permission prompts
+  - heavy-image preparation before upload (`MAX_IMAGE_SOURCE_BYTES=10_000_000`, optimize to `MAX_IMAGE_UPLOAD_BYTES=3_000_000` when needed)
   - send arrow when text/image is present
   - mic visual states driven by explicit `micState` + `hint`
   - off/paused/unsupported icon path via `assets/icons/Mic_Icon_off.png`
@@ -156,11 +161,14 @@ Store-level account isolation:
   - once per artist per app session (`uiSlice.greetedArtistIds`, memory-only)
   - greeting message is inserted as an artist message in a fresh `on-jase` conversation
   - meme-generator launch keeps a single intro message (no additional `upload_prompt` injection) and ensures explicit composer `+` upload guidance in API/fallback copy
+  - greeting lifecycle is run-scoped (`runId`) and stale async runs are ignored on rerender/focus/state churn
+  - centralized `finalizeGreetingRun(...)` closes loading (`isGreetingBooting=false`) across all exits (success, timeout fallback, cancellation, cleanup/unmount)
+  - cancelled runs without inserted greeting can reopen cycle lock (`lastInjectedGreetingCycleRef`) to avoid lock + loading dead states
   - best-effort voice playback via TTS (with web speech fallback)
   - greeting/tutorial message injection triggers one-time auto-mic arming for that `messageId` in mode-select (`armListeningActivation`)
   - manual user pause during greeting cancels forced auto-start for that greeting message
   - web localhost bypasses `/api/greeting` and uses local fallback copy to avoid local 500 noise
-  - greeting API failures trigger a short client backoff before retrying
+  - greeting API retries are prolonged under a bounded global budget (`25s`); timeout forces local fallback greeting text so loading cannot remain stuck
 - Auto replay on return:
   - `useAutoReplayLastArtistMessage` replays only the latest replayable artist message in the current conversation
   - triggers on initial mount and `AppState=active`
@@ -215,8 +223,10 @@ Store-level account isolation:
 ### Hooks (`src/hooks`)
 
 - `useAuth`: optional bootstrap path (enabled in root layout only), usage/gamification hydration, and Supabase auth-change synchronization
+- `usePrimaryThreadCloudSync`: root-level remote primary-thread bootstrap and active-artist pull/merge on focus/app-active for cross-device continuity
 - `useChat`: queue-driven streaming orchestration, retry support, image-intent routing, mode-based score triggers, and route-safe stream cleanup
   - per-turn conversation-language resolver (`explicit switch` > `auto-detect` > `keep current`) with language persistence at conversation level
+  - post-reply primary-thread cloud sync trigger (`syncPrimaryThreadArtist`) to persist latest primary conversation across devices
 - `useStorePersistence`: hydration/debounced persistence
 
 ## Backend Endpoints (`api`)
@@ -493,7 +503,7 @@ Vercel functions require project dependencies at runtime; `.vercelignore` must i
 - API tests: `api/__tests__/`
 - Store slice tests: `src/store/slices/*.test.ts`
 - Command: `npm run test:unit`
-- Latest unit/lint/type baseline (2026-04-02): `85` suites, `457` tests, plus PASS on `typecheck` and `lint`
+- Latest unit/lint/type baseline (2026-04-03): `97` suites, `534` tests, plus PASS on `typecheck` and `lint`
 - Latest full cross-check including `verify:profile-prompt` + smoke remains 2026-04-01 (see `docs/qa-run-2026-04-01.md`)
 
 ## Repos and Hosting Topology

@@ -16,6 +16,7 @@ Implemented in this repository:
 - Header logo remains a home shortcut to artist selection (`/`) and never replaces back behavior.
 - Chat header title reflects the active mode label (for example `🔥 Radar d’Attitude`) instead of a static "Discussion" title.
 - Web chat input supports keyboard send: `Enter` sends, `Shift+Enter` inserts a new line.
+- Chat image attachment now uses an explicit source picker (`library` or `camera`) and a preparation pipeline (`10MB` source cap, adaptive optimization to `<=3MB` upload payload).
 - Mode selection is now split into:
   - a category hub (`2x2` animated buttons)
   - a dedicated category page showing only its sub-modes/actions
@@ -42,6 +43,8 @@ Implemented in this repository:
   - right-mic action model: mode-off => enable+listen, active => pause, paused/recovery => resume, assistant-speaking => pause
   - inline mode-select conversation stack (no forced route switch)
   - mode-select greeting/tutorial auto-arms mic once per injected greeting message, while respecting manual user override
+  - first-pass mode-select greeting boot cycle is now run-scoped and finalized on every exit path (success/cancel/timeout/unmount), preventing stuck loading loops after signup
+  - greeting API retries are prolonged inside a global `25s` budget; when budget is exhausted, local fallback greeting text is injected so loading always closes
   - first-session greeting with weather/news signal context
   - replay remains one-message-at-a-time and current-conversation scoped, but web focus/visibility auto-replay is disabled to avoid surprise replays
   - chunk-synced text/voice playback keyed by `message.id` with animated waveform replay control (`loading`, `playing`, `idle/play`)
@@ -77,6 +80,7 @@ Implemented in this repository:
 - Sentry exception capture is integrated on app and API runtimes (DSN-driven, disabled when unset).
 - Shared API utilities (`api/_utils.js`) for CORS, bearer token extraction, request IDs, env checks, and standardized errors.
 - Extensible account type model (`free`, `regular`, `premium`, `admin`, plus custom).
+- Primary-thread cross-device sync via Supabase keeps each artist primary conversation metadata/messages aligned across devices (bootstrap + focus/app-active refresh + post-reply sync).
 - Unit test baseline (Jest) for API security contracts and core store slices.
 - App web + API are deployed together from this repo to the Vercel project `haha-app` (custom domain: `app.ha-ha.ai`).
 - Marketing/landing is maintained in a separate repo and deployed to a separate Vercel project (`ha-ha-ai`, domain `ha-ha.ai`).
@@ -88,8 +92,8 @@ Implemented in this repository:
 - [`docs/phase3-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase3-status.md)
 - [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
 - Admin dashboard status: [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md)
-- Latest QA run: [`docs/qa-run-2026-04-02.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-02.md)
-- Latest code-review snapshot: [`docs/code-review-2026-04-01.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-01.md)
+- Latest QA run: [`docs/qa-run-2026-04-03.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-03.md)
+- Latest code-review snapshot: [`docs/code-review-2026-04-03.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-03.md)
 - Pre-release conversation reset checklist: [`docs/pre-release-reset-checklist.md`](/Users/laurentbernier/Documents/HAHA_app/docs/pre-release-reset-checklist.md)
 
 ## Repos and Vercel Projects
@@ -575,6 +579,7 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/qa-run-2026-03-28.md`
 - `docs/qa-run-2026-04-01.md`
 - `docs/qa-run-2026-04-02.md`
+- `docs/qa-run-2026-04-03.md`
 - `docs/code-review-2026-03-15.md`
 - `docs/code-review-2026-03-16.md`
 - `docs/code-review-2026-03-17.md`
@@ -582,6 +587,7 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/code-review-2026-03-27.md`
 - `docs/code-review-2026-03-28.md`
 - `docs/code-review-2026-04-01.md`
+- `docs/code-review-2026-04-03.md`
 - `docs/voice-ops-runbook.md`
 - `docs/troubleshooting.md`
 - `ha-ha-ai-build-prompt.improved.md`
