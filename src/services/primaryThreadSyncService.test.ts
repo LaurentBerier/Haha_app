@@ -7,7 +7,7 @@ type QueryBuilder = {
   eq: (column: string, value: unknown) => QueryBuilder;
   order: (column: string, options?: { ascending?: boolean }) => QueryBuilder;
   limit: (value: number) => QueryBuilder;
-  maybeSingle: <T>() => QueryBuilder;
+  maybeSingle: () => QueryBuilder;
   then: <TResult1 = SupabaseResponse, TResult2 = never>(
     onfulfilled?: ((value: SupabaseResponse) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null
