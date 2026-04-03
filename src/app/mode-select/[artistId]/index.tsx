@@ -30,6 +30,8 @@ import type { ChatError } from '../../../models/ChatError';
 import { normalizeConversationThreadType } from '../../../models/Conversation';
 import type { Message } from '../../../models/Message';
 import { synthesizeVoice } from '../../../services/voiceEngine';
+import { attemptVoiceAutoplayUri } from '../../../services/voiceAutoplayService';
+import { queueLatestWebAutoplayUnlockRetry } from '../../../services/webAutoplayUnlockService';
 import { tryLaunchExperienceFromText } from '../../../services/experienceLaunchService';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voiceFillerService';
 import { useStore } from '../../../store/useStore';
@@ -1126,8 +1128,6 @@ export default function ModeSelectHomeScreen() {
   const rootLayoutRef = useRef<View>(null);
   const categoryGridRef = useRef<View>(null);
   const lastLoggedRenderedMessageCountRef = useRef(0);
-  const greetingPlaybackCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const greetingGestureRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingSpeechHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const greetingCycleFocusStateRef = useRef(false);
   const lastInjectedGreetingCycleRef = useRef('');
@@ -1286,7 +1286,6 @@ export default function ModeSelectHomeScreen() {
     isSendContextReady,
     audioPlayer
   } = useChat(modeSelectConversationId);
-  const playGreetingAudio = audioPlayer.play;
   const stopGreetingAudio = audioPlayer.stop;
   const isValidConversation = modeSelectConversationId.length > 0;
   const isModeSelectComposerDisabled = !isValidConversation || isQuotaBlocked || !isSendContextReady;
@@ -1337,7 +1336,10 @@ export default function ModeSelectHomeScreen() {
               return;
             }
             if (!audioPlayer.isPlaying && !audioPlayer.isLoading) {
-              void audioPlayer.play(uri);
+              void attemptVoiceAutoplayUri({
+                audioPlayer,
+                uri
+              });
             }
           })
           .catch(() => {
@@ -1500,15 +1502,6 @@ export default function ModeSelectHomeScreen() {
     fallbackLanguage: language
   });
   const resolvedArtistDisplayName = formatArtistDisplayName(currentArtistName ?? artistDisplayName);
-  const audioStateRef = useRef<{
-    isPlaying: boolean;
-    isLoading: boolean;
-    currentUri: string | null;
-  }>({
-    isPlaying: false,
-    isLoading: false,
-    currentUri: null
-  });
   const isGreetingVoicePendingGesture = Boolean(pendingGreetingAudio || pendingGreetingSpeechText);
   const hasVisibleConversationText = messages.some(
     (message) => message.status === 'complete' && message.content.trim().length > 0
@@ -1587,20 +1580,6 @@ export default function ModeSelectHomeScreen() {
     });
   }, []);
 
-  const clearGreetingPlaybackCheck = useCallback(() => {
-    if (greetingPlaybackCheckTimeoutRef.current) {
-      clearTimeout(greetingPlaybackCheckTimeoutRef.current);
-      greetingPlaybackCheckTimeoutRef.current = null;
-    }
-  }, []);
-
-  const clearGreetingGestureRetry = useCallback(() => {
-    if (greetingGestureRetryTimeoutRef.current) {
-      clearTimeout(greetingGestureRetryTimeoutRef.current);
-      greetingGestureRetryTimeoutRef.current = null;
-    }
-  }, []);
-
   const clearGreetingSpeechHint = useCallback(() => {
     if (greetingSpeechHintTimeoutRef.current) {
       clearTimeout(greetingSpeechHintTimeoutRef.current);
@@ -1618,8 +1597,6 @@ export default function ModeSelectHomeScreen() {
   }, []);
 
   const stopModeSelectGreetingPlayback = useCallback(() => {
-    clearGreetingPlaybackCheck();
-    clearGreetingGestureRetry();
     clearGreetingSpeechHint();
     setPendingGreetingAudio(null);
     setPendingGreetingSpeechText(null);
@@ -1634,7 +1611,7 @@ export default function ModeSelectHomeScreen() {
       };
       speechScope.speechSynthesis?.cancel?.();
     }
-  }, [clearGreetingGestureRetry, clearGreetingPlaybackCheck, clearGreetingSpeechHint, stopGreetingAudio]);
+  }, [clearGreetingSpeechHint, stopGreetingAudio]);
 
   const stopModeSelectVoiceAndMic = useCallback(() => {
     stopModeSelectGreetingPlayback();
@@ -1670,14 +1647,6 @@ export default function ModeSelectHomeScreen() {
       greetingSpeechHintTimeoutRef.current = null;
     }, Math.max(800, durationMs));
   }, [clearGreetingSpeechHint]);
-
-  useEffect(() => {
-    audioStateRef.current = {
-      isPlaying: audioPlayer.isPlaying,
-      isLoading: audioPlayer.isLoading,
-      currentUri: audioPlayer.currentUri
-    };
-  }, [audioPlayer.currentUri, audioPlayer.isLoading, audioPlayer.isPlaying]);
 
   useEffect(() => {
     const currentMessageId = audioPlayer.currentMessageId?.trim() ?? '';
@@ -1834,8 +1803,7 @@ export default function ModeSelectHomeScreen() {
     audioPlayer,
     enabled: isValidConversation && isModeSelectScreenFocused,
     hasStreaming,
-    voiceAutoPlay,
-    replayOnFocus: false
+    voiceAutoPlay
   });
 
   useEffect(() => {
@@ -2084,8 +2052,6 @@ export default function ModeSelectHomeScreen() {
     }
     lastInjectedGreetingCycleRef.current = cycleKey;
 
-    clearGreetingPlaybackCheck();
-    clearGreetingGestureRetry();
     clearGreetingSpeechHint();
 
     let isCancelled = false;
@@ -2210,6 +2176,19 @@ export default function ModeSelectHomeScreen() {
           if (Platform.OS === 'web' && modeSelectScreenFocusedRef.current) {
             if (!speakGreetingWithWebFallback(nextGreeting, language)) {
               setPendingGreetingSpeechText(nextGreeting);
+              queueLatestWebAutoplayUnlockRetry(() => {
+                if (!modeSelectScreenFocusedRef.current) {
+                  return;
+                }
+                const speechText = nextGreeting.trim();
+                if (!speechText) {
+                  return;
+                }
+                if (speakGreetingWithWebFallback(speechText, language)) {
+                  setPendingGreetingSpeechText(null);
+                  pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(speechText));
+                }
+              });
             } else {
               pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
             }
@@ -2243,27 +2222,51 @@ export default function ModeSelectHomeScreen() {
             return;
           }
 
-          void playGreetingAudio(greetingAudioUri, { messageId: greetingMessageId });
-          if (Platform.OS === 'web') {
-            clearGreetingPlaybackCheck();
-            greetingPlaybackCheckTimeoutRef.current = setTimeout(() => {
+          const autoplayState = await attemptVoiceAutoplayUri({
+            audioPlayer,
+            uri: greetingAudioUri,
+            messageId: greetingMessageId,
+            onWebUnlockRetry: () => {
               if (!modeSelectScreenFocusedRef.current) {
                 return;
               }
-              const audioState = audioStateRef.current;
-              if (audioState.isPlaying || audioState.isLoading || audioState.currentUri === greetingAudioUri) {
-                return;
-              }
-              if (!speakGreetingWithWebFallback(nextGreeting, language)) {
-                setPendingGreetingAudio({
-                  uri: greetingAudioUri,
-                  messageId: greetingMessageId
-                });
-                setPendingGreetingSpeechText(nextGreeting);
-              } else {
-                pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
-              }
-            }, 900);
+              setPendingGreetingAudio(null);
+              setPendingGreetingSpeechText(null);
+              clearGreetingSpeechHint();
+              void attemptVoiceAutoplayUri({
+                audioPlayer,
+                uri: greetingAudioUri,
+                messageId: greetingMessageId
+              });
+            }
+          });
+          if (autoplayState === 'pending_web_unlock') {
+            setPendingGreetingAudio({
+              uri: greetingAudioUri,
+              messageId: greetingMessageId
+            });
+            setPendingGreetingSpeechText(nextGreeting);
+            return;
+          }
+          if (autoplayState === 'failed' && Platform.OS === 'web' && modeSelectScreenFocusedRef.current) {
+            if (!speakGreetingWithWebFallback(nextGreeting, language)) {
+              setPendingGreetingSpeechText(nextGreeting);
+              queueLatestWebAutoplayUnlockRetry(() => {
+                if (!modeSelectScreenFocusedRef.current) {
+                  return;
+                }
+                const speechText = nextGreeting.trim();
+                if (!speechText) {
+                  return;
+                }
+                if (speakGreetingWithWebFallback(speechText, language)) {
+                  setPendingGreetingSpeechText(null);
+                  pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(speechText));
+                }
+              });
+            } else {
+              pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
+            }
           }
         } catch (error) {
           if (!isCancelled) {
@@ -2310,6 +2313,19 @@ export default function ModeSelectHomeScreen() {
             if (Platform.OS === 'web' && !terminalTtsCode && modeSelectScreenFocusedRef.current) {
               if (!speakGreetingWithWebFallback(nextGreeting, language)) {
                 setPendingGreetingSpeechText(nextGreeting);
+                queueLatestWebAutoplayUnlockRetry(() => {
+                  if (!modeSelectScreenFocusedRef.current) {
+                    return;
+                  }
+                  const speechText = nextGreeting.trim();
+                  if (!speechText) {
+                    return;
+                  }
+                  if (speakGreetingWithWebFallback(speechText, language)) {
+                    setPendingGreetingSpeechText(null);
+                    pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(speechText));
+                  }
+                });
               } else {
                 pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(nextGreeting));
               }
@@ -2335,8 +2351,7 @@ export default function ModeSelectHomeScreen() {
     accessToken,
     addMessage,
     artist,
-    clearGreetingGestureRetry,
-    clearGreetingPlaybackCheck,
+    audioPlayer,
     clearGreetingSpeechHint,
     greetingOpenCycle,
     isModeSelectScreenFocused,
@@ -2344,7 +2359,6 @@ export default function ModeSelectHomeScreen() {
     markArtistGreeted,
     preferredName,
     pulseGreetingSpeechHint,
-    playGreetingAudio,
     commitBoundConversationId,
     resolveModeSelectSessionHubConversation,
     setActiveConversation,
@@ -2356,54 +2370,37 @@ export default function ModeSelectHomeScreen() {
     if (
       Platform.OS !== 'web' ||
       !isModeSelectScreenFocused ||
-      (!pendingGreetingAudio && !pendingGreetingSpeechText) ||
-      typeof document === 'undefined'
+      (!pendingGreetingAudio && !pendingGreetingSpeechText)
     ) {
       return;
     }
 
-    const handleFirstGesture = () => {
+    const pendingAudio = pendingGreetingAudio;
+    const speechText = pendingGreetingSpeechText?.trim() ?? '';
+    queueLatestWebAutoplayUnlockRetry(() => {
       if (!modeSelectScreenFocusedRef.current) {
         return;
       }
-      const pendingAudio = pendingGreetingAudio;
-      const speechText = pendingGreetingSpeechText;
-      setPendingGreetingAudio(null);
-      setPendingGreetingSpeechText(null);
-
       if (pendingAudio) {
-        void playGreetingAudio(pendingAudio.uri, { messageId: pendingAudio.messageId });
+        void attemptVoiceAutoplayUri({
+          audioPlayer,
+          uri: pendingAudio.uri,
+          messageId: pendingAudio.messageId
+        });
+        setPendingGreetingAudio(null);
       }
 
-      if (speechText) {
-        clearGreetingGestureRetry();
-        greetingGestureRetryTimeoutRef.current = setTimeout(() => {
-          if (!modeSelectScreenFocusedRef.current) {
-            return;
-          }
-          const audioState = audioStateRef.current;
-          if (audioState.isPlaying || audioState.isLoading) {
-            return;
-          }
-          if (speakGreetingWithWebFallback(speechText, language)) {
-            pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(speechText));
-          }
-        }, 420);
+      if (speechText && speakGreetingWithWebFallback(speechText, language)) {
+        setPendingGreetingSpeechText(null);
+        pulseGreetingSpeechHint(estimateGreetingSpeechDurationMs(speechText));
       }
-    };
-
-    document.addEventListener('pointerdown', handleFirstGesture, { once: true });
-    return () => {
-      document.removeEventListener('pointerdown', handleFirstGesture);
-      clearGreetingGestureRetry();
-    };
+    });
   }, [
-    clearGreetingGestureRetry,
+    audioPlayer,
     isModeSelectScreenFocused,
     language,
     pendingGreetingAudio,
     pendingGreetingSpeechText,
-    playGreetingAudio,
     pulseGreetingSpeechHint
   ]);
 

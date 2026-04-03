@@ -17,6 +17,7 @@ import { t } from '../../i18n';
 import type { ChatSendPayload } from '../../models/ChatSendPayload';
 import { normalizeConversationThreadType } from '../../models/Conversation';
 import { tryLaunchExperienceFromText } from '../../services/experienceLaunchService';
+import { attemptVoiceAutoplayUri } from '../../services/voiceAutoplayService';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../services/voiceFillerService';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
@@ -177,7 +178,10 @@ export default function ChatScreen() {
               return;
             }
             if (!audioPlayer.isPlaying && !audioPlayer.isLoading) {
-              void audioPlayer.play(uri);
+              void attemptVoiceAutoplayUri({
+                audioPlayer,
+                uri
+              });
             }
           })
           .catch(() => {
@@ -279,8 +283,7 @@ export default function ChatScreen() {
     audioPlayer,
     enabled: isValidConversation,
     hasStreaming,
-    voiceAutoPlay,
-    replayOnFocus: false
+    voiceAutoPlay
   });
 
   const handleChooseMemeOption = useCallback(

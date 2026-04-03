@@ -30,6 +30,7 @@ import {
 } from '../services/relationshipMemoryService';
 import { addScore } from '../services/scoreManager';
 import { fetchAndCacheVoice } from '../services/ttsService';
+import { attemptVoiceAutoplayQueue } from '../services/voiceAutoplayService';
 import { useStore } from '../store/useStore';
 import { resolveLanguageForTurn } from '../utils/conversationLanguage';
 import { findConversationById } from '../utils/conversationUtils';
@@ -523,6 +524,48 @@ export function useChat(conversationId: string) {
     isLoading: audioPlayer.isLoading,
     currentMessageId: audioPlayer.currentMessageId
   });
+  const autoplayVoiceQueueRef = useRef<
+    ((uris: string[], messageId: string, options?: { retryOnWebUnlock?: boolean }) => void) | null
+  >(null);
+
+  const autoplayVoiceQueue = useCallback(
+    (uris: string[], messageId: string, options?: { retryOnWebUnlock?: boolean }) => {
+      const normalizedMessageId = messageId.trim();
+      if (!normalizedMessageId) {
+        return;
+      }
+      const shouldRetryOnWebUnlock = options?.retryOnWebUnlock ?? true;
+      const normalizedUris = uris.map((uri) => uri.trim()).filter(Boolean);
+      if (normalizedUris.length === 0) {
+        return;
+      }
+
+      void attemptVoiceAutoplayQueue({
+        audioPlayer,
+        uris: normalizedUris,
+        messageId: normalizedMessageId,
+        onWebUnlockRetry: shouldRetryOnWebUnlock
+          ? () => {
+              autoplayVoiceQueueRef.current?.(normalizedUris, normalizedMessageId, {
+                retryOnWebUnlock: false
+              });
+            }
+          : null
+      });
+    },
+    [audioPlayer]
+  );
+
+  const autoplayVoiceUri = useCallback(
+    (uri: string, messageId: string, options?: { retryOnWebUnlock?: boolean }) => {
+      autoplayVoiceQueue([uri], messageId, options);
+    },
+    [autoplayVoiceQueue]
+  );
+
+  useEffect(() => {
+    autoplayVoiceQueueRef.current = autoplayVoiceQueue;
+  }, [autoplayVoiceQueue]);
 
   const sendContextBlockReason = useMemo<ChatSendContextBlockReason | null>(() => {
     if (!conversationId.trim()) {
@@ -786,7 +829,7 @@ export function useChat(conversationId: string) {
               if (hasActivePlayback && matchesExpectedMessage) {
                 audioPlayer.appendToQueue(uri, { messageId });
               } else if (!options?.queueOnly) {
-                void audioPlayer.play(uri, { messageId });
+                autoplayVoiceUri(uri, messageId);
               }
             }
           })
@@ -983,7 +1026,7 @@ export function useChat(conversationId: string) {
           if (uri && shouldAutoPlay) {
             if (nextPlayableChunkIndex === 0 && !hasQueuedAutoplayChunk) {
               // First real chunk interrupts any filler currently playing.
-              void audioPlayer.playQueue([uri], { messageId: artistMessageId });
+              autoplayVoiceQueue([uri], artistMessageId);
               hasQueuedAutoplayChunk = true;
             } else if (hasQueuedAutoplayChunk) {
               audioPlayer.appendToQueue(uri, { messageId: artistMessageId });
@@ -1256,7 +1299,7 @@ export function useChat(conversationId: string) {
 
                 const shouldAutoPlay = Boolean(useStore.getState().voiceAutoPlay);
                 if (shouldAutoPlay && !shouldBlockInput) {
-                  void audioPlayer.playQueue([uri], { messageId: artistMessageId });
+                  autoplayVoiceQueue([uri], artistMessageId);
                 }
               } catch (error: unknown) {
                 if (registerTerminalTtsError(error)) {
@@ -1309,7 +1352,7 @@ export function useChat(conversationId: string) {
 
               const shouldAutoPlay = Boolean(useStore.getState().voiceAutoPlay);
               if (shouldAutoPlay && !shouldBlockInput && !hasQueuedAutoplayChunk) {
-                void audioPlayer.playQueue(orderedVoiceUris, { messageId: artistMessageId });
+                autoplayVoiceQueue(orderedVoiceUris, artistMessageId);
               }
             });
           }
@@ -1503,6 +1546,8 @@ export function useChat(conversationId: string) {
     addMessage,
     applyLocalScoreAction,
     appendMessageContent,
+    autoplayVoiceQueue,
+    autoplayVoiceUri,
     audioPlayer,
     accessToken,
     buildQuotaBlockedMessage,
@@ -1648,7 +1693,7 @@ export function useChat(conversationId: string) {
         });
 
         if (useStore.getState().voiceAutoPlay) {
-          void audioPlayer.playQueue([uri], { messageId: artistMessageId });
+          autoplayVoiceQueue([uri], artistMessageId);
         }
       } catch (error: unknown) {
         const latestMessageAfterFailure =
@@ -1668,7 +1713,7 @@ export function useChat(conversationId: string) {
         });
       }
     },
-    [accessToken, audioPlayer, currentAccountType, currentRole, resolveVoiceErrorCode, updateMessage]
+    [accessToken, autoplayVoiceQueue, currentAccountType, currentRole, resolveVoiceErrorCode, updateMessage]
   );
 
   const chooseMemeOption = useCallback(

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { AppState, Platform, type AppStateStatus } from 'react-native';
 import type { Message } from '../models/Message';
 import type { AudioPlayerController } from './useAudioPlayer';
+import { attemptVoiceAutoplayQueue, type VoiceAutoplayAttemptState } from '../services/voiceAutoplayService';
 import {
   findLatestReplayableArtistMessage,
   findReplayableArtistMessageById,
@@ -21,6 +22,14 @@ interface UseAutoReplayLastArtistMessageParams {
 interface AttemptReplayOptions {
   messageId?: string | null;
   allowReplayOfSameMessage?: boolean;
+}
+
+export type PendingReplayStatus = 'pending_blockers' | 'pending_web_unlock';
+export type ReplayAttemptStatus = PendingReplayStatus | VoiceAutoplayAttemptState | 'failed';
+
+export interface PendingReplayState {
+  messageId: string;
+  status: PendingReplayStatus;
 }
 
 interface ResolveInterruptedReplayMessageIdParams {
@@ -66,6 +75,50 @@ export function shouldAttemptInterruptedReplayOnAppActive(
   return normalizedMessageId.length > 0;
 }
 
+export function resolveReplayTrackingStateAfterAttempt(
+  previousLastStartedMessageId: string | null,
+  messageId: string,
+  status: ReplayAttemptStatus
+): {
+  nextLastStartedMessageId: string | null;
+  nextPendingReplay: PendingReplayState | null;
+} {
+  if (status === 'started') {
+    return {
+      nextLastStartedMessageId: messageId,
+      nextPendingReplay: null
+    };
+  }
+
+  if (status === 'pending_blockers' || status === 'pending_web_unlock') {
+    return {
+      nextLastStartedMessageId: previousLastStartedMessageId,
+      nextPendingReplay: {
+        messageId,
+        status
+      }
+    };
+  }
+
+  return {
+    nextLastStartedMessageId: previousLastStartedMessageId,
+    nextPendingReplay: null
+  };
+}
+
+export function shouldRetryPendingReplayWhenUnblocked(params: {
+  pendingReplay: PendingReplayState | null;
+  hasStreaming: boolean;
+  isPlaying: boolean;
+  isLoading: boolean;
+}): boolean {
+  if (!params.pendingReplay || params.pendingReplay.status !== 'pending_blockers') {
+    return false;
+  }
+
+  return !params.hasStreaming && !params.isPlaying && !params.isLoading;
+}
+
 export function useAutoReplayLastArtistMessage({
   messages,
   audioPlayer,
@@ -75,8 +128,10 @@ export function useAutoReplayLastArtistMessage({
   replayOnFocus = true
 }: UseAutoReplayLastArtistMessageParams): void {
   const hasRunInitialReplayRef = useRef(false);
-  const lastReplayedMessageIdRef = useRef<string | null>(null);
+  const lastStartedReplayMessageIdRef = useRef<string | null>(null);
   const interruptedReplayMessageIdRef = useRef<string | null>(null);
+  const pendingReplayRef = useRef<PendingReplayState | null>(null);
+  const attemptReplayRef = useRef<(options?: AttemptReplayOptions) => Promise<ReplayAttemptStatus>>(async () => 'failed');
 
   const resolveReplayableMessage = useCallback(
     (targetMessageId?: string | null): ReplayableArtistMessage | null => {
@@ -88,32 +143,69 @@ export function useAutoReplayLastArtistMessage({
     [messages]
   );
 
-  const attemptReplay = useCallback((options?: AttemptReplayOptions): boolean => {
-    if (!canAutoReplayArtistMessage(enabled, voiceAutoPlay) || hasStreaming || audioPlayer.isPlaying || audioPlayer.isLoading) {
-      return false;
+  const attemptReplay = useCallback(async (options?: AttemptReplayOptions): Promise<ReplayAttemptStatus> => {
+    if (!canAutoReplayArtistMessage(enabled, voiceAutoPlay)) {
+      pendingReplayRef.current = null;
+      return 'failed';
     }
 
     const latestReplayable = resolveReplayableMessage(options?.messageId);
     if (!latestReplayable) {
-      return false;
+      if (options?.messageId) {
+        pendingReplayRef.current = null;
+      }
+      return 'failed';
     }
 
     const shouldBypassReplayGuard = Boolean(options?.allowReplayOfSameMessage);
-    if (!shouldBypassReplayGuard && !shouldReplayArtistMessage(lastReplayedMessageIdRef.current, latestReplayable)) {
-      return false;
+    if (!shouldBypassReplayGuard && !shouldReplayArtistMessage(lastStartedReplayMessageIdRef.current, latestReplayable)) {
+      pendingReplayRef.current = null;
+      return 'failed';
     }
 
-    lastReplayedMessageIdRef.current = latestReplayable.messageId;
-    void audioPlayer.playQueue(latestReplayable.uris, {
-      messageId: latestReplayable.messageId
+    if (hasStreaming || audioPlayer.isPlaying || audioPlayer.isLoading) {
+      const trackingState = resolveReplayTrackingStateAfterAttempt(
+        lastStartedReplayMessageIdRef.current,
+        latestReplayable.messageId,
+        'pending_blockers'
+      );
+      lastStartedReplayMessageIdRef.current = trackingState.nextLastStartedMessageId;
+      pendingReplayRef.current = trackingState.nextPendingReplay;
+      return 'pending_blockers';
+    }
+
+    const autoplayState = await attemptVoiceAutoplayQueue({
+      audioPlayer,
+      uris: latestReplayable.uris,
+      messageId: latestReplayable.messageId,
+      onWebUnlockRetry: () => {
+        void attemptReplayRef.current({
+          messageId: latestReplayable.messageId,
+          allowReplayOfSameMessage: true
+        });
+      }
     });
-    return true;
+
+    const trackingState = resolveReplayTrackingStateAfterAttempt(
+      lastStartedReplayMessageIdRef.current,
+      latestReplayable.messageId,
+      autoplayState
+    );
+    lastStartedReplayMessageIdRef.current = trackingState.nextLastStartedMessageId;
+    pendingReplayRef.current = trackingState.nextPendingReplay;
+    return autoplayState;
   }, [audioPlayer, enabled, hasStreaming, resolveReplayableMessage, voiceAutoPlay]);
+
+  useEffect(() => {
+    attemptReplayRef.current = attemptReplay;
+  }, [attemptReplay]);
 
   useEffect(() => {
     if (!canAutoReplayArtistMessage(enabled, voiceAutoPlay)) {
       hasRunInitialReplayRef.current = false;
+      lastStartedReplayMessageIdRef.current = null;
       interruptedReplayMessageIdRef.current = null;
+      pendingReplayRef.current = null;
       return;
     }
 
@@ -126,8 +218,35 @@ export function useAutoReplayLastArtistMessage({
     }
 
     hasRunInitialReplayRef.current = true;
-    attemptReplay();
-  }, [attemptReplay, enabled, resolveReplayableMessage, voiceAutoPlay]);
+    void attemptReplayRef.current();
+  }, [enabled, resolveReplayableMessage, voiceAutoPlay]);
+
+  useEffect(() => {
+    if (!canAutoReplayArtistMessage(enabled, voiceAutoPlay)) {
+      return;
+    }
+
+    if (
+      !shouldRetryPendingReplayWhenUnblocked({
+        pendingReplay: pendingReplayRef.current,
+        hasStreaming,
+        isPlaying: audioPlayer.isPlaying,
+        isLoading: audioPlayer.isLoading
+      })
+    ) {
+      return;
+    }
+
+    const pendingReplay = pendingReplayRef.current;
+    if (!pendingReplay) {
+      return;
+    }
+
+    void attemptReplayRef.current({
+      messageId: pendingReplay.messageId,
+      allowReplayOfSameMessage: true
+    });
+  }, [audioPlayer.isLoading, audioPlayer.isPlaying, enabled, hasStreaming, voiceAutoPlay]);
 
   useEffect(() => {
     if (Platform.OS === 'web' || !canAutoReplayArtistMessage(enabled, voiceAutoPlay)) {
@@ -145,24 +264,38 @@ export function useAutoReplayLastArtistMessage({
         return;
       }
 
-      if (shouldAttemptInterruptedReplayOnAppActive(nextState, interruptedReplayMessageIdRef.current)) {
-        const queuedInterruptedMessageId = interruptedReplayMessageIdRef.current?.trim() ?? '';
-        if (!resolveReplayableMessage(queuedInterruptedMessageId)) {
-          interruptedReplayMessageIdRef.current = null;
-        } else if (
-          attemptReplay({
-            messageId: queuedInterruptedMessageId,
-            allowReplayOfSameMessage: true
-          })
-        ) {
-          interruptedReplayMessageIdRef.current = null;
-          return;
-        }
+      if (nextState === 'active') {
+        void (async () => {
+          if (shouldAttemptInterruptedReplayOnAppActive(nextState, interruptedReplayMessageIdRef.current)) {
+            const queuedInterruptedMessageId = interruptedReplayMessageIdRef.current?.trim() ?? '';
+            interruptedReplayMessageIdRef.current = null;
+            if (queuedInterruptedMessageId) {
+              const replayState = await attemptReplayRef.current({
+                messageId: queuedInterruptedMessageId,
+                allowReplayOfSameMessage: true
+              });
+              if (replayState === 'started' || replayState === 'pending_blockers' || replayState === 'pending_web_unlock') {
+                return;
+              }
+            }
+          }
+
+          const pendingReplayMessageId = pendingReplayRef.current?.messageId?.trim() ?? '';
+          if (pendingReplayMessageId) {
+            await attemptReplayRef.current({
+              messageId: pendingReplayMessageId,
+              allowReplayOfSameMessage: true
+            });
+            return;
+          }
+
+          if (replayOnFocus) {
+            await attemptReplayRef.current();
+          }
+        })();
+        return;
       }
 
-      if (nextState === 'active' && replayOnFocus) {
-        attemptReplay();
-      }
     };
 
     const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
@@ -171,13 +304,11 @@ export function useAutoReplayLastArtistMessage({
       appStateSubscription.remove();
     };
   }, [
-    attemptReplay,
     audioPlayer.currentMessageId,
     audioPlayer.isLoading,
     audioPlayer.isPlaying,
     enabled,
     replayOnFocus,
-    resolveReplayableMessage,
     voiceAutoPlay
   ]);
 
@@ -186,12 +317,25 @@ export function useAutoReplayLastArtistMessage({
       return;
     }
 
+    const replayPendingOrLatest = () => {
+      const pendingReplayMessageId = pendingReplayRef.current?.messageId?.trim() ?? '';
+      if (pendingReplayMessageId) {
+        void attemptReplayRef.current({
+          messageId: pendingReplayMessageId,
+          allowReplayOfSameMessage: true
+        });
+        return;
+      }
+
+      void attemptReplayRef.current();
+    };
+
     const handleWindowFocus = () => {
-      attemptReplay();
+      replayPendingOrLatest();
     };
     const handleVisibilityChange = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        attemptReplay();
+        replayPendingOrLatest();
       }
     };
 
@@ -206,5 +350,5 @@ export function useAutoReplayLastArtistMessage({
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       }
     };
-  }, [attemptReplay, enabled, replayOnFocus, voiceAutoPlay]);
+  }, [enabled, replayOnFocus, voiceAutoPlay]);
 }

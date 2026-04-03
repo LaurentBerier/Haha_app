@@ -18,7 +18,7 @@ interface MockStoreState {
 const mockStoreRef: { current: MockStoreState | null } = { current: null };
 const mockFetchAndCacheVoice = jest.fn<Promise<string | null>, unknown[]>();
 const mockAudioPlayer = {
-  playQueue: jest.fn(async () => undefined),
+  playQueue: jest.fn(async () => ({ started: true, reason: null })),
   stop: jest.fn(async () => undefined)
 };
 

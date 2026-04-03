@@ -99,8 +99,8 @@ const mockAudioPlayer = {
   currentMessageId: null as string | null,
   currentIndex: 0,
   totalChunks: 0,
-  play: jest.fn(async () => undefined),
-  playQueue: jest.fn(async () => undefined),
+  play: jest.fn(async () => ({ started: true, reason: null })),
+  playQueue: jest.fn(async () => ({ started: true, reason: null })),
   appendToQueue: jest.fn(),
   pause: jest.fn(async () => undefined),
   stop: jest.fn(async () => undefined)

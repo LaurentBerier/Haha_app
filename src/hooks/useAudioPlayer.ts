@@ -1,6 +1,7 @@
 import { Audio, type AVPlaybackStatus } from 'expo-av';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
+import { markWebAutoplaySessionUnlocked } from '../services/webAutoplayUnlockService';
 
 interface WebAudioLike {
   addEventListener: (event: string, handler: () => void) => void;
@@ -11,6 +12,13 @@ interface WebAudioLike {
   volume: number;
 }
 
+export type AudioPlaybackFailureReason = 'invalid_queue' | 'web_autoplay_blocked' | 'playback_error' | 'interrupted';
+
+export interface AudioPlaybackResult {
+  started: boolean;
+  reason: AudioPlaybackFailureReason | null;
+}
+
 export interface AudioPlayerController {
   isPlaying: boolean;
   isLoading: boolean;
@@ -18,8 +26,8 @@ export interface AudioPlayerController {
   currentMessageId: string | null;
   currentIndex: number;
   totalChunks: number;
-  play: (uri: string, context?: AudioPlaybackContext) => Promise<void>;
-  playQueue: (uris: string[], context?: AudioPlaybackContext) => Promise<void>;
+  play: (uri: string, context?: AudioPlaybackContext) => Promise<AudioPlaybackResult>;
+  playQueue: (uris: string[], context?: AudioPlaybackContext) => Promise<AudioPlaybackResult>;
   appendToQueue: (uri: string, context?: AudioPlaybackContext) => void;
   pause: () => Promise<void>;
   stop: () => Promise<void>;
@@ -36,6 +44,33 @@ interface AudioPlaybackQueueItem {
 
 function isLoadedStatus(status: AVPlaybackStatus): status is AVPlaybackStatus & { isLoaded: true } {
   return status.isLoaded;
+}
+
+const PLAYBACK_STARTED_RESULT: AudioPlaybackResult = {
+  started: true,
+  reason: null
+};
+
+function toPlaybackFailureResult(reason: AudioPlaybackFailureReason): AudioPlaybackResult {
+  return {
+    started: false,
+    reason
+  };
+}
+
+export function isWebAutoplayBlockedError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const name = 'name' in error && typeof error.name === 'string' ? error.name : '';
+  return name === 'NotAllowedError';
+}
+
+export function resolveAudioPlaybackFailureReason(error: unknown): AudioPlaybackFailureReason {
+  if (isWebAutoplayBlockedError(error)) {
+    return 'web_autoplay_blocked';
+  }
+  return 'playback_error';
 }
 
 export function useAudioPlayer(): AudioPlayerController {
@@ -123,7 +158,7 @@ export function useAudioPlayer(): AudioPlayerController {
           messageId: context?.messageId ?? null
         }));
       if (nextQueue.length === 0) {
-        return;
+        return toPlaybackFailureResult('invalid_queue');
       }
 
       const token = playbackTokenRef.current + 1;
@@ -133,22 +168,22 @@ export function useAudioPlayer(): AudioPlayerController {
 
       await releaseAllAudio();
 
-      const playIndex = async (index: number): Promise<void> => {
+      const playIndex = async (index: number): Promise<AudioPlaybackResult> => {
         if (!isMountedRef.current || playbackTokenRef.current !== token) {
-          return;
+          return toPlaybackFailureResult('interrupted');
         }
 
         await releaseAllAudio();
 
         if (!isMountedRef.current || playbackTokenRef.current !== token) {
-          return;
+          return toPlaybackFailureResult('interrupted');
         }
 
         const queue = queueRef.current;
         const queueItem = queue[index];
         if (!queueItem?.uri) {
           await stop();
-          return;
+          return toPlaybackFailureResult('invalid_queue');
         }
         const uri = queueItem.uri;
 
@@ -178,7 +213,7 @@ export function useAudioPlayer(): AudioPlayerController {
           const WebAudioCtor = (globalThis as { Audio?: new (src?: string) => WebAudioLike }).Audio;
           if (!WebAudioCtor) {
             await stop();
-            return;
+            return toPlaybackFailureResult('playback_error');
           }
 
           const webAudio = new WebAudioCtor(uri);
@@ -221,10 +256,17 @@ export function useAudioPlayer(): AudioPlayerController {
               setIsLoading(false);
               setIsPlaying(true);
             }
-          } catch {
+            markWebAutoplaySessionUnlocked();
+            return PLAYBACK_STARTED_RESULT;
+          } catch (error: unknown) {
+            const reason = resolveAudioPlaybackFailureReason(error);
+            if (reason === 'web_autoplay_blocked') {
+              await stop();
+              return toPlaybackFailureResult(reason);
+            }
             onChunkEnd();
+            return toPlaybackFailureResult(reason);
           }
-          return;
         }
 
         try {
@@ -271,22 +313,29 @@ export function useAudioPlayer(): AudioPlayerController {
           } catch {
             // Best effort.
           }
+          if (!isMountedRef.current || playbackTokenRef.current !== token) {
+            return toPlaybackFailureResult('interrupted');
+          }
+
           if (isMountedRef.current && playbackTokenRef.current === token) {
             setIsLoading(false);
             setIsPlaying(true);
           }
-        } catch {
+          return PLAYBACK_STARTED_RESULT;
+        } catch (error: unknown) {
+          const reason = resolveAudioPlaybackFailureReason(error);
           onChunkEnd();
+          return toPlaybackFailureResult(reason);
         }
       };
 
-      await playIndex(0);
+      return playIndex(0);
     },
     [clearWebListeners, releaseAllAudio, stop]
   );
 
   const play = useCallback(async (uri: string, context?: AudioPlaybackContext) => {
-    await playQueue([uri], context);
+    return playQueue([uri], context);
   }, [playQueue]);
 
   const appendToQueue = useCallback(
