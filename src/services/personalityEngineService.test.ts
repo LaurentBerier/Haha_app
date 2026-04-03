@@ -2,12 +2,13 @@ import { ARTIST_IDS } from '../config/constants';
 import { buildSystemPrompt, buildSystemPromptForArtist } from './personalityEngineService';
 
 describe('personalityEngineService', () => {
-  it('builds Cathy prompt with mode-specific instructions', () => {
+  it('keeps retired mode ids unmapped in Cathy prompt generation', () => {
     const prompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'roast', null, 'fr-CA');
 
     expect(prompt).toContain('Tu es Cathy Gauthier');
     expect(prompt).toContain('## MODE ACTIF : roast');
-    expect(prompt).toContain("L'utilisateur veut se faire roaster");
+    expect(prompt).toContain('Conversation libre. Reponds comme Cathy dans une discussion informelle');
+    expect(prompt).not.toContain("L'utilisateur veut se faire roaster");
     expect(prompt).toContain('## MARQUEURS AUDIO');
     expect(prompt).toContain('[laughs]');
     expect(prompt).toContain("## POLITIQUE INFO D'ABORD");

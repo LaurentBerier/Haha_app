@@ -41,13 +41,13 @@ import { findConversationById } from '../utils/conversationUtils';
 import cleanBackground from '../../assets/branding/Clean_BG.jpg';
 import neonTitleMark from '../../assets/branding/logo-neon-Trans.png';
 
-type AccountMenuRoute = '/settings' | '/settings/subscription' | '/stats' | '/admin' | `/history/${string}`;
+type AccountMenuRoute = '/settings' | '/settings/subscription' | '/stats' | '/admin' | '/history';
 const WEB_BACKGROUND_MIN_HEIGHT_VH = 100;
 const WEB_BACKGROUND_MAX_HEIGHT_VH = 170;
 const WEB_RESUME_ROUTE_RESTORE_FLAG_KEY = 'ha-ha:web-resume-route-restore:v1';
 
 function resolveArtistIdFromPath(pathname: string): string | null {
-  const match = pathname.match(/^\/(?:mode-select|games|history)\/([^/]+)/);
+  const match = pathname.match(/^\/(?:mode-select|games)\/([^/]+)/);
   if (!match?.[1]) {
     return null;
   }
@@ -60,7 +60,7 @@ function resolveArtistIdFromPath(pathname: string): string | null {
 }
 
 function isModeSelectRoute(pathname: string): boolean {
-  return /^\/mode-select\/[^/]+(?:\/[^/]+)?\/?$/.test(pathname) || /^\/mode_select\/[^/]+(?:\/[^/]+)?\/?$/.test(pathname);
+  return /^\/mode-select\/[^/]+(?:\/[^/]+)?\/?$/.test(pathname);
 }
 
 export default function RootLayout() {
@@ -126,9 +126,7 @@ export default function RootLayout() {
     { label: t('settingsStats'), route: '/stats' as const },
     { label: t('settingsSubscription'), route: '/settings/subscription' as const }
   ];
-  if (targetArtistId) {
-    accountMenuItems.push({ label: t('historyModeTitle'), route: `/history/${targetArtistId}` });
-  }
+  accountMenuItems.push({ label: t('historyModeTitle'), route: '/history' });
   if (isAdmin) {
     accountMenuItems.unshift({ label: 'Admin Dashboard', route: '/admin' });
   }
@@ -698,9 +696,9 @@ export default function RootLayout() {
                   }}
                 />
                 <Stack.Screen
-                  name="history/[artistId]"
+                  name="history/index"
                   options={{
-                    title: t('historyScreenTitle'),
+                    title: t('historyModeTitle'),
                     animation: 'slide_from_right',
                     animationDuration: 260
                   }}

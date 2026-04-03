@@ -262,7 +262,7 @@ describe('api/stripe-webhook', () => {
     });
   });
 
-  it('falls back to legacy payment_events insert when provider_event_id column is missing', async () => {
+  it('returns 500 when payment_events is missing provider_event_id column', async () => {
     const event = {
       id: 'evt_checkout_legacy_insert',
       type: 'checkout.session.completed',
@@ -297,14 +297,13 @@ describe('api/stripe-webhook', () => {
 
     await handler(req, res);
 
-    expect(res.statusCode).toBe(200);
-    expect(supabase.spies.paymentInsert).toHaveBeenCalledTimes(2);
+    expect(res.statusCode).toBe(500);
+    expect(supabase.spies.paymentInsert).toHaveBeenCalledTimes(1);
     expect(supabase.spies.paymentInsert.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         provider_event_id: 'evt_checkout_legacy_insert'
       })
     );
-    expect(supabase.spies.paymentInsert.mock.calls[1][0].provider_event_id).toBeUndefined();
   });
 
   it('processes customer.subscription.deleted and downgrades to free', async () => {

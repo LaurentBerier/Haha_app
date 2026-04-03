@@ -11,11 +11,6 @@ interface ModeCardProps {
 const MODE_EMOJI_BY_ID: Record<string, string> = {
   [MODE_IDS.ON_JASE]: '🎤',
   [MODE_IDS.GRILL]: '🔥',
-  [MODE_IDS.RADAR_ATTITUDE]: '🔥',
-  [MODE_IDS.RELAX]: '😌',
-  [MODE_IDS.ROAST]: '😈',
-  [MODE_IDS.COACH_BRUTAL]: '💪',
-  [MODE_IDS.JE_CASSE_TOUT]: '💀',
   [MODE_IDS.COACH_DE_VIE]: '🧭',
   [MODE_IDS.MESSAGE_PERSONNALISE]: '🎁',
   [MODE_IDS.NUMERO_DE_SHOW]: '🎤',

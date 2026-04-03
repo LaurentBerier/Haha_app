@@ -7,10 +7,6 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   removeItem: jest.fn()
 }));
 
-jest.mock('expo-secure-store', () => ({
-  deleteItemAsync: jest.fn()
-}));
-
 describe('persistenceService', () => {
   beforeAll(() => {
     (globalThis as Record<string, unknown>).__DEV__ = false;
@@ -91,7 +87,7 @@ describe('persistenceService', () => {
     expect(snapshot).toBeNull();
   });
 
-  it('accepts legacy snapshots when threadType is absent', async () => {
+  it('rejects snapshots when threadType is absent', async () => {
     const legacySnapshot = {
       selectedArtistId: 'cathy-gauthier',
       conversations: {
@@ -122,7 +118,7 @@ describe('persistenceService', () => {
 
     const snapshot = await loadPersistedSnapshot();
 
-    expect(snapshot).toEqual(legacySnapshot);
+    expect(snapshot).toBeNull();
   });
 
   it('rejects snapshots when threadType has an invalid value', async () => {
@@ -166,7 +162,7 @@ describe('persistenceService', () => {
     const snapshot = await loadPersistedSnapshot();
 
     expect(snapshot).toBeNull();
-    expect(AsyncStorage.removeItem).toHaveBeenCalledWith('ha-ha-store-v1');
+    expect(AsyncStorage.removeItem).toHaveBeenCalledWith('ha-ha-store-v2');
   });
 
   it('rejects snapshots when conversationModeEnabled preference is invalid', async () => {

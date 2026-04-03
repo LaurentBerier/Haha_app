@@ -2,35 +2,37 @@ import { MODE_IDS } from '../config/constants';
 import { selectPersistedSnapshot, useStore } from './useStore';
 
 describe('useStore hydration', () => {
-  it('restores legacy on-jase conversations as primary threads when threadType is missing', () => {
+  it('preserves explicit persisted thread types', () => {
     useStore.getState().hydrateStore({
       ownerUserId: null,
       selectedArtistId: 'cathy-gauthier',
       conversations: {
         'cathy-gauthier': [
           {
-            id: 'legacy-primary',
+            id: 'primary-thread',
             artistId: 'cathy-gauthier',
-            title: 'Legacy primary',
+            title: 'Primary',
             language: 'fr-CA',
             modeId: MODE_IDS.ON_JASE,
+            threadType: 'primary',
             createdAt: '2026-03-22T12:00:00.000Z',
             updatedAt: '2026-03-22T12:00:00.000Z',
             lastMessagePreview: ''
           },
           {
-            id: 'legacy-mode',
+            id: 'mode-thread',
             artistId: 'cathy-gauthier',
-            title: 'Legacy mode',
+            title: 'Mode',
             language: 'fr-CA',
             modeId: MODE_IDS.GRILL,
+            threadType: 'mode',
             createdAt: '2026-03-22T13:00:00.000Z',
             updatedAt: '2026-03-22T13:00:00.000Z',
             lastMessagePreview: ''
           }
         ]
       },
-      activeConversationId: 'legacy-primary',
+      activeConversationId: 'primary-thread',
       messagesByConversation: {},
       preferences: {
         language: 'fr-CA',
@@ -43,11 +45,11 @@ describe('useStore hydration', () => {
     expect(conversations).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: 'legacy-primary',
+          id: 'primary-thread',
           threadType: 'primary'
         }),
         expect.objectContaining({
-          id: 'legacy-mode',
+          id: 'mode-thread',
           threadType: 'mode'
         })
       ])

@@ -90,6 +90,7 @@ Implemented in this repository:
 - Admin dashboard status: [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md)
 - Latest QA run: [`docs/qa-run-2026-04-02.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-02.md)
 - Latest code-review snapshot: [`docs/code-review-2026-04-01.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-01.md)
+- Pre-release conversation reset checklist: [`docs/pre-release-reset-checklist.md`](/Users/laurentbernier/Documents/HAHA_app/docs/pre-release-reset-checklist.md)
 
 ## Repos and Vercel Projects
 
@@ -415,14 +416,13 @@ Notes:
   - Category hub (`/mode-select/[artistId]`) with `On Jase?`, `Blagues & Gadgets`, `Jeux`, `Profil`
   - Category detail (`/mode-select/[artistId]/[categoryId]`) with only relevant modes/actions
 - Games flow:
-  - Entry banner from history (`/history/[artistId]` -> `/games/[artistId]`)
+  - Entry from mode category (`/mode-select/[artistId]/battles` -> `/games/[artistId]`)
   - Current game screens: `Histoire improvisée`, `Vrai ou Inventé`, and `Tirage de Tarot`
 - Mode catalog currently includes:
   - `On Jase?`: `On jase!`, `Mets-moi sur le grill`
-  - `Blagues & Gadgets`: `Générateur de Meme`, `Analyste de Screenshots`, `Victime du Jour`, `Phrase du Jour`, `Numéro de Show`
+  - `Blagues & Gadgets`: `Générateur de Meme`, `Analyste de Screenshots`, `Numéro de Show`
   - `Jeux`: `Histoire improvisée`, `Vrai ou Inventé`
   - `Profil`: profile edit + recent chat history shortcuts
-- Legacy mode IDs remain server-mapped for conversation compatibility (`relax`, `roast`, `coach-brutal`, etc.).
 
 ## Run
 

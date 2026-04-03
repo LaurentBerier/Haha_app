@@ -124,7 +124,7 @@ export default function ModeCategoryScreen() {
               <Text style={styles.profileActionTitle}>{t('historyModeTitle')}</Text>
               <Text style={styles.profileActionDescription}>{t('historyModeDescription')}</Text>
               <Pressable
-                onPress={() => router.push(`/history/${artist.id}`)}
+                onPress={() => router.push('/history')}
                 style={({ pressed }) => [
                   styles.profileActionButton,
                   pressed ? styles.profileActionButtonPressed : null

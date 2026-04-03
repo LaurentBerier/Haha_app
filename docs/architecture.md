@@ -42,7 +42,7 @@ Supabase is the source of truth for:
   - `/mode-select/[artistId]` (category hub)
   - `/mode-select/[artistId]/[categoryId]` (category detail)
   - `/chat/[conversationId]`
-  - `/history/[artistId]`
+  - `/history`
   - `/stats`
   - `/games/[artistId]` (game lobby)
   - `/games/[artistId]/impro-chain`

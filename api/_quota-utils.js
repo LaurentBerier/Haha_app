@@ -35,16 +35,6 @@ function isMissingMonthlyCounterColumnError(error) {
   return message.includes('monthly_message_count') || message.includes('monthly_reset_at');
 }
 
-function isMissingUsageEventsRequestIdColumn(error) {
-  const code = isRecord(error) && typeof error.code === 'string' ? error.code : '';
-  if (code !== '42703') {
-    return false;
-  }
-
-  const message = isRecord(error) && typeof error.message === 'string' ? error.message.toLowerCase() : '';
-  return message.includes('request_id');
-}
-
 async function readProfileMonthlyCounter(supabaseAdmin, userId, requestId, logPrefix) {
   const { data, error } = await supabaseAdmin
     .from('profiles')
@@ -199,15 +189,7 @@ async function recordUsageEvent({ supabaseAdmin, userId, endpoint, requestId, in
     ...(typeof ttsCharacters === 'number' && { tts_characters: ttsCharacters })
   };
 
-  let { error } = await supabaseAdmin.from('usage_events').insert(insertPayload);
-  if (error && isMissingUsageEventsRequestIdColumn(error)) {
-    const fallbackPayload = {
-      user_id: userId,
-      endpoint,
-      created_at: nowIso
-    };
-    ({ error } = await supabaseAdmin.from('usage_events').insert(fallbackPayload));
-  }
+  const { error } = await supabaseAdmin.from('usage_events').insert(insertPayload);
 
   if (error) {
     return { ok: false, error };

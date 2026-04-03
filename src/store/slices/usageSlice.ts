@@ -18,8 +18,6 @@ export interface UsageSlice {
   isSoftCapReached: () => boolean;
   markThresholdMessageShown: (threshold: 1 | 2 | 3 | 4) => void;
   setBlocked: (blocked: boolean) => void;
-  markSoftCapMessageShown: () => void;
-  markHardCapMessageShown: () => void;
   resetQuota: () => void;
   hydrateQuota: (messagesUsed: number, accountType: string) => void;
   hydrateQuotaWithCap: (messagesUsed: number, messagesCap: number | null) => void;
@@ -132,22 +130,6 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
       quota: {
         ...normalizeQuotaWindow(state.quota),
         isBlocked: blocked
-      }
-    })),
-  // Legacy compatibility with previous naming.
-  markSoftCapMessageShown: () =>
-    set((state) => ({
-      quota: {
-        ...normalizeQuotaWindow(state.quota),
-        threshold1MessageShown: true
-      }
-    })),
-  // Legacy compatibility with previous naming.
-  markHardCapMessageShown: () =>
-    set((state) => ({
-      quota: {
-        ...normalizeQuotaWindow(state.quota),
-        threshold3MessageShown: true
       }
     })),
   resetQuota: () =>

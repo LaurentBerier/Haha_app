@@ -50,7 +50,7 @@ function resolvePrimaryChatArtistFromPath(
 }
 
 function resolveModeSelectArtistFromPath(pathname: string): string | null {
-  const modeSelectMatch = pathname.match(/^\/(?:mode-select|mode_select)\/([^/?#]+)/);
+  const modeSelectMatch = pathname.match(/^\/mode-select\/([^/?#]+)/);
   if (!modeSelectMatch?.[1]) {
     return null;
   }

@@ -1,7 +1,6 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { create } = require('zustand') as typeof import('zustand');
 import { MODE_IDS } from '../config/constants';
-import { resolveModeIdCompat } from '../config/modeCompat';
 import { setLanguage as setI18nLanguage } from '../i18n';
 import { EMPTY_GAMIFICATION_STATS } from '../models/Gamification';
 import { normalizeConversationThreadType, type Conversation } from '../models/Conversation';
@@ -42,11 +41,10 @@ function normalizeConversations(input: Record<string, PersistedConversation[]>):
 
   Object.entries(input).forEach(([artistId, conversations]) => {
     normalized[artistId] = (conversations ?? []).map((conversation) => {
-      const modeId = resolveModeIdCompat(conversation.modeId ?? MODE_IDS.ON_JASE);
-      const threadType =
-        conversation.threadType === undefined && modeId === MODE_IDS.ON_JASE
-          ? 'primary'
-          : normalizeConversationThreadType(conversation.threadType);
+      const modeId = typeof conversation.modeId === 'string' && conversation.modeId.trim()
+        ? conversation.modeId.trim()
+        : MODE_IDS.ON_JASE;
+      const threadType = normalizeConversationThreadType(conversation.threadType);
 
       return {
         ...conversation,

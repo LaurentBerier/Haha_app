@@ -17,40 +17,6 @@ export const modes: Mode[] = [
     "kind": "delire"
   },
   {
-    "id": "radar-attitude",
-    "name": "Radar d’Attitude",
-    "description": "Mode désormais intégré à Dis-moi la vérité pour une conversation libre.",
-    "emoji": "🔥",
-    "kind": "chat"
-  },
-  {
-    "id": "relax",
-    "name": "Relax",
-    "description": "Mode désormais intégré à Dis-moi la vérité pour une conversation libre.",
-    "emoji": "😌",
-    "kind": "delire"
-  },
-  {
-    "id": "roast",
-    "name": "Roast",
-    "description": "Mode désormais intégré à Mets-moi sur le grill.",
-    "kind": "chat"
-  },
-  {
-    "id": "coach-brutal",
-    "name": "Coach brutal",
-    "description": "Mode désormais intégré à Mets-moi sur le grill.",
-    "emoji": "💪",
-    "kind": "delire"
-  },
-  {
-    "id": "je-casse-tout",
-    "name": "Je casse tout",
-    "description": "Mode désormais intégré à Dis-moi la vérité pour une conversation libre.",
-    "emoji": "💀",
-    "kind": "delire"
-  },
-  {
     "id": "coach-de-vie",
     "name": "Coach de vie",
     "description": "Ton amie la plus franche: conseils concrets, vérité qui pique un peu, et zéro bullshit motivant.",

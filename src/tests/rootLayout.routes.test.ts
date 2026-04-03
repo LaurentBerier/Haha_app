@@ -37,6 +37,14 @@ describe('root layout route registration', () => {
     expect(layoutSource).toContain('!isGameRoute &&');
   });
 
+  it('registers global history route and no longer uses artist-scoped history route', () => {
+    const layoutPath = path.resolve(__dirname, '../app/_layout.tsx');
+    const layoutSource = fs.readFileSync(layoutPath, 'utf8');
+
+    expect(layoutSource).toContain('<Stack.Screen\n                  name="history/index"');
+    expect(layoutSource).not.toContain('name="history/[artistId]"');
+  });
+
   it('uses artist-aware header home navigation and a center artist picker button', () => {
     const layoutPath = path.resolve(__dirname, '../app/_layout.tsx');
     const layoutSource = fs.readFileSync(layoutPath, 'utf8');

@@ -4,14 +4,6 @@ const DEFAULT_MODE_PROMPT = `Conversation libre. Reponds comme Cathy dans une di
 avec repartie rapide, sarcasme et punchlines courtes.
 Quand tu parles de toi, utilise je/moi/mon, jamais "Cathy" a la troisieme personne.`;
 
-const MODE_ID_COMPAT: Record<string, string> = {
-  [MODE_IDS.RADAR_ATTITUDE]: MODE_IDS.ON_JASE,
-  [MODE_IDS.RELAX]: MODE_IDS.ON_JASE,
-  [MODE_IDS.JE_CASSE_TOUT]: MODE_IDS.ON_JASE,
-  [MODE_IDS.ROAST]: MODE_IDS.GRILL,
-  [MODE_IDS.COACH_BRUTAL]: MODE_IDS.GRILL
-};
-
 const modePrompts: Record<string, string> = {
   'on-jase': `L'utilisateur veut jaser avec toi.
 Ce mode s'appelle "Dis-moi la verite".
@@ -88,6 +80,5 @@ Le verdict doit etre present exactement une fois.`,
 };
 
 export function getModePrompt(modeId: string): string {
-  const canonicalModeId = MODE_ID_COMPAT[modeId] ?? modeId;
-  return modePrompts[canonicalModeId] ?? DEFAULT_MODE_PROMPT;
+  return modePrompts[modeId] ?? DEFAULT_MODE_PROMPT;
 }

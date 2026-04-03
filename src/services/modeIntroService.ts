@@ -1,6 +1,5 @@
 import { MODE_IDS } from '../config/constants';
 import { API_BASE_URL, CLAUDE_PROXY_URL } from '../config/env';
-import { resolveModeIdCompat } from '../config/modeCompat';
 import type { UserProfile } from '../models/UserProfile';
 
 const MODE_INTRO_API_BACKOFF_MS = 5 * 60_000;
@@ -169,10 +168,9 @@ function buildGrillFallback(preferredName: string | null): string {
 }
 
 export function generateModeIntro(modeId: string, userProfile?: UserProfile | null): string {
-  const canonicalModeId = resolveModeIdCompat(modeId);
   const preferredName = getPreferredName(userProfile);
 
-  switch (canonicalModeId) {
+  switch (modeId) {
     case MODE_IDS.ON_JASE:
       return buildOnJaseFallback(preferredName);
     case MODE_IDS.GRILL:
@@ -206,11 +204,10 @@ export async function fetchModeIntroFromApi(params: FetchModeIntroFromApiParams)
     return null;
   }
 
-  const canonicalModeId = resolveModeIdCompat(params.modeId);
   if (
-    canonicalModeId !== MODE_IDS.ON_JASE &&
-    canonicalModeId !== MODE_IDS.GRILL &&
-    canonicalModeId !== MODE_IDS.MEME_GENERATOR
+    params.modeId !== MODE_IDS.ON_JASE &&
+    params.modeId !== MODE_IDS.GRILL &&
+    params.modeId !== MODE_IDS.MEME_GENERATOR
   ) {
     return null;
   }
@@ -224,7 +221,7 @@ export async function fetchModeIntroFromApi(params: FetchModeIntroFromApiParams)
     artistId: params.artistId,
     language: params.language,
     introType: 'mode_intro',
-    modeId: canonicalModeId
+    modeId: params.modeId
   };
 
   if (typeof params.preferredName === 'string' && params.preferredName.trim()) {

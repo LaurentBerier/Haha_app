@@ -8,14 +8,6 @@ export function normalizeAccountType(accountType: string | null | undefined): 'f
     if (normalized === 'free' || normalized === 'regular' || normalized === 'premium' || normalized === 'admin') {
       return normalized;
     }
-
-    const compact = normalized.replace(/[\s_-]+/g, '');
-    if (compact === 'unlimited') {
-      return 'regular';
-    }
-    if (compact === 'proartist') {
-      return 'premium';
-    }
   }
 
   return 'free';

@@ -1,10 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SecureStore from 'expo-secure-store';
 import type { PersistedStoreSnapshot } from '../models/Persistence';
 
-const STORAGE_KEY = 'ha-ha-store-v1';
-const LEGACY_SECURE_STORAGE_KEY = 'ha-ha-secure-v1';
-const SECURE_CLEANUP_FLAG_KEY = 'ha-ha-secure-cleanup-v1';
+const STORAGE_KEY = 'ha-ha-store-v2';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -39,10 +36,7 @@ function isValidConversation(value: unknown): boolean {
     typeof value.title === 'string' &&
     typeof value.language === 'string' &&
     typeof value.modeId === 'string' &&
-    (value.threadType === undefined ||
-      value.threadType === 'primary' ||
-      value.threadType === 'secondary' ||
-      value.threadType === 'mode') &&
+    (value.threadType === 'primary' || value.threadType === 'secondary' || value.threadType === 'mode') &&
     typeof value.createdAt === 'string' &&
     typeof value.updatedAt === 'string' &&
     typeof value.lastMessagePreview === 'string'
@@ -309,22 +303,6 @@ export async function savePersistedSnapshot(snapshot: PersistedStoreSnapshot): P
   } catch (error) {
     if (__DEV__) {
       console.warn('[persistenceService] save failed:', error);
-    }
-  }
-}
-
-export async function clearLegacySecureStoreData(): Promise<void> {
-  try {
-    const cleanupDone = await AsyncStorage.getItem(SECURE_CLEANUP_FLAG_KEY);
-    if (cleanupDone === '1') {
-      return;
-    }
-
-    await SecureStore.deleteItemAsync(LEGACY_SECURE_STORAGE_KEY);
-    await AsyncStorage.setItem(SECURE_CLEANUP_FLAG_KEY, '1');
-  } catch (error) {
-    if (__DEV__) {
-      console.warn('[persistenceService] legacy secure cleanup failed:', error);
     }
   }
 }

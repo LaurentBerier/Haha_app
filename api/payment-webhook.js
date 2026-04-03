@@ -87,30 +87,6 @@ function isUniqueViolation(error) {
   return isRecord(error) && typeof error.code === 'string' && error.code === '23505';
 }
 
-function isMissingProviderEventIdColumn(error) {
-  if (!isRecord(error)) {
-    return false;
-  }
-  const code = typeof error.code === 'string' ? error.code : '';
-  if (code === '42703') {
-    return true;
-  }
-  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
-  return message.includes('provider_event_id');
-}
-
-function isMissingProviderEventConflictConstraint(error) {
-  if (!isRecord(error)) {
-    return false;
-  }
-  const code = typeof error.code === 'string' ? error.code : '';
-  if (code === '42P10') {
-    return true;
-  }
-  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
-  return message.includes('no unique') && message.includes('on conflict');
-}
-
 async function upsertPaymentEventByProviderEventId(supabaseAdmin, row) {
   const { data, error } = await supabaseAdmin
     .from('payment_events')
@@ -121,10 +97,7 @@ async function upsertPaymentEventByProviderEventId(supabaseAdmin, row) {
     .select('id');
 
   if (error) {
-    if (isMissingProviderEventIdColumn(error) || isMissingProviderEventConflictConstraint(error)) {
-      return { ok: false, unsupported: true, error };
-    }
-    return { ok: false, unsupported: false, error };
+    return { ok: false, error };
   }
 
   const insertedRows = Array.isArray(data) ? data.length : 0;
@@ -143,17 +116,10 @@ async function insertPaymentEvent(supabaseAdmin, row) {
     if (upsertResult.ok) {
       return { error: null, duplicate: upsertResult.duplicate };
     }
-    if (!upsertResult.unsupported) {
-      return { error: upsertResult.error, duplicate: false };
-    }
+    return { error: upsertResult.error, duplicate: false };
   }
 
-  let result = await supabaseAdmin.from('payment_events').insert(withProviderEventId);
-  if (result.error && isMissingProviderEventIdColumn(result.error)) {
-    const legacyRow = { ...withProviderEventId };
-    delete legacyRow.provider_event_id;
-    result = await supabaseAdmin.from('payment_events').insert(legacyRow);
-  }
+  const result = await supabaseAdmin.from('payment_events').insert(withProviderEventId);
 
   if (result.error) {
     if (providerEventId && isUniqueViolation(result.error)) {

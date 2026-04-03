@@ -23,16 +23,6 @@ const MODE_ID_GRILL = 'grill';
 const MODE_ID_MEME_GENERATOR = 'meme-generator';
 const TRANSIENT_UPSTREAM_STATUSES = new Set([429, 500, 502, 503, 504, 529]);
 
-const MODE_ID_COMPAT = {
-  'radar-attitude': MODE_ID_ON_JASE,
-  relax: MODE_ID_ON_JASE,
-  'je-casse-tout': MODE_ID_ON_JASE,
-  'phrase-du-jour': MODE_ID_ON_JASE,
-  'victime-du-jour': MODE_ID_ON_JASE,
-  roast: MODE_ID_GRILL,
-  'coach-brutal': MODE_ID_GRILL
-};
-
 const RSS_FEEDS = [
   {
     id: 'radio-canada',
@@ -413,7 +403,7 @@ function normalizeModeId(value) {
     return null;
   }
 
-  return MODE_ID_COMPAT[normalized] ?? normalized;
+  return normalized;
 }
 
 function parsePayload(body) {

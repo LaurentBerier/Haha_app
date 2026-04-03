@@ -33,6 +33,8 @@ export const en = {
   newDiscussionCta: '+ New discussion',
   historyThreadPrimaryBadge: 'Main',
   historyThreadSecondaryBadge: 'Thread',
+  historyThreadModeBadge: 'Mode',
+  historyArchivedThreadTitle: 'Archived discussion',
   historyGroupToday: 'Today',
   historyGroupYesterday: 'Yesterday',
   historyGroupThisWeek: 'This week',

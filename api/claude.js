@@ -2270,16 +2270,6 @@ async function setMonthlyQuotaCache(userId, monthStartIso, count, requestId) {
   await writeMonthlyQuotaToKv(userId, monthStartIso, count, requestId);
 }
 
-function isMissingUsageEventsRequestIdColumn(error) {
-  const code = isRecord(error) && typeof error.code === 'string' ? error.code : '';
-  if (code !== '42703') {
-    return false;
-  }
-
-  const message = isRecord(error) && typeof error.message === 'string' ? error.message.toLowerCase() : '';
-  return message.includes('request_id');
-}
-
 function isMissingLimitsRpcError(error) {
   if (!isRecord(error)) {
     return false;
@@ -2558,15 +2548,7 @@ async function enforceUserRateLimit(supabaseAdmin, userId, requestId, monthlyQuo
       created_at: nowIso
     };
 
-    let { error: insertError } = await supabaseAdmin.from('usage_events').insert(insertPayload);
-    if (insertError && isMissingUsageEventsRequestIdColumn(insertError)) {
-      const legacyInsertPayload = {
-        user_id: userId,
-        endpoint: 'claude',
-        created_at: nowIso
-      };
-      ({ error: insertError } = await supabaseAdmin.from('usage_events').insert(legacyInsertPayload));
-    }
+    const { error: insertError } = await supabaseAdmin.from('usage_events').insert(insertPayload);
 
     if (insertError) {
       console.error(`[api/claude][${requestId}] Failed to write usage_events`, insertError);

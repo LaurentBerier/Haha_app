@@ -626,7 +626,7 @@ describe('api/greeting tutorial behavior', () => {
     expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
   });
 
-  it('normalizes roast compatibility mode into grill for mode_intro prompting', async () => {
+  it('rejects retired compatibility mode ids for mode_intro prompting', async () => {
     const supabase = buildSupabaseClient({
       profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 0 }
     });
@@ -651,11 +651,8 @@ describe('api/greeting tutorial behavior', () => {
 
     await handler(req, res);
 
-    expect(res.statusCode).toBe(200);
-    const anthropicBody = extractAnthropicRequestBody(fetchMock);
-    expect(anthropicBody.system).toContain('Tu ouvres le mode "Mets-moi sur le grill".');
-    expect(anthropicBody.messages?.[0]?.content).toContain('Mode ID: grill');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
   });
 

@@ -1,4 +1,4 @@
-import type { Conversation, ConversationThreadType } from './Conversation';
+import type { Conversation } from './Conversation';
 import type { GamificationStats } from './Gamification';
 import type { MessagePage } from './Message';
 
@@ -10,9 +10,7 @@ export interface PersistedUiPreferences {
   conversationModeEnabled: boolean;
 }
 
-export type PersistedConversation = Omit<Conversation, 'threadType'> & {
-  threadType?: ConversationThreadType;
-};
+export type PersistedConversation = Conversation;
 
 export interface PersistedStoreSnapshot {
   ownerUserId?: string | null;

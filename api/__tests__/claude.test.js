@@ -1177,7 +1177,7 @@ describe('api/claude', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it('accepts request when usage_events insert first fails on request_id and legacy retry succeeds', async () => {
+  it('returns 500 when usage_events insert fails on missing request_id column', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: jest.fn().mockResolvedValue({ id: 'msg_1', content: [{ type: 'text', text: 'hi' }] })
@@ -1204,8 +1204,9 @@ describe('api/claude', () => {
 
     await handler(req, res);
 
-    expect(res.statusCode).toBe(200);
-    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(500);
+    expect(res.payload.error.code).toBe('SERVER_MISCONFIGURED');
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
   it('returns 500 when usage_events rate-limit store is unavailable (no in-memory bypass)', async () => {

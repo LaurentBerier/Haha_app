@@ -2,14 +2,14 @@ import { MODE_IDS } from './constants';
 import { resolveModeIdCompat } from './modeCompat';
 
 describe('modeCompat', () => {
-  it('maps retired Cathy modes into On Jase compatibility flow', () => {
-    expect(resolveModeIdCompat('phrase-du-jour')).toBe(MODE_IDS.ON_JASE);
-    expect(resolveModeIdCompat('victime-du-jour')).toBe(MODE_IDS.ON_JASE);
+  it('keeps canonical ids untouched', () => {
+    expect(resolveModeIdCompat(MODE_IDS.ON_JASE)).toBe(MODE_IDS.ON_JASE);
+    expect(resolveModeIdCompat(MODE_IDS.GRILL)).toBe(MODE_IDS.GRILL);
   });
 
-  it('preserves existing aliases for legacy On Jase variants', () => {
-    expect(resolveModeIdCompat(MODE_IDS.RADAR_ATTITUDE)).toBe(MODE_IDS.ON_JASE);
-    expect(resolveModeIdCompat(MODE_IDS.RELAX)).toBe(MODE_IDS.ON_JASE);
-    expect(resolveModeIdCompat(MODE_IDS.JE_CASSE_TOUT)).toBe(MODE_IDS.ON_JASE);
+  it('does not remap retired aliases anymore', () => {
+    expect(resolveModeIdCompat('phrase-du-jour')).toBe('phrase-du-jour');
+    expect(resolveModeIdCompat('victime-du-jour')).toBe('victime-du-jour');
+    expect(resolveModeIdCompat(MODE_IDS.ROAST)).toBe(MODE_IDS.ROAST);
   });
 });

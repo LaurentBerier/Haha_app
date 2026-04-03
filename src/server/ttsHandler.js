@@ -211,16 +211,6 @@ function getVoiceSettings() {
   };
 }
 
-function isMissingUsageEventsRequestIdColumn(error) {
-  const code = isRecord(error) && typeof error.code === 'string' ? error.code : '';
-  if (code !== '42703') {
-    return false;
-  }
-
-  const message = isRecord(error) && typeof error.message === 'string' ? error.message.toLowerCase() : '';
-  return message.includes('request_id');
-}
-
 async function validateAuthHeader(supabaseAdmin, req, requestId) {
   const token = extractBearerToken(req.headers.authorization);
 
@@ -427,14 +417,7 @@ async function enforceUserRateLimit(supabaseAdmin, userId, accountType, requestI
     ...(typeof ttsCharacters === 'number' && { tts_characters: ttsCharacters })
   };
 
-  let { error: insertError } = await supabaseAdmin.from('usage_events').insert(insertPayload);
-  if (insertError && isMissingUsageEventsRequestIdColumn(insertError)) {
-    ({ error: insertError } = await supabaseAdmin.from('usage_events').insert({
-      user_id: userId,
-      endpoint: 'tts',
-      created_at: nowIso
-    }));
-  }
+  const { error: insertError } = await supabaseAdmin.from('usage_events').insert(insertPayload);
 
   if (insertError) {
     console.error(`[api/tts][${requestId}] Failed to write usage_events`, insertError);
