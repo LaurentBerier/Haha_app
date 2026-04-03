@@ -38,6 +38,7 @@
     "expo-av": "~15.1.7",
     "expo-file-system": "~18.1.11",
     "expo-haptics": "~14.1.4",
+    "expo-image-manipulator": "~13.1.7",
     "expo-image-picker": "~16.1.4",
     "expo-location": "~18.1.6",
     "expo-media-library": "^55.0.10",

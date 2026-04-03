@@ -783,6 +783,7 @@ export default function ImproChainScreen() {
               <ChatInput
                 onSend={sendFromImproComposer}
                 disabled={isStreaming || game?.status === 'cathy-ending'}
+                allowImage={false}
                 conversationMode={{
                   enabled: conversationModeEnabled,
                   isListening,

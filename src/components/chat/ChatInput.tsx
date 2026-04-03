@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Animated,
   Image,
+  Modal,
   NativeSyntheticEvent,
   Platform,
   Pressable,
@@ -13,12 +14,13 @@ import {
   TextInputKeyPressEventData,
   View
 } from 'react-native';
-import { MAX_IMAGE_UPLOAD_BYTES, MAX_MESSAGE_LENGTH } from '../../config/constants';
+import { MAX_IMAGE_SOURCE_BYTES, MAX_MESSAGE_LENGTH } from '../../config/constants';
 import { t } from '../../i18n';
 import type { ChatError } from '../../models/ChatError';
 import type { ChatImageAttachment, ChatSendPayload } from '../../models/ChatSendPayload';
 import type { ClaudeImageMediaType } from '../../services/claudeApiService';
 import { impactLight } from '../../services/hapticsService';
+import { prepareImageForUpload, PrepareImageUploadError } from '../../services/imageUploadPreparation';
 import { theme } from '../../theme';
 import type { VoiceConversationStatus } from '../../hooks/useVoiceConversation';
 import { resolveChatInputVoiceAction, runChatInputVoiceAction } from './chatInputVoiceAction';
@@ -56,10 +58,21 @@ interface ChatImageAttachmentDraft {
   uri: string;
   mediaType: ClaudeImageMediaType;
   fileSizeBytes: number | null;
+  widthPx: number | null;
+  heightPx: number | null;
 }
 
 const IMAGE_MEDIA_TYPES = new Set<ClaudeImageMediaType>(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
+const IMAGE_PICKER_OPTIONS = {
+  mediaTypes: ['images'] as ImagePicker.MediaType[],
+  allowsEditing: false,
+  quality: 1,
+  base64: false,
+  exif: false
+};
+
+type ImageSourceOption = 'library' | 'camera';
 
 function useVoiceAnimations(isListening: boolean) {
   const pulse = useRef(new Animated.Value(1)).current;
@@ -97,38 +110,44 @@ function normalizeImageMediaType(rawMimeType: string | null | undefined): Claude
   return IMAGE_MEDIA_TYPES.has(mapped as ClaudeImageMediaType) ? (mapped as ClaudeImageMediaType) : null;
 }
 
-function estimateBase64Bytes(base64: string): number {
-  const trimmed = base64.trim();
-  const padding = trimmed.endsWith('==') ? 2 : trimmed.endsWith('=') ? 1 : 0;
-  return Math.floor((trimmed.length * 3) / 4) - padding;
-}
-
-async function blobToBase64(blob: Blob): Promise<string> {
-  return await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const result = typeof reader.result === 'string' ? reader.result : '';
-      const commaIndex = result.indexOf(',');
-      if (commaIndex < 0) {
-        reject(new Error('Invalid data URL.'));
-        return;
-      }
-      resolve(result.slice(commaIndex + 1));
-    };
-    reader.onerror = () => {
-      reject(new Error('Failed to read image file.'));
-    };
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function readImageAsBase64(uri: string): Promise<string> {
-  const response = await fetch(uri);
-  if (!response.ok) {
-    throw new Error(`Failed to read image attachment (${response.status}).`);
+function inferImageMediaTypeFromUri(uri: string | null | undefined): ClaudeImageMediaType | null {
+  if (!uri) {
+    return null;
   }
-  const blob = await response.blob();
-  return await blobToBase64(blob);
+
+  const normalizedUri = uri.toLowerCase();
+  if (normalizedUri.endsWith('.jpg') || normalizedUri.endsWith('.jpeg')) {
+    return 'image/jpeg';
+  }
+  if (normalizedUri.endsWith('.png')) {
+    return 'image/png';
+  }
+  if (normalizedUri.endsWith('.webp')) {
+    return 'image/webp';
+  }
+  if (normalizedUri.endsWith('.gif')) {
+    return 'image/gif';
+  }
+
+  return null;
+}
+
+function resolveImagePreparationErrorMessage(error: unknown): string {
+  if (!(error instanceof PrepareImageUploadError)) {
+    return t('imagePickerError');
+  }
+
+  switch (error.code) {
+    case 'unsupported_media_type':
+      return t('imagePickerUnsupported');
+    case 'source_too_large':
+      return t('imageTooLarge');
+    case 'optimization_failed':
+      return t('imageOptimizationFailed');
+    case 'read_failed':
+    default:
+      return t('imagePickerError');
+  }
 }
 
 export function ChatInput({
@@ -142,6 +161,7 @@ export function ChatInput({
   const [imageAttachment, setImageAttachment] = useState<ChatImageAttachmentDraft | null>(null);
   const [isPickingImage, setIsPickingImage] = useState(false);
   const [isEncodingImage, setIsEncodingImage] = useState(false);
+  const [isImageSourceModalVisible, setIsImageSourceModalVisible] = useState(false);
   const [error, setError] = useState<ChatError | null>(null);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const sendScale = useRef(new Animated.Value(1)).current;
@@ -165,6 +185,7 @@ export function ChatInput({
   const trimmed = value.trim();
   const hasText = trimmed.length > 0;
   const hasImage = allowImage && Boolean(imageAttachment);
+  const isBusyWithImage = isPickingImage || isEncodingImage;
   const canSend = (hasText || hasImage) && !disabled && !isEncodingImage;
 
   useEffect(() => {
@@ -176,6 +197,12 @@ export function ChatInput({
       setImageAttachment(null);
     }
   }, [allowImage, imageAttachment]);
+
+  useEffect(() => {
+    if (!allowImage && isImageSourceModalVisible) {
+      setIsImageSourceModalVisible(false);
+    }
+  }, [allowImage, isImageSourceModalVisible]);
 
   const clearValidationErrors = () => {
     if (error) {
@@ -195,25 +222,21 @@ export function ChatInput({
     if (allowImage && imageAttachment) {
       setIsEncodingImage(true);
       try {
-        const base64 = await readImageAsBase64(imageAttachment.uri);
-        if (!base64) {
-          setPickerError(t('imagePickerError'));
-          return;
-        }
-
-        const estimatedBytes = estimateBase64Bytes(base64);
-        if (estimatedBytes > MAX_IMAGE_UPLOAD_BYTES) {
-          setPickerError(t('imageTooLarge'));
-          return;
-        }
-
-        preparedImage = {
+        const prepared = await prepareImageForUpload({
           uri: imageAttachment.uri,
           mediaType: imageAttachment.mediaType,
-          base64
+          sourceSizeBytes: imageAttachment.fileSizeBytes,
+          width: imageAttachment.widthPx,
+          height: imageAttachment.heightPx
+        });
+
+        preparedImage = {
+          uri: prepared.uri,
+          mediaType: prepared.mediaType,
+          base64: prepared.base64
         };
-      } catch {
-        setPickerError(t('imagePickerError'));
+      } catch (prepareError) {
+        setPickerError(resolveImagePreparationErrorMessage(prepareError));
         return;
       } finally {
         setIsEncodingImage(false);
@@ -233,28 +256,53 @@ export function ChatInput({
     setImageAttachment(null);
   };
 
-  const handlePickImage = async () => {
-    if (!allowImage || disabled || isPickingImage) {
+  const handleImageSelection = (asset: ImagePicker.ImagePickerAsset) => {
+    const mediaType = normalizeImageMediaType(asset.mimeType) ?? inferImageMediaTypeFromUri(asset.uri);
+    const fileSizeBytes = typeof asset.fileSize === 'number' && Number.isFinite(asset.fileSize) ? asset.fileSize : null;
+
+    if (!mediaType) {
+      setPickerError(t('imagePickerUnsupported'));
       return;
     }
 
+    if (fileSizeBytes !== null && fileSizeBytes > MAX_IMAGE_SOURCE_BYTES) {
+      setPickerError(t('imageTooLarge'));
+      return;
+    }
+
+    clearValidationErrors();
+    setImageAttachment({
+      uri: asset.uri,
+      mediaType,
+      fileSizeBytes,
+      widthPx: typeof asset.width === 'number' && Number.isFinite(asset.width) ? asset.width : null,
+      heightPx: typeof asset.height === 'number' && Number.isFinite(asset.height) ? asset.height : null
+    });
+  };
+
+  const handlePickImageFrom = async (source: ImageSourceOption) => {
+    if (!allowImage || disabled || isBusyWithImage) {
+      return;
+    }
+
+    setIsImageSourceModalVisible(false);
     setIsPickingImage(true);
     setPickerError(null);
 
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const permission =
+        source === 'camera'
+          ? await ImagePicker.requestCameraPermissionsAsync()
+          : await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        setPickerError(t('imagePickerPermissionDenied'));
+        setPickerError(source === 'camera' ? t('cameraPermissionDenied') : t('imagePickerPermissionDenied'));
         return;
       }
 
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'] as ImagePicker.MediaType[],
-        allowsEditing: false,
-        quality: 0.7,
-        base64: false,
-        exif: false
-      });
+      const result =
+        source === 'camera'
+          ? await ImagePicker.launchCameraAsync(IMAGE_PICKER_OPTIONS)
+          : await ImagePicker.launchImageLibraryAsync(IMAGE_PICKER_OPTIONS);
 
       if (result.canceled || result.assets.length === 0) {
         return;
@@ -265,30 +313,21 @@ export function ChatInput({
         return;
       }
 
-      const mediaType = normalizeImageMediaType(asset.mimeType);
-      const fileSizeBytes = typeof asset.fileSize === 'number' && Number.isFinite(asset.fileSize) ? asset.fileSize : null;
-
-      if (!mediaType) {
-        setPickerError(t('imagePickerUnsupported'));
-        return;
-      }
-
-      if (fileSizeBytes !== null && fileSizeBytes > MAX_IMAGE_UPLOAD_BYTES) {
-        setPickerError(t('imageTooLarge'));
-        return;
-      }
-
-      clearValidationErrors();
-      setImageAttachment({
-        uri: asset.uri,
-        mediaType,
-        fileSizeBytes
-      });
+      handleImageSelection(asset);
     } catch {
       setPickerError(t('imagePickerError'));
     } finally {
       setIsPickingImage(false);
     }
+  };
+
+  const handlePickImage = () => {
+    if (!allowImage || disabled || isBusyWithImage) {
+      return;
+    }
+
+    clearValidationErrors();
+    setIsImageSourceModalVisible(true);
   };
 
   const handleRightActionPress = () => {
@@ -357,6 +396,41 @@ export function ChatInput({
 
   return (
     <View style={styles.wrapper}>
+      <Modal
+        transparent
+        animationType="fade"
+        visible={isImageSourceModalVisible}
+        onRequestClose={() => setIsImageSourceModalVisible(false)}
+      >
+        <Pressable style={styles.imageSourceBackdrop} onPress={() => setIsImageSourceModalVisible(false)}>
+          <Pressable style={styles.imageSourceCard} onPress={() => {}}>
+            <Text style={styles.imageSourceTitle}>{t('imageSourcePickerTitle')}</Text>
+            <Pressable
+              style={styles.imageSourceButton}
+              onPress={() => {
+                void handlePickImageFrom('library');
+              }}
+            >
+              <Text style={styles.imageSourceButtonText}>{t('imageSourceLibrary')}</Text>
+            </Pressable>
+            <Pressable
+              style={styles.imageSourceButton}
+              onPress={() => {
+                void handlePickImageFrom('camera');
+              }}
+            >
+              <Text style={styles.imageSourceButtonText}>{t('imageSourceCamera')}</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.imageSourceButton, styles.imageSourceCancelButton]}
+              onPress={() => setIsImageSourceModalVisible(false)}
+            >
+              <Text style={[styles.imageSourceButtonText, styles.imageSourceCancelText]}>{t('cancel')}</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {allowImage && imageAttachment ? (
         <View style={styles.attachmentRow}>
           <Image source={{ uri: imageAttachment.uri }} style={styles.attachmentImage} resizeMode="cover" />
@@ -383,13 +457,13 @@ export function ChatInput({
       <View style={styles.container}>
         {allowImage ? (
           <Pressable
-            style={[styles.leftAction, (disabled || isPickingImage || isEncodingImage) && styles.disabledButton]}
-            disabled={disabled || isPickingImage || isEncodingImage}
+            style={[styles.leftAction, (disabled || isBusyWithImage) && styles.disabledButton]}
+            disabled={disabled || isBusyWithImage}
             onPress={handlePickImage}
             accessibilityRole="button"
             accessibilityLabel={t('addButtonA11y')}
           >
-            {isPickingImage || isEncodingImage ? (
+            {isBusyWithImage ? (
               <ActivityIndicator color={theme.colors.textDisabled} />
             ) : (
               <Text style={styles.leftActionText}>+</Text>
@@ -478,6 +552,46 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: theme.colors.border,
     backgroundColor: theme.colors.surfaceSunken
+  },
+  imageSourceBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    paddingHorizontal: theme.spacing.lg
+  },
+  imageSourceCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    padding: theme.spacing.md,
+    gap: theme.spacing.sm
+  },
+  imageSourceTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 16,
+    fontWeight: '700'
+  },
+  imageSourceButton: {
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surfaceButton,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.md
+  },
+  imageSourceButtonText: {
+    color: theme.colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '600'
+  },
+  imageSourceCancelButton: {
+    backgroundColor: theme.colors.surfaceSunken
+  },
+  imageSourceCancelText: {
+    color: theme.colors.textSecondary
   },
   attachmentRow: {
     marginHorizontal: theme.spacing.sm,
