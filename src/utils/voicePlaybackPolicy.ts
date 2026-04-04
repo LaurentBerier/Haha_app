@@ -13,15 +13,10 @@ export interface VoicePlaybackOutcome {
 
 /**
  * Conversation mode is hands-free: force autoplay even when the manual global
- * toggle is disabled, unless quota blocks the turn.
+ * toggle is disabled.
  */
 export function shouldAutoPlayVoice(state: VoiceAutoplayPolicyState): boolean {
-  const shouldAutoPlayByMode = state.conversationModeEnabled || state.voiceAutoPlayEnabled;
-  if (!shouldAutoPlayByMode) {
-    return false;
-  }
-
-  return !state.quotaBlocked;
+  return state.conversationModeEnabled || state.voiceAutoPlayEnabled;
 }
 
 export function toVoicePlaybackOutcome(result: VoiceAutoplayAttemptResultDetailed): VoicePlaybackOutcome {

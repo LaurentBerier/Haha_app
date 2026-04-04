@@ -11,14 +11,14 @@ describe('voicePlaybackPolicy', () => {
     ).toBe(true);
   });
 
-  it('disables autoplay when quota is blocked', () => {
+  it('keeps autoplay enabled even when quota is blocked', () => {
     expect(
       shouldAutoPlayVoice({
         conversationModeEnabled: true,
         voiceAutoPlayEnabled: true,
         quotaBlocked: true
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('keeps playback outcome distinct from synthesis status', () => {
