@@ -1213,6 +1213,15 @@ export function useChat(conversationId: string) {
             battleResult: battleResult ?? undefined
           }
         });
+        if (resolvedFinalContent.trim().length > 0) {
+          updateConversation(
+            jobConversationId,
+            {
+              lastMessagePreview: resolvedFinalContent
+            },
+            artistId
+          );
+        }
         incrementUsage();
         const latestStateAfterReply = useStore.getState();
         const latestUserId = latestStateAfterReply.session?.user.id ?? '';

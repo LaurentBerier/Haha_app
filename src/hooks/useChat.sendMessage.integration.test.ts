@@ -991,6 +991,35 @@ describe('useChat sendMessage integration', () => {
     expect(mockSaveMemoryFacts.mock.calls[0]?.[1]).toEqual(expect.arrayContaining(["Je vis a Quebec et j'aime le cafe noir"]));
   });
 
+  it('refreshes primary thread preview from the completed artist reply before sync side effects', async () => {
+    const conversationId = 'conv-primary-preview-refresh';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    conversation.threadType = 'primary';
+    const state = mockStoreRef.current as MockStoreState;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const sendResult = chat.sendMessage({ text: 'Salut Cathy' });
+    expect(sendResult).toBeNull();
+    expect(streamMockParams).toHaveLength(1);
+
+    const stream = streamMockParams[0] as MockStreamParams;
+    stream.onToken('Voici la reponse finale de Cathy.');
+    stream.onComplete({ tokensUsed: 5 });
+    await flushAsyncWork();
+
+    expect(state.updateConversation).toHaveBeenCalledWith(
+      conversation.id,
+      expect.objectContaining({
+        lastMessagePreview: 'Voici la reponse finale de Cathy.'
+      }),
+      conversation.artistId
+    );
+  });
+
   it('does not persist memory facts when the active thread is secondary', async () => {
     const conversationId = 'conv-memory-secondary';
     const chat = renderUseChatHook(conversationId);
