@@ -24,7 +24,12 @@ import { useAutoReplayLastArtistMessage } from '../../../hooks/useAutoReplayLast
 import { resolveChatSendContextFromState } from '../../../hooks/chatSendContext';
 import { useChat } from '../../../hooks/useChat';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
-import type { TerminalTtsCode as SharedTerminalTtsCode } from '../../../hooks/useTtsPlayback';
+import {
+  buildCathyVoiceNotice,
+  resolveVoiceErrorCode,
+  shouldShowUpgradeForTtsCode,
+  type TerminalTtsCode as SharedTerminalTtsCode
+} from '../../../hooks/useTtsPlayback';
 import { useVoiceConversation } from '../../../hooks/useVoiceConversation';
 import { t } from '../../../i18n';
 import type { ChatError } from '../../../models/ChatError';
@@ -48,6 +53,7 @@ import {
 import { shouldSkipModeSelectGreetingInjection } from '../../../utils/modeSelectGreetingDedup';
 import { stripAudioTags } from '../../../utils/audioTags';
 import { generateId } from '../../../utils/generateId';
+import { shouldAutoPlayVoice, toVoicePlaybackOutcome } from '../../../utils/voicePlaybackPolicy';
 import {
   resolveModeSelectConversationRecoveryAction
 } from '../../../utils/modeSelectConversationRecovery';
@@ -61,7 +67,6 @@ import type { ChatSendPayload } from '../../../models/ChatSendPayload';
 import { shouldRestoreModeSelectMicAfterBlur } from '../micRestore';
 import { resolveGreetingAutoMicDecision } from '../greetingAutoMic';
 import { fetchModeSelectGreetingFromApi, type GreetingCoordinates } from '../greetingService';
-import { shouldConfirmGreetingAutoplayFailure } from '../greetingVoiceFailure';
 
 interface PendingGreetingAudio {
   conversationId: string;
@@ -98,10 +103,9 @@ const GREETING_BOOTING_FR_LINES = [
   "Injection d'opinions non sollicitees... en cours"
 ] as const;
 const MODE_SELECT_DEBUG_TOGGLE_KEY = 'HAHA_MODE_SELECT_DEBUG';
-const TERMINAL_TTS_CODES = new Set(['TTS_QUOTA_EXCEEDED', 'RATE_LIMIT_EXCEEDED', 'TTS_FORBIDDEN']);
 
 type TerminalTtsCode = SharedTerminalTtsCode;
-type GreetingVoiceNoticeCode = TerminalTtsCode | 'UNAUTHORIZED' | 'TTS_PROVIDER_ERROR' | 'TTS_AUTOPLAY_FAILED';
+type GreetingVoiceNoticeCode = TerminalTtsCode | 'UNAUTHORIZED' | 'TTS_PROVIDER_ERROR';
 
 function parseDebugToggleValue(value: unknown): boolean | null {
   if (typeof value === 'boolean') {
@@ -180,39 +184,8 @@ function logModeSelectDebugTrace(event: string, payload: Record<string, unknown>
   });
 }
 
-function isTerminalTtsCode(value: string | null | undefined): value is TerminalTtsCode {
-  return typeof value === 'string' && TERMINAL_TTS_CODES.has(value);
-}
-
-function resolveTerminalTtsCode(error: unknown): TerminalTtsCode | null {
-  if (!error || typeof error !== 'object') {
-    return null;
-  }
-
-  const code = 'code' in error && typeof error.code === 'string' ? error.code : null;
-  if (isTerminalTtsCode(code)) {
-    return code;
-  }
-
-  const status = 'status' in error && typeof error.status === 'number' ? error.status : null;
-  if (status === 403) {
-    return 'TTS_FORBIDDEN';
-  }
-  if (status === 429) {
-    return 'RATE_LIMIT_EXCEEDED';
-  }
-  return null;
-}
-
-function shouldShowUpgradeForTtsCode(code: TerminalTtsCode): boolean {
-  return code === 'TTS_QUOTA_EXCEEDED' || code === 'TTS_FORBIDDEN';
-}
-
-function buildCathyVoiceNotice(code: TerminalTtsCode): string {
-  if (code === 'RATE_LIMIT_EXCEEDED') {
-    return t('cathyVoiceRateLimitMessage');
-  }
-  return t('cathyVoiceQuotaExceededMessage');
+function isGreetingTerminalTtsCode(value: string): value is TerminalTtsCode {
+  return value === 'TTS_QUOTA_EXCEEDED' || value === 'RATE_LIMIT_EXCEEDED' || value === 'TTS_FORBIDDEN';
 }
 
 function buildCathyVoiceUnavailableNotice(code: GreetingVoiceNoticeCode): string {
@@ -227,42 +200,12 @@ function buildCathyVoiceUnavailableNotice(code: GreetingVoiceNoticeCode): string
 
 function resolveGreetingVoiceNoticeCode(errorCode: string): GreetingVoiceNoticeCode {
   const normalized = errorCode.trim();
-  if (isTerminalTtsCode(normalized)) {
+  if (isGreetingTerminalTtsCode(normalized)) {
     return normalized;
   }
   if (normalized === 'UNAUTHORIZED') {
     return 'UNAUTHORIZED';
   }
-  if (normalized === 'TTS_AUTOPLAY_FAILED') {
-    return 'TTS_AUTOPLAY_FAILED';
-  }
-  return 'TTS_PROVIDER_ERROR';
-}
-
-function resolveVoiceErrorCode(error: unknown): string {
-  const terminalCode = resolveTerminalTtsCode(error);
-  if (terminalCode) {
-    return terminalCode;
-  }
-
-  if (error && typeof error === 'object') {
-    const explicitCode = 'code' in error && typeof error.code === 'string' ? error.code.trim() : '';
-    if (explicitCode) {
-      return explicitCode;
-    }
-
-    const status = 'status' in error && typeof error.status === 'number' ? error.status : null;
-    if (status === 401) {
-      return 'UNAUTHORIZED';
-    }
-    if (status === 403) {
-      return 'TTS_FORBIDDEN';
-    }
-    if (status === 429) {
-      return 'RATE_LIMIT_EXCEEDED';
-    }
-  }
-
   return 'TTS_PROVIDER_ERROR';
 }
 
@@ -1179,6 +1122,7 @@ export default function ModeSelectHomeScreen() {
     disabled: isModeSelectComposerDisabled,
     hasTypedDraft,
     isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
+    isAudioPlaybackLoading: audioPlayer.isLoading,
     onSend: (text) => {
       const normalized = text.trim();
       if (!normalized) {
@@ -1328,7 +1272,7 @@ export default function ModeSelectHomeScreen() {
       }
       greetingVoiceNoticeKeysRef.current.add(noticeKey);
 
-      const terminalCode = isTerminalTtsCode(normalizedCode) ? normalizedCode : null;
+      const terminalCode = isGreetingTerminalTtsCode(normalizedCode) ? normalizedCode : null;
       const latestSessionUser = useStore.getState().session?.user;
       const latestAccountType = resolveEffectiveAccountType(
         latestSessionUser?.accountType ?? null,
@@ -1388,37 +1332,6 @@ export default function ModeSelectHomeScreen() {
       })
     );
   }, [audioPlayer.currentMessageId, audioPlayer.isLoading, audioPlayer.isPlaying]);
-
-  const shouldConfirmGreetingAutoplayFailureForMessage = useCallback(
-    (params: {
-      conversationId: string;
-      messageId: string;
-      failureReason: 'invalid_queue' | 'playback_error' | 'interrupted' | null;
-    }): boolean => {
-      const normalizedConversationId = params.conversationId.trim();
-      const normalizedMessageId = params.messageId.trim();
-      if (!normalizedConversationId || !normalizedMessageId) {
-        return false;
-      }
-
-      const latestMessage =
-        useStore
-          .getState()
-          .messagesByConversation[normalizedConversationId]
-          ?.messages.find((message) => message.id === normalizedMessageId) ?? null;
-      const playbackState = audioPlayerRef.current;
-      return shouldConfirmGreetingAutoplayFailure({
-        state: 'failed',
-        failureReason: params.failureReason,
-        messageId: normalizedMessageId,
-        isPlaying: playbackState.isPlaying,
-        isLoading: playbackState.isLoading,
-        currentMessageId: playbackState.currentMessageId,
-        metadata: latestMessage?.metadata
-      });
-    },
-    []
-  );
 
   useEffect(() => {
     const currentMessageId = audioPlayer.currentMessageId?.trim() ?? '';
@@ -1575,7 +1488,7 @@ export default function ModeSelectHomeScreen() {
     audioPlayer,
     enabled: isValidConversation && isModeSelectScreenFocused,
     hasStreaming,
-    voiceAutoPlay
+    voiceAutoPlay: voiceAutoPlay || conversationModeEnabled
   });
 
   useEffect(() => {
@@ -2015,12 +1928,23 @@ export default function ModeSelectHomeScreen() {
             return;
           }
 
-          const autoplayResult = await attemptVoiceAutoplayUriDetailed({
-            audioPlayer: audioPlayerRef.current,
-            uri: greetingAudioUri,
-            messageId: greetingMessageId
+          const shouldAutoPlayGreeting = shouldAutoPlayVoice({
+            conversationModeEnabled,
+            voiceAutoPlayEnabled: voiceAutoPlay,
+            quotaBlocked: isQuotaBlocked
           });
-          if (autoplayResult.state === 'pending_web_unlock') {
+          if (!shouldAutoPlayGreeting) {
+            return;
+          }
+
+          const playbackOutcome = toVoicePlaybackOutcome(
+            await attemptVoiceAutoplayUriDetailed({
+              audioPlayer: audioPlayerRef.current,
+              uri: greetingAudioUri,
+              messageId: greetingMessageId
+            })
+          );
+          if (playbackOutcome.state === 'pending_web_unlock') {
             setPendingGreetingAudio({
               conversationId: introConversation.id,
               uri: greetingAudioUri,
@@ -2028,29 +1952,11 @@ export default function ModeSelectHomeScreen() {
             });
             return;
           }
-          if (
-            autoplayResult.state === 'failed' &&
-            shouldConfirmGreetingAutoplayFailureForMessage({
+          if (playbackOutcome.state === 'failed') {
+            logModeSelectDebugTrace('greeting_autoplay_failed_non_fatal', {
               conversationId: introConversation.id,
               messageId: greetingMessageId,
-              failureReason: autoplayResult.failureReason
-            })
-          ) {
-            const failedAutoplayCode = 'TTS_AUTOPLAY_FAILED';
-            updateMessage(introConversation.id, greetingMessageId, {
-              metadata: {
-                ...greetingMetadata,
-                voiceStatus: 'unavailable',
-                voiceErrorCode: failedAutoplayCode,
-                voiceUrl: undefined,
-                voiceQueue: undefined,
-                voiceChunkBoundaries: undefined
-              }
-            });
-            enqueueGreetingVoiceNotice({
-              conversationId: introConversation.id,
-              greetingMessageId,
-              errorCode: failedAutoplayCode
+              failureReason: playbackOutcome.failureReason
             });
           }
         } catch (error) {
@@ -2059,11 +1965,12 @@ export default function ModeSelectHomeScreen() {
           }
 
           const resolvedVoiceErrorCode = resolveVoiceErrorCode(error);
+          const greetingVoiceErrorCode = resolvedVoiceErrorCode === 'UNKNOWN' ? 'TTS_PROVIDER_ERROR' : resolvedVoiceErrorCode;
           updateMessage(introConversation.id, greetingMessageId, {
             metadata: {
               ...greetingMetadata,
               voiceStatus: 'unavailable',
-              voiceErrorCode: resolvedVoiceErrorCode,
+              voiceErrorCode: greetingVoiceErrorCode,
               voiceUrl: undefined,
               voiceQueue: undefined,
               voiceChunkBoundaries: undefined
@@ -2073,7 +1980,7 @@ export default function ModeSelectHomeScreen() {
           enqueueGreetingVoiceNotice({
             conversationId: introConversation.id,
             greetingMessageId,
-            errorCode: resolvedVoiceErrorCode
+            errorCode: greetingVoiceErrorCode
           });
         }
       } catch {
@@ -2111,22 +2018,34 @@ export default function ModeSelectHomeScreen() {
     addMessage,
     artist,
     commitBoundConversationId,
+    conversationModeEnabled,
     enqueueGreetingVoiceNotice,
     finalizeGreetingRun,
     greetingOpenCycle,
     isModeSelectScreenFocused,
+    isQuotaBlocked,
     language,
     markArtistGreeted,
-    shouldConfirmGreetingAutoplayFailureForMessage,
     preferredName,
     resolveModeSelectSessionHubConversation,
     setActiveConversation,
     updateMessage,
-    updateConversation
+    updateConversation,
+    voiceAutoPlay
   ]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || !isModeSelectScreenFocused || !pendingGreetingAudio) {
+      return;
+    }
+
+    const shouldAutoPlayGreeting = shouldAutoPlayVoice({
+      conversationModeEnabled,
+      voiceAutoPlayEnabled: voiceAutoPlay,
+      quotaBlocked: isQuotaBlocked
+    });
+    if (!shouldAutoPlayGreeting) {
+      setPendingGreetingAudio(null);
       return;
     }
 
@@ -2137,58 +2056,36 @@ export default function ModeSelectHomeScreen() {
           return;
         }
 
-        const autoplayResult = await attemptVoiceAutoplayUriDetailed({
-          audioPlayer: audioPlayerRef.current,
-          uri: pendingAudio.uri,
-          messageId: pendingAudio.messageId
-        });
+        const playbackOutcome = toVoicePlaybackOutcome(
+          await attemptVoiceAutoplayUriDetailed({
+            audioPlayer: audioPlayerRef.current,
+            uri: pendingAudio.uri,
+            messageId: pendingAudio.messageId
+          })
+        );
         if (!modeSelectScreenFocusedRef.current) {
           return;
         }
 
-        if (autoplayResult.state === 'started' || autoplayResult.state === 'failed') {
+        if (playbackOutcome.state === 'started' || playbackOutcome.state === 'failed') {
           setPendingGreetingAudio(null);
         }
 
-        if (
-          autoplayResult.state === 'failed' &&
-          shouldConfirmGreetingAutoplayFailureForMessage({
+        if (playbackOutcome.state === 'failed') {
+          logModeSelectDebugTrace('greeting_autoplay_retry_failed_non_fatal', {
             conversationId: pendingAudio.conversationId,
             messageId: pendingAudio.messageId,
-            failureReason: autoplayResult.failureReason
-          })
-        ) {
-          const failedAutoplayCode = 'TTS_AUTOPLAY_FAILED';
-          const existingMessage =
-            useStore
-              .getState()
-              .messagesByConversation[pendingAudio.conversationId]
-              ?.messages.find((message) => message.id === pendingAudio.messageId) ?? null;
-          const existingMetadata = existingMessage?.metadata ?? {};
-          updateMessage(pendingAudio.conversationId, pendingAudio.messageId, {
-            metadata: {
-              ...existingMetadata,
-              voiceStatus: 'unavailable',
-              voiceErrorCode: failedAutoplayCode,
-              voiceUrl: undefined,
-              voiceQueue: undefined,
-              voiceChunkBoundaries: undefined
-            }
-          });
-          enqueueGreetingVoiceNotice({
-            conversationId: pendingAudio.conversationId,
-            greetingMessageId: pendingAudio.messageId,
-            errorCode: failedAutoplayCode
+            failureReason: playbackOutcome.failureReason
           });
         }
       })();
     });
   }, [
-    enqueueGreetingVoiceNotice,
+    conversationModeEnabled,
     isModeSelectScreenFocused,
+    isQuotaBlocked,
     pendingGreetingAudio,
-    shouldConfirmGreetingAutoplayFailureForMessage,
-    updateMessage
+    voiceAutoPlay
   ]);
 
   useEffect(() => {

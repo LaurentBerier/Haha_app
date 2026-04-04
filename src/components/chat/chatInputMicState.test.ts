@@ -16,7 +16,7 @@ describe('chatInputMicState', () => {
     expect(shouldUseOffMicAsset(false, 'listening')).toBe(true);
     expect(shouldUseOffMicAsset(true, 'paused_manual')).toBe(true);
     expect(shouldUseOffMicAsset(true, 'unsupported')).toBe(true);
-    expect(shouldUseOffMicAsset(true, 'assistant_busy')).toBe(false);
+    expect(shouldUseOffMicAsset(true, 'assistant_busy')).toBe(true);
     expect(shouldUseOffMicAsset(true, 'listening')).toBe(false);
   });
 

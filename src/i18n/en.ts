@@ -290,6 +290,7 @@ export const en = {
   voicePermissionDenied: 'Microphone access denied',
   voiceInputPlaceholder: 'Listening...',
   micPausedHint: 'Mic paused - tap to resume',
+  micAssistantBusyHint: 'Cathy is speaking - mic resumes after her reply',
   micRecoveryPausedHint: 'Mic stopped - tap to restart',
   micUnsupportedHint: 'Mic unavailable in this browser',
   addButtonA11y: 'Add image',

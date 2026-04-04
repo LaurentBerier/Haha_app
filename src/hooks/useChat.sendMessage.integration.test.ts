@@ -1048,6 +1048,7 @@ describe('useChat sendMessage integration', () => {
     const chat = renderUseChatHook(conversationId);
     const conversation = createConversation(conversationId);
     const state = mockStoreRef.current as MockStoreState;
+    const playQueueMock = mockAudioPlayer.playQueue as jest.Mock;
     state.session.accessToken = 'token-voice';
     state.conversationModeEnabled = true;
     state.voiceAutoPlay = false;
@@ -1086,6 +1087,7 @@ describe('useChat sendMessage integration', () => {
     expect(baseArtistMessage?.metadata?.voiceQueue).toEqual(['blob:https://ha-ha.ai/chunk-1.mp3']);
     expect(baseArtistMessage?.metadata?.voiceUrl).toBe('blob:https://ha-ha.ai/chunk-1.mp3');
     expect(baseArtistMessage?.metadata?.voiceErrorCode).toBeUndefined();
+    expect(playQueueMock).toHaveBeenCalled();
 
     const injectedVoiceNotice = state.messagesByConversation[conversation.id]?.messages.find(
       (message) =>
@@ -1094,6 +1096,48 @@ describe('useChat sendMessage integration', () => {
         message.metadata?.errorCode === 'RATE_LIMIT_EXCEEDED'
     );
     expect(injectedVoiceNotice).toBeUndefined();
+  });
+
+  it('keeps voice metadata ready when autoplay fails in conversation mode', async () => {
+    const conversationId = 'conv-voice-autoplay-failed-non-fatal';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    const playQueueMock = mockAudioPlayer.playQueue as jest.Mock;
+    state.session.accessToken = 'token-voice';
+    state.conversationModeEnabled = true;
+    state.voiceAutoPlay = false;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    playQueueMock.mockResolvedValue({ started: false, reason: 'playback_error' } as unknown);
+    mockFetchAndCacheVoice.mockResolvedValueOnce('blob:https://ha-ha.ai/chunk-failed-autoplay.mp3');
+
+    const sendResult = chat.sendMessage({ text: 'Lis-moi ce message en vocal meme si autoplay est bloque.' });
+    expect(sendResult).toBeNull();
+    expect(streamMockParams).toHaveLength(1);
+
+    const stream = streamMockParams[0] as MockStreamParams;
+    stream.onToken(
+      'Cathy donne une reponse assez longue pour former un vrai chunk audio et declencher l autoplay en mode conversation.'
+    );
+    stream.onComplete({ tokensUsed: 14 });
+    await flushAsyncWork();
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    const baseArtistMessage =
+      state.messagesByConversation[conversation.id]?.messages.find(
+        (message) => message.role === 'artist' && message.metadata?.injected !== true
+      ) ?? null;
+    expect(baseArtistMessage).not.toBeNull();
+    expect(baseArtistMessage?.metadata?.voiceStatus).toBe('ready');
+    expect(baseArtistMessage?.metadata?.voiceUrl).toBe('blob:https://ha-ha.ai/chunk-failed-autoplay.mp3');
+    expect(baseArtistMessage?.metadata?.voiceQueue).toEqual(['blob:https://ha-ha.ai/chunk-failed-autoplay.mp3']);
+    expect(baseArtistMessage?.metadata?.voiceErrorCode).toBeUndefined();
+    expect(playQueueMock).toHaveBeenCalled();
   });
 
   it('retries autoplay with the full queue when first chunk autoplay is interrupted', async () => {

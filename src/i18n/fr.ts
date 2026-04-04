@@ -290,6 +290,7 @@ export const fr = {
   voicePermissionDenied: 'Accès au microphone refusé',
   voiceInputPlaceholder: "Je t'écoute...",
   micPausedHint: 'Micro en pause - touche pour reprendre',
+  micAssistantBusyHint: 'Cathy parle - le micro reprend apres sa reponse',
   micRecoveryPausedHint: 'Micro interrompu - touche pour relancer',
   micUnsupportedHint: 'Micro indisponible sur ce navigateur',
   addButtonA11y: 'Ajouter une image',

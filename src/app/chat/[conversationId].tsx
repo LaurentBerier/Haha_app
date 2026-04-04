@@ -109,6 +109,7 @@ export default function ChatScreen() {
     disabled: isChatComposerDisabled,
     hasTypedDraft,
     isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
+    isAudioPlaybackLoading: audioPlayer.isLoading,
     onSend: (text) => {
       const normalized = text.trim();
       if (!normalized) {
@@ -283,7 +284,7 @@ export default function ChatScreen() {
     audioPlayer,
     enabled: isValidConversation,
     hasStreaming,
-    voiceAutoPlay
+    voiceAutoPlay: voiceAutoPlay || conversationModeEnabled
   });
 
   const handleChooseMemeOption = useCallback(

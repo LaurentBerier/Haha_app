@@ -23,6 +23,7 @@ import {
   shouldDeferQueuedManualResume,
   shouldQueueManualResume,
   shouldResumeMicAfterTypedDraft,
+  shouldRecoverFromBusyLoadingStall,
   shouldSuppressDuplicateVoiceTranscript,
   shouldSuspendMicForWebFocusLoss,
   shouldAttemptAutoListen,
@@ -283,10 +284,52 @@ describe('useVoiceConversation helpers', () => {
   });
 
   it('returns explicit hints for paused and unsupported states', () => {
+    expect(getVoiceConversationHint('assistant_busy')).toBe('micAssistantBusyHint');
     expect(getVoiceConversationHint('paused_manual')).toBe('micPausedHint');
     expect(getVoiceConversationHint('paused_recovery')).toBe('micRecoveryPausedHint');
     expect(getVoiceConversationHint('unsupported')).toBe('micUnsupportedHint');
     expect(getVoiceConversationHint('listening')).toBeNull();
+  });
+
+  it('recovers only when assistant_busy is stuck in loading without active recovery/session work', () => {
+    expect(
+      shouldRecoverFromBusyLoadingStall({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isAudioPlaybackLoading: true,
+        status: 'assistant_busy',
+        startInFlight: false,
+        hasActiveSession: false,
+        hasRecoveryTimer: false
+      })
+    ).toBe(true);
+
+    expect(
+      shouldRecoverFromBusyLoadingStall({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isAudioPlaybackLoading: true,
+        status: 'listening',
+        startInFlight: false,
+        hasActiveSession: false,
+        hasRecoveryTimer: false
+      })
+    ).toBe(false);
+
+    expect(
+      shouldRecoverFromBusyLoadingStall({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isAudioPlaybackLoading: false,
+        status: 'assistant_busy',
+        startInFlight: false,
+        hasActiveSession: false,
+        hasRecoveryTimer: false
+      })
+    ).toBe(false);
   });
 
   it('suspends mic on focus loss only when a live/auto-resumable session was active', () => {

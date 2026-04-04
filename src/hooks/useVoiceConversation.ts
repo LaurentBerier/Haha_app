@@ -12,6 +12,9 @@ import {
 const parsedSilenceTimeout = Number.parseInt(process.env.EXPO_PUBLIC_SILENCE_TIMEOUT_MS ?? '', 10);
 const SILENCE_TIMEOUT_MS =
   Number.isFinite(parsedSilenceTimeout) && parsedSilenceTimeout >= 1200 ? parsedSilenceTimeout : 1800;
+const parsedBusyLoadingTimeout = Number.parseInt(process.env.EXPO_PUBLIC_BUSY_LOADING_TIMEOUT_MS ?? '', 10);
+const BUSY_LOADING_TIMEOUT_MS =
+  Number.isFinite(parsedBusyLoadingTimeout) && parsedBusyLoadingTimeout >= 3000 ? parsedBusyLoadingTimeout : 12000;
 const RECOVERY_DELAYS_MS = [250, 800, 2000] as const;
 export const VOICE_DUPLICATE_SEND_WINDOW_MS = 3_000;
 
@@ -30,6 +33,7 @@ export interface UseVoiceConversationProps {
   enabled: boolean;
   disabled: boolean;
   isPlaying: boolean;
+  isAudioPlaybackLoading?: boolean;
   hasTypedDraft?: boolean;
   onSend: (text: string) => void;
   onStopAudio: () => void;
@@ -84,6 +88,17 @@ interface ManualResumeQueueState {
 
 interface PendingManualResumeBlockersState {
   isPlaying: boolean;
+  startInFlight: boolean;
+  hasActiveSession: boolean;
+  hasRecoveryTimer: boolean;
+}
+
+interface BusyLoadingRecoveryState {
+  enabled: boolean;
+  disabled: boolean;
+  hasTypedDraft: boolean;
+  isAudioPlaybackLoading: boolean;
+  status: VoiceConversationStatus;
   startInFlight: boolean;
   hasActiveSession: boolean;
   hasRecoveryTimer: boolean;
@@ -368,6 +383,9 @@ export function getVoiceRecoveryPlan(
 }
 
 export function getVoiceConversationHint(status: VoiceConversationStatus): string | null {
+  if (status === 'assistant_busy') {
+    return t('micAssistantBusyHint');
+  }
   if (status === 'paused_manual') {
     return t('micPausedHint');
   }
@@ -424,10 +442,23 @@ export function shouldDeferQueuedManualResume(state: PendingManualResumeBlockers
   return state.isPlaying || state.startInFlight || state.hasActiveSession || state.hasRecoveryTimer;
 }
 
+export function shouldRecoverFromBusyLoadingStall(state: BusyLoadingRecoveryState): boolean {
+  if (!state.enabled || state.disabled || state.hasTypedDraft || !state.isAudioPlaybackLoading) {
+    return false;
+  }
+
+  if (state.status !== 'assistant_busy') {
+    return false;
+  }
+
+  return !state.startInFlight && !state.hasActiveSession && !state.hasRecoveryTimer;
+}
+
 export function useVoiceConversation({
   enabled,
   disabled,
   isPlaying,
+  isAudioPlaybackLoading = false,
   hasTypedDraft = false,
   onSend,
   onStopAudio,
@@ -443,6 +474,7 @@ export function useVoiceConversation({
   const startInFlightRef = useRef(false);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const busyLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumeAfterTypedDraftRef = useRef(false);
   const pendingManualResumeRef = useRef(false);
   const hasUserActivatedListeningRef = useRef(Platform.OS !== 'web');
@@ -452,6 +484,7 @@ export function useVoiceConversation({
   const enabledRef = useRef(enabled);
   const disabledRef = useRef(disabled);
   const isPlayingRef = useRef(isPlaying);
+  const isAudioPlaybackLoadingRef = useRef(isAudioPlaybackLoading);
   const hasTypedDraftRef = useRef(hasTypedDraft);
   const onSendRef = useRef(onSend);
   const onStopAudioRef = useRef(onStopAudio);
@@ -476,6 +509,10 @@ export function useVoiceConversation({
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  useEffect(() => {
+    isAudioPlaybackLoadingRef.current = isAudioPlaybackLoading;
+  }, [isAudioPlaybackLoading]);
 
   useEffect(() => {
     hasTypedDraftRef.current = hasTypedDraft;
@@ -513,6 +550,15 @@ export function useVoiceConversation({
 
     clearTimeout(recoveryTimerRef.current);
     recoveryTimerRef.current = null;
+  }, []);
+
+  const clearBusyLoadingTimer = useCallback(() => {
+    if (!busyLoadingTimerRef.current) {
+      return;
+    }
+
+    clearTimeout(busyLoadingTimerRef.current);
+    busyLoadingTimerRef.current = null;
   }, []);
 
   const stopActiveSession = useCallback(() => {
@@ -924,6 +970,7 @@ export function useVoiceConversation({
       if (disabled) {
         pendingManualResumeRef.current = false;
       }
+      clearBusyLoadingTimer();
       clearRecoveryTimer();
       clearSilenceTimer();
       stopActiveSession();
@@ -938,6 +985,7 @@ export function useVoiceConversation({
         status: stateRef.current.status,
         hasActiveSession: Boolean(activeSessionRef.current)
       });
+      clearBusyLoadingTimer();
       clearRecoveryTimer();
       clearSilenceTimer();
       stopActiveSession();
@@ -999,8 +1047,12 @@ export function useVoiceConversation({
       } else {
         clearTranscript();
       }
+      return;
     }
+
+    clearBusyLoadingTimer();
   }, [
+    clearBusyLoadingTimer,
     clearRecoveryTimer,
     clearSilenceTimer,
     clearTranscript,
@@ -1011,6 +1063,55 @@ export function useVoiceConversation({
     startListeningFlow,
     stopActiveSession
   ]);
+
+  useEffect(() => {
+    if (
+      !shouldRecoverFromBusyLoadingStall({
+        enabled,
+        disabled,
+        hasTypedDraft,
+        isAudioPlaybackLoading,
+        status: state.status,
+        startInFlight: startInFlightRef.current,
+        hasActiveSession: Boolean(activeSessionRef.current),
+        hasRecoveryTimer: Boolean(recoveryTimerRef.current)
+      })
+    ) {
+      clearBusyLoadingTimer();
+      return;
+    }
+
+    if (busyLoadingTimerRef.current) {
+      return;
+    }
+
+    busyLoadingTimerRef.current = setTimeout(() => {
+      busyLoadingTimerRef.current = null;
+      if (
+        !isMountedRef.current ||
+        !shouldRecoverFromBusyLoadingStall({
+          enabled: enabledRef.current,
+          disabled: disabledRef.current,
+          hasTypedDraft: hasTypedDraftRef.current,
+          isAudioPlaybackLoading: isAudioPlaybackLoadingRef.current,
+          status: stateRef.current.status,
+          startInFlight: startInFlightRef.current,
+          hasActiveSession: Boolean(activeSessionRef.current),
+          hasRecoveryTimer: Boolean(recoveryTimerRef.current)
+        })
+      ) {
+        return;
+      }
+
+      logVoiceDebug('busy_loading_stall_reset', {
+        status: stateRef.current.status,
+        isPlaying: isPlayingRef.current
+      });
+      pendingManualResumeRef.current = true;
+      onStopAudioRef.current();
+      dispatch({ type: 'set_off' });
+    }, BUSY_LOADING_TIMEOUT_MS);
+  }, [clearBusyLoadingTimer, disabled, enabled, hasTypedDraft, isAudioPlaybackLoading, state.status]);
 
   useEffect(() => {
     if (
@@ -1040,14 +1141,16 @@ export function useVoiceConversation({
     shouldResumeAfterWebFocusLossRef.current = false;
     pendingManualResumeRef.current = false;
     resumeAfterTypedDraftRef.current = false;
+    clearBusyLoadingTimer();
     clearRecoveryTimer();
     clearSilenceTimer();
     stopActiveSession();
     dispatch({ type: 'pause_manual' });
-  }, [clearRecoveryTimer, clearSilenceTimer, stopActiveSession]);
+  }, [clearBusyLoadingTimer, clearRecoveryTimer, clearSilenceTimer, stopActiveSession]);
 
   const resumeListening = useCallback(() => {
     shouldResumeAfterWebFocusLossRef.current = false;
+    clearBusyLoadingTimer();
     if (disabledRef.current) {
       pendingManualResumeRef.current = false;
       return;
@@ -1097,13 +1200,14 @@ export function useVoiceConversation({
     dispatch({ type: 'set_off' });
     dispatch({ type: 'starting' });
     void startListeningFlow('resume');
-  }, [startListeningFlow]);
+  }, [clearBusyLoadingTimer, startListeningFlow]);
 
   const interruptAndListen = useCallback(() => {
     logVoiceDebug('interrupt_and_listen', { fromStatus: stateRef.current.status });
     shouldResumeAfterWebFocusLossRef.current = false;
     pendingManualResumeRef.current = false;
     resumeAfterTypedDraftRef.current = false;
+    clearBusyLoadingTimer();
     clearRecoveryTimer();
     clearSilenceTimer();
     onStopAudioRef.current();
@@ -1116,7 +1220,7 @@ export function useVoiceConversation({
     dispatch({ type: 'set_off' });
     dispatch({ type: 'starting' });
     void startListeningFlow('interrupt');
-  }, [clearRecoveryTimer, clearSilenceTimer, startListeningFlow]);
+  }, [clearBusyLoadingTimer, clearRecoveryTimer, clearSilenceTimer, startListeningFlow]);
 
   const armListeningActivation = useCallback(() => {
     hasUserActivatedListeningRef.current = true;
@@ -1160,11 +1264,12 @@ export function useVoiceConversation({
     return () => {
       isMountedRef.current = false;
       shouldResumeAfterWebFocusLossRef.current = false;
+      clearBusyLoadingTimer();
       clearRecoveryTimer();
       clearSilenceTimer();
       stopActiveSession();
     };
-  }, [clearRecoveryTimer, clearSilenceTimer, stopActiveSession]);
+  }, [clearBusyLoadingTimer, clearRecoveryTimer, clearSilenceTimer, stopActiveSession]);
 
   const hint = useMemo(() => getVoiceConversationHint(state.status), [state.status]);
 

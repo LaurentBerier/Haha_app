@@ -37,6 +37,7 @@ import { findConversationById } from '../utils/conversationUtils';
 import { generateId } from '../utils/generateId';
 import { collectArtistMemoryFacts } from '../utils/memoryFacts';
 import { normalizeSpeechText, splitDisplayChunkFromRaw, stripAudioTags } from '../utils/audioTags';
+import { shouldAutoPlayVoice } from '../utils/voicePlaybackPolicy';
 import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../utils/accountTypeUtils';
 import type { ScoreAction } from '../models/Gamification';
 import { computeTutorialModeForRequest, isAffectionateUserMessage, shouldApplyReactionForUserMessage } from './chatBehavior';
@@ -584,6 +585,21 @@ export function useChat(conversationId: string) {
     autoplayVoiceQueueRef.current = autoplayVoiceQueue;
   }, [autoplayVoiceQueue]);
 
+  const shouldAutoPlayWithStoreState = useCallback(
+    (overrides?: {
+      conversationModeEnabled?: boolean;
+      quotaBlocked?: boolean;
+    }): boolean => {
+      const latestState = useStore.getState();
+      return shouldAutoPlayVoice({
+        conversationModeEnabled: overrides?.conversationModeEnabled ?? Boolean(latestState.conversationModeEnabled),
+        voiceAutoPlayEnabled: Boolean(latestState.voiceAutoPlay),
+        quotaBlocked: overrides?.quotaBlocked ?? latestState.quota.isBlocked
+      });
+    },
+    []
+  );
+
   const sendContextBlockReason = useMemo<ChatSendContextBlockReason | null>(() => {
     if (!conversationId.trim()) {
       return 'missing_conversation_id';
@@ -660,6 +676,10 @@ export function useChat(conversationId: string) {
         return;
       }
       const conversationModeEnabledForJob = useStore.getState().conversationModeEnabled;
+      const shouldAutoPlayForJob = (): boolean =>
+        shouldAutoPlayWithStoreState({
+          conversationModeEnabled: conversationModeEnabledForJob
+        });
       const voiceModeAddendum = conversationModeEnabledForJob
         ? '\n\n## VOICE MODE\nKeep this answer to 1-2 sentences maximum. You are live. No lists, no long explanations.'
         : '';
@@ -838,7 +858,7 @@ export function useChat(conversationId: string) {
               voiceChunkBoundaries: [boundary]
             });
 
-            if (useStore.getState().voiceAutoPlay) {
+            if (shouldAutoPlayForJob()) {
               const playbackState = audioPlaybackStateRef.current;
               const hasActivePlayback = playbackState.isPlaying || playbackState.isLoading;
               const matchesExpectedMessage =
@@ -855,7 +875,7 @@ export function useChat(conversationId: string) {
           });
       };
       const waitForReplyAudioToSettle = async (): Promise<void> => {
-        if (!canGenerateVoice || !useStore.getState().voiceAutoPlay) {
+        if (!canGenerateVoice || !shouldAutoPlayForJob()) {
           return;
         }
 
@@ -1048,7 +1068,7 @@ export function useChat(conversationId: string) {
           return;
         }
 
-        const shouldAutoPlay = Boolean(useStore.getState().voiceAutoPlay) && !useStore.getState().quota.isBlocked;
+        const shouldAutoPlay = shouldAutoPlayForJob();
         let didAdvance = false;
 
         while (ttsChunkUrisByIndex.has(nextPlayableChunkIndex)) {
@@ -1343,9 +1363,9 @@ export function useChat(conversationId: string) {
                 const normalizedTextLength = stripAudioTags(fallbackPreviewText, { trim: true }).length;
                 markArtistVoiceReady(uri, [uri], [normalizedTextLength]);
 
-                const shouldAutoPlay = Boolean(useStore.getState().voiceAutoPlay);
+                const shouldAutoPlay = shouldAutoPlayForJob();
                 if (shouldAutoPlay && !shouldBlockInput) {
-                  autoplayVoiceQueue([uri], artistMessageId);
+                  void autoplayVoiceQueue([uri], artistMessageId);
                 }
               } catch (error: unknown) {
                 if (registerTerminalTtsError(error)) {
@@ -1396,7 +1416,7 @@ export function useChat(conversationId: string) {
               }
               markArtistVoiceReady(firstVoiceUri, orderedVoiceUris, orderedBoundaries);
 
-              const shouldAutoPlay = Boolean(useStore.getState().voiceAutoPlay);
+              const shouldAutoPlay = shouldAutoPlayForJob();
               if (shouldAutoPlay && !shouldBlockInput && (!hasQueuedAutoplayChunk || !didStartReplyAutoplay)) {
                 void autoplayVoiceQueue(orderedVoiceUris, artistMessageId).then((state) => {
                   if (state === 'started' || state === 'pending_web_unlock') {
@@ -1615,6 +1635,7 @@ export function useChat(conversationId: string) {
     reactionToScoreAction,
     resolveScoreActions,
     resolveVoiceErrorCode,
+    shouldAutoPlayWithStoreState,
     updateMessage
   ]);
 
@@ -1745,8 +1766,8 @@ export function useChat(conversationId: string) {
           }
         });
 
-        if (useStore.getState().voiceAutoPlay) {
-          autoplayVoiceQueue([uri], artistMessageId);
+        if (shouldAutoPlayWithStoreState()) {
+          void autoplayVoiceQueue([uri], artistMessageId);
         }
       } catch (error: unknown) {
         const latestMessageAfterFailure =
@@ -1766,7 +1787,15 @@ export function useChat(conversationId: string) {
         });
       }
     },
-    [accessToken, autoplayVoiceQueue, currentAccountType, currentRole, resolveVoiceErrorCode, updateMessage]
+    [
+      accessToken,
+      autoplayVoiceQueue,
+      currentAccountType,
+      currentRole,
+      resolveVoiceErrorCode,
+      shouldAutoPlayWithStoreState,
+      updateMessage
+    ]
   );
 
   const chooseMemeOption = useCallback(
