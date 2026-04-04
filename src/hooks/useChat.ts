@@ -1211,6 +1211,12 @@ export function useChat(conversationId: string) {
         if (!isCurrentStream()) {
           return;
         }
+        // Finalize any buffered tokens before switching the message to complete.
+        if (flushFrameRef.current !== null && typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(flushFrameRef.current);
+          flushFrameRef.current = null;
+        }
+        flushBufferedTokensRef.current?.();
         if (shouldUseChunkedTts) {
           flushTtsChunks(true);
         }

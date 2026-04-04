@@ -1185,4 +1185,58 @@ describe('useChat sendMessage integration', () => {
     );
   });
 
+  it('flushes deferred frame tokens before marking artist message complete', async () => {
+    const conversationId = 'conv-stream-finalization';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const originalRaf = globalThis.requestAnimationFrame;
+    const originalCancelRaf = globalThis.cancelAnimationFrame;
+    let scheduledFrame: FrameRequestCallback | null = null;
+    (globalThis as unknown as { requestAnimationFrame: (cb: FrameRequestCallback) => number }).requestAnimationFrame = (
+      callback: FrameRequestCallback
+    ) => {
+      scheduledFrame = callback;
+      return 1;
+    };
+    (globalThis as unknown as { cancelAnimationFrame: (id: number) => void }).cancelAnimationFrame = () => {
+      scheduledFrame = null;
+    };
+
+    try {
+      const sendResult = chat.sendMessage({ text: 'Test flush stream.' });
+      expect(sendResult).toBeNull();
+      expect(streamMockParams).toHaveLength(1);
+
+      const stream = streamMockParams[0] as MockStreamParams;
+      stream.onToken('Phrase finale de Cathy.');
+      stream.onComplete({ tokensUsed: 4 });
+      await flushAsyncWork();
+
+      const artistMessage =
+        state.messagesByConversation[conversation.id]?.messages.find((message) => message.role === 'artist') ?? null;
+      expect(artistMessage).not.toBeNull();
+      expect(artistMessage?.content).toBe('Phrase finale de Cathy.');
+      expect(artistMessage?.status).toBe('complete');
+      expect(scheduledFrame).toBeNull();
+    } finally {
+      if (originalRaf) {
+        (globalThis as unknown as { requestAnimationFrame: typeof originalRaf }).requestAnimationFrame = originalRaf;
+      } else {
+        delete (globalThis as unknown as { requestAnimationFrame?: typeof originalRaf }).requestAnimationFrame;
+      }
+      if (originalCancelRaf) {
+        (globalThis as unknown as { cancelAnimationFrame: typeof originalCancelRaf }).cancelAnimationFrame =
+          originalCancelRaf;
+      } else {
+        delete (globalThis as unknown as { cancelAnimationFrame?: typeof originalCancelRaf }).cancelAnimationFrame;
+      }
+    }
+  });
+
 });
