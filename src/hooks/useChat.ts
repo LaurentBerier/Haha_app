@@ -525,32 +525,49 @@ export function useChat(conversationId: string) {
     currentMessageId: audioPlayer.currentMessageId
   });
   const autoplayVoiceQueueRef = useRef<
-    ((uris: string[], messageId: string, options?: { retryOnWebUnlock?: boolean }) => void) | null
+    ((
+      uris: string[],
+      messageId: string,
+      options?: { retryOnWebUnlock?: boolean }
+    ) => Promise<Awaited<ReturnType<typeof attemptVoiceAutoplayQueue>>>) | null
   >(null);
 
   const autoplayVoiceQueue = useCallback(
-    (uris: string[], messageId: string, options?: { retryOnWebUnlock?: boolean }) => {
+    (
+      uris: string[],
+      messageId: string,
+      options?: { retryOnWebUnlock?: boolean }
+    ): Promise<Awaited<ReturnType<typeof attemptVoiceAutoplayQueue>>> => {
       const normalizedMessageId = messageId.trim();
       if (!normalizedMessageId) {
-        return;
+        return Promise.resolve('failed');
       }
       const shouldRetryOnWebUnlock = options?.retryOnWebUnlock ?? true;
       const normalizedUris = uris.map((uri) => uri.trim()).filter(Boolean);
       if (normalizedUris.length === 0) {
-        return;
+        return Promise.resolve('failed');
       }
 
-      void attemptVoiceAutoplayQueue({
-        audioPlayer,
-        uris: normalizedUris,
-        messageId: normalizedMessageId,
-        onWebUnlockRetry: shouldRetryOnWebUnlock
-          ? () => {
-              autoplayVoiceQueueRef.current?.(normalizedUris, normalizedMessageId, {
-                retryOnWebUnlock: false
-              });
-            }
-          : null
+      const runAttempt = (retryOnWebUnlock: boolean) =>
+        attemptVoiceAutoplayQueue({
+          audioPlayer,
+          uris: normalizedUris,
+          messageId: normalizedMessageId,
+          onWebUnlockRetry: retryOnWebUnlock
+            ? () => {
+                void autoplayVoiceQueueRef.current?.(normalizedUris, normalizedMessageId, {
+                  retryOnWebUnlock: false
+                });
+              }
+            : null
+        });
+
+      return runAttempt(shouldRetryOnWebUnlock).then((state) => {
+        if (state !== 'failed') {
+          return state;
+        }
+        // One immediate retry handles transient interruptions when filler and reply autoplay race.
+        return runAttempt(false);
       });
     },
     [audioPlayer]
@@ -558,7 +575,7 @@ export function useChat(conversationId: string) {
 
   const autoplayVoiceUri = useCallback(
     (uri: string, messageId: string, options?: { retryOnWebUnlock?: boolean }) => {
-      autoplayVoiceQueue([uri], messageId, options);
+      return autoplayVoiceQueue([uri], messageId, options);
     },
     [autoplayVoiceQueue]
   );
@@ -933,6 +950,7 @@ export function useChat(conversationId: string) {
       let displayTextAccumulator = 0;
       let nextPlayableChunkIndex = 0;
       let hasQueuedAutoplayChunk = false;
+      let didStartReplyAutoplay = false;
       let pendingVoiceNoticeCode: TerminalTtsCode | null = null;
       let pendingVoiceErrorCode: VoiceErrorCode | null = null;
 
@@ -1026,8 +1044,15 @@ export function useChat(conversationId: string) {
           if (uri && shouldAutoPlay) {
             if (nextPlayableChunkIndex === 0 && !hasQueuedAutoplayChunk) {
               // First real chunk interrupts any filler currently playing.
-              autoplayVoiceQueue([uri], artistMessageId);
               hasQueuedAutoplayChunk = true;
+              void autoplayVoiceQueue([uri], artistMessageId).then((state) => {
+                if (state === 'started' || state === 'pending_web_unlock') {
+                  didStartReplyAutoplay = true;
+                  return;
+                }
+
+                hasQueuedAutoplayChunk = false;
+              });
             } else if (hasQueuedAutoplayChunk) {
               audioPlayer.appendToQueue(uri, { messageId: artistMessageId });
             }
@@ -1351,8 +1376,13 @@ export function useChat(conversationId: string) {
               markArtistVoiceReady(firstVoiceUri, orderedVoiceUris, orderedBoundaries);
 
               const shouldAutoPlay = Boolean(useStore.getState().voiceAutoPlay);
-              if (shouldAutoPlay && !shouldBlockInput && !hasQueuedAutoplayChunk) {
-                autoplayVoiceQueue(orderedVoiceUris, artistMessageId);
+              if (shouldAutoPlay && !shouldBlockInput && (!hasQueuedAutoplayChunk || !didStartReplyAutoplay)) {
+                void autoplayVoiceQueue(orderedVoiceUris, artistMessageId).then((state) => {
+                  if (state === 'started' || state === 'pending_web_unlock') {
+                    didStartReplyAutoplay = true;
+                    hasQueuedAutoplayChunk = true;
+                  }
+                });
               }
             });
           }

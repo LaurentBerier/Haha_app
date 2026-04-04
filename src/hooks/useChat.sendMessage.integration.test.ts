@@ -1058,4 +1058,49 @@ describe('useChat sendMessage integration', () => {
     expect(baseArtistMessage?.metadata?.voiceUrl).toBe('blob:https://ha-ha.ai/chunk-1.mp3');
     expect(baseArtistMessage?.metadata?.voiceErrorCode).toBeUndefined();
   });
+
+  it('retries autoplay with the full queue when first chunk autoplay is interrupted', async () => {
+    const conversationId = 'conv-voice-autoplay-retry';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    state.session.accessToken = 'token-voice';
+    state.conversationModeEnabled = true;
+    state.voiceAutoPlay = true;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    const playQueueMock = mockAudioPlayer.playQueue as jest.Mock;
+    playQueueMock
+      .mockResolvedValueOnce({ started: false, reason: 'interrupted' } as unknown)
+      .mockResolvedValue({ started: true, reason: null } as unknown);
+    mockFetchAndCacheVoice
+      .mockResolvedValueOnce('blob:https://ha-ha.ai/chunk-retry-1.mp3')
+      .mockResolvedValueOnce('blob:https://ha-ha.ai/chunk-retry-2.mp3');
+
+    const sendResult = chat.sendMessage({ text: 'Donne une reponse audio detaillee sur ce sujet.' });
+    expect(sendResult).toBeNull();
+    expect(streamMockParams).toHaveLength(1);
+
+    const stream = streamMockParams[0] as MockStreamParams;
+    stream.onToken(
+      'Cathy lance une phrase assez longue pour declencher le premier chunk audio dans le flux vocal. ' +
+        'Ensuite elle continue avec une deuxieme phrase pour forcer une queue complete sur la relecture auto.'
+    );
+    stream.onComplete({ tokensUsed: 21 });
+    await flushAsyncWork();
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    expect(playQueueMock).toHaveBeenCalledTimes(2);
+    const secondAutoplayQueue = playQueueMock.mock.calls[1]?.[0];
+    expect(secondAutoplayQueue).toEqual(expect.arrayContaining(['blob:https://ha-ha.ai/chunk-retry-1.mp3']));
+    expect(playQueueMock.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        messageId: expect.any(String)
+      })
+    );
+  });
 });
