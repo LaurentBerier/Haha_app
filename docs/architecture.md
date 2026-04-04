@@ -196,6 +196,7 @@ Store-level account isolation:
   - performs final full-text fallback synthesis only when needed
   - stabilizes metadata transitions (`voiceStatus: generating -> ready|unavailable`)
   - stores `voiceChunkBoundaries` for text/voice synchronization
+  - concurrent TTS fetches capped at `MAX_TTS_CONCURRENT = 3` via semaphore + draining queue (prevents 30+ simultaneous ElevenLabs requests during long responses)
 - `useAudioPlayer` tracks playback context by `currentMessageId` so sync/playback targets are message-identity based (not URI based).
 - `ChatBubble` progressively reveals text only for the active `currentMessageId`; non-active bubbles render full text.
 - Eligible Cathy bubbles expose explicit voice UI states:
@@ -227,7 +228,7 @@ Store-level account isolation:
 - `useChat`: queue-driven streaming orchestration, retry support, image-intent routing, mode-based score triggers, and route-safe stream cleanup
   - per-turn conversation-language resolver (`explicit switch` > `auto-detect` > `keep current`) with language persistence at conversation level
   - post-reply primary-thread cloud sync trigger (`syncPrimaryThreadArtist`) to persist latest primary conversation across devices
-- `useStorePersistence`: hydration/debounced persistence
+- `useStorePersistence`: hydration/debounced persistence; flushes snapshot immediately on unmount to prevent data loss when app backgrounds mid-debounce
 
 ## Backend Endpoints (`api`)
 
@@ -490,6 +491,31 @@ Quebec language rules are enforced for Cathy when active language is French (`ap
 - Partner pronoun inference: Claude deduces partner gender from contextual cues ("mon chum" → masculine, "ma blonde/copine" → feminine); defaults to neutral ("ton partenaire", "ton ex") with no assumed gender.
 - Tarot variety rule: no keyword, place name, or cultural reference repeated across the 3 card readings and grand finale.
 
+## Security Model
+
+### System Prompt Injection Protection
+
+User-controlled profile fields (`preferredName`, `interests`) are wrapped in `<user_value>…</user_value>` XML delimiters when injected into the Claude system prompt. An explicit note at the top of the profile section instructs Claude to treat tagged content as data only, never as instructions. Server-side normalization (`normalizeProfileForPrompt`) sanitizes types, lengths, and character sets before prompt assembly.
+
+### API Error Responses
+
+API error responses return only generic messages to clients. Full Supabase/PostgreSQL error details (table names, column names, constraint messages) are logged server-side only. This prevents DB schema enumeration via error probing.
+
+### Rate Limiting
+
+- IP-level rate limit: sliding-window via Vercel KV (Redis). Bypass via `NODE_ENV=test|development` for local dev, or explicit `DISABLE_IP_RATE_LIMIT=true` for intentional opt-out (never set this in production).
+- Per-user rate limit: sliding-window via `usage_events` table or RPC (`CLAUDE_LIMITS_RPC=true`). Fallback to in-memory single-instance limiter if DB is unavailable.
+- Monthly quota: per-tier caps with soft thresholds (75%, 90%, 100%), per-user override, and cached quota reads (5s TTL).
+
+### Webhook Authentication
+
+- Stripe: `Stripe-Signature` HMAC verified via SDK `constructEvent(...)` with 300s tolerance.
+- RevenueCat: Bearer token with `timingSafeEqual` constant-time comparison.
+
+### CORS
+
+Origin whitelist checked on every request via `api/_utils.js`. Fetch Metadata secondary validation. Wildcards supported only for localhost and subdomains of `ha-ha.ai`. Webhooks allow missing origin header (authenticated by payload signature instead).
+
 ## Deployment Notes
 
 Vercel functions require project dependencies at runtime; `.vercelignore` must include:
@@ -505,6 +531,7 @@ Vercel functions require project dependencies at runtime; `.vercelignore` must i
 - Command: `npm run test:unit`
 - Latest unit/lint/type baseline (2026-04-04): `99` suites, `550` tests, plus PASS on `typecheck` and `lint`
 - Latest full cross-check including `verify:profile-prompt` + smoke: 2026-04-04 (see `docs/qa-run-2026-04-04.md`)
+- Latest comprehensive security + performance audit: 2026-04-04 (see `docs/code-review-2026-04-04b.md`)
 
 ## Repos and Hosting Topology
 

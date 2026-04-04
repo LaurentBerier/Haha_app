@@ -1,6 +1,6 @@
 # Phase 4 Status (Conversation Naturelle)
 
-Last updated: **2026-04-04**
+Last updated: **2026-04-04** (security + performance audit pass)
 
 ## Scope
 
@@ -138,6 +138,12 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
 
 ## QA Status
 
+Full regression validation on **2026-04-04** (security + performance audit — prompt injection, TTS concurrency, store persistence, FlatList, audio listeners, voice hydration retry):
+
+- `npm run typecheck` -> PASS
+- `npm run lint` -> PASS
+- `npm run test:unit` -> PASS (`99` suites, `550` tests)
+
 Full regression validation on **2026-04-04** (subscription-cancel resilience + lint baseline restore):
 
 - `npm run typecheck` -> PASS
@@ -202,7 +208,8 @@ Detailed run logs:
 - [`docs/qa-run-2026-03-19.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-19.md)
 - [`docs/qa-run-2026-03-18.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-18.md)
 - [`docs/qa-run-2026-03-17.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-17.md)
-- Latest code review snapshot: [`docs/code-review-2026-04-04.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-04.md)
+- Latest code review snapshot: [`docs/code-review-2026-04-04b.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-04b.md) (comprehensive security + performance audit)
+- Previous code review: [`docs/code-review-2026-04-04.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-04.md)
 
 ## Games & Prompt Quality (2026-03-25)
 

@@ -1,6 +1,6 @@
 # Repo and Vercel Topology
 
-Last updated: **2026-04-04**
+Last updated: **2026-04-04** (added DISABLE_IP_RATE_LIMIT note)
 
 ## Production Split
 
@@ -42,6 +42,7 @@ Server-only secrets:
 - `STRIPE_WEBHOOK_SECRET`
 - `REVENUECAT_WEBHOOK_SECRET` (if RevenueCat endpoint enabled)
 - other backend-only vars (`CLAUDE_*`, `ALLOWED_ORIGINS`, etc.)
+- `DISABLE_IP_RATE_LIMIT=true` — opt-out of IP-level rate limiting (never set in production; for dev/test environments where Redis/KV is not available and `NODE_ENV` cannot be set to `development`)
 
 ### In `ha-ha-ai` (landing project)
 
