@@ -6,6 +6,20 @@ const MAX_TTS_INPUT_CHARS = 1000;
 const TTS_ENDPOINT_TIMEOUT_MS = 10_000;
 const WEB_TTS_CACHE = new Map<string, string>();
 const WEB_TTS_CACHE_MAX_ENTRIES = 40;
+const IN_FLIGHT_TTS_REQUESTS = new Map<string, Promise<string | null>>();
+const TERMINAL_TTS_COOLDOWNS = new Map<
+  string,
+  {
+    status: number;
+    code: string;
+    untilMs: number;
+    retryAfterSeconds?: number;
+  }
+>();
+const DEFAULT_TTS_RATE_LIMIT_COOLDOWN_MS = 60_000;
+const DEFAULT_TTS_QUOTA_COOLDOWN_MS = 10 * 60_000;
+const DEFAULT_TTS_FORBIDDEN_COOLDOWN_MS = 2 * 60_000;
+const DEFAULT_TTS_UNAUTHORIZED_COOLDOWN_MS = 30_000;
 const EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC = process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC;
 const EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY = process.env.EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY;
 const VOICE_CACHE_VERSION = `${EXPO_PUBLIC_ELEVENLABS_VOICE_ID_GENERIC ?? ''}|${EXPO_PUBLIC_ELEVENLABS_VOICE_ID_CATHY ?? ''}`;
@@ -89,6 +103,72 @@ function buildTtsError(status: number, code?: string): Error & { status: number;
   return error;
 }
 
+function buildTtsScopeKey(artistId: string, language: string, purpose: VoiceSynthesisPurpose, accessToken: string): string {
+  return `${artistId}|${language.trim().toLowerCase()}|${purpose}|${hashString(accessToken.trim())}`;
+}
+
+function resolveTerminalCooldownMs(status: number, code: string, retryAfterSeconds?: number): number {
+  if (typeof retryAfterSeconds === 'number' && retryAfterSeconds > 0) {
+    return retryAfterSeconds * 1000;
+  }
+
+  if (status === 429) {
+    return code === 'TTS_QUOTA_EXCEEDED' ? DEFAULT_TTS_QUOTA_COOLDOWN_MS : DEFAULT_TTS_RATE_LIMIT_COOLDOWN_MS;
+  }
+
+  if (status === 403) {
+    return DEFAULT_TTS_FORBIDDEN_COOLDOWN_MS;
+  }
+
+  if (status === 401) {
+    return DEFAULT_TTS_UNAUTHORIZED_COOLDOWN_MS;
+  }
+
+  return DEFAULT_TTS_RATE_LIMIT_COOLDOWN_MS;
+}
+
+function writeTerminalCooldown(scopeKey: string, status: number, code: string, retryAfterSeconds?: number): void {
+  if (!isTerminalTtsStatus(status)) {
+    return;
+  }
+
+  const durationMs = resolveTerminalCooldownMs(status, code, retryAfterSeconds);
+  const nowMs = Date.now();
+  TERMINAL_TTS_COOLDOWNS.set(scopeKey, {
+    status,
+    code,
+    untilMs: nowMs + durationMs,
+    retryAfterSeconds
+  });
+}
+
+function clearTerminalCooldown(scopeKey: string): void {
+  TERMINAL_TTS_COOLDOWNS.delete(scopeKey);
+}
+
+function readTerminalCooldown(scopeKey: string): {
+  status: number;
+  code: string;
+  retryAfterSeconds: number;
+} | null {
+  const entry = TERMINAL_TTS_COOLDOWNS.get(scopeKey);
+  if (!entry) {
+    return null;
+  }
+
+  const remainingMs = entry.untilMs - Date.now();
+  if (remainingMs <= 0) {
+    TERMINAL_TTS_COOLDOWNS.delete(scopeKey);
+    return null;
+  }
+
+  return {
+    status: entry.status,
+    code: entry.code,
+    retryAfterSeconds: Math.max(1, Math.ceil(remainingMs / 1000))
+  };
+}
+
 function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
 }
@@ -141,6 +221,8 @@ function writeWebTtsCache(cacheKey: string, blobUrl: string): void {
 }
 
 export function clearVoiceCacheOnSessionReset(): void {
+  IN_FLIGHT_TTS_REQUESTS.clear();
+  TERMINAL_TTS_COOLDOWNS.clear();
   if (WEB_TTS_CACHE.size === 0) {
     return;
   }
@@ -331,21 +413,90 @@ export async function fetchAndCacheVoice(
 ): Promise<string | null> {
   const normalizedText = normalizeTtsText(text);
   const normalizedArtistId = artistId.trim();
+  const normalizedAccessToken = accessToken.trim();
   const purpose = options?.purpose ?? 'reply';
-  if (!normalizedText || !normalizedArtistId || !accessToken.trim()) {
+  if (!normalizedText || !normalizedArtistId || !normalizedAccessToken) {
     return null;
   }
 
   const cacheKey = buildCacheKey(normalizedText, normalizedArtistId, language.trim(), purpose);
+  const scopeKey = buildTtsScopeKey(normalizedArtistId, language, purpose, normalizedAccessToken);
+  const inFlightKey = `${Platform.OS}|${cacheKey}|${hashString(normalizedAccessToken)}`;
 
   if (Platform.OS === 'web') {
     const cachedUrl = readWebTtsCache(cacheKey);
     if (cachedUrl) {
       return cachedUrl;
     }
+  }
 
-    const response = await fetchTtsBinary(normalizedText, normalizedArtistId, language, accessToken, options);
+  const existingInFlight = IN_FLIGHT_TTS_REQUESTS.get(inFlightKey);
+  if (existingInFlight) {
+    return existingInFlight;
+  }
+
+  const requestPromise = (async (): Promise<string | null> => {
+    const blocked = readTerminalCooldown(scopeKey);
+    if (blocked) {
+      if (options?.throwOnError) {
+        const error = buildTtsError(blocked.status, blocked.code);
+        error.retryAfterSeconds = blocked.retryAfterSeconds;
+        throw error;
+      }
+      return null;
+    }
+
+    if (Platform.OS === 'web') {
+      const response = await fetchTtsBinary(normalizedText, normalizedArtistId, language, normalizedAccessToken, options);
+      if (!response.ok || !response.arrayBuffer) {
+        if (isTerminalTtsStatus(response.status)) {
+          writeTerminalCooldown(
+            scopeKey,
+            response.status,
+            normalizeTtsErrorCode(response.status, response.code),
+            response.retryAfterSeconds
+          );
+        }
+        if (options?.throwOnError) {
+          const error = buildTtsError(response.status, response.code);
+          error.retryAfterSeconds = response.retryAfterSeconds;
+          throw error;
+        }
+        return null;
+      }
+
+      clearTerminalCooldown(scopeKey);
+      const blob = new Blob([response.arrayBuffer], { type: 'audio/mpeg' });
+      const blobUrl = URL.createObjectURL(blob);
+      writeWebTtsCache(cacheKey, blobUrl);
+      return blobUrl;
+    }
+
+    if (!FileSystem.cacheDirectory) {
+      return null;
+    }
+
+    const cacheUri = `${FileSystem.cacheDirectory}tts_${cacheKey}.mp3`;
+
+    try {
+      const info = await FileSystem.getInfoAsync(cacheUri);
+      if (info.exists) {
+        return cacheUri;
+      }
+    } catch {
+      // Continue with fetch.
+    }
+
+    const response = await fetchTtsBinary(normalizedText, normalizedArtistId, language, normalizedAccessToken, options);
     if (!response.ok || !response.arrayBuffer) {
+      if (isTerminalTtsStatus(response.status)) {
+        writeTerminalCooldown(
+          scopeKey,
+          response.status,
+          normalizeTtsErrorCode(response.status, response.code),
+          response.retryAfterSeconds
+        );
+      }
       if (options?.throwOnError) {
         const error = buildTtsError(response.status, response.code);
         error.retryAfterSeconds = response.retryAfterSeconds;
@@ -354,42 +505,20 @@ export async function fetchAndCacheVoice(
       return null;
     }
 
-    const blob = new Blob([response.arrayBuffer], { type: 'audio/mpeg' });
-    const blobUrl = URL.createObjectURL(blob);
-    writeWebTtsCache(cacheKey, blobUrl);
-    return blobUrl;
-  }
+    clearTerminalCooldown(scopeKey);
+    const base64 = bytesToBase64(new Uint8Array(response.arrayBuffer));
 
-  if (!FileSystem.cacheDirectory) {
-    return null;
-  }
+    await FileSystem.writeAsStringAsync(cacheUri, base64, {
+      encoding: FileSystem.EncodingType.Base64
+    });
 
-  const cacheUri = `${FileSystem.cacheDirectory}tts_${cacheKey}.mp3`;
+    return cacheUri;
+  })();
 
-  try {
-    const info = await FileSystem.getInfoAsync(cacheUri);
-    if (info.exists) {
-      return cacheUri;
+  IN_FLIGHT_TTS_REQUESTS.set(inFlightKey, requestPromise);
+  return requestPromise.finally(() => {
+    if (IN_FLIGHT_TTS_REQUESTS.get(inFlightKey) === requestPromise) {
+      IN_FLIGHT_TTS_REQUESTS.delete(inFlightKey);
     }
-  } catch {
-    // Continue with fetch.
-  }
-
-  const response = await fetchTtsBinary(normalizedText, normalizedArtistId, language, accessToken, options);
-  if (!response.ok || !response.arrayBuffer) {
-    if (options?.throwOnError) {
-      const error = buildTtsError(response.status, response.code);
-      error.retryAfterSeconds = response.retryAfterSeconds;
-      throw error;
-    }
-    return null;
-  }
-
-  const base64 = bytesToBase64(new Uint8Array(response.arrayBuffer));
-
-  await FileSystem.writeAsStringAsync(cacheUri, base64, {
-    encoding: FileSystem.EncodingType.Base64
   });
-
-  return cacheUri;
 }

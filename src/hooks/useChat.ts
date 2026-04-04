@@ -983,10 +983,10 @@ export function useChat(conversationId: string) {
       const ttsChunkUrisByIndex = new Map<number, string>();
       const ttsChunkDisplayBoundariesByIndex = new Map<number, number>();
       const ttsPendingPromises: Array<Promise<void>> = [];
-      // Semaphore: limit concurrent TTS fetches to avoid 30+ simultaneous requests.
+      // Semaphore: keep TTS requests serialized to avoid rate-limit bursts.
       let ttsInFlight = 0;
-      const MAX_TTS_CONCURRENT = 3;
-      const ttsConcurrencyQueue: Array<() => void> = [];
+      const MAX_TTS_CONCURRENT = 1;
+      const ttsConcurrencyQueue: Array<{ run: () => void; cancel: () => void }> = [];
       let displayTextAccumulator = 0;
       let nextPlayableChunkIndex = 0;
       let hasQueuedAutoplayChunk = false;
@@ -1037,6 +1037,13 @@ export function useChat(conversationId: string) {
         return typeof metadata.voiceUrl === 'string' && metadata.voiceUrl.trim().length > 0;
       };
 
+      const clearPendingTtsQueue = () => {
+        while (ttsConcurrencyQueue.length > 0) {
+          const pending = ttsConcurrencyQueue.shift();
+          pending?.cancel();
+        }
+      };
+
       const registerTerminalTtsError = (error: unknown): boolean => {
         const terminalCode = resolveTerminalTtsCode(error);
         if (!terminalCode) {
@@ -1048,6 +1055,7 @@ export function useChat(conversationId: string) {
         }
 
         ignoreTtsUpdates = true;
+        clearPendingTtsQueue();
         const { orderedVoiceUris, orderedBoundaries } = buildVoicePlaybackData();
         if (orderedVoiceUris.length > 0 && orderedVoiceUris[0]) {
           markArtistVoiceReady(orderedVoiceUris[0], orderedVoiceUris, orderedBoundaries);
@@ -1155,6 +1163,10 @@ export function useChat(conversationId: string) {
         const latestAccessToken = useStore.getState().session?.accessToken ?? accessToken;
 
         const runFetch = (): Promise<void> => {
+          if (ignoreTtsUpdates) {
+            return Promise.resolve();
+          }
+
           ttsInFlight += 1;
           return fetchAndCacheVoice(normalizedChunk, artistId, language, latestAccessToken, {
             throwOnError: true
@@ -1175,19 +1187,28 @@ export function useChat(conversationId: string) {
             })
             .finally(() => {
               ttsInFlight -= 1;
+              if (ignoreTtsUpdates) {
+                clearPendingTtsQueue();
+                return;
+              }
               const next = ttsConcurrencyQueue.shift();
               if (next) {
-                next();
+                next.run();
               }
             });
         };
 
         const ttsPromise: Promise<void> = new Promise((resolve) => {
           const run = () => resolve(runFetch());
+          const cancel = () => resolve();
+          if (ignoreTtsUpdates) {
+            resolve();
+            return;
+          }
           if (ttsInFlight < MAX_TTS_CONCURRENT) {
             run();
           } else {
-            ttsConcurrencyQueue.push(run);
+            ttsConcurrencyQueue.push({ run, cancel });
           }
         });
 

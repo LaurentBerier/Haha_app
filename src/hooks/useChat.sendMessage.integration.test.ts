@@ -1098,6 +1098,50 @@ describe('useChat sendMessage integration', () => {
     expect(injectedVoiceNotice).toBeUndefined();
   });
 
+  it('stops queued chunk fetches after the first terminal TTS error', async () => {
+    const conversationId = 'conv-voice-terminal-stop';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    state.session.accessToken = 'token-voice';
+    state.conversationModeEnabled = true;
+    state.voiceAutoPlay = false;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    mockFetchAndCacheVoice.mockRejectedValueOnce({
+      status: 429,
+      code: 'RATE_LIMIT_EXCEEDED'
+    });
+
+    const sendResult = chat.sendMessage({ text: 'Donne-moi une reponse audio longue et fluide.' });
+    expect(sendResult).toBeNull();
+    expect(streamMockParams).toHaveLength(1);
+
+    const stream = streamMockParams[0] as MockStreamParams;
+    stream.onToken(
+      "Voici une premiere phrase volontairement longue pour depasser le seuil de chunk et valider l ordre de traitement audio. " +
+        "Ensuite une deuxieme phrase prolonge la reponse avec assez de contenu pour creer un autre morceau potentiel. " +
+        "Enfin une troisieme phrase ferme la boucle et nous permet de verifier qu aucun autre appel TTS ne part apres une erreur terminale."
+    );
+    stream.onComplete({ tokensUsed: 18 });
+    await flushAsyncWork();
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    expect(mockFetchAndCacheVoice).toHaveBeenCalledTimes(1);
+
+    const baseArtistMessage =
+      state.messagesByConversation[conversation.id]?.messages.find(
+        (message) => message.role === 'artist' && message.metadata?.injected !== true
+      ) ?? null;
+    expect(baseArtistMessage).not.toBeNull();
+    expect(baseArtistMessage?.metadata?.voiceStatus).toBe('unavailable');
+    expect(baseArtistMessage?.metadata?.voiceErrorCode).toBe('RATE_LIMIT_EXCEEDED');
+  });
+
   it('keeps voice metadata ready when autoplay fails in conversation mode', async () => {
     const conversationId = 'conv-voice-autoplay-failed-non-fatal';
     const chat = renderUseChatHook(conversationId);

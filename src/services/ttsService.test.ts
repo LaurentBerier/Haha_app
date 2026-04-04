@@ -129,6 +129,132 @@ describe('ttsService', () => {
     });
   });
 
+  it('deduplicates identical in-flight TTS requests', async () => {
+    const audioResponse = {
+      ok: true,
+      status: 200,
+      headers: {
+        get: (key: string) => (key === 'content-type' ? 'audio/mpeg' : null)
+      },
+      arrayBuffer: async () => new Uint8Array([9, 8, 7]).buffer
+    };
+    let resolveFetch!: (value: unknown) => void;
+    const fetchMock = jest.fn(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        })
+    );
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const firstPromise = fetchAndCacheVoice('Salut Cathy', 'cathy-gauthier', 'fr-CA', 'token-premium');
+    const secondPromise = fetchAndCacheVoice('Salut Cathy', 'cathy-gauthier', 'fr-CA', 'token-premium');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolveFetch(audioResponse);
+
+    const [first, second] = await Promise.all([firstPromise, secondPromise]);
+    expect(first).toBeTruthy();
+    expect(second).toBe(first);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  it('short-circuits repeated requests during terminal TTS cooldown windows', async () => {
+    const rateLimitResponse = {
+      ok: false,
+      status: 429,
+      headers: {
+        get: (key: string) => {
+          if (key === 'content-type') {
+            return 'application/json';
+          }
+          if (key === 'retry-after') {
+            return '17';
+          }
+          return null;
+        }
+      },
+      clone: () => ({
+        json: async () => ({
+          error: {
+            code: 'RATE_LIMIT_EXCEEDED'
+          }
+        })
+      })
+    };
+    const fetchMock = jest.fn().mockResolvedValue(rateLimitResponse);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(
+      fetchAndCacheVoice('Salut Cathy', 'cathy-gauthier', 'fr-CA', 'token-premium', {
+        throwOnError: true
+      })
+    ).rejects.toMatchObject({
+      status: 429,
+      code: 'RATE_LIMIT_EXCEEDED'
+    });
+
+    await expect(
+      fetchAndCacheVoice('Une autre ligne', 'cathy-gauthier', 'fr-CA', 'token-premium', {
+        throwOnError: true
+      })
+    ).rejects.toMatchObject({
+      status: 429,
+      code: 'RATE_LIMIT_EXCEEDED'
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears terminal cooldown state on session reset', async () => {
+    const rateLimitResponse = {
+      ok: false,
+      status: 429,
+      headers: {
+        get: (key: string) => {
+          if (key === 'content-type') {
+            return 'application/json';
+          }
+          if (key === 'retry-after') {
+            return '17';
+          }
+          return null;
+        }
+      },
+      clone: () => ({
+        json: async () => ({
+          error: {
+            code: 'RATE_LIMIT_EXCEEDED'
+          }
+        })
+      })
+    };
+    const successResponse = {
+      ok: true,
+      status: 200,
+      headers: {
+        get: (key: string) => (key === 'content-type' ? 'audio/mpeg' : null)
+      },
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer
+    };
+    const fetchMock = jest.fn().mockResolvedValueOnce(rateLimitResponse).mockResolvedValueOnce(successResponse);
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    await expect(
+      fetchAndCacheVoice('Salut Cathy', 'cathy-gauthier', 'fr-CA', 'token-premium', {
+        throwOnError: true
+      })
+    ).rejects.toMatchObject({
+      status: 429
+    });
+
+    clearVoiceCacheOnSessionReset();
+
+    const uri = await fetchAndCacheVoice('Salut encore', 'cathy-gauthier', 'fr-CA', 'token-premium');
+    expect(uri).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it('supports explicit web voice-cache reset across auth/session boundaries', async () => {
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,

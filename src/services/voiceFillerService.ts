@@ -39,9 +39,13 @@ export function prewarmVoiceFillers(artistId: string, language: string, accessTo
     return;
   }
 
-  fillers.forEach((filler) => {
-    void fetchAndCacheVoice(filler, normalizedArtistId, language, normalizedToken, { purpose: 'reply' });
-  });
+  // Warm a single filler to reduce startup quota consumption and avoid burst traffic.
+  const filler = pickRandomEntry(fillers);
+  if (!filler) {
+    return;
+  }
+
+  void fetchAndCacheVoice(filler, normalizedArtistId, language, normalizedToken, { purpose: 'reply' });
 }
 
 export async function getRandomFillerUri(
