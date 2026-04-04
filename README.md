@@ -92,8 +92,8 @@ Implemented in this repository:
 - [`docs/phase3-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase3-status.md)
 - [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
 - Admin dashboard status: [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md)
-- Latest QA run: [`docs/qa-run-2026-04-03.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-03.md)
-- Latest code-review snapshot: [`docs/code-review-2026-04-03.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-03.md)
+- Latest QA run: [`docs/qa-run-2026-04-04.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-04.md)
+- Latest code-review snapshot: [`docs/code-review-2026-04-04.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-04.md)
 - Pre-release conversation reset checklist: [`docs/pre-release-reset-checklist.md`](/Users/laurentbernier/Documents/HAHA_app/docs/pre-release-reset-checklist.md)
 
 ## Repos and Vercel Projects
@@ -580,6 +580,7 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/qa-run-2026-04-01.md`
 - `docs/qa-run-2026-04-02.md`
 - `docs/qa-run-2026-04-03.md`
+- `docs/qa-run-2026-04-04.md`
 - `docs/code-review-2026-03-15.md`
 - `docs/code-review-2026-03-16.md`
 - `docs/code-review-2026-03-17.md`
@@ -588,6 +589,7 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/code-review-2026-03-28.md`
 - `docs/code-review-2026-04-01.md`
 - `docs/code-review-2026-04-03.md`
+- `docs/code-review-2026-04-04.md`
 - `docs/voice-ops-runbook.md`
 - `docs/troubleshooting.md`
 - `ha-ha-ai-build-prompt.improved.md`

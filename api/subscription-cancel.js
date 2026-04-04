@@ -41,6 +41,69 @@ function getStripeSecretKeyCandidates() {
   return Array.from(new Set([live, test].filter(Boolean)));
 }
 
+function isRecord(value) {
+  return typeof value === 'object' && value !== null;
+}
+
+function isMaybeSingleAmbiguousError(error) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const code = typeof error.code === 'string' ? error.code : '';
+  if (code === 'PGRST116') {
+    return true;
+  }
+
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return message.includes('multiple (or no) rows returned') || message.includes('multiple rows returned');
+}
+
+async function fetchStripeSubscriptionId(supabaseAdmin, userId) {
+  const singleResult = await supabaseAdmin
+    .from('stripe_customer_links')
+    .select('stripe_subscription_id')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!singleResult.error) {
+    const stripeSubscriptionId =
+      singleResult.data && typeof singleResult.data.stripe_subscription_id === 'string'
+        ? singleResult.data.stripe_subscription_id.trim()
+        : '';
+    return {
+      ok: true,
+      stripeSubscriptionId
+    };
+  }
+
+  if (!isMaybeSingleAmbiguousError(singleResult.error)) {
+    return { ok: false, error: singleResult.error };
+  }
+
+  const listResult = await supabaseAdmin
+    .from('stripe_customer_links')
+    .select('stripe_subscription_id')
+    .eq('user_id', userId)
+    .limit(10);
+
+  if (listResult.error) {
+    return { ok: false, error: listResult.error };
+  }
+
+  const rows = Array.isArray(listResult.data) ? listResult.data : [];
+  const preferredRow =
+    rows.find((row) => isRecord(row) && typeof row.stripe_subscription_id === 'string' && row.stripe_subscription_id.trim()) ??
+    rows[0];
+  const stripeSubscriptionId =
+    preferredRow && typeof preferredRow.stripe_subscription_id === 'string' ? preferredRow.stripe_subscription_id.trim() : '';
+
+  return {
+    ok: true,
+    stripeSubscriptionId
+  };
+}
+
 async function cancelStripeSubscription(stripeSecretKey, stripeSubscriptionId) {
   const body = new URLSearchParams({ cancel_at_period_end: 'true' });
 
@@ -151,19 +214,12 @@ module.exports = async function handler(req, res) {
   }
   const accountType = toAccountType(auth.user);
 
-  const { data: link, error: linkError } = await supabaseAdmin
-    .from('stripe_customer_links')
-    .select('stripe_subscription_id')
-    .eq('user_id', auth.user.id)
-    .maybeSingle();
-
-  if (linkError) {
-    sendError(res, 500, linkError.message, { code: 'SERVER_ERROR', requestId });
+  const stripeLink = await fetchStripeSubscriptionId(supabaseAdmin, auth.user.id);
+  if (!stripeLink.ok) {
+    sendError(res, 500, stripeLink.error.message, { code: 'SERVER_ERROR', requestId });
     return;
   }
-
-  const stripeSubscriptionId =
-    link && typeof link.stripe_subscription_id === 'string' ? link.stripe_subscription_id.trim() : '';
+  const stripeSubscriptionId = stripeLink.stripeSubscriptionId;
 
   if (!stripeSubscriptionId) {
     sendError(res, 404, 'No active Stripe subscription found.', { code: 'NOT_FOUND', requestId });

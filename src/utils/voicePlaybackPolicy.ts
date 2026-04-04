@@ -21,7 +21,7 @@ export function shouldAutoPlayVoice(state: VoiceAutoplayPolicyState): boolean {
     return false;
   }
 
-  return !Boolean(state.quotaBlocked);
+  return !state.quotaBlocked;
 }
 
 export function toVoicePlaybackOutcome(result: VoiceAutoplayAttemptResultDetailed): VoicePlaybackOutcome {

@@ -2,11 +2,13 @@ const { createReqRes } = require('./testHelpers');
 
 function buildSupabaseClient({
   user = { id: 'user-1', app_metadata: { account_type: 'free' } },
-  stripeSubscriptionId = null
+  stripeSubscriptionId = null,
+  stripeLinkMaybeSingleError = null,
+  stripeLinkListRows = null
 } = {}) {
   const stripeLinkMaybeSingle = jest.fn().mockResolvedValue({
     data: stripeSubscriptionId ? { stripe_subscription_id: stripeSubscriptionId } : null,
-    error: null
+    error: stripeLinkMaybeSingleError
   });
 
   return {
@@ -21,7 +23,19 @@ function buildSupabaseClient({
         return {
           select: () => ({
             eq: () => ({
-              maybeSingle: stripeLinkMaybeSingle
+              maybeSingle: stripeLinkMaybeSingle,
+              limit: jest.fn().mockResolvedValue({
+                data:
+                  stripeLinkListRows ??
+                  (stripeSubscriptionId
+                    ? [
+                        {
+                          stripe_subscription_id: stripeSubscriptionId
+                        }
+                      ]
+                    : []),
+                error: null
+              })
             })
           })
         };
@@ -180,6 +194,49 @@ describe('api/subscription-cancel', () => {
     expect(res.payload.cancelAtPeriodEnd).toBe(true);
     expect(res.payload.canCancel).toBe(false);
     expect(res.payload.nextBillingDate).toBe('2024-03-09T16:00:00.000Z');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back to list query when maybeSingle returns ambiguous rows error', async () => {
+    process.env.STRIPE_SECRET_KEY = 'sk_live_test';
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: jest.fn().mockResolvedValue({
+        status: 'active',
+        cancel_at_period_end: true,
+        current_period_end: 1_710_000_000
+      })
+    });
+
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() =>
+        buildSupabaseClient({
+          user: { id: 'u-legacy', app_metadata: { account_type: 'premium' } },
+          stripeSubscriptionId: null,
+          stripeLinkMaybeSingleError: {
+            code: 'PGRST116',
+            message: 'JSON object requested, multiple (or no) rows returned'
+          },
+          stripeLinkListRows: [
+            { stripe_subscription_id: '' },
+            { stripe_subscription_id: 'sub_legacy' }
+          ]
+        })
+      )
+    }));
+
+    const handler = require('../subscription-cancel');
+    const { req, res } = createReqRes({
+      method: 'POST',
+      headers: { authorization: 'Bearer valid-token' }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.ok).toBe(true);
+    expect(res.payload.cancelAtPeriodEnd).toBe(true);
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 });
