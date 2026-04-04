@@ -31,7 +31,7 @@ import type { ChatError } from '../../../models/ChatError';
 import { normalizeConversationThreadType } from '../../../models/Conversation';
 import type { Message } from '../../../models/Message';
 import { synthesizeVoice } from '../../../services/voiceEngine';
-import { attemptVoiceAutoplayUri } from '../../../services/voiceAutoplayService';
+import { attemptVoiceAutoplayUri, attemptVoiceAutoplayUriDetailed } from '../../../services/voiceAutoplayService';
 import { queueLatestWebAutoplayUnlockRetry } from '../../../services/webAutoplayUnlockService';
 import { tryLaunchExperienceFromText } from '../../../services/experienceLaunchService';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voiceFillerService';
@@ -61,6 +61,7 @@ import type { ChatSendPayload } from '../../../models/ChatSendPayload';
 import { shouldRestoreModeSelectMicAfterBlur } from '../micRestore';
 import { resolveGreetingAutoMicDecision } from '../greetingAutoMic';
 import { fetchModeSelectGreetingFromApi, type GreetingCoordinates } from '../greetingService';
+import { shouldConfirmGreetingAutoplayFailure } from '../greetingVoiceFailure';
 
 interface PendingGreetingAudio {
   conversationId: string;
@@ -1388,6 +1389,37 @@ export default function ModeSelectHomeScreen() {
     );
   }, [audioPlayer.currentMessageId, audioPlayer.isLoading, audioPlayer.isPlaying]);
 
+  const shouldConfirmGreetingAutoplayFailureForMessage = useCallback(
+    (params: {
+      conversationId: string;
+      messageId: string;
+      failureReason: 'invalid_queue' | 'playback_error' | 'interrupted' | null;
+    }): boolean => {
+      const normalizedConversationId = params.conversationId.trim();
+      const normalizedMessageId = params.messageId.trim();
+      if (!normalizedConversationId || !normalizedMessageId) {
+        return false;
+      }
+
+      const latestMessage =
+        useStore
+          .getState()
+          .messagesByConversation[normalizedConversationId]
+          ?.messages.find((message) => message.id === normalizedMessageId) ?? null;
+      const playbackState = audioPlayerRef.current;
+      return shouldConfirmGreetingAutoplayFailure({
+        state: 'failed',
+        failureReason: params.failureReason,
+        messageId: normalizedMessageId,
+        isPlaying: playbackState.isPlaying,
+        isLoading: playbackState.isLoading,
+        currentMessageId: playbackState.currentMessageId,
+        metadata: latestMessage?.metadata
+      });
+    },
+    []
+  );
+
   useEffect(() => {
     const currentMessageId = audioPlayer.currentMessageId?.trim() ?? '';
     if (!artist?.id || !currentMessageId || (!audioPlayer.isPlaying && !audioPlayer.isLoading)) {
@@ -1920,6 +1952,10 @@ export default function ModeSelectHomeScreen() {
         markArtistGreeted(artist.id);
         autoMicManualOverrideRef.current = false;
         setPendingAutoMicGreetingMessageId(greetingMessageId);
+        setReplayBarrier({
+          conversationId: introConversation.id,
+          messageId: greetingMessageId
+        });
         hasInsertedGreetingMessage = true;
         updateConversation(
           introConversation.id,
@@ -1979,12 +2015,12 @@ export default function ModeSelectHomeScreen() {
             return;
           }
 
-          const autoplayState = await attemptVoiceAutoplayUri({
+          const autoplayResult = await attemptVoiceAutoplayUriDetailed({
             audioPlayer: audioPlayerRef.current,
             uri: greetingAudioUri,
             messageId: greetingMessageId
           });
-          if (autoplayState === 'pending_web_unlock') {
+          if (autoplayResult.state === 'pending_web_unlock') {
             setPendingGreetingAudio({
               conversationId: introConversation.id,
               uri: greetingAudioUri,
@@ -1992,7 +2028,14 @@ export default function ModeSelectHomeScreen() {
             });
             return;
           }
-          if (autoplayState === 'failed') {
+          if (
+            autoplayResult.state === 'failed' &&
+            shouldConfirmGreetingAutoplayFailureForMessage({
+              conversationId: introConversation.id,
+              messageId: greetingMessageId,
+              failureReason: autoplayResult.failureReason
+            })
+          ) {
             const failedAutoplayCode = 'TTS_AUTOPLAY_FAILED';
             updateMessage(introConversation.id, greetingMessageId, {
               metadata: {
@@ -2074,6 +2117,7 @@ export default function ModeSelectHomeScreen() {
     isModeSelectScreenFocused,
     language,
     markArtistGreeted,
+    shouldConfirmGreetingAutoplayFailureForMessage,
     preferredName,
     resolveModeSelectSessionHubConversation,
     setActiveConversation,
@@ -2093,7 +2137,7 @@ export default function ModeSelectHomeScreen() {
           return;
         }
 
-        const autoplayState = await attemptVoiceAutoplayUri({
+        const autoplayResult = await attemptVoiceAutoplayUriDetailed({
           audioPlayer: audioPlayerRef.current,
           uri: pendingAudio.uri,
           messageId: pendingAudio.messageId
@@ -2102,11 +2146,18 @@ export default function ModeSelectHomeScreen() {
           return;
         }
 
-        if (autoplayState === 'started' || autoplayState === 'failed') {
+        if (autoplayResult.state === 'started' || autoplayResult.state === 'failed') {
           setPendingGreetingAudio(null);
         }
 
-        if (autoplayState === 'failed') {
+        if (
+          autoplayResult.state === 'failed' &&
+          shouldConfirmGreetingAutoplayFailureForMessage({
+            conversationId: pendingAudio.conversationId,
+            messageId: pendingAudio.messageId,
+            failureReason: autoplayResult.failureReason
+          })
+        ) {
           const failedAutoplayCode = 'TTS_AUTOPLAY_FAILED';
           const existingMessage =
             useStore
@@ -2136,6 +2187,7 @@ export default function ModeSelectHomeScreen() {
     enqueueGreetingVoiceNotice,
     isModeSelectScreenFocused,
     pendingGreetingAudio,
+    shouldConfirmGreetingAutoplayFailureForMessage,
     updateMessage
   ]);
 

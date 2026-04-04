@@ -1086,6 +1086,14 @@ describe('useChat sendMessage integration', () => {
     expect(baseArtistMessage?.metadata?.voiceQueue).toEqual(['blob:https://ha-ha.ai/chunk-1.mp3']);
     expect(baseArtistMessage?.metadata?.voiceUrl).toBe('blob:https://ha-ha.ai/chunk-1.mp3');
     expect(baseArtistMessage?.metadata?.voiceErrorCode).toBeUndefined();
+
+    const injectedVoiceNotice = state.messagesByConversation[conversation.id]?.messages.find(
+      (message) =>
+        message.role === 'artist' &&
+        message.metadata?.injected === true &&
+        message.metadata?.errorCode === 'RATE_LIMIT_EXCEEDED'
+    );
+    expect(injectedVoiceNotice).toBeUndefined();
   });
 
   it('retries autoplay with the full queue when first chunk autoplay is interrupted', async () => {
@@ -1132,4 +1140,5 @@ describe('useChat sendMessage integration', () => {
       })
     );
   });
+
 });

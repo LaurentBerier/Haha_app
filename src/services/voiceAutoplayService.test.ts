@@ -6,7 +6,7 @@ jest.mock('react-native', () => ({
 
 import type { AudioPlayerController } from '../hooks/useAudioPlayer';
 import { __resetWebAutoplayUnlockServiceForTests } from './webAutoplayUnlockService';
-import { attemptVoiceAutoplayQueue } from './voiceAutoplayService';
+import { attemptVoiceAutoplayQueue, attemptVoiceAutoplayQueueDetailed } from './voiceAutoplayService';
 
 class MockDocumentEvents {
   private listeners = new Map<string, Set<() => void>>();
@@ -81,6 +81,24 @@ describe('voiceAutoplayService', () => {
     expect(result).toBe('started');
   });
 
+  it('returns detailed started state with no failure reason', async () => {
+    const audioPlayer = createAudioPlayerStub(async () => ({
+      started: true,
+      reason: null
+    }));
+
+    const result = await attemptVoiceAutoplayQueueDetailed({
+      audioPlayer,
+      uris: ['https://example.com/cathy.mp3'],
+      messageId: 'msg-voice-detailed-1'
+    });
+
+    expect(result).toEqual({
+      state: 'started',
+      failureReason: null
+    });
+  });
+
   it('returns pending_web_unlock and retries when the first gesture unlocks autoplay', async () => {
     const audioPlayer = createAudioPlayerStub(async () => ({
       started: false,
@@ -101,6 +119,24 @@ describe('voiceAutoplayService', () => {
     expect(onWebUnlockRetry).toHaveBeenCalledTimes(1);
   });
 
+  it('returns detailed pending_web_unlock with null failure reason', async () => {
+    const audioPlayer = createAudioPlayerStub(async () => ({
+      started: false,
+      reason: 'web_autoplay_blocked'
+    }));
+
+    const result = await attemptVoiceAutoplayQueueDetailed({
+      audioPlayer,
+      uris: ['https://example.com/cathy.mp3'],
+      messageId: 'msg-voice-detailed-2'
+    });
+
+    expect(result).toEqual({
+      state: 'pending_web_unlock',
+      failureReason: null
+    });
+  });
+
   it('returns failed on non-autoplay playback errors', async () => {
     const audioPlayer = createAudioPlayerStub(async () => ({
       started: false,
@@ -114,5 +150,51 @@ describe('voiceAutoplayService', () => {
     });
 
     expect(result).toBe('failed');
+  });
+
+  it('returns detailed failure reasons for playback errors', async () => {
+    const playbackErrorPlayer = createAudioPlayerStub(async () => ({
+      started: false,
+      reason: 'playback_error'
+    }));
+    const interruptedPlayer = createAudioPlayerStub(async () => ({
+      started: false,
+      reason: 'interrupted'
+    }));
+    const invalidQueuePlayer = createAudioPlayerStub(async () => ({
+      started: false,
+      reason: 'invalid_queue'
+    }));
+
+    await expect(
+      attemptVoiceAutoplayQueueDetailed({
+        audioPlayer: playbackErrorPlayer,
+        uris: ['https://example.com/cathy.mp3'],
+        messageId: 'msg-voice-detailed-3'
+      })
+    ).resolves.toEqual({
+      state: 'failed',
+      failureReason: 'playback_error'
+    });
+    await expect(
+      attemptVoiceAutoplayQueueDetailed({
+        audioPlayer: interruptedPlayer,
+        uris: ['https://example.com/cathy.mp3'],
+        messageId: 'msg-voice-detailed-4'
+      })
+    ).resolves.toEqual({
+      state: 'failed',
+      failureReason: 'interrupted'
+    });
+    await expect(
+      attemptVoiceAutoplayQueueDetailed({
+        audioPlayer: invalidQueuePlayer,
+        uris: ['https://example.com/cathy.mp3'],
+        messageId: 'msg-voice-detailed-5'
+      })
+    ).resolves.toEqual({
+      state: 'failed',
+      failureReason: 'invalid_queue'
+    });
   });
 });

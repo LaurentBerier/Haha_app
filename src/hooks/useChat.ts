@@ -985,6 +985,18 @@ export function useChat(conversationId: string) {
         });
       };
 
+      const hasReplayableVoiceMetadata = (metadata: Message['metadata'] | null | undefined): boolean => {
+        if (!metadata) {
+          return false;
+        }
+
+        if (Array.isArray(metadata.voiceQueue) && metadata.voiceQueue.some((uri) => typeof uri === 'string' && uri.trim())) {
+          return true;
+        }
+
+        return typeof metadata.voiceUrl === 'string' && metadata.voiceUrl.trim().length > 0;
+      };
+
       const registerTerminalTtsError = (error: unknown): boolean => {
         const terminalCode = resolveTerminalTtsCode(error);
         if (!terminalCode) {
@@ -1396,7 +1408,9 @@ export function useChat(conversationId: string) {
             });
           }
         }
-        if (pendingVoiceNoticeCode) {
+        const latestArtistMessageAfterVoice = getLatestArtistMessage();
+        const hasReplayableVoiceForTurn = hasReplayableVoiceMetadata(latestArtistMessageAfterVoice?.metadata);
+        if (pendingVoiceNoticeCode && !hasReplayableVoiceForTurn) {
           const showUpgradeCta =
             shouldShowUpgradeForTtsCode(pendingVoiceNoticeCode) && normalizedAccountType !== 'admin';
           const noticeMetadata: NonNullable<Message['metadata']> = {
