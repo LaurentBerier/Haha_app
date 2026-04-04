@@ -395,25 +395,25 @@ module.exports = async function handler(req, res) {
 
     if (usageResult.error) {
       console.error(`[api/admin-stats][${requestId}] Failed to query admin_daily_usage`, usageResult.error);
-      sendError(res, 500, usageResult.error.message, { code: 'SERVER_ERROR', requestId });
+      sendError(res, 500, 'Failed to load usage data.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 
     if (revenueResult.error) {
       console.error(`[api/admin-stats][${requestId}] Failed to query admin_revenue_summary`, revenueResult.error);
-      sendError(res, 500, revenueResult.error.message, { code: 'SERVER_ERROR', requestId });
+      sendError(res, 500, 'Failed to load revenue data.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 
     if (!usageEventsResult.ok) {
       console.error(`[api/admin-stats][${requestId}] Failed to query usage_events timeseries`, usageEventsResult.error);
-      sendError(res, 500, usageEventsResult.error.message, { code: 'SERVER_ERROR', requestId });
+      sendError(res, 500, 'Failed to load timeseries data.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 
     if (!tierBreakdownResult.ok) {
       console.error(`[api/admin-stats][${requestId}] Failed to query profile tier counts`, tierBreakdownResult.error);
-      sendError(res, 500, tierBreakdownResult.error.message, { code: 'SERVER_ERROR', requestId });
+      sendError(res, 500, 'Failed to load tier breakdown.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 

@@ -93,9 +93,13 @@ export function useStorePersistence(): void {
 
     return () => {
       unsubscribe();
+      // Flush any pending debounced save so the last action is not lost on unmount.
       if (timeoutId) {
         clearTimeout(timeoutId);
+        timeoutId = null;
       }
+      const snapshot = selectPersistedSnapshot(useStore.getState());
+      void savePersistedSnapshot(snapshot);
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       }

@@ -770,7 +770,7 @@ describe('api/claude', () => {
 
     const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
     expect(res.statusCode).toBe(200);
-    expect(upstreamBody.system).toContain('Prenom prefere a utiliser: Laurent');
+    expect(upstreamBody.system).toContain('Prenom prefere a utiliser: <user_value>Laurent</user_value>');
     expect(upstreamBody.system).toContain('Signe astro : Belier');
     expect(upstreamBody.system).toContain("n'affirme jamais que tu ne sais rien");
   });
@@ -813,7 +813,7 @@ describe('api/claude', () => {
 
     const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
     expect(res.statusCode).toBe(200);
-    expect(upstreamBody.system).toContain(`Interets : ${'a'.repeat(50)}`);
+    expect(upstreamBody.system).toContain(`Interets : <user_value>${'a'.repeat(50)}`);
     expect(upstreamBody.system).not.toContain('a'.repeat(51));
   });
 

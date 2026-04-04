@@ -284,6 +284,9 @@ function isKvEnvironmentConfigured() {
 }
 
 function shouldBypassIpRateLimitWhenKvUnavailable() {
+  if (process.env.DISABLE_IP_RATE_LIMIT === 'true') {
+    return true;
+  }
   return process.env.NODE_ENV === 'test' || process.env.NODE_ENV === 'development';
 }
 

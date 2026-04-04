@@ -238,11 +238,11 @@ export function useAudioPlayer(): AudioPlayerController {
             onChunkEnd();
           };
 
+          clearWebListeners();
           webAudio.addEventListener('ended', handleEnded);
           webAudio.addEventListener('playing', handlePlaying);
           webAudio.addEventListener('pause', handlePause);
           webAudio.addEventListener('error', handleError);
-          clearWebListeners();
           detachWebListenersRef.current = () => {
             webAudio.removeEventListener('ended', handleEnded);
             webAudio.removeEventListener('playing', handlePlaying);

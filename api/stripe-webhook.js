@@ -485,7 +485,8 @@ module.exports = async function handler(req, res) {
   const providerEventId = getStripeProviderEventId(event);
   const duplicateCheck = await isDuplicateStripeEvent(supabaseAdmin, providerEventId);
   if (!duplicateCheck.ok) {
-    sendError(res, 500, duplicateCheck.error.message, { code: 'SERVER_ERROR', requestId });
+    console.error(`[api/stripe-webhook][${requestId}] Duplicate check failed`, duplicateCheck.error);
+    sendError(res, 500, 'Failed to process webhook event.', { code: 'SERVER_ERROR', requestId });
     return;
   }
 

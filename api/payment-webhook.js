@@ -279,7 +279,8 @@ module.exports = async function handler(req, res) {
     });
 
     if (insertResult.error) {
-      sendError(res, 500, insertResult.error.message, { code: 'SERVER_ERROR', requestId });
+      console.error(`[api/payment-webhook][${requestId}] Failed to insert payment event`, insertResult.error);
+      sendError(res, 500, 'Failed to record payment event.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 

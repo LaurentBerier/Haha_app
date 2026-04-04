@@ -1,4 +1,4 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, useRef } from 'react';
 import { FlatList, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import type { Message } from '../../models/Message';
 import { t } from '../../i18n';
@@ -64,6 +64,11 @@ function MessageListBase({
   removeClippedSubviews,
   disableVirtualization
 }: MessageListProps) {
+  // Keep a ref to the latest audioPlayer so renderItem doesn't need it as a dep.
+  // This prevents every ChatBubble from re-rendering on audio state ticks.
+  const audioPlayerRef = useRef(audioPlayer);
+  audioPlayerRef.current = audioPlayer;
+
   const verticalAlignment = resolveMessageListVerticalAlignment(messages.length);
   const {
     listRef,
@@ -94,7 +99,7 @@ function MessageListBase({
         activeMemeOptionId={activeMemeOptionId}
         activeMemeSaveMessageId={activeMemeSaveMessageId}
         activeMemeShareMessageId={activeMemeShareMessageId}
-        audioPlayer={audioPlayer}
+        audioPlayer={audioPlayerRef.current}
       />
     ),
     [
@@ -102,7 +107,6 @@ function MessageListBase({
       activeMemeSaveMessageId,
       activeMemeShareMessageId,
       artistDisplayName,
-      audioPlayer,
       onChooseMemeOption,
       onRetryMessage,
       onRetryVoice,
@@ -126,6 +130,7 @@ function MessageListBase({
       data={messages}
       keyExtractor={(item) => item.id}
       renderItem={renderItem}
+      extraData={audioPlayer}
       windowSize={windowSize}
       initialNumToRender={initialNumToRender}
       maxToRenderPerBatch={maxToRenderPerBatch}

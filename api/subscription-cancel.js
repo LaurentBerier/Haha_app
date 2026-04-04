@@ -216,7 +216,8 @@ module.exports = async function handler(req, res) {
 
   const stripeLink = await fetchStripeSubscriptionId(supabaseAdmin, auth.user.id);
   if (!stripeLink.ok) {
-    sendError(res, 500, stripeLink.error.message, { code: 'SERVER_ERROR', requestId });
+    console.error(`[api/subscription-cancel][${requestId}] Failed to fetch Stripe subscription`, stripeLink.error);
+    sendError(res, 500, 'Failed to load subscription data.', { code: 'SERVER_ERROR', requestId });
     return;
   }
   const stripeSubscriptionId = stripeLink.stripeSubscriptionId;

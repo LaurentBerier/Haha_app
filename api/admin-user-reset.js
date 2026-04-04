@@ -137,7 +137,7 @@ module.exports = async function handler(req, res) {
 
     if (previousError) {
       console.error(`[api/admin-user-reset][${requestId}] Failed to read profile`, previousError);
-      sendError(res, 500, previousError.message, { code: 'SERVER_ERROR', requestId });
+      sendError(res, 500, 'Failed to read user profile.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 
@@ -158,7 +158,7 @@ module.exports = async function handler(req, res) {
 
     if (updateError) {
       console.error(`[api/admin-user-reset][${requestId}] Failed to reset profile usage`, updateError);
-      sendError(res, 500, updateError.message, { code: 'SERVER_ERROR', requestId });
+      sendError(res, 500, 'Failed to reset user usage.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 

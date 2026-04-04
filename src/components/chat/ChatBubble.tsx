@@ -33,7 +33,23 @@ interface ChatBubbleProps {
   audioPlayer?: AudioPlayerController;
 }
 
-const VOICE_HYDRATION_ATTEMPTS = new Set<string>();
+// Bounded set so transient failures don't permanently block retry.
+// Uses Map insertion order as LRU: entries added last are evicted last.
+const VOICE_HYDRATION_ATTEMPTS_MAX = 200;
+const VOICE_HYDRATION_ATTEMPTS = new Map<string, true>();
+function markVoiceHydrationAttempt(key: string): boolean {
+  if (VOICE_HYDRATION_ATTEMPTS.has(key)) {
+    return false;
+  }
+  VOICE_HYDRATION_ATTEMPTS.set(key, true);
+  if (VOICE_HYDRATION_ATTEMPTS.size > VOICE_HYDRATION_ATTEMPTS_MAX) {
+    const oldest = VOICE_HYDRATION_ATTEMPTS.keys().next().value;
+    if (oldest !== undefined) {
+      VOICE_HYDRATION_ATTEMPTS.delete(oldest);
+    }
+  }
+  return true;
+}
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 function resolveVoiceErrorCode(error: unknown): string {
@@ -353,11 +369,9 @@ function ChatBubbleBase({
     }
 
     const attemptKey = `${message.id}:${conversation.artistId}:${conversation.language}`;
-    if (VOICE_HYDRATION_ATTEMPTS.has(attemptKey)) {
+    if (!markVoiceHydrationAttempt(attemptKey)) {
       return;
     }
-
-    VOICE_HYDRATION_ATTEMPTS.add(attemptKey);
     let cancelled = false;
     mergeMetadata({
       voiceStatus: 'generating',

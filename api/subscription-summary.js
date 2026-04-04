@@ -280,7 +280,8 @@ module.exports = async function handler(req, res) {
 
   const linkLookup = await fetchStripeLink(supabaseAdmin, auth.user.id);
   if (!linkLookup.ok) {
-    sendError(res, 500, linkLookup.error.message, { code: 'SERVER_ERROR', requestId });
+    console.error(`[api/subscription-summary][${requestId}] Failed to fetch Stripe link`, linkLookup.error);
+    sendError(res, 500, 'Failed to load subscription data.', { code: 'SERVER_ERROR', requestId });
     return;
   }
 

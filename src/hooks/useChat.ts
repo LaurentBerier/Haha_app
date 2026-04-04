@@ -967,6 +967,10 @@ export function useChat(conversationId: string) {
       const ttsChunkUrisByIndex = new Map<number, string>();
       const ttsChunkDisplayBoundariesByIndex = new Map<number, number>();
       const ttsPendingPromises: Array<Promise<void>> = [];
+      // Semaphore: limit concurrent TTS fetches to avoid 30+ simultaneous requests.
+      let ttsInFlight = 0;
+      const MAX_TTS_CONCURRENT = 3;
+      const ttsConcurrencyQueue: Array<() => void> = [];
       let displayTextAccumulator = 0;
       let nextPlayableChunkIndex = 0;
       let hasQueuedAutoplayChunk = false;
@@ -1134,24 +1138,42 @@ export function useChat(conversationId: string) {
         ttsChunkDisplayBoundariesByIndex.set(chunkIndex, Math.max(displayTextAccumulator, 0));
         const latestAccessToken = useStore.getState().session?.accessToken ?? accessToken;
 
-        const ttsPromise = fetchAndCacheVoice(normalizedChunk, artistId, language, latestAccessToken, {
-          throwOnError: true
-        })
-          .then((uri) => {
-            if (ignoreTtsUpdates) {
-              return;
-            }
-            if (uri) {
-              ttsChunkUrisByIndex.set(chunkIndex, uri);
-              flushReadyPlaybackChunks();
-              return;
-            }
+        const runFetch = (): Promise<void> => {
+          ttsInFlight += 1;
+          return fetchAndCacheVoice(normalizedChunk, artistId, language, latestAccessToken, {
+            throwOnError: true
           })
-          .catch((error: unknown) => {
-            if (registerTerminalTtsError(error)) {
-              return;
-            }
-          });
+            .then((uri) => {
+              if (ignoreTtsUpdates) {
+                return;
+              }
+              if (uri) {
+                ttsChunkUrisByIndex.set(chunkIndex, uri);
+                flushReadyPlaybackChunks();
+              }
+            })
+            .catch((error: unknown) => {
+              if (registerTerminalTtsError(error)) {
+                return;
+              }
+            })
+            .finally(() => {
+              ttsInFlight -= 1;
+              const next = ttsConcurrencyQueue.shift();
+              if (next) {
+                next();
+              }
+            });
+        };
+
+        const ttsPromise: Promise<void> = new Promise((resolve) => {
+          const run = () => resolve(runFetch());
+          if (ttsInFlight < MAX_TTS_CONCURRENT) {
+            run();
+          } else {
+            ttsConcurrencyQueue.push(run);
+          }
+        });
 
         ttsPendingPromises.push(ttsPromise);
       };
