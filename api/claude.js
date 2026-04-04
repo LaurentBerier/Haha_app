@@ -55,7 +55,7 @@ const DEFAULT_MONTHLY_CAPS = {
   // admin intentionally omitted => unlimited
 };
 const DEFAULT_MAX_TOKENS_BY_TIER = {
-  free: 150,
+  free: 200,
   regular: 200,
   premium: 300,
   admin: 300
@@ -73,13 +73,13 @@ const QUOTA_THRESHOLDS = {
   ABSOLUTE: 1.5
 };
 const SOFT1_MAX_TOKENS_BY_TIER = {
-  free: 120,
+  free: 180,
   regular: 180,
   premium: 280,
   admin: 300
 };
 const SOFT2_MAX_TOKENS_BY_TIER = {
-  free: 80,
+  free: 130,
   regular: 130,
   premium: 200,
   admin: 300

@@ -27,20 +27,20 @@ API behavior in [`api/claude.js`](/Users/laurentbernier/Documents/HAHA_app/api/c
 
 1. `normal` mode (`<75%`)
 - primary model: `claude-sonnet-4-6`
-- tier max tokens: `free=150`, `regular=200`, `premium=300`
+- tier max tokens: `free=200`, `regular=200`, `premium=300`
 - context window by tier: `free=5`, `regular=15`, `premium=20`, `admin=20`
 
 2. `soft1` mode (`>=75%`)
 - model: keeps `claude-sonnet-4-6`
 - reduced max tokens:
-  - `free=120`, `regular=180`, `premium=280`
+  - `free=180`, `regular=180`, `premium=280`
 - reduced context window:
   - `free=5`, `regular=12`, `premium=20`
 
 3. `soft2` mode (`>=90%`)
 - model fallback: `claude-haiku-4-5-20251001`
 - reduced max tokens:
-  - `free=80`, `regular=130`, `premium=200`
+  - `free=130`, `regular=130`, `premium=200`
 - reduced context window:
   - `free=3`, `regular=7`, `premium=12`
 

@@ -88,6 +88,7 @@ jest.mock('../store/useStore', () => {
 });
 
 import {
+  __resetPrimaryThreadSyncServiceForTests,
   fetchPrimaryThreadMessages,
   syncPrimaryThreadArtist
 } from './primaryThreadSyncService';
@@ -95,6 +96,7 @@ import {
 describe('primaryThreadSyncService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    __resetPrimaryThreadSyncServiceForTests();
     selectResponseQueue.length = 0;
     upsertResponseQueue.length = 0;
     rpcResponseQueue.length = 0;
@@ -297,5 +299,76 @@ describe('primaryThreadSyncService', () => {
 
     expect(messages.map((message) => message.id)).toEqual(['m1', 'm2']);
     expect(messages[1]?.content).toBe('Two');
+  });
+
+  it('keeps sync non-fatal when trim RPC is unavailable and skips repeated trim attempts in-session', async () => {
+    mockStoreStateRef.current.conversations = {
+      cathy: [
+        {
+          id: 'conv-primary',
+          artistId: 'cathy',
+          title: 'Local primary',
+          language: 'fr-CA',
+          modeId: 'on-jase',
+          threadType: 'primary',
+          createdAt: '2026-04-03T10:00:00.000Z',
+          updatedAt: '2026-04-03T11:00:00.000Z',
+          lastMessagePreview: 'Salut'
+        }
+      ]
+    };
+    mockStoreStateRef.current.messagesByConversation = {
+      'conv-primary': {
+        messages: [
+          {
+            id: 'm1',
+            conversationId: 'conv-primary',
+            role: 'user',
+            content: 'A',
+            status: 'complete',
+            timestamp: '2026-04-03T10:00:00.000Z'
+          }
+        ]
+      }
+    };
+
+    // First sync: trim RPC is unavailable (non-fatal).
+    selectResponseQueue.push(
+      { data: null, error: null },
+      { data: [], error: null }
+    );
+    upsertResponseQueue.push(
+      { data: null, error: null },
+      { data: null, error: null }
+    );
+    rpcResponseQueue.push({
+      data: null,
+      error: { code: '42883', message: 'function public.trim_primary_thread_messages(text, integer) does not exist' }
+    });
+
+    const firstResult = await syncPrimaryThreadArtist('user-1', 'cathy');
+    expect(firstResult.skipped).toBe(false);
+    expect(firstResult.uploadedMessagesCount).toBe(1);
+
+    // Second sync for same user+artist: trim is skipped (no extra RPC call).
+    selectResponseQueue.push(
+      { data: null, error: null },
+      { data: [{ message_id: 'm1' }], error: null }
+    );
+    upsertResponseQueue.push({ data: null, error: null });
+
+    const secondResult = await syncPrimaryThreadArtist('user-1', 'cathy');
+    expect(secondResult.skipped).toBe(false);
+    expect(secondResult.uploadedMessagesCount).toBe(0);
+
+    expect(mockRpcCalls).toEqual([
+      {
+        fnName: 'trim_primary_thread_messages',
+        args: {
+          artist_id: 'cathy',
+          keep_count: 500
+        }
+      }
+    ]);
   });
 });

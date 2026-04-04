@@ -10,6 +10,7 @@ jest.mock('react-native', () => ({
 }));
 
 import {
+  DEFAULT_REPLAY_ON_FOCUS,
   resolveReplayTrackingStateAfterAttempt,
   resolveInterruptedReplayMessageId,
   shouldRetryPendingReplayWhenUnblocked,
@@ -18,6 +19,10 @@ import {
 } from './useAutoReplayLastArtistMessage';
 
 describe('useAutoReplayLastArtistMessage helpers', () => {
+  it('defaults focus replay to disabled', () => {
+    expect(DEFAULT_REPLAY_ON_FOCUS).toBe(false);
+  });
+
   it('disables focus replay when replayOnFocus is false', () => {
     expect(shouldReplayOnFocusLifecycle(true, false, true)).toBe(false);
   });

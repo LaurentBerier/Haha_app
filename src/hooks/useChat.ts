@@ -30,7 +30,7 @@ import {
 } from '../services/relationshipMemoryService';
 import { addScore } from '../services/scoreManager';
 import { fetchAndCacheVoice } from '../services/ttsService';
-import { attemptVoiceAutoplayQueue } from '../services/voiceAutoplayService';
+import { attemptVoiceAutoplayQueue, attemptVoiceAutoplayQueueDetailed } from '../services/voiceAutoplayService';
 import { useStore } from '../store/useStore';
 import { resolveLanguageForTurn } from '../utils/conversationLanguage';
 import { findConversationById } from '../utils/conversationUtils';
@@ -117,6 +117,8 @@ const RELATIONSHIP_MEMORY_UPDATE_MIN_USER_TURNS = 20;
 const RELATIONSHIP_MEMORY_UPDATE_COOLDOWN_MS = 30 * 60_000;
 const RELATIONSHIP_MEMORY_EXCERPT_MAX_MESSAGES = 28;
 const RELATIONSHIP_MEMORY_EXCERPT_MAX_CHARS = 280;
+const VOICE_AUTOPLAY_MAX_ATTEMPTS = 3;
+const VOICE_AUTOPLAY_RETRY_DELAY_MS = 0;
 export {
   buildCathyVoiceNotice,
   resolveTerminalTtsCode,
@@ -550,7 +552,7 @@ export function useChat(conversationId: string) {
       }
 
       const runAttempt = (retryOnWebUnlock: boolean) =>
-        attemptVoiceAutoplayQueue({
+        attemptVoiceAutoplayQueueDetailed({
           audioPlayer,
           uris: normalizedUris,
           messageId: normalizedMessageId,
@@ -563,13 +565,27 @@ export function useChat(conversationId: string) {
             : null
         });
 
-      return runAttempt(shouldRetryOnWebUnlock).then((state) => {
-        if (state !== 'failed') {
-          return state;
+      return (async () => {
+        for (let attempt = 1; attempt <= VOICE_AUTOPLAY_MAX_ATTEMPTS; attempt += 1) {
+          const result = await runAttempt(attempt === 1 ? shouldRetryOnWebUnlock : false);
+          if (result.state !== 'failed') {
+            return result.state;
+          }
+
+          if (result.failureReason !== 'interrupted' && result.failureReason !== 'playback_error') {
+            return 'failed';
+          }
+
+          if (attempt >= VOICE_AUTOPLAY_MAX_ATTEMPTS) {
+            return 'failed';
+          }
+
+          if (VOICE_AUTOPLAY_RETRY_DELAY_MS > 0) {
+            await sleep(VOICE_AUTOPLAY_RETRY_DELAY_MS);
+          }
         }
-        // One immediate retry handles transient interruptions when filler and reply autoplay race.
-        return runAttempt(false);
-      });
+        return 'failed';
+      })();
     },
     [audioPlayer]
   );

@@ -32,6 +32,8 @@ export interface PendingReplayState {
   status: PendingReplayStatus;
 }
 
+export const DEFAULT_REPLAY_ON_FOCUS = false;
+
 interface ResolveInterruptedReplayMessageIdParams {
   nextState: AppStateStatus;
   isAudioActive: boolean;
@@ -125,7 +127,7 @@ export function useAutoReplayLastArtistMessage({
   enabled,
   hasStreaming,
   voiceAutoPlay = true,
-  replayOnFocus = true
+  replayOnFocus = DEFAULT_REPLAY_ON_FOCUS
 }: UseAutoReplayLastArtistMessageParams): void {
   const hasRunInitialReplayRef = useRef(false);
   const lastStartedReplayMessageIdRef = useRef<string | null>(null);

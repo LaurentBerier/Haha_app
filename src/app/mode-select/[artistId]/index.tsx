@@ -103,6 +103,8 @@ const GREETING_BOOTING_FR_LINES = [
   "Injection d'opinions non sollicitees... en cours"
 ] as const;
 const MODE_SELECT_DEBUG_TOGGLE_KEY = 'HAHA_MODE_SELECT_DEBUG';
+const GREETING_AUTOPLAY_MAX_ATTEMPTS = 3;
+const GREETING_AUTOPLAY_RETRY_DELAY_MS = 0;
 
 type TerminalTtsCode = SharedTerminalTtsCode;
 type GreetingVoiceNoticeCode = TerminalTtsCode | 'UNAUTHORIZED' | 'TTS_PROVIDER_ERROR';
@@ -207,6 +209,48 @@ function resolveGreetingVoiceNoticeCode(errorCode: string): GreetingVoiceNoticeC
     return 'UNAUTHORIZED';
   }
   return 'TTS_PROVIDER_ERROR';
+}
+
+function shouldRetryGreetingAutoplayFailure(failureReason: string | null): boolean {
+  return failureReason === 'interrupted' || failureReason === 'playback_error';
+}
+
+async function attemptGreetingAutoplayWithRetries(params: {
+  audioPlayer: Parameters<typeof attemptVoiceAutoplayUriDetailed>[0]['audioPlayer'];
+  uri: string;
+  messageId: string;
+}): Promise<ReturnType<typeof toVoicePlaybackOutcome>> {
+  let lastOutcome: ReturnType<typeof toVoicePlaybackOutcome> = {
+    state: 'failed',
+    failureReason: 'playback_error'
+  };
+
+  for (let attempt = 1; attempt <= GREETING_AUTOPLAY_MAX_ATTEMPTS; attempt += 1) {
+    const playbackOutcome = toVoicePlaybackOutcome(
+      await attemptVoiceAutoplayUriDetailed({
+        audioPlayer: params.audioPlayer,
+        uri: params.uri,
+        messageId: params.messageId
+      })
+    );
+    lastOutcome = playbackOutcome;
+    if (playbackOutcome.state !== 'failed') {
+      return playbackOutcome;
+    }
+    if (!shouldRetryGreetingAutoplayFailure(playbackOutcome.failureReason)) {
+      return playbackOutcome;
+    }
+    if (attempt >= GREETING_AUTOPLAY_MAX_ATTEMPTS) {
+      return playbackOutcome;
+    }
+    if (GREETING_AUTOPLAY_RETRY_DELAY_MS > 0) {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, GREETING_AUTOPLAY_RETRY_DELAY_MS);
+      });
+    }
+  }
+
+  return lastOutcome;
 }
 
 interface ArtistModeSource {
@@ -1488,7 +1532,8 @@ export default function ModeSelectHomeScreen() {
     audioPlayer,
     enabled: isValidConversation && isModeSelectScreenFocused,
     hasStreaming,
-    voiceAutoPlay: voiceAutoPlay || conversationModeEnabled
+    voiceAutoPlay: voiceAutoPlay || conversationModeEnabled,
+    replayOnFocus: false
   });
 
   useEffect(() => {
@@ -1727,7 +1772,7 @@ export default function ModeSelectHomeScreen() {
       return;
     }
 
-    if (!artist || !isModeSelectScreenFocused || greetingOpenCycle <= 0) {
+    if (!artist || !isModeSelectScreenFocused || greetingOpenCycle <= 0 || hasArtistBeenGreetedThisSession) {
       return;
     }
 
@@ -1937,13 +1982,11 @@ export default function ModeSelectHomeScreen() {
             return;
           }
 
-          const playbackOutcome = toVoicePlaybackOutcome(
-            await attemptVoiceAutoplayUriDetailed({
-              audioPlayer: audioPlayerRef.current,
-              uri: greetingAudioUri,
-              messageId: greetingMessageId
-            })
-          );
+          const playbackOutcome = await attemptGreetingAutoplayWithRetries({
+            audioPlayer: audioPlayerRef.current,
+            uri: greetingAudioUri,
+            messageId: greetingMessageId
+          });
           if (playbackOutcome.state === 'pending_web_unlock') {
             setPendingGreetingAudio({
               conversationId: introConversation.id,
@@ -2022,6 +2065,7 @@ export default function ModeSelectHomeScreen() {
     enqueueGreetingVoiceNotice,
     finalizeGreetingRun,
     greetingOpenCycle,
+    hasArtistBeenGreetedThisSession,
     isModeSelectScreenFocused,
     isQuotaBlocked,
     language,
@@ -2056,13 +2100,11 @@ export default function ModeSelectHomeScreen() {
           return;
         }
 
-        const playbackOutcome = toVoicePlaybackOutcome(
-          await attemptVoiceAutoplayUriDetailed({
-            audioPlayer: audioPlayerRef.current,
-            uri: pendingAudio.uri,
-            messageId: pendingAudio.messageId
-          })
-        );
+        const playbackOutcome = await attemptGreetingAutoplayWithRetries({
+          audioPlayer: audioPlayerRef.current,
+          uri: pendingAudio.uri,
+          messageId: pendingAudio.messageId
+        });
         if (!modeSelectScreenFocusedRef.current) {
           return;
         }

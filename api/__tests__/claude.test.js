@@ -1308,6 +1308,57 @@ describe('api/claude', () => {
       expect(res.statusCode).toBe(200);
       expect(res.headers['X-Quota-Mode']).toBe('normal');
       expect(upstreamBody.model).toBe('claude-sonnet-4-6');
+      expect(upstreamBody.max_tokens).toBe(200);
+    });
+
+    it('uses soft1 mode for free user at 75 percent threshold', async () => {
+      jest.doMock('@supabase/supabase-js', () => ({
+        createClient: jest.fn(() =>
+          buildSupabaseClient({
+            user: { id: 'free-user-soft1', app_metadata: { account_type: 'free' } },
+            initialUsageCount: 149
+          })
+        )
+      }));
+
+      const handler = require('../claude');
+      const { req, res } = createReqRes({
+        headers: { authorization: 'Bearer free-soft1-token' },
+        body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello' }] }
+      });
+
+      await handler(req, res);
+
+      const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['X-Quota-Mode']).toBe('soft1');
+      expect(upstreamBody.model).toBe('claude-sonnet-4-6');
+      expect(upstreamBody.max_tokens).toBe(180);
+    });
+
+    it('uses soft2 mode for free user at 90 percent threshold', async () => {
+      jest.doMock('@supabase/supabase-js', () => ({
+        createClient: jest.fn(() =>
+          buildSupabaseClient({
+            user: { id: 'free-user-soft2', app_metadata: { account_type: 'free' } },
+            initialUsageCount: 179
+          })
+        )
+      }));
+
+      const handler = require('../claude');
+      const { req, res } = createReqRes({
+        headers: { authorization: 'Bearer free-soft2-token' },
+        body: { systemPrompt: 'system', messages: [{ role: 'user', content: 'hello' }] }
+      });
+
+      await handler(req, res);
+
+      const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['X-Quota-Mode']).toBe('soft2');
+      expect(upstreamBody.model).toBe('claude-haiku-4-5-20251001');
+      expect(upstreamBody.max_tokens).toBe(130);
     });
 
     it('uses profile account type when auth metadata is stale', async () => {

@@ -284,7 +284,8 @@ export default function ChatScreen() {
     audioPlayer,
     enabled: isValidConversation,
     hasStreaming,
-    voiceAutoPlay: voiceAutoPlay || conversationModeEnabled
+    voiceAutoPlay: voiceAutoPlay || conversationModeEnabled,
+    replayOnFocus: false
   });
 
   const handleChooseMemeOption = useCallback(

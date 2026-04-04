@@ -8,6 +8,14 @@ type SupabaseClientType = typeof import('./supabaseClient').supabase;
 
 const PRIMARY_THREAD_REMOTE_MESSAGE_CAP = 500;
 const PRIMARY_THREAD_SYNC_BATCH_SIZE = 100;
+const TRIM_RPC_DISABLED_SESSION_KEYS = new Set<string>();
+
+interface RpcErrorLike {
+  code?: unknown;
+  message?: unknown;
+  details?: unknown;
+  hint?: unknown;
+}
 
 interface PrimaryThreadRow {
   user_id: string;
@@ -121,6 +129,63 @@ function normalizeMessageRole(value: unknown): 'user' | 'artist' | null {
     return value;
   }
   return null;
+}
+
+function normalizeRpcErrorCode(error: unknown): string {
+  if (!error || typeof error !== 'object') {
+    return '';
+  }
+  const candidate = (error as RpcErrorLike).code;
+  return typeof candidate === 'string' ? candidate.trim() : '';
+}
+
+function normalizeRpcErrorText(error: unknown): string {
+  if (!error || typeof error !== 'object') {
+    return '';
+  }
+  const candidate = error as RpcErrorLike;
+  return [candidate.message, candidate.details, candidate.hint]
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function isTrimRpcFunctionUnavailable(error: unknown): boolean {
+  const code = normalizeRpcErrorCode(error);
+  if (code === 'PGRST202' || code === '42883') {
+    return true;
+  }
+
+  const text = normalizeRpcErrorText(error);
+  return text.includes('trim_primary_thread_messages') && (text.includes('does not exist') || text.includes('not found'));
+}
+
+function isTrimRpcAuthContextUnavailable(error: unknown): boolean {
+  const code = normalizeRpcErrorCode(error);
+  if (code === 'PGRST301' || code === '401') {
+    return true;
+  }
+
+  const text = normalizeRpcErrorText(error);
+  return (
+    text.includes('authenticated user required') ||
+    (text.includes('jwt') && text.includes('invalid')) ||
+    (text.includes('auth.uid') && text.includes('null'))
+  );
+}
+
+function shouldDisableTrimRpcForSession(error: unknown): boolean {
+  return isTrimRpcFunctionUnavailable(error) || isTrimRpcAuthContextUnavailable(error);
+}
+
+function buildTrimSessionKey(userId: string, artistId: string): string {
+  return `${userId}:${artistId}`;
+}
+
+export function __resetPrimaryThreadSyncServiceForTests(): void {
+  TRIM_RPC_DISABLED_SESSION_KEYS.clear();
 }
 
 function isPrimitiveJsonValue(value: unknown): value is string | number | boolean {
@@ -601,13 +666,26 @@ export async function syncPrimaryThreadArtist(userId: string, artistId: string):
     }
   }
 
-  const { error: trimError } = await supabaseClient.rpc('trim_primary_thread_messages', {
-    artist_id: normalizedArtistId,
-    keep_count: PRIMARY_THREAD_REMOTE_MESSAGE_CAP
-  });
+  const trimSessionKey = buildTrimSessionKey(normalizedUserId, normalizedArtistId);
+  if (!TRIM_RPC_DISABLED_SESSION_KEYS.has(trimSessionKey)) {
+    const { error: trimError } = await supabaseClient.rpc('trim_primary_thread_messages', {
+      artist_id: normalizedArtistId,
+      keep_count: PRIMARY_THREAD_REMOTE_MESSAGE_CAP
+    });
 
-  if (trimError) {
-    throw trimError;
+    if (trimError) {
+      if (shouldDisableTrimRpcForSession(trimError)) {
+        TRIM_RPC_DISABLED_SESSION_KEYS.add(trimSessionKey);
+      }
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.warn('[primaryThreadSyncService] trim_primary_thread_messages skipped', {
+          userId: normalizedUserId,
+          artistId: normalizedArtistId,
+          code: normalizeRpcErrorCode(trimError),
+          message: normalizeRpcErrorText(trimError)
+        });
+      }
+    }
   }
 
   return {
