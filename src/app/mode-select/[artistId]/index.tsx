@@ -38,7 +38,7 @@ import type { Message } from '../../../models/Message';
 import { synthesizeVoice } from '../../../services/voiceEngine';
 import { clearTerminalCooldownForPurpose } from '../../../services/ttsService';
 import { attemptVoiceAutoplayUri, attemptVoiceAutoplayUriDetailed } from '../../../services/voiceAutoplayService';
-import { queueLatestWebAutoplayUnlockRetry } from '../../../services/webAutoplayUnlockService';
+import { markWebAutoplaySessionUnlocked, queueLatestWebAutoplayUnlockRetry } from '../../../services/webAutoplayUnlockService';
 import { tryLaunchExperienceFromText } from '../../../services/experienceLaunchService';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voiceFillerService';
 import { useStore } from '../../../store/useStore';
@@ -2095,7 +2095,7 @@ export default function ModeSelectHomeScreen() {
   ]);
 
   useEffect(() => {
-    if (Platform.OS !== 'web' || !isModeSelectScreenFocused || !pendingGreetingAudio) {
+    if (!isModeSelectScreenFocused || !pendingGreetingAudio) {
       return;
     }
 
@@ -2110,6 +2110,40 @@ export default function ModeSelectHomeScreen() {
     }
 
     const pendingAudio = pendingGreetingAudio;
+
+    if (Platform.OS !== 'web') {
+      // On native there is no browser autoplay gate. Retry directly once the
+      // audio player is idle — the initial attempt may have failed due to an
+      // audio-session conflict with the microphone starting up simultaneously.
+      if (audioPlayer.isPlaying || audioPlayer.isLoading) {
+        return;
+      }
+      void (async () => {
+        if (!modeSelectScreenFocusedRef.current) {
+          return;
+        }
+        const playbackOutcome = await attemptGreetingAutoplayWithRetries({
+          audioPlayer: audioPlayerRef.current,
+          uri: pendingAudio.uri,
+          messageId: pendingAudio.messageId
+        });
+        if (!modeSelectScreenFocusedRef.current) {
+          return;
+        }
+        // Clear pending whether we succeeded or failed — don't loop forever.
+        setPendingGreetingAudio(null);
+        if (playbackOutcome.state === 'failed') {
+          logModeSelectDebugTrace('greeting_autoplay_retry_native_failed_non_fatal', {
+            conversationId: pendingAudio.conversationId,
+            messageId: pendingAudio.messageId,
+            failureReason: playbackOutcome.failureReason
+          });
+        }
+      })();
+      return;
+    }
+
+    // Web: queue a retry that fires on the first user gesture (browser autoplay policy).
     queueLatestWebAutoplayUnlockRetry(() => {
       void (async () => {
         if (!modeSelectScreenFocusedRef.current) {
@@ -2139,6 +2173,8 @@ export default function ModeSelectHomeScreen() {
       })();
     });
   }, [
+    audioPlayer.isLoading,
+    audioPlayer.isPlaying,
     conversationModeEnabled,
     isModeSelectScreenFocused,
     isQuotaBlocked,
@@ -2279,10 +2315,14 @@ export default function ModeSelectHomeScreen() {
                 micState: conversationStatus,
                 hint: conversationHint,
                 onToggle: () => {
+                  markWebAutoplaySessionUnlocked();
                   setConversationModeEnabled(true);
                 },
                 onPauseListening: handlePauseListening,
-                onResumeListening: resumeListening,
+                onResumeListening: () => {
+                  markWebAutoplaySessionUnlocked();
+                  resumeListening();
+                },
                 onTypingStateChange: setHasTypedDraft
               }}
               onInputFocusChange={setIsInputFocused}
