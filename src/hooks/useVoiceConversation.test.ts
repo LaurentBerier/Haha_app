@@ -118,6 +118,21 @@ describe('useVoiceConversation helpers', () => {
     ).toBe(false);
   });
 
+  it('allows auto-listen from assistant_busy on web even without explicit activation', () => {
+    expect(
+      shouldAttemptAutoListen({
+        shouldAutoListen: true,
+        webTabActive: true,
+        hasUserActivation: false,
+        enabled: true,
+        disabled: false,
+        isPlaying: false,
+        hasTypedDraft: false,
+        status: 'assistant_busy'
+      })
+    ).toBe(true);
+  });
+
   it('blocks auto-listen on web when tab is not active', () => {
     expect(
       shouldAttemptAutoListen({

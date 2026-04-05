@@ -400,10 +400,11 @@ export function getVoiceConversationHint(status: VoiceConversationStatus): strin
 
 export function shouldAttemptAutoListen(state: AutoListenState): boolean {
   const webTabActive = state.webTabActive ?? true;
+  const canBypassWebActivationGate = Platform.OS === 'web' && state.status === 'assistant_busy';
   return (
     state.shouldAutoListen &&
     webTabActive &&
-    state.hasUserActivation &&
+    (state.hasUserActivation || canBypassWebActivationGate) &&
     state.enabled &&
     !state.disabled &&
     !state.hasTypedDraft &&

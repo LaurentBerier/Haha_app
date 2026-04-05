@@ -288,6 +288,14 @@ export default function ChatScreen() {
     replayOnFocus: false
   });
 
+  useEffect(() => {
+    if (!conversationModeEnabled || isChatComposerDisabled || !isValidConversation) {
+      return;
+    }
+
+    resumeListening();
+  }, [conversationModeEnabled, isChatComposerDisabled, isValidConversation, resumeListening]);
+
   const handleChooseMemeOption = useCallback(
     async (messageId: string): Promise<void> => {
       if (activeMemeOptionId) {

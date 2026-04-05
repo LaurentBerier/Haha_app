@@ -152,34 +152,6 @@ function normalizeRpcErrorText(error: unknown): string {
     .toLowerCase();
 }
 
-function isTrimRpcFunctionUnavailable(error: unknown): boolean {
-  const code = normalizeRpcErrorCode(error);
-  if (code === 'PGRST202' || code === '42883') {
-    return true;
-  }
-
-  const text = normalizeRpcErrorText(error);
-  return text.includes('trim_primary_thread_messages') && (text.includes('does not exist') || text.includes('not found'));
-}
-
-function isTrimRpcAuthContextUnavailable(error: unknown): boolean {
-  const code = normalizeRpcErrorCode(error);
-  if (code === 'PGRST301' || code === '401') {
-    return true;
-  }
-
-  const text = normalizeRpcErrorText(error);
-  return (
-    text.includes('authenticated user required') ||
-    (text.includes('jwt') && text.includes('invalid')) ||
-    (text.includes('auth.uid') && text.includes('null'))
-  );
-}
-
-function shouldDisableTrimRpcForSession(error: unknown): boolean {
-  return isTrimRpcFunctionUnavailable(error) || isTrimRpcAuthContextUnavailable(error);
-}
-
 function buildTrimSessionKey(userId: string, artistId: string): string {
   return `${userId}:${artistId}`;
 }
@@ -674,9 +646,9 @@ export async function syncPrimaryThreadArtist(userId: string, artistId: string):
     });
 
     if (trimError) {
-      if (shouldDisableTrimRpcForSession(trimError)) {
-        TRIM_RPC_DISABLED_SESSION_KEYS.add(trimSessionKey);
-      }
+      // Trim is best-effort. Disable subsequent attempts for this session after first failure
+      // to prevent repetitive RPC 400/404 noise in the web console.
+      TRIM_RPC_DISABLED_SESSION_KEYS.add(trimSessionKey);
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
         console.warn('[primaryThreadSyncService] trim_primary_thread_messages skipped', {
           userId: normalizedUserId,
