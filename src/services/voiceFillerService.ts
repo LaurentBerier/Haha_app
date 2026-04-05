@@ -3,6 +3,7 @@ import { fetchAndCacheVoice } from './ttsService';
 const CATHY_FILLERS_FR = ['Mmm...', 'Hmm...', 'Mm-hm...', 'Hmmm...', 'Uh-huh...'];
 const CATHY_FILLERS_EN = ['Mmm...', 'Hmm...', 'Mm-hm...', 'Hmmm...', 'Uh-huh...'];
 const PREWARMED_FILLER_KEYS = new Set<string>();
+const PREWARMED_FILLER_BY_SCOPE = new Map<string, string>();
 const LAST_FILLER_AT_BY_SCOPE = new Map<string, number>();
 const parsedFillerCooldownMs = Number.parseInt(process.env.EXPO_PUBLIC_VOICE_FILLER_COOLDOWN_MS ?? '', 10);
 const FILLER_COOLDOWN_MS =
@@ -45,6 +46,7 @@ export function prewarmVoiceFillers(artistId: string, language: string, accessTo
     return;
   }
 
+  PREWARMED_FILLER_BY_SCOPE.set(prewarmKey, filler);
   void fetchAndCacheVoice(filler, normalizedArtistId, language, normalizedToken, { purpose: 'reply' });
 }
 
@@ -67,11 +69,22 @@ export async function getRandomFillerUri(
     return null;
   }
 
-  const filler = pickRandomEntry(resolveFillers(language));
+  const prewarmedFiller = PREWARMED_FILLER_BY_SCOPE.get(scopeKey) ?? null;
+  if (prewarmedFiller) {
+    PREWARMED_FILLER_BY_SCOPE.delete(scopeKey);
+  }
+
+  const filler = prewarmedFiller ?? pickRandomEntry(resolveFillers(language));
   if (!filler) {
     return null;
   }
 
   LAST_FILLER_AT_BY_SCOPE.set(scopeKey, now);
   return fetchAndCacheVoice(filler, normalizedArtistId, language, normalizedToken, { purpose: 'reply' });
+}
+
+export function __resetVoiceFillerServiceForTests(): void {
+  PREWARMED_FILLER_KEYS.clear();
+  PREWARMED_FILLER_BY_SCOPE.clear();
+  LAST_FILLER_AT_BY_SCOPE.clear();
 }
