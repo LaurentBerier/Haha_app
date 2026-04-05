@@ -47,7 +47,8 @@ function createAudioPlayerStub(
     playQueue,
     appendToQueue: () => undefined,
     pause: async () => undefined,
-    stop: async () => undefined
+    stop: async () => undefined,
+    gracefulStop: () => undefined
   };
 }
 
