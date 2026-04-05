@@ -26,7 +26,7 @@ const DEFAULT_TTS_RATE_LIMIT_MAX_REQUESTS_BY_TIER = {
 const MAX_INPUT_TEXT_CHARS = 5_000;
 const MAX_PROVIDER_TEXT_CHARS = 1_000;
 const DEFAULT_TTS_CAPS = {
-  free: 80,
+  free: 200_000,
   regular: 2_000,
   premium: 20_000
 };

@@ -55,13 +55,13 @@ const DEFAULT_MONTHLY_CAPS = {
   // admin intentionally omitted => unlimited
 };
 const DEFAULT_MAX_TOKENS_BY_TIER = {
-  free: 200,
+  free: 400,
   regular: 200,
   premium: 300,
   admin: 300
 };
 const DEFAULT_CONTEXT_WINDOW_BY_TIER = {
-  free: 5,
+  free: 12,
   regular: 15,
   premium: 20,
   admin: 20
@@ -73,25 +73,25 @@ const QUOTA_THRESHOLDS = {
   ABSOLUTE: 1.5
 };
 const SOFT1_MAX_TOKENS_BY_TIER = {
-  free: 180,
+  free: 360,
   regular: 180,
   premium: 280,
   admin: 300
 };
 const SOFT2_MAX_TOKENS_BY_TIER = {
-  free: 130,
+  free: 280,
   regular: 130,
   premium: 200,
   admin: 300
 };
 const SOFT1_CONTEXT_WINDOW_BY_TIER = {
-  free: 5,
+  free: 10,
   regular: 12,
   premium: 20,
   admin: 20
 };
 const SOFT2_CONTEXT_WINDOW_BY_TIER = {
-  free: 3,
+  free: 7,
   regular: 7,
   premium: 12,
   admin: 20

@@ -1509,7 +1509,7 @@ async function generateGreetingText(context) {
       },
       body: JSON.stringify({
         model: DEFAULT_MODEL,
-        max_tokens: 160,
+        max_tokens: 220,
         temperature: 0.9,
         stream: false,
         system: systemPrompt,
