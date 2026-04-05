@@ -1961,13 +1961,9 @@ export default function ModeSelectHomeScreen() {
           const greetingAudioUri = await synthesizeVoice(nextGreeting, artist.id, language, accessToken, {
             purpose: 'greeting'
           });
-          if (!isRunActive()) {
-            return;
-          }
 
-          // TTS is ready — replace placeholder with full text and voice metadata.
-          // voiceChunkBoundaries marks the single-chunk boundary so the ChatBubble
-          // sync mechanism can be used if needed in future multi-chunk greetings.
+          // Always resolve the placeholder with full text and voice metadata, even if we
+          // are about to return early. If we skip this, the typing indicator stays stuck forever.
           updateMessage(introConversation.id, greetingMessageId, {
             content: nextGreeting,
             status: 'complete',
@@ -1979,6 +1975,10 @@ export default function ModeSelectHomeScreen() {
               voiceChunkBoundaries: [nextGreeting.length]
             }
           });
+
+          if (!isRunActive()) {
+            return;
+          }
           if (!modeSelectScreenFocusedRef.current) {
             return;
           }
@@ -2019,11 +2019,8 @@ export default function ModeSelectHomeScreen() {
             });
           }
         } catch (error) {
-          if (!isRunActive()) {
-            return;
-          }
-
-          // TTS failed — replace placeholder with full text (no voice).
+          // TTS failed — always replace placeholder with full text so the typing indicator
+          // doesn't get stuck, even if the run was already cancelled.
           const resolvedVoiceErrorCode = resolveVoiceErrorCode(error);
           const greetingVoiceErrorCode = resolvedVoiceErrorCode === 'UNKNOWN' ? 'TTS_PROVIDER_ERROR' : resolvedVoiceErrorCode;
           updateMessage(introConversation.id, greetingMessageId, {

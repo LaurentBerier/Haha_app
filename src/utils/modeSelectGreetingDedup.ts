@@ -12,9 +12,12 @@ export function shouldSkipModeSelectGreetingInjection(messages: Message[]): bool
     return false;
   }
 
+  // Also skip when the tail is a streaming greeting placeholder — this handles
+  // React StrictMode double-invocation in dev and any effect re-runs during synthesis.
+  const statusOk = tail.status === 'complete' || tail.status === 'streaming';
   return (
     tail.role === 'artist' &&
-    tail.status === 'complete' &&
+    statusOk &&
     typeof tail.metadata?.injectedType === 'string' &&
     GREETING_INJECTED_TYPES.has(tail.metadata.injectedType)
   );
