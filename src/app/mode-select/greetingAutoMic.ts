@@ -15,6 +15,7 @@ export interface ResolveGreetingAutoMicDecisionParams {
   hasTypedDraft: boolean;
   hasStreaming: boolean;
   isGreetingVoiceActive: boolean;
+  isGreetingBooting: boolean;
   conversationModeEnabled: boolean;
 }
 
@@ -43,7 +44,8 @@ export function resolveGreetingAutoMicDecision(
     params.isQuotaBlocked ||
     params.hasTypedDraft ||
     params.hasStreaming ||
-    params.isGreetingVoiceActive
+    params.isGreetingVoiceActive ||
+    params.isGreetingBooting
   ) {
     return 'skip';
   }

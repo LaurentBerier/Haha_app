@@ -1613,6 +1613,7 @@ export default function ModeSelectHomeScreen() {
       hasTypedDraft,
       hasStreaming,
       isGreetingVoiceActive,
+      isGreetingBooting,
       conversationModeEnabled
     });
 
@@ -1634,6 +1635,7 @@ export default function ModeSelectHomeScreen() {
   }, [
     armListeningActivation,
     conversationModeEnabled,
+    isGreetingBooting,
     isGreetingVoiceActive,
     isModeSelectScreenFocused,
     hasStreaming,

@@ -12,6 +12,7 @@ function buildBaseParams() {
     hasTypedDraft: false,
     hasStreaming: false,
     isGreetingVoiceActive: false,
+    isGreetingBooting: false,
     conversationModeEnabled: true
   } as const;
 }
@@ -70,10 +71,16 @@ describe('modeSelect greeting auto-mic', () => {
       ...buildBaseParams(),
       isModeSelectScreenFocused: false
     });
+    const bootingBlocked = resolveGreetingAutoMicDecision({
+      ...buildBaseParams(),
+      injectedType: 'tutorial_greeting',
+      isGreetingBooting: true
+    });
 
     expect(streamingBlocked).toBe('skip');
     expect(draftBlocked).toBe('skip');
     expect(inactiveScreenBlocked).toBe('skip');
+    expect(bootingBlocked).toBe('skip');
   });
 
   it('consumes without auto-arm when this greeting was manually overridden or already handled', () => {
