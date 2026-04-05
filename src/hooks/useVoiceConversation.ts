@@ -1039,7 +1039,11 @@ export function useVoiceConversation({
       return;
     }
 
-    if (isPlaying) {
+    // Stop the active recording as soon as audio starts loading (not just when it starts
+    // playing). On iOS, the recording session holds PlayAndRecord mode which routes audio
+    // to the earpiece; releasing it before playback lets the OS switch to the loudspeaker
+    // before the first audio frame is delivered.
+    if (isPlaying || isAudioPlaybackLoading) {
       clearRecoveryTimer();
       clearSilenceTimer();
       stopActiveSession();
@@ -1060,6 +1064,7 @@ export function useVoiceConversation({
     hasTypedDraft,
     disabled,
     enabled,
+    isAudioPlaybackLoading,
     isPlaying,
     startListeningFlow,
     stopActiveSession

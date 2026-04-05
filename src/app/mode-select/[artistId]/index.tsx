@@ -36,6 +36,7 @@ import type { ChatError } from '../../../models/ChatError';
 import { normalizeConversationThreadType } from '../../../models/Conversation';
 import type { Message } from '../../../models/Message';
 import { synthesizeVoice } from '../../../services/voiceEngine';
+import { clearTerminalCooldownForPurpose } from '../../../services/ttsService';
 import { attemptVoiceAutoplayUri, attemptVoiceAutoplayUriDetailed } from '../../../services/voiceAutoplayService';
 import { queueLatestWebAutoplayUnlockRetry } from '../../../services/webAutoplayUnlockService';
 import { tryLaunchExperienceFromText } from '../../../services/experienceLaunchService';
@@ -1175,7 +1176,7 @@ export default function ModeSelectHomeScreen() {
       sendFromModeSelect({ text: normalized });
     },
     onStopAudio: () => {
-      void audioPlayer.stop();
+      audioPlayer.gracefulStop();
     },
     language: modeSelectConversationLanguage,
     fallbackLanguage: language
@@ -1898,12 +1899,15 @@ export default function ModeSelectHomeScreen() {
 
         const now = new Date().toISOString();
         const greetingMessageId = generateId('msg');
+        // Insert a placeholder (typing indicator) while TTS pre-synthesizes.
+        // The real text is revealed only when audio is ready to play, so text
+        // and voice start at the same moment instead of text appearing 1-2s early.
         addMessage(introConversation.id, {
           id: greetingMessageId,
           conversationId: introConversation.id,
           role: 'artist',
-          content: nextGreeting,
-          status: 'complete',
+          content: '',
+          status: 'streaming',
           timestamp: now,
           metadata: greetingMetadata
         });
@@ -1929,7 +1933,10 @@ export default function ModeSelectHomeScreen() {
 
         if (!accessToken.trim()) {
           const unresolvedErrorCode = 'UNAUTHORIZED';
+          // Replace placeholder with full text (no voice).
           updateMessage(introConversation.id, greetingMessageId, {
+            content: nextGreeting,
+            status: 'complete',
             metadata: {
               ...greetingMetadata,
               voiceStatus: 'unavailable',
@@ -1948,12 +1955,9 @@ export default function ModeSelectHomeScreen() {
         }
 
         try {
-          updateMessage(introConversation.id, greetingMessageId, {
-            metadata: {
-              ...greetingMetadata,
-              voiceStatus: 'generating'
-            }
-          });
+          // Clear any leftover cooldown from a previous session so a prior rate-limit
+          // error doesn't silently block the greeting on a fresh open.
+          clearTerminalCooldownForPurpose(artist.id, language, 'greeting', accessToken);
           const greetingAudioUri = await synthesizeVoice(nextGreeting, artist.id, language, accessToken, {
             purpose: 'greeting'
           });
@@ -1961,12 +1965,18 @@ export default function ModeSelectHomeScreen() {
             return;
           }
 
+          // TTS is ready — replace placeholder with full text and voice metadata.
+          // voiceChunkBoundaries marks the single-chunk boundary so the ChatBubble
+          // sync mechanism can be used if needed in future multi-chunk greetings.
           updateMessage(introConversation.id, greetingMessageId, {
+            content: nextGreeting,
+            status: 'complete',
             metadata: {
               ...greetingMetadata,
               voiceUrl: greetingAudioUri,
               voiceQueue: [greetingAudioUri],
-              voiceStatus: 'ready'
+              voiceStatus: 'ready',
+              voiceChunkBoundaries: [nextGreeting.length]
             }
           });
           if (!modeSelectScreenFocusedRef.current) {
@@ -2001,15 +2011,24 @@ export default function ModeSelectHomeScreen() {
               messageId: greetingMessageId,
               failureReason: playbackOutcome.failureReason
             });
+            // Queue for retry when the screen re-focuses or the user interacts.
+            setPendingGreetingAudio({
+              conversationId: introConversation.id,
+              uri: greetingAudioUri,
+              messageId: greetingMessageId
+            });
           }
         } catch (error) {
           if (!isRunActive()) {
             return;
           }
 
+          // TTS failed — replace placeholder with full text (no voice).
           const resolvedVoiceErrorCode = resolveVoiceErrorCode(error);
           const greetingVoiceErrorCode = resolvedVoiceErrorCode === 'UNKNOWN' ? 'TTS_PROVIDER_ERROR' : resolvedVoiceErrorCode;
           updateMessage(introConversation.id, greetingMessageId, {
+            content: nextGreeting,
+            status: 'complete',
             metadata: {
               ...greetingMetadata,
               voiceStatus: 'unavailable',

@@ -31,6 +31,9 @@ export interface AudioPlayerController {
   appendToQueue: (uri: string, context?: AudioPlaybackContext) => void;
   pause: () => Promise<void>;
   stop: () => Promise<void>;
+  /** Let the current audio chunk finish before stopping. Use instead of stop() when
+   *  interrupting Cathy mid-reply so she doesn't cut off mid-word. */
+  gracefulStop: () => void;
 }
 
 export interface AudioPlaybackContext {
@@ -88,6 +91,7 @@ export function useAudioPlayer(): AudioPlayerController {
   const queueIndexRef = useRef(0);
   const playbackTokenRef = useRef(0);
   const isMountedRef = useRef(true);
+  const isGracefullyStoppingRef = useRef(false);
 
   const clearWebListeners = useCallback(() => {
     detachWebListenersRef.current?.();
@@ -141,6 +145,7 @@ export function useAudioPlayer(): AudioPlayerController {
   }, []);
 
   const stop = useCallback(async () => {
+    isGracefullyStoppingRef.current = false;
     playbackTokenRef.current += 1;
     queueRef.current = [];
     queueIndexRef.current = 0;
@@ -197,6 +202,13 @@ export function useAudioPlayer(): AudioPlayerController {
 
         const onChunkEnd = () => {
           if (!isMountedRef.current || playbackTokenRef.current !== token) {
+            return;
+          }
+
+          // Graceful stop: finish the current chunk, then halt without advancing.
+          if (isGracefullyStoppingRef.current) {
+            isGracefullyStoppingRef.current = false;
+            void stop();
             return;
           }
 
@@ -280,7 +292,22 @@ export function useAudioPlayer(): AudioPlayerController {
             playThroughEarpieceAndroid: false
           });
         } catch {
-          // best effort
+          // First attempt may fail if a recording session is still releasing.
+          // Yield briefly and retry once so iOS routes audio to the loudspeaker.
+          await new Promise<void>((r) => setTimeout(r, 80));
+          try {
+            await Audio.setAudioModeAsync({
+              allowsRecordingIOS: false,
+              interruptionModeIOS: 1,
+              playsInSilentModeIOS: true,
+              staysActiveInBackground: false,
+              shouldDuckAndroid: false,
+              interruptionModeAndroid: 1,
+              playThroughEarpieceAndroid: false
+            });
+          } catch {
+            // give up
+          }
         }
 
         const sound = new Audio.Sound();
@@ -333,6 +360,12 @@ export function useAudioPlayer(): AudioPlayerController {
     },
     [clearWebListeners, releaseAllAudio, stop]
   );
+
+  const gracefulStop = useCallback(() => {
+    // Signal onChunkEnd to stop after the current chunk finishes rather than
+    // advancing to the next one. This prevents Cathy from cutting off mid-word.
+    isGracefullyStoppingRef.current = true;
+  }, []);
 
   const play = useCallback(async (uri: string, context?: AudioPlaybackContext) => {
     return playQueue([uri], context);
@@ -409,6 +442,7 @@ export function useAudioPlayer(): AudioPlayerController {
     playQueue,
     appendToQueue,
     pause,
-    stop
+    stop,
+    gracefulStop
   };
 }

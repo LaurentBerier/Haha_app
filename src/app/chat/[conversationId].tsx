@@ -118,7 +118,7 @@ export default function ChatScreen() {
       sendWithFillerRef.current({ text: normalized });
     },
     onStopAudio: () => {
-      void audioPlayer.stop();
+      audioPlayer.gracefulStop();
     },
     language: conversationLanguage,
     fallbackLanguage: language

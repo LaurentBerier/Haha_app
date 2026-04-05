@@ -146,6 +146,16 @@ function clearTerminalCooldown(scopeKey: string): void {
   TERMINAL_TTS_COOLDOWNS.delete(scopeKey);
 }
 
+export function clearTerminalCooldownForPurpose(
+  artistId: string,
+  language: string,
+  purpose: VoiceSynthesisPurpose,
+  accessToken: string
+): void {
+  const scopeKey = buildTtsScopeKey(artistId, language, purpose, accessToken);
+  clearTerminalCooldown(scopeKey);
+}
+
 function readTerminalCooldown(scopeKey: string): {
   status: number;
   code: string;
