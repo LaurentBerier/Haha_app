@@ -253,6 +253,9 @@ export async function fetchModeIntroFromApi(params: FetchModeIntroFromApiParams)
         });
 
         if (!response.ok) {
+          if (response.status === 401) {
+            return null;
+          }
           if (response.status >= 500) {
             shouldBackoff = true;
           }

@@ -140,6 +140,9 @@ export async function fetchGameGreetingFromApi(params: FetchGameGreetingFromApiP
         });
 
         if (!response.ok) {
+          if (response.status === 401) {
+            return null;
+          }
           if (response.status >= 500) {
             shouldBackoff = true;
           }

@@ -326,6 +326,10 @@ export async function fetchModeSelectGreetingFromApi(
         });
 
         if (!response.ok) {
+          if (response.status === 401) {
+            // Token is invalid — no point retrying any endpoint.
+            return { greeting: null, tutorial: null, timedOut: false };
+          }
           if (response.status >= 500) {
             shouldBackoff = true;
           }
