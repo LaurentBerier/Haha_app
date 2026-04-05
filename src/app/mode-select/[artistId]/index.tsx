@@ -38,7 +38,7 @@ import type { Message } from '../../../models/Message';
 import { synthesizeVoice } from '../../../services/voiceEngine';
 import { clearTerminalCooldownForPurpose } from '../../../services/ttsService';
 import { attemptVoiceAutoplayUri, attemptVoiceAutoplayUriDetailed } from '../../../services/voiceAutoplayService';
-import { markWebAutoplaySessionUnlocked, queueLatestWebAutoplayUnlockRetry } from '../../../services/webAutoplayUnlockService';
+import { markWebAutoplaySessionUnlocked, queueLatestWebAutoplayUnlockRetry, clearPendingWebAutoplayUnlockRetry } from '../../../services/webAutoplayUnlockService';
 import { tryLaunchExperienceFromText } from '../../../services/experienceLaunchService';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voiceFillerService';
 import { useStore } from '../../../store/useStore';
@@ -2094,62 +2094,73 @@ export default function ModeSelectHomeScreen() {
     voiceAutoPlay
   ]);
 
+  // Native: retry greeting playback once the audio player is idle (no browser autoplay gate).
   useEffect(() => {
+    if (Platform.OS === 'web') {
+      return;
+    }
     if (!isModeSelectScreenFocused || !pendingGreetingAudio) {
       return;
     }
-
-    const shouldAutoPlayGreeting = shouldAutoPlayVoice({
-      conversationModeEnabled,
-      voiceAutoPlayEnabled: voiceAutoPlay,
-      quotaBlocked: isQuotaBlocked
-    });
-    if (!shouldAutoPlayGreeting) {
+    if (!shouldAutoPlayVoice({ conversationModeEnabled, voiceAutoPlayEnabled: voiceAutoPlay, quotaBlocked: isQuotaBlocked })) {
       setPendingGreetingAudio(null);
       return;
     }
-
-    const pendingAudio = pendingGreetingAudio;
-
-    if (Platform.OS !== 'web') {
-      // On native there is no browser autoplay gate. Retry directly once the
-      // audio player is idle — the initial attempt may have failed due to an
-      // audio-session conflict with the microphone starting up simultaneously.
-      if (audioPlayer.isPlaying || audioPlayer.isLoading) {
-        return;
-      }
-      void (async () => {
-        if (!modeSelectScreenFocusedRef.current) {
-          return;
-        }
-        const playbackOutcome = await attemptGreetingAutoplayWithRetries({
-          audioPlayer: audioPlayerRef.current,
-          uri: pendingAudio.uri,
-          messageId: pendingAudio.messageId
-        });
-        if (!modeSelectScreenFocusedRef.current) {
-          return;
-        }
-        // Clear pending whether we succeeded or failed — don't loop forever.
-        setPendingGreetingAudio(null);
-        if (playbackOutcome.state === 'failed') {
-          logModeSelectDebugTrace('greeting_autoplay_retry_native_failed_non_fatal', {
-            conversationId: pendingAudio.conversationId,
-            messageId: pendingAudio.messageId,
-            failureReason: playbackOutcome.failureReason
-          });
-        }
-      })();
+    if (audioPlayer.isPlaying || audioPlayer.isLoading) {
       return;
     }
+    const pendingAudio = pendingGreetingAudio;
+    void (async () => {
+      if (!modeSelectScreenFocusedRef.current) {
+        return;
+      }
+      const playbackOutcome = await attemptGreetingAutoplayWithRetries({
+        audioPlayer: audioPlayerRef.current,
+        uri: pendingAudio.uri,
+        messageId: pendingAudio.messageId
+      });
+      if (!modeSelectScreenFocusedRef.current) {
+        return;
+      }
+      setPendingGreetingAudio(null);
+      if (playbackOutcome.state === 'failed') {
+        logModeSelectDebugTrace('greeting_autoplay_retry_native_failed_non_fatal', {
+          conversationId: pendingAudio.conversationId,
+          messageId: pendingAudio.messageId,
+          failureReason: playbackOutcome.failureReason
+        });
+      }
+    })();
+  }, [
+    audioPlayer.isLoading,
+    audioPlayer.isPlaying,
+    conversationModeEnabled,
+    isModeSelectScreenFocused,
+    isQuotaBlocked,
+    pendingGreetingAudio,
+    voiceAutoPlay
+  ]);
 
-    // Web: queue a retry that fires on the first user gesture (browser autoplay policy).
+  // Web: register a callback to play pending greeting audio on the next user gesture.
+  // Deps exclude audioPlayer.isPlaying/isLoading — re-registering on audio state changes
+  // would immediately fire the callback (session already unlocked) causing a double-play.
+  useEffect(() => {
+    if (Platform.OS !== 'web') {
+      return;
+    }
+    if (!isModeSelectScreenFocused || !pendingGreetingAudio) {
+      return;
+    }
+    if (!shouldAutoPlayVoice({ conversationModeEnabled, voiceAutoPlayEnabled: voiceAutoPlay, quotaBlocked: isQuotaBlocked })) {
+      setPendingGreetingAudio(null);
+      return;
+    }
+    const pendingAudio = pendingGreetingAudio;
     queueLatestWebAutoplayUnlockRetry(() => {
       void (async () => {
         if (!modeSelectScreenFocusedRef.current) {
           return;
         }
-
         const playbackOutcome = await attemptGreetingAutoplayWithRetries({
           audioPlayer: audioPlayerRef.current,
           uri: pendingAudio.uri,
@@ -2158,11 +2169,9 @@ export default function ModeSelectHomeScreen() {
         if (!modeSelectScreenFocusedRef.current) {
           return;
         }
-
         if (playbackOutcome.state === 'started' || playbackOutcome.state === 'failed') {
           setPendingGreetingAudio(null);
         }
-
         if (playbackOutcome.state === 'failed') {
           logModeSelectDebugTrace('greeting_autoplay_retry_failed_non_fatal', {
             conversationId: pendingAudio.conversationId,
@@ -2173,8 +2182,6 @@ export default function ModeSelectHomeScreen() {
       })();
     });
   }, [
-    audioPlayer.isLoading,
-    audioPlayer.isPlaying,
     conversationModeEnabled,
     isModeSelectScreenFocused,
     isQuotaBlocked,
@@ -2320,6 +2327,19 @@ export default function ModeSelectHomeScreen() {
                 },
                 onPauseListening: handlePauseListening,
                 onResumeListening: () => {
+                  if (Platform.OS === 'web' && pendingGreetingAudio) {
+                    // Play directly from this gesture handler (user activation context).
+                    // Clear the queued callback first to prevent a double-play attempt.
+                    clearPendingWebAutoplayUnlockRetry();
+                    const pending = pendingGreetingAudio;
+                    void audioPlayerRef.current.playQueue([pending.uri], {
+                      messageId: pending.messageId
+                    }).then((result) => {
+                      if (result.started) {
+                        setPendingGreetingAudio(null);
+                      }
+                    });
+                  }
                   markWebAutoplaySessionUnlocked();
                   resumeListening();
                 },
