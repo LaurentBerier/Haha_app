@@ -16,6 +16,7 @@ import {
   resolveVoiceUnavailableTranslationKey
 } from './chatBubbleVoiceState';
 import { resolveChatBubbleImageDisplayVariant, resolveChatBubbleImageResizeMode } from './chatBubbleImageMode';
+import { shouldDowngradeVoiceAfterPlaybackFailure } from './chatBubbleVoicePlayback';
 import { WaveformButton } from './WaveformButton';
 
 interface ChatBubbleProps {
@@ -33,23 +34,6 @@ interface ChatBubbleProps {
   audioPlayer?: AudioPlayerController;
 }
 
-// Bounded set so transient failures don't permanently block retry.
-// Uses Map insertion order as LRU: entries added last are evicted last.
-const VOICE_HYDRATION_ATTEMPTS_MAX = 200;
-const VOICE_HYDRATION_ATTEMPTS = new Map<string, true>();
-function markVoiceHydrationAttempt(key: string): boolean {
-  if (VOICE_HYDRATION_ATTEMPTS.has(key)) {
-    return false;
-  }
-  VOICE_HYDRATION_ATTEMPTS.set(key, true);
-  if (VOICE_HYDRATION_ATTEMPTS.size > VOICE_HYDRATION_ATTEMPTS_MAX) {
-    const oldest = VOICE_HYDRATION_ATTEMPTS.keys().next().value;
-    if (oldest !== undefined) {
-      VOICE_HYDRATION_ATTEMPTS.delete(oldest);
-    }
-  }
-  return true;
-}
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 function resolveVoiceErrorCode(error: unknown): string {
@@ -71,6 +55,17 @@ function resolveVoiceErrorCode(error: unknown): string {
   }
 
   return 'TTS_PROVIDER_ERROR';
+}
+
+function logVoiceFailure(context: string, details: Record<string, unknown>): void {
+  if (!__DEV__) {
+    return;
+  }
+
+  console.warn('[ChatBubble][voice]', {
+    context,
+    ...details
+  });
 }
 
 function ChatBubbleBase({
@@ -207,13 +202,6 @@ function ChatBubbleBase({
     message.metadata?.errorCode === 'QUOTA_EXCEEDED_BLOCKED' ||
     message.metadata?.errorCode === 'QUOTA_ABSOLUTE_BLOCKED' ||
     message.metadata?.errorCode === 'MONTHLY_QUOTA_EXCEEDED';
-  const shouldHydrateMissingVoice =
-    isVoiceEligible &&
-    !voiceUrl &&
-    voiceStatus !== 'generating' &&
-    voiceStatus !== 'unavailable' &&
-    accessToken.trim().length > 0;
-
   const mergeMetadata = useCallback(
     (patch: NonNullable<Message['metadata']>) => {
       const latestMessage =
@@ -272,6 +260,10 @@ function ChatBubbleBase({
         return;
       }
 
+      logVoiceFailure('retry_returned_empty_uri', {
+        messageId: message.id,
+        conversationId: message.conversationId
+      });
       mergeMetadata({
         voiceStatus: 'unavailable',
         voiceErrorCode: 'TTS_PROVIDER_ERROR',
@@ -280,6 +272,12 @@ function ChatBubbleBase({
         voiceChunkBoundaries: undefined
       });
     } catch (error: unknown) {
+      logVoiceFailure('retry_failed', {
+        messageId: message.id,
+        conversationId: message.conversationId,
+        status: typeof error === 'object' && error && 'status' in error ? (error as { status?: unknown }).status : undefined,
+        code: typeof error === 'object' && error && 'code' in error ? (error as { code?: unknown }).code : undefined
+      });
       mergeMetadata({
         voiceStatus: 'unavailable',
         voiceErrorCode: resolveVoiceErrorCode(error),
@@ -312,7 +310,27 @@ function ChatBubbleBase({
     }
 
     const uris = voiceQueue.length > 0 ? voiceQueue : [voiceUrl];
-    void audioPlayer.playQueue(uris, { messageId: message.id });
+    void (async () => {
+      const result = await audioPlayer.playQueue(uris, { messageId: message.id });
+      if (result.started) {
+        return;
+      }
+
+      if (shouldDowngradeVoiceAfterPlaybackFailure(result.reason)) {
+        logVoiceFailure('replay_failed_invalid_uri', {
+          reason: result.reason,
+          messageId: message.id,
+          uriCount: uris.length
+        });
+        mergeMetadata({
+          voiceStatus: 'unavailable',
+          voiceErrorCode: 'TTS_PROVIDER_ERROR',
+          voiceUrl: undefined,
+          voiceQueue: undefined,
+          voiceChunkBoundaries: undefined
+        });
+      }
+    })();
   };
 
   useEffect(() => {
@@ -362,74 +380,6 @@ function ChatBubbleBase({
       })
     ]).start();
   }, [isMemeOptionSelected, memeSelectScale]);
-
-  useEffect(() => {
-    if (!shouldHydrateMissingVoice || !conversation) {
-      return;
-    }
-
-    const attemptKey = `${message.id}:${conversation.artistId}:${conversation.language}`;
-    if (!markVoiceHydrationAttempt(attemptKey)) {
-      return;
-    }
-    let cancelled = false;
-    mergeMetadata({
-      voiceStatus: 'generating',
-      voiceErrorCode: undefined,
-      voiceUrl: undefined,
-      voiceQueue: undefined,
-      voiceChunkBoundaries: undefined
-    });
-
-    void fetchAndCacheVoice(
-      safeMessageContent,
-      conversation.artistId,
-      conversation.language || 'fr-CA',
-      accessToken,
-      { throwOnError: true }
-    )
-      .then((uri) => {
-        if (cancelled) {
-          return;
-        }
-
-        if (uri) {
-          mergeMetadata({
-            voiceUrl: uri,
-            voiceQueue: [uri],
-            voiceChunkBoundaries: [stripAudioTags(safeMessageContent, { trim: true }).length],
-            voiceStatus: 'ready',
-            voiceErrorCode: undefined
-          });
-          return;
-        }
-
-        mergeMetadata({
-          voiceStatus: 'unavailable',
-          voiceErrorCode: 'TTS_PROVIDER_ERROR',
-          voiceUrl: undefined,
-          voiceQueue: undefined,
-          voiceChunkBoundaries: undefined
-        });
-      })
-      .catch((error: unknown) => {
-        if (cancelled) {
-          return;
-        }
-
-        mergeMetadata({
-          voiceStatus: 'unavailable',
-          voiceErrorCode: resolveVoiceErrorCode(error),
-          voiceUrl: undefined,
-          voiceQueue: undefined,
-          voiceChunkBoundaries: undefined
-        });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [accessToken, conversation, mergeMetadata, message.id, safeMessageContent, shouldHydrateMissingVoice]);
 
   return (
     <Animated.View

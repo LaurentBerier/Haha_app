@@ -62,6 +62,50 @@ function normalizeMessagesByConversation(
 ): Record<string, MessagePage> {
   const normalized: Record<string, MessagePage> = {};
 
+  const isBlobVoiceUri = (value: string): boolean => value.trim().toLowerCase().startsWith('blob:');
+
+  const sanitizeMessageVoiceMetadataForWeb = (message: Message): Message => {
+    const metadata = message.metadata;
+    if (!metadata) {
+      return message;
+    }
+
+    const rawVoiceUrl = typeof metadata.voiceUrl === 'string' ? metadata.voiceUrl.trim() : '';
+    const voiceQueue = Array.isArray(metadata.voiceQueue)
+      ? metadata.voiceQueue
+          .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+          .filter(Boolean)
+          .filter((entry) => !isBlobVoiceUri(entry))
+      : [];
+
+    const hadBlobVoiceUrl = rawVoiceUrl.length > 0 && isBlobVoiceUri(rawVoiceUrl);
+    const hadVoiceQueue = Array.isArray(metadata.voiceQueue) ? metadata.voiceQueue : [];
+    const hadBlobQueueEntry = hadVoiceQueue.some((entry) => typeof entry === 'string' && isBlobVoiceUri(entry));
+
+    let nextVoiceUrl = hadBlobVoiceUrl ? '' : rawVoiceUrl;
+    if (!nextVoiceUrl && voiceQueue.length > 0) {
+      nextVoiceUrl = voiceQueue[0] ?? '';
+    }
+
+    const didSanitize = hadBlobVoiceUrl || hadBlobQueueEntry;
+    if (!didSanitize) {
+      return message;
+    }
+
+    const hasReplayableVoice = nextVoiceUrl.length > 0;
+    return {
+      ...message,
+      metadata: {
+        ...metadata,
+        voiceUrl: hasReplayableVoice ? nextVoiceUrl : undefined,
+        voiceQueue: voiceQueue.length > 0 ? voiceQueue : undefined,
+        voiceChunkBoundaries: hasReplayableVoice ? metadata.voiceChunkBoundaries : undefined,
+        voiceStatus: hasReplayableVoice ? 'ready' : 'unavailable',
+        voiceErrorCode: hasReplayableVoice ? undefined : 'TTS_PROVIDER_ERROR'
+      }
+    };
+  };
+
   const buildMessageIndexById = (messages: Message[]): Record<string, number> => {
     const index: Record<string, number> = {};
     messages.forEach((message, position) => {
@@ -72,21 +116,23 @@ function normalizeMessagesByConversation(
 
   Object.entries(input).forEach(([conversationId, value]) => {
     if (Array.isArray(value)) {
+      const sanitizedMessages = (value as Message[]).map((message) => sanitizeMessageVoiceMetadataForWeb(message));
       normalized[conversationId] = {
-        messages: value as Message[],
+        messages: sanitizedMessages,
         hasMore: false,
         cursor: null,
-        messageIndexById: buildMessageIndexById(value as Message[])
+        messageIndexById: buildMessageIndexById(sanitizedMessages)
       };
       return;
     }
 
     if (value && Array.isArray(value.messages)) {
+      const sanitizedMessages = value.messages.map((message) => sanitizeMessageVoiceMetadataForWeb(message));
       normalized[conversationId] = {
-        messages: value.messages,
+        messages: sanitizedMessages,
         hasMore: typeof value.hasMore === 'boolean' ? value.hasMore : false,
         cursor: typeof value.cursor === 'string' || value.cursor === null ? value.cursor : null,
-        messageIndexById: buildMessageIndexById(value.messages)
+        messageIndexById: buildMessageIndexById(sanitizedMessages)
       };
       return;
     }

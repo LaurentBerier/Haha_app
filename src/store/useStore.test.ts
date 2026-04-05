@@ -127,4 +127,115 @@ describe('useStore hydration', () => {
 
     expect(snapshot.preferences?.conversationModeEnabled).toBe(false);
   });
+
+  it('sanitizes stale web blob voice metadata during hydration', () => {
+    useStore.getState().hydrateStore({
+      ownerUserId: null,
+      selectedArtistId: 'cathy-gauthier',
+      conversations: {
+        'cathy-gauthier': [
+          {
+            id: 'conv-web-voice',
+            artistId: 'cathy-gauthier',
+            title: 'Web Voice',
+            language: 'fr-CA',
+            modeId: MODE_IDS.ON_JASE,
+            threadType: 'primary',
+            createdAt: '2026-04-05T00:00:00.000Z',
+            updatedAt: '2026-04-05T00:00:00.000Z',
+            lastMessagePreview: 'Salut'
+          }
+        ]
+      },
+      activeConversationId: 'conv-web-voice',
+      messagesByConversation: {
+        'conv-web-voice': {
+          messages: [
+            {
+              id: 'msg-web-stale',
+              conversationId: 'conv-web-voice',
+              role: 'artist',
+              content: 'Salut Laurent',
+              status: 'complete',
+              timestamp: '2026-04-05T00:00:00.000Z',
+              metadata: {
+                voiceStatus: 'ready',
+                voiceUrl: 'blob:https://app.ha-ha.ai/stale-audio',
+                voiceQueue: ['blob:https://app.ha-ha.ai/stale-audio']
+              }
+            }
+          ],
+          hasMore: false,
+          cursor: null
+        }
+      },
+      preferences: {
+        language: 'fr-CA',
+        displayMode: 'dark'
+      }
+    });
+
+    const hydratedMessage = useStore.getState().messagesByConversation['conv-web-voice']?.messages[0];
+    expect(hydratedMessage?.metadata?.voiceStatus).toBe('unavailable');
+    expect(hydratedMessage?.metadata?.voiceErrorCode).toBe('TTS_PROVIDER_ERROR');
+    expect(hydratedMessage?.metadata?.voiceUrl).toBeUndefined();
+    expect(hydratedMessage?.metadata?.voiceQueue).toBeUndefined();
+  });
+
+  it('keeps replayable non-blob queue entries when stale blob voiceUrl is present', () => {
+    useStore.getState().hydrateStore({
+      ownerUserId: null,
+      selectedArtistId: 'cathy-gauthier',
+      conversations: {
+        'cathy-gauthier': [
+          {
+            id: 'conv-web-voice-ready',
+            artistId: 'cathy-gauthier',
+            title: 'Web Voice Ready',
+            language: 'fr-CA',
+            modeId: MODE_IDS.ON_JASE,
+            threadType: 'primary',
+            createdAt: '2026-04-05T00:00:00.000Z',
+            updatedAt: '2026-04-05T00:00:00.000Z',
+            lastMessagePreview: 'Salut'
+          }
+        ]
+      },
+      activeConversationId: 'conv-web-voice-ready',
+      messagesByConversation: {
+        'conv-web-voice-ready': {
+          messages: [
+            {
+              id: 'msg-web-ready',
+              conversationId: 'conv-web-voice-ready',
+              role: 'artist',
+              content: 'Salut encore',
+              status: 'complete',
+              timestamp: '2026-04-05T00:00:00.000Z',
+              metadata: {
+                voiceStatus: 'ready',
+                voiceUrl: 'blob:https://app.ha-ha.ai/stale-audio',
+                voiceQueue: [
+                  'blob:https://app.ha-ha.ai/stale-audio',
+                  'https://cdn.ha-ha.ai/audio/fresh.mp3'
+                ]
+              }
+            }
+          ],
+          hasMore: false,
+          cursor: null
+        }
+      },
+      preferences: {
+        language: 'fr-CA',
+        displayMode: 'dark'
+      }
+    });
+
+    const hydratedMessage = useStore.getState().messagesByConversation['conv-web-voice-ready']?.messages[0];
+    expect(hydratedMessage?.metadata?.voiceStatus).toBe('ready');
+    expect(hydratedMessage?.metadata?.voiceErrorCode).toBeUndefined();
+    expect(hydratedMessage?.metadata?.voiceUrl).toBe('https://cdn.ha-ha.ai/audio/fresh.mp3');
+    expect(hydratedMessage?.metadata?.voiceQueue).toEqual(['https://cdn.ha-ha.ai/audio/fresh.mp3']);
+  });
 });
