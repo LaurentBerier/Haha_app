@@ -1308,7 +1308,7 @@ describe('api/claude', () => {
       expect(res.statusCode).toBe(200);
       expect(res.headers['X-Quota-Mode']).toBe('normal');
       expect(upstreamBody.model).toBe('claude-sonnet-4-6');
-      expect(upstreamBody.max_tokens).toBe(200);
+      expect(upstreamBody.max_tokens).toBe(400);
     });
 
     it('uses soft1 mode for free user at 75 percent threshold', async () => {
@@ -1333,7 +1333,7 @@ describe('api/claude', () => {
       expect(res.statusCode).toBe(200);
       expect(res.headers['X-Quota-Mode']).toBe('soft1');
       expect(upstreamBody.model).toBe('claude-sonnet-4-6');
-      expect(upstreamBody.max_tokens).toBe(180);
+      expect(upstreamBody.max_tokens).toBe(360);
     });
 
     it('uses soft2 mode for free user at 90 percent threshold', async () => {
@@ -1358,7 +1358,7 @@ describe('api/claude', () => {
       expect(res.statusCode).toBe(200);
       expect(res.headers['X-Quota-Mode']).toBe('soft2');
       expect(upstreamBody.model).toBe('claude-haiku-4-5-20251001');
-      expect(upstreamBody.max_tokens).toBe(130);
+      expect(upstreamBody.max_tokens).toBe(280);
     });
 
     it('uses profile account type when auth metadata is stale', async () => {

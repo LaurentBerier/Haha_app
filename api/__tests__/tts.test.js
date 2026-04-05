@@ -261,7 +261,7 @@ describe('api/tts', () => {
         buildSupabaseClient({
           user: { id: 'free-user-cap', app_metadata: { account_type: 'free' } },
           profileAccountType: 'free',
-          initialUsageCount: 80
+          initialUsageCount: 200_000
         })
       )
     }));
