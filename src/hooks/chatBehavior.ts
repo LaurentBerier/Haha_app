@@ -33,15 +33,37 @@ export function isAffectionateUserMessage(value: string | null | undefined): boo
 }
 
 export function computeTutorialModeForRequest(messages: Message[]): boolean {
-  const hasTutorialGreeting = messages.some(
-    (message) => message.role === 'artist' && message.metadata?.tutorialMode === true
-  );
-  if (!hasTutorialGreeting) {
+  let lastTutorialGreetingIndex = -1;
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || message.role !== 'artist') {
+      continue;
+    }
+
+    const isTutorialGreeting =
+      message.metadata?.tutorialMode === true || message.metadata?.injectedType === 'tutorial_greeting';
+    if (isTutorialGreeting) {
+      lastTutorialGreetingIndex = index;
+      break;
+    }
+  }
+
+  if (lastTutorialGreetingIndex < 0) {
     return false;
   }
 
-  const completedUserMessages = messages.filter((message) => message.role === 'user' && message.status === 'complete');
-  return completedUserMessages.length < 1;
+  for (let index = lastTutorialGreetingIndex + 1; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (!message) {
+      continue;
+    }
+    if (message.role === 'user' && message.status === 'complete') {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export function shouldApplyReactionForUserMessage(messages: Message[], currentUserMessageId: string): boolean {

@@ -54,6 +54,67 @@ describe('chatBehavior', () => {
 
       expect(computeTutorialModeForRequest(messages)).toBe(false);
     });
+
+    it('returns true when completed user turns are only before the latest tutorial greeting', () => {
+      const messages: Message[] = [
+        createMessage({
+          id: 'user-legacy',
+          role: 'user',
+          content: 'Avant le tuto',
+          status: 'complete'
+        }),
+        createMessage({
+          id: 'artist-legacy',
+          role: 'artist',
+          content: 'Ancienne reponse'
+        }),
+        createMessage({
+          id: 'greet-latest',
+          role: 'artist',
+          content: 'On commence le tuto',
+          metadata: {
+            injected: true,
+            injectedType: 'tutorial_greeting',
+            tutorialMode: true
+          }
+        })
+      ];
+
+      expect(computeTutorialModeForRequest(messages)).toBe(true);
+    });
+
+    it('returns true for a newer tutorial greeting even if an older tutorial was already consumed', () => {
+      const messages: Message[] = [
+        createMessage({
+          id: 'greet-older',
+          role: 'artist',
+          content: 'Vieux tuto',
+          metadata: {
+            injected: true,
+            injectedType: 'tutorial_greeting',
+            tutorialMode: true
+          }
+        }),
+        createMessage({
+          id: 'user-after-old',
+          role: 'user',
+          content: 'J ai deja repondu',
+          status: 'complete'
+        }),
+        createMessage({
+          id: 'greet-new',
+          role: 'artist',
+          content: 'Nouveau tuto',
+          metadata: {
+            injected: true,
+            injectedType: 'tutorial_greeting',
+            tutorialMode: true
+          }
+        })
+      ];
+
+      expect(computeTutorialModeForRequest(messages)).toBe(true);
+    });
   });
 
   describe('shouldApplyReactionForUserMessage', () => {
