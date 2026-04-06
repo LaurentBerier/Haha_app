@@ -187,7 +187,8 @@ export const useStore = create<StoreState>()((...a) => ({
       displayMode: snapshot.preferences?.displayMode ? nextDisplayMode : 'dark',
       reduceMotion: snapshot.preferences?.reduceMotion ? nextReduceMotion : current.reduceMotion,
       voiceAutoPlay: snapshot.preferences ? nextVoiceAutoPlay : current.voiceAutoPlay,
-      conversationModeEnabled: snapshot.preferences ? nextConversationModeEnabled : current.conversationModeEnabled
+      conversationModeEnabled: snapshot.preferences ? nextConversationModeEnabled : current.conversationModeEnabled,
+      completedTutorials: snapshot.preferences?.completedTutorials ?? {}
     });
   },
   clearAccountScopedState: () =>
@@ -199,6 +200,7 @@ export const useStore = create<StoreState>()((...a) => ({
       messagesByConversation: {},
       activeGame: null,
       greetedArtistIds: new Set<string>(),
+      completedTutorials: {},
       queuedChatSendPayload: null,
       modeSelectSessionHubConversationByArtist: {},
       sessionExperienceEventsByArtist: {},
@@ -247,7 +249,8 @@ export function selectPersistedSnapshot(state: StoreState): PersistedStoreSnapsh
       displayMode: state.displayMode,
       reduceMotion: state.reduceMotion,
       voiceAutoPlay: state.voiceAutoPlay,
-      conversationModeEnabled: state.conversationModeEnabled
+      conversationModeEnabled: state.conversationModeEnabled,
+      completedTutorials: state.completedTutorials
     }
   };
 }

@@ -64,6 +64,26 @@ describe('persistenceService', () => {
     expect(snapshot).toEqual(validSnapshot);
   });
 
+  it('returns snapshot when preferences include completedTutorials', async () => {
+    const validSnapshot = {
+      selectedArtistId: 'cathy-gauthier',
+      conversations: {},
+      activeConversationId: null,
+      messagesByConversation: {},
+      preferences: {
+        language: 'fr-CA',
+        displayMode: 'dark',
+        completedTutorials: { greeting: true }
+      }
+    };
+
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify(validSnapshot));
+
+    const snapshot = await loadPersistedSnapshot();
+
+    expect(snapshot).toEqual(validSnapshot);
+  });
+
   it('returns null when snapshot has corrupted nested content', async () => {
     const invalidSnapshot = {
       selectedArtistId: 'cathy-gauthier',
@@ -179,6 +199,26 @@ describe('persistenceService', () => {
     };
 
     (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify(invalidPreferenceSnapshot));
+
+    const snapshot = await loadPersistedSnapshot();
+
+    expect(snapshot).toBeNull();
+  });
+
+  it('rejects snapshots when completedTutorials has invalid values', async () => {
+    const invalidSnapshot = {
+      selectedArtistId: 'cathy-gauthier',
+      conversations: {},
+      activeConversationId: null,
+      messagesByConversation: {},
+      preferences: {
+        language: 'fr-CA',
+        displayMode: 'dark',
+        completedTutorials: { greeting: 'yes' }
+      }
+    };
+
+    (AsyncStorage.getItem as jest.Mock).mockResolvedValue(JSON.stringify(invalidSnapshot));
 
     const snapshot = await loadPersistedSnapshot();
 

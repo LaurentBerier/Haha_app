@@ -37,6 +37,13 @@ describe('uiSlice', () => {
     expect(slice.conversationModeEnabled).toBe(true);
     expect(slice.voiceAutoPlay).toBe(true);
     expect(slice.greetedArtistIds.has('cathy-gauthier')).toBe(false);
+    expect(slice.completedTutorials).toEqual({});
+
+    slice.markTutorialCompleted('greeting');
+    expect(slice.completedTutorials.greeting).toBe(true);
+    slice.markTutorialCompleted('greeting');
+    expect(Object.keys(slice.completedTutorials).length).toBe(1);
+
     expect(slice.queuedChatSendPayload).toBeNull();
     expect(slice.modeSelectSessionHubConversationByArtist).toEqual({});
     expect(slice.sessionExperienceEventsByArtist).toEqual({});

@@ -208,12 +208,20 @@ function isValidPreferences(value: unknown): boolean {
   const hasValidVoiceAutoPlay = voiceAutoPlay === undefined || typeof voiceAutoPlay === 'boolean';
   const hasValidConversationModeEnabled =
     conversationModeEnabled === undefined || typeof conversationModeEnabled === 'boolean';
+  const completedTutorials = value.completedTutorials;
+  const hasValidCompletedTutorials =
+    completedTutorials === undefined ||
+    (isRecord(completedTutorials) &&
+      Object.entries(completedTutorials).every(
+        ([key, val]) => typeof key === 'string' && typeof val === 'boolean'
+      ));
   return (
     hasValidLanguage &&
     hasValidDisplayMode &&
     hasValidReduceMotion &&
     hasValidVoiceAutoPlay &&
-    hasValidConversationModeEnabled
+    hasValidConversationModeEnabled &&
+    hasValidCompletedTutorials
   );
 }
 

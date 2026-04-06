@@ -29,7 +29,7 @@ describe('chatBehavior', () => {
         })
       ];
 
-      expect(computeTutorialModeForRequest(messages)).toBe(true);
+      expect(computeTutorialModeForRequest(messages, {})).toBe(true);
     });
 
     it('returns false once one completed user message already exists', () => {
@@ -52,7 +52,24 @@ describe('chatBehavior', () => {
         })
       ];
 
-      expect(computeTutorialModeForRequest(messages)).toBe(false);
+      expect(computeTutorialModeForRequest(messages, {})).toBe(false);
+    });
+
+    it('returns false when greeting tutorial is already marked completed', () => {
+      const messages: Message[] = [
+        createMessage({
+          id: 'greet-1',
+          role: 'artist',
+          content: 'Hey, comment tu vas?',
+          metadata: {
+            injected: true,
+            injectedType: 'tutorial_greeting',
+            tutorialMode: true
+          }
+        })
+      ];
+
+      expect(computeTutorialModeForRequest(messages, { greeting: true })).toBe(false);
     });
 
     it('returns true when completed user turns are only before the latest tutorial greeting', () => {
@@ -80,7 +97,7 @@ describe('chatBehavior', () => {
         })
       ];
 
-      expect(computeTutorialModeForRequest(messages)).toBe(true);
+      expect(computeTutorialModeForRequest(messages, {})).toBe(true);
     });
 
     it('returns true for a newer tutorial greeting even if an older tutorial was already consumed', () => {
@@ -113,7 +130,7 @@ describe('chatBehavior', () => {
         })
       ];
 
-      expect(computeTutorialModeForRequest(messages)).toBe(true);
+      expect(computeTutorialModeForRequest(messages, {})).toBe(true);
     });
   });
 

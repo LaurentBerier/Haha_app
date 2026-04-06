@@ -55,6 +55,7 @@ export interface UiSlice {
   reduceMotion: ReduceMotionPreference;
   voiceAutoPlay: boolean;
   conversationModeEnabled: boolean;
+  completedTutorials: Record<string, boolean>;
   greetedArtistIds: Set<string>;
   queuedChatSendPayload: QueuedChatSendPayload | null;
   modeSelectSessionHubConversationByArtist: Record<string, string>;
@@ -67,6 +68,7 @@ export interface UiSlice {
   setVoiceAutoPlay: (enabled: boolean) => void;
   setConversationModeEnabled: (enabled: boolean) => void;
   markArtistGreeted: (artistId: string) => void;
+  markTutorialCompleted: (tutorialId: string) => void;
   setModeSelectSessionHubConversation: (artistId: string, conversationId: string) => void;
   trackSessionExperienceEvent: (entry: Omit<SessionExperienceEvent, 'occurredAt'> & { occurredAt?: string }) => void;
   queueChatSendPayload: (entry: QueuedChatSendPayload) => void;
@@ -81,6 +83,7 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set, ge
   reduceMotion: 'system',
   voiceAutoPlay: true,
   conversationModeEnabled: true,
+  completedTutorials: {},
   greetedArtistIds: new Set<string>(),
   queuedChatSendPayload: null,
   modeSelectSessionHubConversationByArtist: {},
@@ -105,6 +108,14 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set, ge
       const next = new Set(state.greetedArtistIds);
       next.add(normalizedArtistId);
       return { greetedArtistIds: next };
+    }),
+  markTutorialCompleted: (tutorialId) =>
+    set((state) => {
+      const normalizedId = tutorialId.trim();
+      if (!normalizedId || state.completedTutorials[normalizedId]) {
+        return {};
+      }
+      return { completedTutorials: { ...state.completedTutorials, [normalizedId]: true } };
     }),
   setModeSelectSessionHubConversation: (artistId, conversationId) =>
     set((state) => {

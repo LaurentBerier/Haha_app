@@ -32,7 +32,14 @@ export function isAffectionateUserMessage(value: string | null | undefined): boo
   return AFFECTION_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-export function computeTutorialModeForRequest(messages: Message[]): boolean {
+export function computeTutorialModeForRequest(
+  messages: Message[],
+  completedTutorials: Record<string, boolean>
+): boolean {
+  if (completedTutorials.greeting) {
+    return false;
+  }
+
   let lastTutorialGreetingIndex = -1;
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {

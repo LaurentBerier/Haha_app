@@ -1873,8 +1873,10 @@ export default function ModeSelectHomeScreen() {
             cycle: greetingOpenCycle
           });
         }
-        const fallbackTutorialMode = isSessionFirstGreeting;
-        const isTutorialConversationForMetadata = fetchedResult.tutorial?.active ?? fallbackTutorialMode;
+        const tutorialAlreadyCompleted = Boolean(sessionStateBeforeGreeting.completedTutorials.greeting);
+        const fallbackTutorialMode = isSessionFirstGreeting && !tutorialAlreadyCompleted;
+        const isTutorialConversationForMetadata =
+          !tutorialAlreadyCompleted && (fetchedResult.tutorial?.active ?? fallbackTutorialMode);
         const forceGreetingAutoplay = isTutorialConversationForMetadata;
         const isTutorialGreetingCopy = isTutorialConversationForMetadata || GREETING_FORCE_TUTORIAL;
         const greetingMetadata = {

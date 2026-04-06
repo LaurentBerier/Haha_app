@@ -8,6 +8,7 @@ export interface PersistedUiPreferences {
   reduceMotion: 'system' | 'on' | 'off';
   voiceAutoPlay: boolean;
   conversationModeEnabled: boolean;
+  completedTutorials?: Record<string, boolean>;
 }
 
 export type PersistedConversation = Conversation;

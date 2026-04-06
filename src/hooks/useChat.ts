@@ -2464,7 +2464,11 @@ export function useChat(conversationId: string) {
     const systemPrompt = imageIntentPromptPrefix
       ? `${imageIntentPromptPrefix}\n\n${baseSystemPrompt}`
       : baseSystemPrompt + voiceModeAddendum;
-    const tutorialMode = computeTutorialModeForRequest(rawMessagesBeforeSend);
+    const completedTutorials = latestStateForSend.completedTutorials;
+    const tutorialMode = computeTutorialModeForRequest(rawMessagesBeforeSend, completedTutorials);
+    if (tutorialMode) {
+      useStore.getState().markTutorialCompleted('greeting');
+    }
     const latestSessionUserId = (latestStateForSend.session?.user.id ?? '').trim();
     const relationshipMemory = latestSessionUserId
       ? getCachedRelationshipMemory(latestSessionUserId, targetConversation.artistId)
