@@ -167,6 +167,7 @@ Store-level account isolation:
   - best-effort voice playback via TTS (with web speech fallback)
   - greeting/tutorial message injection triggers one-time auto-mic arming for that `messageId` in mode-select (`armListeningActivation`)
   - manual user pause during greeting cancels forced auto-start for that greeting message
+  - greeting guard reads `greetedArtistIds` imperatively via `useStore.getState()` (not as a reactive dep): `markArtistGreeted()` is called inside the effect, and a reactive dep would cause a re-run/cleanup cycle that cancels TTS before audio can play
   - web localhost bypasses `/api/greeting` and uses local fallback copy to avoid local 500 noise
   - greeting API retries are prolonged under a bounded global budget (`25s`); timeout forces local fallback greeting text so loading cannot remain stuck
 - Auto replay on return:
@@ -529,7 +530,7 @@ Vercel functions require project dependencies at runtime; `.vercelignore` must i
 - API tests: `api/__tests__/`
 - Store slice tests: `src/store/slices/*.test.ts`
 - Command: `npm run test:unit`
-- Latest unit/lint/type baseline (2026-04-04): `99` suites, `550` tests, plus PASS on `typecheck` and `lint`
+- Latest unit/lint/type baseline (2026-04-05): `99` suites, `550` tests, plus PASS on `typecheck` and `lint`
 - Latest full cross-check including `verify:profile-prompt` + smoke: 2026-04-04 (see `docs/qa-run-2026-04-04.md`)
 - Latest comprehensive security + performance audit: 2026-04-04 (see `docs/code-review-2026-04-04b.md`)
 

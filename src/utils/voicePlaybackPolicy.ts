@@ -3,6 +3,7 @@ import type { VoiceAutoplayAttemptResultDetailed } from '../services/voiceAutopl
 export interface VoiceAutoplayPolicyState {
   conversationModeEnabled: boolean;
   voiceAutoPlayEnabled: boolean;
+  forceAutoplay?: boolean;
   quotaBlocked?: boolean;
 }
 
@@ -16,7 +17,7 @@ export interface VoicePlaybackOutcome {
  * toggle is disabled.
  */
 export function shouldAutoPlayVoice(state: VoiceAutoplayPolicyState): boolean {
-  return state.conversationModeEnabled || state.voiceAutoPlayEnabled;
+  return state.forceAutoplay === true || state.conversationModeEnabled || state.voiceAutoPlayEnabled;
 }
 
 export function toVoicePlaybackOutcome(result: VoiceAutoplayAttemptResultDetailed): VoicePlaybackOutcome {

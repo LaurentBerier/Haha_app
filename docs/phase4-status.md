@@ -1,6 +1,6 @@
 # Phase 4 Status (Conversation Naturelle)
 
-Last updated: **2026-04-04** (security + performance audit pass)
+Last updated: **2026-04-05**
 
 ## Scope
 
@@ -64,6 +64,7 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
     - each greeting cycle now owns a run token (`runId`) so stale async runs are ignored
     - `finalizeGreetingRun(...)` closes `isGreetingBooting` on all exits (success, cancellation, timeout fallback, cleanup/unmount)
     - cancelled runs that did not insert a message can reopen the cycle lock to avoid locked loading state
+    - greeting guard reads `greetedArtistIds` via `useStore.getState()` (imperative read) instead of the reactive selector: `markArtistGreeted()` fires inside the run, and if the selector were a reactive dep, the resulting state change would trigger a cleanup/re-run that cancels TTS before audio can play
   - greeting API retry policy:
     - prolonged retries within a bounded global budget (`25s`)
     - when budget is exhausted, fallback greeting text is injected and loading closes deterministically
@@ -138,6 +139,12 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
 
 ## QA Status
 
+Full regression validation on **2026-04-05** (greeting guard imperative read fix + free tier limit increases):
+
+- `npm run typecheck` -> PASS
+- `npm run lint` -> PASS
+- `npm run test:unit` -> PASS (`99` suites, `550` tests)
+
 Full regression validation on **2026-04-04** (security + performance audit — prompt injection, TTS concurrency, store persistence, FlatList, audio listeners, voice hydration retry):
 
 - `npm run typecheck` -> PASS
@@ -197,6 +204,7 @@ Prior targeted mode-select layout baseline remains available from **2026-03-23**
 
 Detailed run logs:
 
+- [`docs/qa-run-2026-04-05.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-05.md)
 - [`docs/qa-run-2026-04-04.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-04.md)
 - [`docs/qa-run-2026-04-03.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-03.md)
 - [`docs/qa-run-2026-04-02.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-02.md)

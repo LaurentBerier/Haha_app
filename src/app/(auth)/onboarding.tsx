@@ -42,6 +42,7 @@ export default function OnboardingScreen() {
   const setSession = useStore((state) => state.setSession);
 
   const [step, setStep] = useState(0);
+  const [postOnboardingRedirectPath, setPostOnboardingRedirectPath] = useState<'/settings/subscription' | null>(null);
   const optionPulse = useState(() => new Animated.Value(1))[0];
   const [preferredNameInput, setPreferredNameInput] = useState('');
   const [preferredNameError, setPreferredNameError] = useState<string | null>(null);
@@ -66,9 +67,9 @@ export default function OnboardingScreen() {
     }
 
     if (userProfile.onboardingCompleted || userProfile.onboardingSkipped) {
-      router.replace('/');
+      router.replace(postOnboardingRedirectPath ?? '/');
     }
-  }, [userProfile]);
+  }, [postOnboardingRedirectPath, userProfile]);
 
   const goNext = () => {
     if (isSubmitting) {
@@ -135,8 +136,8 @@ export default function OnboardingScreen() {
         return;
       }
 
+      setPostOnboardingRedirectPath('/settings/subscription');
       setUserProfile(profile);
-      router.replace('/');
     } catch {
       setErrorMessage("Une erreur réseau est survenue. Vérifie ta connexion et réessaie.");
     } finally {
@@ -177,8 +178,8 @@ export default function OnboardingScreen() {
       } catch (metadataError) {
         console.error('[Onboarding] preferred display name update failed', metadataError);
       }
+      setPostOnboardingRedirectPath('/settings/subscription');
       setUserProfile({ ...profile, preferredName });
-      router.replace('/');
     } catch (error) {
       const message =
         error instanceof Error && error.message.trim()

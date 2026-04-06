@@ -46,7 +46,7 @@ export function useLayoutAuthGate({
       return;
     }
 
-    if (!needsOnboarding && inAuthGroup) {
+    if (!needsOnboarding && inAuthGroup && !isOnboardingRoute) {
       router.replace('/');
     }
   }, [

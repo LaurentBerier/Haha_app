@@ -44,6 +44,7 @@ Implemented in this repository:
   - inline mode-select conversation stack (no forced route switch)
   - mode-select greeting/tutorial auto-arms mic once per injected greeting message, while respecting manual user override
   - first-pass mode-select greeting boot cycle is now run-scoped and finalized on every exit path (success/cancel/timeout/unmount), preventing stuck loading loops after signup
+  - greeting guard reads `greetedArtistIds` imperatively via `useStore.getState()` to avoid a reactive-dep re-run that would cancel TTS before audio plays when `markArtistGreeted()` fires mid-flight
   - greeting API retries are prolonged inside a global `25s` budget; when budget is exhausted, local fallback greeting text is injected so loading always closes
   - first-session greeting with weather/news signal context
   - replay remains one-message-at-a-time and current-conversation scoped, but web focus/visibility auto-replay is disabled to avoid surprise replays
@@ -92,7 +93,7 @@ Implemented in this repository:
 - [`docs/phase3-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase3-status.md)
 - [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
 - Admin dashboard status: [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md)
-- Latest QA run: [`docs/qa-run-2026-04-04.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-04.md)
+- Latest QA run: [`docs/qa-run-2026-04-05.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-05.md)
 - Latest code-review snapshot: [`docs/code-review-2026-04-04b.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-04b.md) (comprehensive security + performance audit)
 - Pre-release conversation reset checklist: [`docs/pre-release-reset-checklist.md`](/Users/laurentbernier/Documents/HAHA_app/docs/pre-release-reset-checklist.md)
 
@@ -580,6 +581,7 @@ Use this checklist before shipping subscription changes (test or live):
 - `docs/qa-run-2026-04-01.md`
 - `docs/qa-run-2026-04-02.md`
 - `docs/qa-run-2026-04-03.md`
+- `docs/qa-run-2026-04-05.md`
 - `docs/qa-run-2026-04-04.md`
 - `docs/code-review-2026-03-15.md`
 - `docs/code-review-2026-03-16.md`

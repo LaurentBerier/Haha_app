@@ -54,7 +54,7 @@ import {
 import { shouldSkipModeSelectGreetingInjection } from '../../../utils/modeSelectGreetingDedup';
 import { stripAudioTags } from '../../../utils/audioTags';
 import { generateId } from '../../../utils/generateId';
-import { shouldAutoPlayVoice, toVoicePlaybackOutcome } from '../../../utils/voicePlaybackPolicy';
+import { toVoicePlaybackOutcome } from '../../../utils/voicePlaybackPolicy';
 import {
   resolveModeSelectConversationRecoveryAction
 } from '../../../utils/modeSelectConversationRecovery';
@@ -67,12 +67,14 @@ import {
 import type { ChatSendPayload } from '../../../models/ChatSendPayload';
 import { shouldRestoreModeSelectMicAfterBlur } from '../micRestore';
 import { resolveGreetingAutoMicDecision } from '../greetingAutoMic';
+import { shouldAutoPlayGreetingVoice, shouldAutoPlayPendingGreetingVoice } from '../greetingAutoplayPolicy';
 import { fetchModeSelectGreetingFromApi, type GreetingCoordinates } from '../greetingService';
 
 interface PendingGreetingAudio {
   conversationId: string;
   uri: string;
   messageId: string;
+  forceAutoplay: boolean;
 }
 
 type ModeSelectRuntimeRebindReason =
@@ -1775,7 +1777,13 @@ export default function ModeSelectHomeScreen() {
       return;
     }
 
-    if (!artist || !isModeSelectScreenFocused || greetingOpenCycle <= 0 || hasArtistBeenGreetedThisSession) {
+    if (!artist || !isModeSelectScreenFocused || greetingOpenCycle <= 0) {
+      return;
+    }
+    // Read live from store instead of using the reactive selector: markArtistGreeted() is called
+    // inside this run, which would change hasArtistBeenGreetedThisSession mid-flight and trigger
+    // a cleanup/re-run cycle that cancels TTS before audio can play.
+    if (useStore.getState().greetedArtistIds.has(artist.id)) {
       return;
     }
 
@@ -1867,6 +1875,7 @@ export default function ModeSelectHomeScreen() {
         }
         const fallbackTutorialMode = isSessionFirstGreeting;
         const isTutorialConversationForMetadata = fetchedResult.tutorial?.active ?? fallbackTutorialMode;
+        const forceGreetingAutoplay = isTutorialConversationForMetadata;
         const isTutorialGreetingCopy = isTutorialConversationForMetadata || GREETING_FORCE_TUTORIAL;
         const greetingMetadata = {
           injected: true,
@@ -1985,9 +1994,10 @@ export default function ModeSelectHomeScreen() {
             return;
           }
 
-          const shouldAutoPlayGreeting = shouldAutoPlayVoice({
+          const shouldAutoPlayGreeting = shouldAutoPlayGreetingVoice({
             conversationModeEnabled,
             voiceAutoPlayEnabled: voiceAutoPlay,
+            forceAutoplay: forceGreetingAutoplay,
             quotaBlocked: isQuotaBlocked
           });
           if (!shouldAutoPlayGreeting) {
@@ -2003,7 +2013,8 @@ export default function ModeSelectHomeScreen() {
             setPendingGreetingAudio({
               conversationId: introConversation.id,
               uri: greetingAudioUri,
-              messageId: greetingMessageId
+              messageId: greetingMessageId,
+              forceAutoplay: forceGreetingAutoplay
             });
             return;
           }
@@ -2017,7 +2028,8 @@ export default function ModeSelectHomeScreen() {
             setPendingGreetingAudio({
               conversationId: introConversation.id,
               uri: greetingAudioUri,
-              messageId: greetingMessageId
+              messageId: greetingMessageId,
+              forceAutoplay: forceGreetingAutoplay
             });
           }
         } catch (error) {
@@ -2083,7 +2095,6 @@ export default function ModeSelectHomeScreen() {
     enqueueGreetingVoiceNotice,
     finalizeGreetingRun,
     greetingOpenCycle,
-    hasArtistBeenGreetedThisSession,
     isModeSelectScreenFocused,
     isQuotaBlocked,
     language,
@@ -2104,7 +2115,15 @@ export default function ModeSelectHomeScreen() {
     if (!isModeSelectScreenFocused || !pendingGreetingAudio) {
       return;
     }
-    if (!shouldAutoPlayVoice({ conversationModeEnabled, voiceAutoPlayEnabled: voiceAutoPlay, quotaBlocked: isQuotaBlocked })) {
+    if (
+      !shouldAutoPlayPendingGreetingVoice({
+        hasPendingGreetingAudio: Boolean(pendingGreetingAudio),
+        conversationModeEnabled,
+        voiceAutoPlayEnabled: voiceAutoPlay,
+        forceAutoplay: pendingGreetingAudio.forceAutoplay,
+        quotaBlocked: isQuotaBlocked
+      })
+    ) {
       setPendingGreetingAudio(null);
       return;
     }
@@ -2153,7 +2172,15 @@ export default function ModeSelectHomeScreen() {
     if (!isModeSelectScreenFocused || !pendingGreetingAudio) {
       return;
     }
-    if (!shouldAutoPlayVoice({ conversationModeEnabled, voiceAutoPlayEnabled: voiceAutoPlay, quotaBlocked: isQuotaBlocked })) {
+    if (
+      !shouldAutoPlayPendingGreetingVoice({
+        hasPendingGreetingAudio: Boolean(pendingGreetingAudio),
+        conversationModeEnabled,
+        voiceAutoPlayEnabled: voiceAutoPlay,
+        forceAutoplay: pendingGreetingAudio.forceAutoplay,
+        quotaBlocked: isQuotaBlocked
+      })
+    ) {
       setPendingGreetingAudio(null);
       return;
     }
