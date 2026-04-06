@@ -16,6 +16,7 @@ import { MessageList } from '../../../components/chat/MessageList';
 import { StreamingIndicator } from '../../../components/chat/StreamingIndicator';
 import { AmbientGlow } from '../../../components/common/AmbientGlow';
 import { BackButton } from '../../../components/common/BackButton';
+import { buildTutorialConversationGreeting } from '../../../constants/tutorialConversationCopy';
 import { MODE_IDS } from '../../../config/constants';
 import { getVisibleModeNamesForGreeting } from '../../../config/experienceCatalog';
 import { MODE_CATEGORY_META, MODE_CATEGORY_ORDER, type ModeCategoryId } from '../../../config/modeCategories';
@@ -414,7 +415,6 @@ function buildFallbackGreetingText(
   const isEnglish = language.toLowerCase().startsWith('en');
   const displayName = preferredName ?? (isEnglish ? 'there' : 'toi');
   const nameStyle = classifyGreetingNameStyle(preferredName);
-  const shouldAcknowledgeName = Boolean(preferredName) && nameStyle === 'unusual';
   const artistName = artist.name?.trim() || 'Cathy';
   const isCathyArtist = artistName.toLowerCase().includes('cathy');
   const recentActivityFacts = Array.isArray(options?.recentActivityFacts)
@@ -449,15 +449,7 @@ function buildFallbackGreetingText(
   const hasRecentActivity = recentActivityFacts.length > 0 || Boolean(explicitRecentExperienceFact);
 
   if (isTutorialGreeting) {
-    if (isEnglish) {
-      const intro = preferredName ? `Hey ${displayName}, how are you?` : 'Hey, how are you?';
-      const nameBeat = shouldAcknowledgeName ? ' Your name is unique and I love it.' : '';
-      return `${intro}${nameBeat} The mic at the bottom is already on, so you can talk to me right now. If you prefer texting, tap the mic off and send one short message.`;
-    }
-
-    const intro = preferredName ? `Hey ${displayName}, comment tu vas?` : 'Hey, comment tu vas?';
-    const nameBeat = shouldAcknowledgeName ? " Ton prénom est original, j'aime ça." : '';
-    return `${intro}${nameBeat} Le micro en bas est déjà actif, donc tu peux me parler direct. Si tu préfères texter, coupe le micro et envoie-moi une courte phrase.`;
+    return buildTutorialConversationGreeting(language, preferredName, nameStyle);
   }
 
   if (isEnglish) {

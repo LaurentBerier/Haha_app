@@ -58,6 +58,8 @@ const {
   setCorsHeaders
 } = require('./_utils');
 
+const tutorialMic = require('../src/constants/tutorialConversationMic.json');
+
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
 }
@@ -1117,11 +1119,12 @@ function buildGreetingSystemPrompt(language, options = {}) {
 
   if (tutorialActive && isEnglish) {
     return `You are Cathy Gauthier, intense, playful, sarcastic, welcoming the user in mode selection.
-Write exactly 3 short sentences in this strict order:
+Write exactly 2 short sentences (18 to 45 words total).
+Required content:
 1) Greet the user by first name when available, ask how they are doing, and add a short playful joke about being Cathy's clone (funny but kind).
-2) Explain that voice conversation is already active and the lit mic at the bottom-right is how they talk to you directly right now.
-3) Explain that if they prefer typing, they can tap the mic to return to text mode, then end with one easy first prompt.
+2) End with one easy invitation to reply (one short line is enough).
 Hard rules:
+- Do NOT mention microphone, voice recording, speaking into the phone, typing vs voice, bottom UI, or any app controls. A fixed tutorial block about the mic is appended after your text.
 - During tutorial, do NOT introduce weather, headlines, or mode lists unless the user explicitly asks.
 - If Name style is unusual, add one short positive acknowledgment about the name (playful, never mocking).
 - Never write "how are you with Cathy" or similar unnatural phrasing.
@@ -1132,19 +1135,18 @@ Hard rules:
 - Keep spoken-style contractions and lively oral rhythm.
 - Include one brief emotional cue naturally (laugh, excitement, or sarcasm), without overdoing it.
 - Keep it natural, coherent, and concise.
-- The 3 sentences must flow as one smooth mini welcome arc.
 - No markdown, no bullets, no asterisks, no em dashes.
-- Keep proper punctuation and contractions.
-- 30 to 60 words total.`;
+- Keep proper punctuation and contractions.`;
   }
 
   if (tutorialActive) {
     return `Tu es Cathy Gauthier, intense, excitée, sarcastique et drôle, et tu accueilles l'utilisateur dans l'ecran de selection de mode.
-Ecris exactement 3 phrases courtes, dans cet ordre strict :
+Ecris exactement 2 phrases courtes (18 a 45 mots au total).
+Contenu obligatoire :
 1) Salue la personne par son prenom si disponible, demande comment elle va, et ajoute une mini blague sur le fait que tu es le clone de Cathy (drôle, vive, mais bienveillante).
-2) Explique que la conversation vocale est déjà active et que le micro allumé en bas à droite sert à lui parler direct.
-3) Explique que si la personne prefere texter, elle peut cliquer sur le micro pour retourner en mode texte, puis termine avec une invitation facile.
+2) Termine avec une invitation facile a repondre (une courte phrase suffit).
 Regles absolues :
+- N'evoque PAS le micro, l'enregistrement vocal, parler au telephone, texter vs voix, le bas de l'ecran, ni aucun controle de l'app. Un bloc tutoriel fixe sur le micro est ajoute apres ton texte.
 - Pendant le tutorial, n'introduis JAMAIS meteo, actualite ou liste de modes sauf si l'utilisateur le demande explicitement.
 - Si le style du prenom est inhabituel, ajoute un clin d'oeil positif bref sur le prenom (jamais moqueur).
 - Interdit de dire "comment tu vas avec Cathy" ou une tournure equivalente.
@@ -1155,10 +1157,8 @@ Regles absolues :
 - Le texte doit etre logique, naturel et court en francais quebecois parle.
 - Utilise des contractions orales quebecoises fortes (ex: j'suis, t'es, t'as, y'a, j'peux, j'vais, t'tente, t'veux, t'peux, s'pas, c'est-tu, han). Elision obligatoire : "te" -> "t'" devant consonne (t'tente, t'vois, t'penses), "tu" -> "t'" dans les questions (t'as-tu, t'veux-tu). Pas de "te" isole apres verbe quand l'elision est naturelle.
 - Ajoute un micro-signal d'emotion (rire, excitation ou sarcasme) de facon naturelle.
-- Les 3 phrases doivent s'enchainer de facon fluide comme un mini accueil.
 - Pas de markdown, pas d'asterisque, pas de liste, pas de tiret long.
-- Orthographe et ponctuation impeccables (accents et apostrophes obligatoires).
-- 30 a 60 mots au total.`;
+- Orthographe et ponctuation impeccables (accents et apostrophes obligatoires).`;
   }
 
   if (isEnglish) {
@@ -1465,24 +1465,31 @@ function shouldIncludeHeadlineContext() {
   return Math.random() < inclusionRate;
 }
 
-function buildForcedTutorialGreetingText(language, preferredName, nameStyle = 'normal') {
+function getTutorialMicParagraphForLanguage(language) {
+  return language.toLowerCase().startsWith('en') ? tutorialMic.micParagraphEn : tutorialMic.micParagraphFr;
+}
+
+/**
+ * Keep in sync with src/constants/tutorialConversationCopy.ts (same strings + logic).
+ */
+function buildTutorialConversationGreeting(language, preferredName, nameStyle = 'normal') {
   const isEnglish = language.toLowerCase().startsWith('en');
-  const displayName = normalizeOptionalString(preferredName, 40);
-  const shouldAcknowledgeName = Boolean(displayName) && nameStyle === 'unusual';
+  const trimmedPreferred = normalizeOptionalString(preferredName, 40) ?? '';
+  const shouldAcknowledgeName = Boolean(trimmedPreferred) && nameStyle === 'unusual';
 
   if (isEnglish) {
-    const intro = displayName
-      ? `Hey ${displayName}, how are you doing?`
-      : 'Hey, how are you doing?';
+    const intro = trimmedPreferred ? `Hey ${trimmedPreferred}, how are you?` : 'Hey, how are you?';
     const nameBeat = shouldAcknowledgeName ? ' Your name is unique and I love it.' : '';
-    return `${intro}${nameBeat} Voice conversation is already active: you can see the small lit mic at the bottom-right, so you can simply speak to interact with me. If you prefer texting, tap the mic to turn it off, then send me your texts.`;
+    return `${intro}${nameBeat} ${tutorialMic.micParagraphEn}`;
   }
 
-  const intro = displayName
-    ? `Hey ${displayName}, comment tu vas?`
-    : 'Hey, comment tu vas?';
+  const intro = trimmedPreferred ? `Hey ${trimmedPreferred}, comment tu vas?` : 'Hey, comment tu vas?';
   const nameBeat = shouldAcknowledgeName ? " Ton prénom est original, j'aime ça." : '';
-  return `${intro}${nameBeat} La conversation vocale est déjà active: tu vois le petit micro allumé en bas à droite, donc tu peux simplement parler pour interagir avec moi. Si tu préfères texter, clique sur le micro pour le couper, puis envoie-moi tes textos.`;
+  return `${intro}${nameBeat} ${tutorialMic.micParagraphFr}`;
+}
+
+function buildForcedTutorialGreetingText(language, preferredName, nameStyle = 'normal') {
+  return buildTutorialConversationGreeting(language, preferredName, nameStyle);
 }
 
 async function generateGreetingText(context) {
@@ -1546,6 +1553,12 @@ async function generateGreetingText(context) {
     const rawText = extractResponseText(payload);
     if (!rawText) {
       throw new Error('Greeting response is empty.');
+    }
+
+    if (!isModeIntro && context.tutorialActive === true) {
+      const introPart = clampToWordLimit(clampToSentenceLimit(rawText, 2), 45);
+      const mic = getTutorialMicParagraphForLanguage(context.language);
+      return `${introPart} ${mic}`.trim();
     }
 
     return clampToWordLimit(clampToSentenceLimit(rawText, 3), 45);
@@ -1737,7 +1750,7 @@ module.exports = async function handler(req, res) {
       : input.language.toLowerCase().startsWith('en')
         ? 'headline context unavailable for this greeting'
         : 'contexte manchette indisponible pour ce greeting';
-  const includeVoiceHint = tutorialGreetingContextActive;
+  const includeVoiceHint = false;
 
   let greeting;
   if (forcedTutorialGreetingActive) {
@@ -1776,8 +1789,12 @@ module.exports = async function handler(req, res) {
     }
   }
 
+  const clampedGreeting = tutorialGreetingContextActive
+    ? clampToWordLimit(clampToSentenceLimit(greeting, 8), 120)
+    : clampToWordLimit(clampToSentenceLimit(greeting, 3), 45);
+
   res.status(200).json({
-    greeting: clampToWordLimit(clampToSentenceLimit(greeting, 3), 45),
+    greeting: clampedGreeting,
     tutorial: {
       active: tutorial.active,
       sessionIndex: tutorial.sessionIndex,
