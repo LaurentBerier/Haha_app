@@ -93,6 +93,7 @@ function ChatBubbleBase({
   const wasMemeOptionSelectedRef = useRef(false);
   const didInitMemeSelectionRef = useRef(false);
   const [isVoiceRetryInFlight, setIsVoiceRetryInFlight] = useState(false);
+  const prevAccessTokenRef = useRef('');
   const isUser = message.role === 'user';
   const imageUri = message.metadata?.imageUri;
   const errorMessage =
@@ -298,6 +299,30 @@ function ChatBubbleBase({
       setIsVoiceRetryInFlight(false);
     });
   }, [isVoiceRetryInFlight, message.id, onRetryVoice, retryVoiceLocally]);
+
+  useEffect(() => {
+    const prevToken = prevAccessTokenRef.current;
+    prevAccessTokenRef.current = accessToken;
+
+    if (
+      prevToken === accessToken ||
+      !accessToken.trim() ||
+      message.metadata?.voiceStatus !== 'unavailable' ||
+      message.metadata?.voiceErrorCode !== 'UNAUTHORIZED' ||
+      isVoiceRetryInFlight
+    ) {
+      return;
+    }
+
+    handleRetryVoice();
+  }, [
+    accessToken,
+    handleRetryVoice,
+    isVoiceRetryInFlight,
+    message.id,
+    message.metadata?.voiceErrorCode,
+    message.metadata?.voiceStatus
+  ]);
 
   const handleVoicePress = () => {
     if (!audioPlayer || !hasVoiceButton) {

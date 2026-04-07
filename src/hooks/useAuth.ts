@@ -20,6 +20,15 @@ async function clearVoiceCacheOnSessionResetSafely(): Promise<void> {
   }
 }
 
+async function clearTerminalTtsCooldownsSafely(): Promise<void> {
+  try {
+    const ttsService = await import('../services/ttsService');
+    ttsService.clearTerminalTtsCooldowns();
+  } catch {
+    // Best effort.
+  }
+}
+
 export function useAuth(options: UseAuthOptions = {}) {
   const { bootstrap = false } = options;
   const session = useStore((state) => state.session);
@@ -188,6 +197,8 @@ export function useAuth(options: UseAuthOptions = {}) {
           resetGamification();
           return;
         }
+
+        void clearTerminalTtsCooldownsSafely();
 
         const hasLocalChatData =
           Object.keys(useStore.getState().conversations).length > 0 ||

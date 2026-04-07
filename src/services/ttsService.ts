@@ -242,6 +242,10 @@ export function clearVoiceCacheOnSessionReset(): void {
   WEB_TTS_CACHE.clear();
 }
 
+export function clearTerminalTtsCooldowns(): void {
+  TERMINAL_TTS_COOLDOWNS.clear();
+}
+
 export function buildTtsProxyCandidates(): string[] {
   const candidates: string[] = [];
 
