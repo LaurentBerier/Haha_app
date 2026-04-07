@@ -25,11 +25,11 @@ export function buildTutorialConversationGreeting(
 
   if (isEnglish) {
     const intro = trimmedPreferred ? `Hey ${trimmedPreferred}, how are you?` : 'Hey, how are you?';
-    const nameBeat = shouldAcknowledgeName ? ' Your name is unique and I love it.' : '';
+    const nameBeat = shouldAcknowledgeName ? " That name though - I've got questions, but we'll get to that." : '';
     return `${intro}${nameBeat} ${TUTORIAL_MIC_PARAGRAPH_EN}`;
   }
 
   const intro = trimmedPreferred ? `Hey ${trimmedPreferred}, comment tu vas?` : 'Hey, comment tu vas?';
-  const nameBeat = shouldAcknowledgeName ? " Ton prénom est original, j'aime ça." : '';
+  const nameBeat = shouldAcknowledgeName ? ' Ton prénom, j\'ai des questions - mais on réglera ça plus tard.' : '';
   return `${intro}${nameBeat} ${TUTORIAL_MIC_PARAGRAPH_FR}`;
 }

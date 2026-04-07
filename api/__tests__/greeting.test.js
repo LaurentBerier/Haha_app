@@ -326,14 +326,12 @@ describe('api/greeting tutorial behavior', () => {
     expect(res.payload.tutorial).toEqual({
       active: true,
       sessionIndex: 1,
-      connectionLimit: 3,
+      connectionLimit: 1,
       modeNudgeAfterUserMessages: 2
     });
     const anthropicBody = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body ?? '{}');
-    expect(anthropicBody.system).toContain('Evite d\'ouvrir avec "Ah la", "Allo"');
-    expect(anthropicBody.system).toContain(
-      "L'autoderision est permise, mais jamais en disant ou insinuant que tes blagues sont nulles, plates ou mauvaises."
-    );
+    expect(anthropicBody.system).toContain('Écris 2 à 4 phrases courtes (20 à 70 mots au total)');
+    expect(anthropicBody.system).toContain('Cette règle a priorité sur la règle 3');
     expect(supabase.spies.profileUpdate).toHaveBeenCalledWith({
       greeting_tutorial_sessions_count: 1
     });
@@ -341,40 +339,9 @@ describe('api/greeting tutorial behavior', () => {
     expect(String(fetchMock.mock.calls[0]?.[0] ?? '')).toBe(ANTHROPIC_API_URL);
   });
 
-  it('keeps tutorial active at session 3 and increments to 3', async () => {
+  it('disables tutorial when count reached 1 and allows contextual fetches', async () => {
     const supabase = buildSupabaseClient({
-      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 2 }
-    });
-    jest.doMock('@supabase/supabase-js', () => ({
-      createClient: jest.fn(() => supabase.client)
-    }));
-    installFetchMock();
-
-    const handler = require('../greeting');
-    const { req, res } = createReqRes({
-      headers: { authorization: 'Bearer token' },
-      body: {
-        artistId: 'cathy-gauthier',
-        language: 'fr-CA',
-        isSessionFirstGreeting: true,
-        availableModes: ['On Jase', 'Jeux'],
-        coords: { lat: 45.5, lon: -73.5 }
-      }
-    });
-
-    await handler(req, res);
-
-    expect(res.statusCode).toBe(200);
-    expect(res.payload.tutorial.active).toBe(true);
-    expect(res.payload.tutorial.sessionIndex).toBe(3);
-    expect(supabase.spies.profileUpdate).toHaveBeenCalledWith({
-      greeting_tutorial_sessions_count: 3
-    });
-  });
-
-  it('disables tutorial when count reached 3 and allows contextual fetches', async () => {
-    const supabase = buildSupabaseClient({
-      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 3 }
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 1 }
     });
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => supabase.client)
@@ -402,7 +369,7 @@ describe('api/greeting tutorial behavior', () => {
 
   it('applies short non-tutorial prompt and clamps reply to 3 sentences / 45 words', async () => {
     const supabase = buildSupabaseClient({
-      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 3 }
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 1 }
     });
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => supabase.client)
@@ -441,7 +408,7 @@ describe('api/greeting tutorial behavior', () => {
   it('skips RSS fetches and marks headline context unavailable when news gate is off', async () => {
     process.env.GREETING_HEADLINE_INCLUSION_RATE = '0';
     const supabase = buildSupabaseClient({
-      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 3 }
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 1 }
     });
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => supabase.client)
@@ -475,7 +442,7 @@ describe('api/greeting tutorial behavior', () => {
   it('fetches RSS signals and marks headline context available when news gate is on', async () => {
     process.env.GREETING_HEADLINE_INCLUSION_RATE = '1';
     const supabase = buildSupabaseClient({
-      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 3 }
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 1 }
     });
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => supabase.client)
@@ -521,7 +488,7 @@ describe('api/greeting tutorial behavior', () => {
   it('injects recent activity prompt signals when provided by the client payload', async () => {
     process.env.GREETING_HEADLINE_INCLUSION_RATE = '0';
     const supabase = buildSupabaseClient({
-      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 3 }
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 1 }
     });
     jest.doMock('@supabase/supabase-js', () => ({
       createClient: jest.fn(() => supabase.client)
@@ -818,7 +785,7 @@ describe('api/greeting tutorial behavior', () => {
     expect(res.statusCode).toBe(200);
     expect(res.payload.tutorial.active).toBe(false);
     expect(res.payload.greeting).toContain('Hey xX_DR4G0N');
-    expect(res.payload.greeting).toContain("Ton prénom est original, j'aime ça.");
+    expect(res.payload.greeting).toContain('Ton prénom, j\'ai des questions - mais on réglera ça plus tard.');
     expect(res.payload.greeting.toLowerCase()).toContain('micro');
     expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(0);

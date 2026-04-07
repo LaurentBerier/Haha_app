@@ -13,7 +13,7 @@ const MAX_WEATHER_CACHE_ENTRIES = 200;
 const NEWS_CACHE_TTL_MS = 30 * 60_000;
 const MAX_RSS_ITEMS_PER_FEED = 14;
 const MAX_NEWS_SIGNALS_PER_REGION = 3;
-const TUTORIAL_CONNECTION_LIMIT = 3;
+const TUTORIAL_CONNECTION_LIMIT = 1;
 const TUTORIAL_NUDGE_AFTER_USER_MESSAGES = 2;
 const DEFAULT_HEADLINE_INCLUSION_RATE = 0.3;
 const MODE_INTRO_TYPE = 'mode_intro';
@@ -945,8 +945,8 @@ function createTutorialState({
 async function fetchUserGreetingProfile(supabaseAdmin, userId, requestId) {
   try {
     let columns = profileSelectSupportsTutorialCounterColumn
-      ? 'horoscope_sign, greeting_tutorial_sessions_count'
-      : 'horoscope_sign';
+      ? 'horoscope_sign, greeting_tutorial_sessions_count, age, relationship_status, interests'
+      : 'horoscope_sign, age, relationship_status, interests';
 
     let result = await supabaseAdmin
       .from('profiles')
@@ -960,7 +960,7 @@ async function fetchUserGreetingProfile(supabaseAdmin, userId, requestId) {
       isGreetingTutorialCounterColumnMissingError(result.error)
     ) {
       profileSelectSupportsTutorialCounterColumn = false;
-      columns = 'horoscope_sign';
+      columns = 'horoscope_sign, age, relationship_status, interests';
       result = await supabaseAdmin
         .from('profiles')
         .select(columns)
@@ -972,6 +972,9 @@ async function fetchUserGreetingProfile(supabaseAdmin, userId, requestId) {
       console.error(`[api/greeting][${requestId}] Failed to read user profile`, result.error);
       return {
         horoscopeSign: null,
+        age: null,
+        relationshipStatus: null,
+        interests: [],
         tutorialSessionsCount: null,
         hasPersistedCounter: false
       };
@@ -987,6 +990,11 @@ async function fetchUserGreetingProfile(supabaseAdmin, userId, requestId) {
 
     return {
       horoscopeSign: normalizeOptionalString(row.horoscope_sign, 30),
+      age: typeof row.age === 'number' && Number.isFinite(row.age) ? Math.floor(row.age) : null,
+      relationshipStatus: normalizeOptionalString(row.relationship_status, 30),
+      interests: Array.isArray(row.interests)
+        ? row.interests.filter((s) => typeof s === 'string').slice(0, 5)
+        : [],
       tutorialSessionsCount,
       hasPersistedCounter: profileSelectSupportsTutorialCounterColumn
     };
@@ -994,6 +1002,9 @@ async function fetchUserGreetingProfile(supabaseAdmin, userId, requestId) {
     console.error(`[api/greeting][${requestId}] Failed to read user profile`, error);
     return {
       horoscopeSign: null,
+      age: null,
+      relationshipStatus: null,
+      interests: [],
       tutorialSessionsCount: null,
       hasPersistedCounter: false
     };
@@ -1113,51 +1124,67 @@ function toHeadlineSummaryText(newsSignals, language) {
   return primary ?? fallback;
 }
 
+function toRelationshipLabel(status, isEnglish) {
+  const key = typeof status === 'string' ? status.trim().toLowerCase() : '';
+  const map = isEnglish
+    ? {
+        single: 'single',
+        in_relationship: 'in a relationship',
+        married: 'married',
+        complicated: "it's complicated"
+      }
+    : {
+        single: 'célibataire',
+        in_relationship: 'en couple',
+        married: 'marié(e)',
+        complicated: "c'est compliqué"
+      };
+  return map[key] ?? (isEnglish ? 'Unknown' : 'Inconnu');
+}
+
 function buildGreetingSystemPrompt(language, options = {}) {
   const isEnglish = language.toLowerCase().startsWith('en');
   const tutorialActive = options.tutorialActive === true;
 
   if (tutorialActive && isEnglish) {
     return `You are Cathy Gauthier, intense, playful, sarcastic, welcoming the user in mode selection.
-Write exactly 2 short sentences (18 to 45 words total).
+Write 2 to 4 short sentences (20 to 70 words total).
 Required content:
 1) Greet the user by first name when available, ask how they are doing, and add a short playful joke about being Cathy's clone (funny but kind).
-2) End with one easy invitation to reply (one short line is enough).
+2) If Name style is "unusual", speculate playfully about what the name might mean or where it could come from (e.g., "Is that a Viking name? A secret weapon? A mix of your parents' WiFi passwords?"). Curiosity-based humor, never mocking. This rule takes priority over rule 3.
+3) Otherwise, if profile data is available and not "Unknown" (relationship status > interests > age > horoscope sign), weave a micro-tease about ONE element naturally. Skip if the value is "Unknown".
+4) End with one easy invitation to reply.
 Hard rules:
 - Do NOT mention microphone, voice recording, speaking into the phone, typing vs voice, bottom UI, or any app controls. A fixed tutorial block about the mic is appended after your text.
 - During tutorial, do NOT introduce weather, headlines, or mode lists unless the user explicitly asks.
-- If Name style is unusual, add one short positive acknowledgment about the name (playful, never mocking).
 - Never write "how are you with Cathy" or similar unnatural phrasing.
-- Avoid opening with "Ah là", "Allô", or equivalent intros; use "Hey", "Salut", or start directly.
+- Avoid opening with "Ah là", "Allô", or equivalent; use "Hey", "Hi", or start directly.
 - Self-deprecating humor is allowed, but never imply your jokes are bad, lame, or flat.
-- Tone must feel welcoming and confidence-building for onboarding.
-- Humor should be witty and light, never mean in this greeting.
+- Stay as concise as possible — only exceed 70 words if the content truly requires it.
 - Keep spoken-style contractions and lively oral rhythm.
-- Include one brief emotional cue naturally (laugh, excitement, or sarcasm), without overdoing it.
-- Keep it natural, coherent, and concise.
+- Include one brief emotional cue naturally (laugh, excitement, or sarcasm).
 - No markdown, no bullets, no asterisks, no em dashes.
 - Keep proper punctuation and contractions.`;
   }
 
   if (tutorialActive) {
-    return `Tu es Cathy Gauthier, intense, excitée, sarcastique et drôle, et tu accueilles l'utilisateur dans l'ecran de selection de mode.
-Ecris exactement 2 phrases courtes (18 a 45 mots au total).
+    return `Tu es Cathy Gauthier, intense, excitée, sarcastique et drôle, et tu accueilles l'utilisateur dans l'écran de sélection de mode.
+Écris 2 à 4 phrases courtes (20 à 70 mots au total).
 Contenu obligatoire :
-1) Salue la personne par son prenom si disponible, demande comment elle va, et ajoute une mini blague sur le fait que tu es le clone de Cathy (drôle, vive, mais bienveillante).
-2) Termine avec une invitation facile a repondre (une courte phrase suffit).
-Regles absolues :
-- N'evoque PAS le micro, l'enregistrement vocal, parler au telephone, texter vs voix, le bas de l'ecran, ni aucun controle de l'app. Un bloc tutoriel fixe sur le micro est ajoute apres ton texte.
-- Pendant le tutorial, n'introduis JAMAIS meteo, actualite ou liste de modes sauf si l'utilisateur le demande explicitement.
-- Si le style du prenom est inhabituel, ajoute un clin d'oeil positif bref sur le prenom (jamais moqueur).
-- Interdit de dire "comment tu vas avec Cathy" ou une tournure equivalente.
-- Evite d'ouvrir avec "Ah la", "Allo" ou equivalent; privilegie "Hey", "Salut" ou une entree directe.
-- L'autoderision est permise, mais jamais en disant ou insinuant que tes blagues sont nulles, plates ou mauvaises.
-- Ton d'accueil onboarding: chaleureux, complice, rassurant, energique.
-- Humour d'entree: taquin, jamais agressif dans ce message d'accueil.
-- Le texte doit etre logique, naturel et court en francais quebecois parle.
-- Utilise des contractions orales quebecoises fortes (ex: j'suis, t'es, t'as, y'a, j'peux, j'vais, t'tente, t'veux, t'peux, s'pas, c'est-tu, han). Elision obligatoire : "te" -> "t'" devant consonne (t'tente, t'vois, t'penses), "tu" -> "t'" dans les questions (t'as-tu, t'veux-tu). Pas de "te" isole apres verbe quand l'elision est naturelle.
-- Ajoute un micro-signal d'emotion (rire, excitation ou sarcasme) de facon naturelle.
-- Pas de markdown, pas d'asterisque, pas de liste, pas de tiret long.
+1) Salue la personne par son prénom si disponible, demande comment elle va, et ajoute une mini-blague sur le fait que tu es le clone de Cathy (drôle, vive, bienveillante).
+2) Si le style du prénom est "inhabituel", lance une hypothèse drôle sur sa signification ou son origine (ex: "C'est-tu un nom de viking? Une planète cachée? T'as des ancêtres extraterrestres?"). Curiosité amusée, jamais moqueur. Cette règle a priorité sur la règle 3.
+3) Sinon, si tu as une info profil non-"Inconnu" (statut amoureux > centres d'intérêt > âge > signe astro), glisse une micro-observation taquine sur UN seul élément, naturellement. Saute si la valeur est "Inconnu".
+4) Termine avec une invitation courte et facile à répondre.
+Règles absolues :
+- N'évoque PAS le micro, l'enregistrement vocal, parler au téléphone, texter vs voix, le bas de l'écran, ni aucun contrôle de l'app. Un bloc tutoriel fixe sur le micro est ajouté après ton texte.
+- Pendant le tutorial, n'introduis JAMAIS météo, actualité ou liste de modes sauf si l'utilisateur le demande.
+- Interdit de dire "comment tu vas avec Cathy" ou tournure équivalente.
+- Évite d'ouvrir avec "Ah là", "Allô" ou équivalent ; privilégie "Hey", "Salut" ou une entrée directe.
+- L'autodérision est permise, jamais en disant que tes blagues sont nulles ou plates.
+- Reste le plus concis possible — ne dépasse 70 mots que si le contenu l'exige vraiment.
+- Contractions orales québécoises fortes (j'suis, t'es, t'as, y'a, j'peux, c'est-tu, han). Élision obligatoire.
+- Un seul micro-signal d'émotion naturel (rire, excitation ou sarcasme).
+- Pas de markdown, pas d'astérisque, pas de liste, pas de tiret long.
 - Orthographe et ponctuation impeccables (accents et apostrophes obligatoires).`;
   }
 
@@ -1370,6 +1397,9 @@ function buildGreetingUserPrompt(context) {
       `Artist: ${context.artistId}`,
       `First name: ${context.preferredName ?? 'Unknown'}`,
       `Name style: ${context.nameStyle === 'unusual' ? 'unusual' : 'normal'}`,
+      `Age: ${context.age ?? 'Unknown'}`,
+      `Relationship status: ${toRelationshipLabel(context.relationshipStatus, true)}`,
+      `Interests: ${context.interests?.length > 0 ? context.interests.join(', ') : 'Unknown'}`,
       `Horoscope sign: ${context.horoscopeSign ?? 'Unknown'}`,
       `Weather: ${context.weatherSummary}`,
       `Headline: ${context.headlineSummary}`,
@@ -1394,6 +1424,9 @@ function buildGreetingUserPrompt(context) {
     `Artiste: ${context.artistId}`,
     `Prenom: ${context.preferredName ?? 'Inconnu'}`,
     `Style du prenom: ${context.nameStyle === 'unusual' ? 'inhabituel' : 'normal'}`,
+    `Âge: ${context.age ?? 'Inconnu'}`,
+    `Statut amoureux: ${toRelationshipLabel(context.relationshipStatus, false)}`,
+    `Centres d'intérêt: ${context.interests?.length > 0 ? context.interests.join(', ') : 'Inconnu'}`,
     `Signe astro: ${context.horoscopeSign ?? 'Inconnu'}`,
     `Meteo: ${context.weatherSummary}`,
     `Manchette: ${context.headlineSummary}`,
@@ -1479,12 +1512,12 @@ function buildTutorialConversationGreeting(language, preferredName, nameStyle = 
 
   if (isEnglish) {
     const intro = trimmedPreferred ? `Hey ${trimmedPreferred}, how are you?` : 'Hey, how are you?';
-    const nameBeat = shouldAcknowledgeName ? ' Your name is unique and I love it.' : '';
+    const nameBeat = shouldAcknowledgeName ? " That name though - I've got questions, but we'll get to that." : '';
     return `${intro}${nameBeat} ${tutorialMic.micParagraphEn}`;
   }
 
   const intro = trimmedPreferred ? `Hey ${trimmedPreferred}, comment tu vas?` : 'Hey, comment tu vas?';
-  const nameBeat = shouldAcknowledgeName ? " Ton prénom est original, j'aime ça." : '';
+  const nameBeat = shouldAcknowledgeName ? ' Ton prénom, j\'ai des questions - mais on réglera ça plus tard.' : '';
   return `${intro}${nameBeat} ${tutorialMic.micParagraphFr}`;
 }
 
@@ -1556,7 +1589,7 @@ async function generateGreetingText(context) {
     }
 
     if (!isModeIntro && context.tutorialActive === true) {
-      const introPart = clampToWordLimit(clampToSentenceLimit(rawText, 2), 45);
+      const introPart = clampToWordLimit(clampToSentenceLimit(rawText, 4), 70);
       const mic = getTutorialMicParagraphForLanguage(context.language);
       return `${introPart} ${mic}`.trim();
     }
@@ -1767,6 +1800,9 @@ module.exports = async function handler(req, res) {
           preferredName,
           nameStyle,
           horoscopeSign: userGreetingProfile.horoscopeSign,
+          age: userGreetingProfile.age,
+          relationshipStatus: userGreetingProfile.relationshipStatus,
+          interests: userGreetingProfile.interests,
           weatherSummary,
           headlineSummary,
           headlineContextAvailable: includeHeadlineContext,

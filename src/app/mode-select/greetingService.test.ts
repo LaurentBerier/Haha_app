@@ -28,7 +28,7 @@ describe('mode-select greetingService', () => {
       status: 200,
       json: async () => ({
         greeting: '  Salut, bienvenue.  ',
-        tutorial: { active: true, sessionIndex: 1, connectionLimit: 3 }
+        tutorial: { active: true, sessionIndex: 1, connectionLimit: 1 }
       })
     });
 
@@ -47,7 +47,7 @@ describe('mode-select greetingService', () => {
       tutorial: {
         active: true,
         sessionIndex: 1,
-        connectionLimit: 3
+        connectionLimit: 1
       },
       timedOut: false
     });
