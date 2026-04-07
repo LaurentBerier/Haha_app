@@ -2464,7 +2464,7 @@ export function useChat(conversationId: string) {
     const systemPrompt = imageIntentPromptPrefix
       ? `${imageIntentPromptPrefix}\n\n${baseSystemPrompt}`
       : baseSystemPrompt + voiceModeAddendum;
-    const completedTutorials = latestStateForSend.completedTutorials;
+    const completedTutorials = latestStateForSend.completedTutorials ?? {};
     const tutorialMode = computeTutorialModeForRequest(rawMessagesBeforeSend, completedTutorials);
     if (tutorialMode) {
       useStore.getState().markTutorialCompleted('greeting');

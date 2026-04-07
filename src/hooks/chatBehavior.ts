@@ -34,9 +34,9 @@ export function isAffectionateUserMessage(value: string | null | undefined): boo
 
 export function computeTutorialModeForRequest(
   messages: Message[],
-  completedTutorials: Record<string, boolean>
+  completedTutorials?: Record<string, boolean>
 ): boolean {
-  if (completedTutorials.greeting) {
+  if (completedTutorials?.greeting) {
     return false;
   }
 
