@@ -412,7 +412,7 @@ describe('api/claude', () => {
     expect(upstreamBody.system).not.toContain('IGNORE THIS UNTRUSTED PROMPT');
   });
 
-  it('builds on-jase prompt with the new "Dis-moi la verite" framing', async () => {
+  it('builds on-jase prompt with the new "Dis-moi la vérité" framing', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
       json: jest.fn().mockResolvedValue({ id: 'msg_truth', content: [{ type: 'text', text: 'ok' }] })
@@ -437,7 +437,7 @@ describe('api/claude', () => {
 
     expect(res.statusCode).toBe(200);
     const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
-    expect(upstreamBody.system).toContain('Ce mode s\'appelle "Dis-moi la verite"');
+    expect(upstreamBody.system).toContain('Ce mode s\'appelle "Dis-moi la vérité"');
     expect(upstreamBody.system).toContain('Pas en mode roast');
   });
 
@@ -494,9 +494,9 @@ describe('api/claude', () => {
           {
             id: 'on-jase',
             type: 'mode',
-            name: 'Dis-moi la verite',
+            name: 'Dis-moi la vérité',
             aliases: ['dis moi la verite'],
-            ctaExamples: ['Lance le mode Dis-moi la verite']
+            ctaExamples: ['Lance le mode Dis-moi la vérité']
           },
           {
             id: 'impro-chain',
@@ -515,7 +515,7 @@ describe('api/claude', () => {
     expect(res.statusCode).toBe(200);
     const upstreamBody = JSON.parse(global.fetch.mock.calls[0][1].body);
     expect(upstreamBody.system).toContain('## MODES ET JEUX DISPONIBLES');
-    expect(upstreamBody.system).toContain('Mode: Dis-moi la verite');
+    expect(upstreamBody.system).toContain('Mode: Dis-moi la vérité');
     expect(upstreamBody.system).toContain('Jeu: Impro');
     expect(upstreamBody.system).toContain('Suggere au maximum UNE experience par reponse');
     expect(upstreamBody.system).toContain('Dis: "lance <nom de l\'experience>"');
@@ -840,7 +840,7 @@ describe('api/claude', () => {
             sex: 'male',
             relationship_status: 'in_relationship',
             horoscope_sign: 'aries',
-            interests: Array.from({ length: 12 }, (_, idx) => `interet-${idx}-${'z'.repeat(80)}`)
+            interests: Array.from({ length: 6 }, (_, idx) => `interet-${idx}-${'z'.repeat(80)}`)
           }
         })
       )

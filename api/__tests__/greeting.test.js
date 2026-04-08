@@ -564,7 +564,7 @@ describe('api/greeting tutorial behavior', () => {
       createClient: jest.fn(() => supabase.client)
     }));
     const fetchMock = installFetchMockWithOptions({
-      anthropicText: "Hey Laurent, mode Dis-moi la verite active. J'te dis la vraie affaire sans te planter. Raconte-moi ton probleme concret."
+      anthropicText: "Hey Laurent, mode Dis-moi la vérité actif. J'te dis la vraie affaire sans te planter. Raconte-moi ton probleme concret."
     });
 
     const handler = require('../greeting');
@@ -586,7 +586,7 @@ describe('api/greeting tutorial behavior', () => {
     expect(res.payload.greeting).toContain('Laurent');
     expect(res.payload.tutorial).toBeUndefined();
     const anthropicBody = extractAnthropicRequestBody(fetchMock);
-    expect(anthropicBody.system).toContain('Tu ouvres le mode "Dis-moi la verite".');
+    expect(anthropicBody.system).toContain('Tu ouvres le mode "Dis-moi la vérité".');
     expect(anthropicBody.messages?.[0]?.content).toContain('Mode ID: on-jase');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(String(fetchMock.mock.calls[0]?.[0] ?? '')).toBe(ANTHROPIC_API_URL);

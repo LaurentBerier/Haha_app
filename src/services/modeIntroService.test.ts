@@ -6,7 +6,7 @@ describe('modeIntroService fallback intro', () => {
     jest.restoreAllMocks();
   });
 
-  it('includes user name, mode concept and conversation invitation for Dis-moi la verite', () => {
+  it('includes user name, mode concept and conversation invitation for Dis-moi la vérité', () => {
     jest.spyOn(Math, 'random').mockReturnValue(0);
 
     const intro = generateModeIntro(MODE_IDS.ON_JASE, {
@@ -23,9 +23,9 @@ describe('modeIntroService fallback intro', () => {
     });
 
     expect(intro).toContain('Hey Laurent');
-    expect(intro).toContain('Dis-moi la verite');
+    expect(intro).toContain('Dis-moi la vérité');
     expect(intro).toContain("Ici j'suis cash");
-    expect(intro).toContain('Raconte-moi une situation precise');
+    expect(intro).toContain('Raconte-moi une situation précise');
   });
 
   it('uses a neutral address when no preferred name is provided', () => {
@@ -52,7 +52,7 @@ describe('modeIntroService fallback intro', () => {
   it('returns an image-first intro fallback for meme-generator', () => {
     const intro = generateModeIntro(MODE_IDS.MEME_GENERATOR, null);
 
-    expect(intro.toLowerCase()).toContain('memes');
+    expect(intro.toLowerCase()).toContain('mèmes');
     expect(intro.toLowerCase()).toContain('contexte');
     expect(intro).toContain('petit +');
   });

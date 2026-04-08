@@ -16,11 +16,11 @@ describe('personalityEngineService', () => {
     expect(prompt).toContain('Tu ne te refugies jamais derriere "je suis juste une humoriste"');
   });
 
-  it('builds On Jase prompt as "Dis-moi la verite" without roast framing', () => {
+  it('builds On Jase prompt as "Dis-moi la vérité" without roast framing', () => {
     const prompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'on-jase', null, 'fr-CA');
 
     expect(prompt).toContain('## MODE ACTIF : on-jase');
-    expect(prompt).toContain('Ce mode s\'appelle "Dis-moi la verite"');
+    expect(prompt).toContain('Ce mode s\'appelle "Dis-moi la vérité"');
     expect(prompt).toContain('Pas en mode roast');
     expect(prompt).toContain('Si la reponse utilisateur est vague');
     expect(prompt).toContain('Questions ciblees possibles');
@@ -41,7 +41,7 @@ describe('personalityEngineService', () => {
 
     expect(prompt).toContain('Mode "Jugement de Texto"');
     expect(prompt).toContain("capture d'ecran OU coller un echange texte");
-    expect(prompt).toContain('UNE replique prete a envoyer');
+    expect(prompt).toContain('UNE réplique prete a envoyer');
   });
 
   it('builds fallback prompt for unknown artist profiles without Cathy mode coupling', () => {
@@ -78,15 +78,15 @@ describe('personalityEngineService', () => {
 
     expect(coachPrompt).toContain("L'utilisateur veut du coaching concret.");
     expect(meteoPrompt).toContain("L'utilisateur veut la meteo version Cathy.");
-    expect(showPrompt).toContain("L'utilisateur veut un mini numero d'humour.");
+    expect(showPrompt).toContain("L'utilisateur veut un mini numéro d'humour.");
   });
 
   it('lists only visible launchable experiences for Cathy in the base system prompt', () => {
     const prompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'on-jase', null, 'fr-CA');
 
     expect(prompt).toContain('## MODES ET JEUX DISPONIBLES');
-    expect(prompt).toContain('Mode: Dis-moi la verite');
-    expect(prompt).toContain('Mode: Numero de show');
+    expect(prompt).toContain('Mode: Dis-moi la vérité');
+    expect(prompt).toContain('Mode: Numéro de show');
     expect(prompt).toContain('Jeu: Impro');
     expect(prompt).not.toContain('Coach de vie');
     expect(prompt).not.toContain('Meteo');

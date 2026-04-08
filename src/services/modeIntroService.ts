@@ -114,24 +114,24 @@ function pickRandom<T>(values: T[]): T {
 function buildOnJaseFallback(preferredName: string | null): string {
   const opening = preferredName
     ? pickRandom([
-        `Hey ${preferredName}, t'es en mode Dis-moi la verite.`,
-        `Salut ${preferredName}, mode Dis-moi la verite active.`,
-        `Bon ${preferredName}, Dis-moi la verite est parti.`
+        `Hey ${preferredName}, t'es en mode Dis-moi la vérité.`,
+        `Salut ${preferredName}, mode Dis-moi la vérité actif.`,
+        `Bon ${preferredName}, Dis-moi la vérité est parti.`
       ])
     : pickRandom([
-        "Hey toi, t'es en mode Dis-moi la verite.",
-        'Salut, mode Dis-moi la verite active.',
-        'Bon, Dis-moi la verite est parti.'
+        "Hey toi, t'es en mode Dis-moi la vérité.",
+        'Salut, mode Dis-moi la vérité actif.',
+        'Bon, Dis-moi la vérité est parti.'
       ]);
 
   const concept = pickRandom([
-    "Ici j'suis cash: verite frontale, coaching concret, zero flafla.",
-    "J'vais etre lucide et directe, sans humiliation gratuite.",
+    "Ici j'suis cash: vérité frontale, coaching concret, zéro flafla.",
+    "J'vais être lucide et directe, sans humiliation gratuite.",
     "Tu veux du vrai? Je coupe les excuses et j'te donne l'angle utile."
   ]);
 
   const invitation = pickRandom([
-    "Raconte-moi une situation precise et j'te guide tout de suite.",
+    "Raconte-moi une situation précise et j'te guide tout de suite.",
     "Donne-moi ton vrai probleme pis on commence maintenant.",
     "Lance une affaire concrete de ta vie et on la decode ensemble."
   ]);
@@ -143,23 +143,23 @@ function buildGrillFallback(preferredName: string | null): string {
   const opening = preferredName
     ? pickRandom([
         `Hey ${preferredName}, t'es en mode Mets-moi sur le grill.`,
-        `Ok ${preferredName}, mode Mets-moi sur le grill active.`,
+        `Ok ${preferredName}, mode Mets-moi sur le grill actif.`,
         `Salut ${preferredName}, Mets-moi sur le grill est en feu.`
       ])
     : pickRandom([
         "Hey toi, t'es en mode Mets-moi sur le grill.",
-        'Ok, mode Mets-moi sur le grill active.',
+        'Ok, mode Mets-moi sur le grill actif.',
         'Salut, Mets-moi sur le grill est en feu.'
       ]);
 
   const concept = pickRandom([
-    "Ici c'est roast assume: plus mordant, plus direct, mais toujours intelligent.",
+    "Ici c'est roast assumé : plus mordant, plus direct, mais toujours intelligent.",
     "Tu demandes le feu: j'vais te roaster sans coussin, puis te recadrer pour vrai.",
-    "On joue rough: verite dure, punchlines, et coaching brutal quand ca compte."
+    "On joue rough: vérité dure, punchlines, et coaching brutal quand ça compte."
   ]);
 
   const invitation = pickRandom([
-    "Donne-moi une habitude, un date rate, ou ton pire pattern, j'embarque.",
+    "Donne-moi une habitude, un rendez-vous galant raté, ou ton pire pattern, j'embarque.",
     "Pars avec une histoire concrete et j'te mets sur le grill pour vrai.",
     "Dis-moi ce que t'as fait cette semaine et j'te sors l'angle comique."
   ]);
@@ -177,24 +177,24 @@ export function generateModeIntro(modeId: string, userProfile?: UserProfile | nu
       return buildGrillFallback(preferredName);
     case MODE_IDS.ROAST_BATTLE:
       return preferredName
-        ? `${preferredName}, bataille de roast commence. Tu lances, je replique, puis je donne le verdict final.`
-        : 'Bataille de roast commence. Tu lances, je replique, puis je donne le verdict final.';
+        ? `${preferredName}, bataille de roast commence. Tu lances, je réplique, puis je donne le verdict final.`
+        : 'Bataille de roast commence. Tu lances, je réplique, puis je donne le verdict final.';
     case MODE_IDS.MEME_GENERATOR:
       return preferredName
-        ? `${preferredName}, clique sur le petit + a gauche du champ texte pour ajouter ton image et donne moi un peu de contexte si tu peux, ca aide pour des memes plus droles!`
-        : 'Clique sur le petit + a gauche du champ texte pour ajouter ton image et donne moi un peu de contexte si tu peux, ca aide pour des memes plus droles!';
+        ? `${preferredName}, clique sur le petit + à gauche du champ texte pour ajouter ton image et donne moi un peu de contexte si tu peux, ça aide pour des mèmes plus drôles !`
+        : 'Clique sur le petit + à gauche du champ texte pour ajouter ton image et donne moi un peu de contexte si tu peux, ça aide pour des mèmes plus drôles !';
     case MODE_IDS.SCREENSHOT_ANALYZER:
       return preferredName
-        ? `${preferredName}, envoie ton screenshot ou colle le texto. Je juge l'histoire, puis je te donne une replique utile.`
-        : "Envoie ton screenshot ou colle le texto. Je juge l'histoire, puis je te donne une replique utile.";
+        ? `${preferredName}, envoie ton screenshot ou colle le texto. Je juge l'histoire, puis je te donne une réplique utile.`
+        : "Envoie ton screenshot ou colle le texto. Je juge l'histoire, puis je te donne une réplique utile.";
     case MODE_IDS.COACH_DE_VIE:
       return preferredName
-        ? `${preferredName}, tu veux du vrai, pas du vernis? Dis-moi la situation et on la regle cash.`
-        : 'Tu veux du vrai, pas du vernis? Dis-moi la situation et on la regle cash.';
+        ? `${preferredName}, tu veux du vrai, pas du vernis? Dis-moi la situation et on la règle cash.`
+        : 'Tu veux du vrai, pas du vernis? Dis-moi la situation et on la règle cash.';
     default:
       return preferredName
-        ? `${preferredName}, on y va. Raconte-moi ce qui se passe et je te reponds direct.`
-        : 'On y va. Raconte-moi ce qui se passe et je te reponds direct.';
+        ? `${preferredName}, on y va. Raconte-moi ce qui se passe et je te réponds direct.`
+        : 'On y va. Raconte-moi ce qui se passe et je te réponds direct.';
   }
 }
 

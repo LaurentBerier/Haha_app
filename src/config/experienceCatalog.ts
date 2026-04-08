@@ -40,10 +40,17 @@ const CATHY_VISIBLE_EXPERIENCES: LaunchableExperienceDefinition[] = [
     id: MODE_IDS.ON_JASE,
     type: 'mode',
     modeId: MODE_IDS.ON_JASE,
-    nameFr: 'Dis-moi la verite',
+    nameFr: 'Dis-moi la vérité',
     nameEn: 'Tell me the truth',
-    aliases: ['dis-moi la verite', 'dis moi la verite', 'on jase', 'mode verite', 'truth mode'],
-    ctaFr: ['Lance le mode Dis-moi la verite'],
+    aliases: [
+      'dis-moi la vérité',
+      'dis-moi la verite',
+      'dis moi la verite',
+      'on jase',
+      'mode verite',
+      'truth mode'
+    ],
+    ctaFr: ['Lance le mode Dis-moi la vérité'],
     ctaEn: ['Launch Tell me the truth mode']
   },
   {
@@ -60,10 +67,10 @@ const CATHY_VISIBLE_EXPERIENCES: LaunchableExperienceDefinition[] = [
     id: MODE_IDS.MEME_GENERATOR,
     type: 'mode',
     modeId: MODE_IDS.MEME_GENERATOR,
-    nameFr: 'Generateur de Meme',
+    nameFr: 'Générateur de Meme',
     nameEn: 'Meme Generator',
-    aliases: ['generateur de meme', 'meme generator', 'mode meme', 'meme mode'],
-    ctaFr: ['Lance le mode Generateur de Meme'],
+    aliases: ['générateur de meme', 'generateur de meme', 'meme generator', 'mode meme', 'meme mode'],
+    ctaFr: ['Lance le mode Générateur de Meme'],
     ctaEn: ['Launch Meme Generator mode']
   },
   {
@@ -80,10 +87,10 @@ const CATHY_VISIBLE_EXPERIENCES: LaunchableExperienceDefinition[] = [
     id: MODE_IDS.NUMERO_DE_SHOW,
     type: 'mode',
     modeId: MODE_IDS.NUMERO_DE_SHOW,
-    nameFr: 'Numero de show',
+    nameFr: 'Numéro de show',
     nameEn: 'Show number',
-    aliases: ['numero de show', 'mini show', 'standup', 'stand-up', 'mode show'],
-    ctaFr: ['Lance le mode Numero de show'],
+    aliases: ['numéro de show', 'numero de show', 'mini show', 'standup', 'stand-up', 'mode show'],
+    ctaFr: ['Lance le mode Numéro de show'],
     ctaEn: ['Launch Show number mode']
   },
   {
@@ -100,10 +107,10 @@ const CATHY_VISIBLE_EXPERIENCES: LaunchableExperienceDefinition[] = [
     id: 'vrai-ou-invente',
     type: 'game',
     gameId: 'vrai-ou-invente',
-    nameFr: 'Vrai ou Invente',
+    nameFr: 'Vrai ou Inventé',
     nameEn: 'True or Invented',
-    aliases: ['vrai ou invente', 'vrai ou invente?', 'true or invented', '2 vraies 1 inventee'],
-    ctaFr: ['Lance le jeu Vrai ou Invente'],
+    aliases: ['vrai ou inventé', 'vrai ou invente', 'vrai ou invente?', 'true or invented', '2 vraies 1 inventee'],
+    ctaFr: ['Lance le jeu Vrai ou Inventé'],
     ctaEn: ['Launch True or Invented game']
   },
   {
