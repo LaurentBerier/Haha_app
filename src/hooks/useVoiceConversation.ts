@@ -18,6 +18,58 @@ const BUSY_LOADING_TIMEOUT_MS =
 const RECOVERY_DELAYS_MS = [250, 800, 2000] as const;
 export const VOICE_DUPLICATE_SEND_WINDOW_MS = 3_000;
 
+const GARBLED_STT_STANDALONE_WORDS = new Set([
+  // French articles & determiners
+  'le',
+  'la',
+  'les',
+  'un',
+  'une',
+  'des',
+  'du',
+  'ce',
+  'cet',
+  'cette',
+  'ces',
+  // French prepositions
+  'de',
+  'en',
+  'au',
+  'aux',
+  'par',
+  'sur',
+  'sous',
+  'dans',
+  'avec',
+  'pour',
+  // French conjunctions
+  'et',
+  'ou',
+  'mais',
+  'donc',
+  'or',
+  'ni',
+  'car',
+  // English articles & determiners
+  'the',
+  'a',
+  'an',
+  // English prepositions
+  'in',
+  'of',
+  'to',
+  'at',
+  'by',
+  'for',
+  'on',
+  'up',
+  // English conjunctions
+  'and',
+  'or',
+  'but',
+  'if'
+]);
+
 export type VoiceConversationStatus =
   | 'off'
   | 'starting'
@@ -651,6 +703,13 @@ export function useVoiceConversation({
         return;
       }
 
+      const words = textToSend.split(/\s+/).filter(Boolean);
+      const singleWord = words.length === 1 ? words[0] : undefined;
+      if (singleWord !== undefined && GARBLED_STT_STANDALONE_WORDS.has(singleWord.toLowerCase())) {
+        clearTranscript();
+        return;
+      }
+
       if (
         !enabledRef.current ||
         disabledRef.current ||
@@ -888,22 +947,39 @@ export function useVoiceConversation({
           recoveryAttempt: stateRef.current.recoveryAttempt
         });
 
+        let audioStartFired = false;
+        const audioStartTimeoutId = setTimeout(() => {
+          if (!audioStartFired && isMountedRef.current) {
+            dispatch({ type: 'listening' });
+          }
+        }, 1000);
+
         const session = startVoiceListeningSession({
           locale: languageRef.current,
           fallbackLocale: fallbackLanguageRef.current,
           onResult: (event) => {
             handleSessionResult(event.sessionId, event.transcript);
           },
-          onEnd: handleSessionEnd
+          onEnd: (event) => {
+            clearTimeout(audioStartTimeoutId);
+            handleSessionEnd(event);
+          },
+          onAudioStart: () => {
+            audioStartFired = true;
+            clearTimeout(audioStartTimeoutId);
+            if (isMountedRef.current) {
+              dispatch({ type: 'listening' });
+            }
+          }
         });
 
         if (!isMountedRef.current) {
+          clearTimeout(audioStartTimeoutId);
           session.stop();
           return;
         }
 
         activeSessionRef.current = session;
-        dispatch({ type: 'listening' });
       } finally {
         startInFlightRef.current = false;
       }

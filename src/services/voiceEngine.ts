@@ -10,7 +10,7 @@ type NativeSpeechRecognitionEvent = {
 type SpeechRecognitionModule = {
   requestPermissionsAsync: () => Promise<{ granted: boolean }>;
   addListener: (
-    eventName: 'result' | 'error' | 'end',
+    eventName: 'result' | 'error' | 'end' | 'audiostart',
     callback: (event?: NativeSpeechRecognitionEvent) => void
   ) => Listener;
   start: (options: {
@@ -54,6 +54,7 @@ interface WebSpeechRecognition {
   onresult: ((event: WebSpeechRecognitionEvent) => void) | null;
   onerror: ((event: WebSpeechRecognitionErrorEvent) => void) | null;
   onend: (() => void) | null;
+  onaudiostart: (() => void) | null;
   start: () => void;
   stop: () => void;
   abort?: () => void;
@@ -100,6 +101,7 @@ export interface StartVoiceListeningSessionOptions {
   fallbackLocale?: string;
   onResult: (event: VoiceListeningResultEvent) => void;
   onEnd: (event: VoiceListeningEndEvent) => void;
+  onAudioStart?: () => void;
 }
 
 const DEFAULT_STT_LOCALE = 'fr-CA';
@@ -429,7 +431,8 @@ export function startVoiceListeningSession({
   locale,
   fallbackLocale,
   onResult,
-  onEnd
+  onEnd,
+  onAudioStart
 }: StartVoiceListeningSessionOptions): VoiceListeningSession {
   const sessionId = nextVoiceSessionId;
   nextVoiceSessionId += 1;
@@ -488,6 +491,13 @@ export function startVoiceListeningSession({
     });
   };
 
+  const emitAudioStart = () => {
+    if (stopped || activeVoiceSessionId !== sessionId) {
+      return;
+    }
+    onAudioStart?.();
+  };
+
   cleanupActiveRecognition();
   activeVoiceSessionId = sessionId;
   const resolvedLocales = resolveSttLocales(locale, fallbackLocale);
@@ -530,6 +540,10 @@ export function startVoiceListeningSession({
 
       pendingWebEndReason = reason;
       pendingWebEndMessage = message;
+    };
+
+    recognition.onaudiostart = () => {
+      emitAudioStart();
     };
 
     recognition.onend = () => {
@@ -613,6 +627,9 @@ export function startVoiceListeningSession({
       }),
       module.addListener('end', () => {
         emitEnd('ended_unexpectedly', 'Speech recognition ended unexpectedly');
+      }),
+      module.addListener('audiostart', () => {
+        emitAudioStart();
       })
     ];
 

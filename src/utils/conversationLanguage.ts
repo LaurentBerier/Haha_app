@@ -394,7 +394,7 @@ export function normalizeConversationLanguage(language: string, fallback = 'fr-C
 
   const prefix = getLanguagePrefix(normalizedTag);
   if (!normalizedTag.includes('-')) {
-    return DEFAULT_LANGUAGE_BY_PREFIX[prefix] ?? normalizedTag.toLowerCase();
+    return DEFAULT_LANGUAGE_BY_PREFIX[prefix] ?? fallback;
   }
 
   return normalizedTag;
@@ -416,12 +416,9 @@ export function parseExplicitLanguageSwitch(text: string): ExplicitLanguageSwitc
   const resolvedLanguage = aliasLanguage ?? (codeLanguage || null);
   const hasDirectiveVerb = EXPLICIT_SWITCH_PATTERNS.some((pattern) => pattern.test(normalizedText));
   const hasLanguageWord = EXPLICIT_LANGUAGE_WORD_PATTERN.test(normalizedText);
-  const isShortLanguageOnlyRequest =
-    normalizedText.split(' ').filter(Boolean).length <= 4 && Boolean(aliasLanguage ?? codeLanguage);
   const hasExplicitTarget = Boolean(extractExplicitTarget(normalizedText));
 
   if (
-    !isShortLanguageOnlyRequest &&
     shouldBlockExplicitSwitchDetection({
       normalizedText,
       resolvedLanguage,
@@ -433,7 +430,8 @@ export function parseExplicitLanguageSwitch(text: string): ExplicitLanguageSwitc
     return { detected: false, language: null };
   }
 
-  const isExplicit = isShortLanguageOnlyRequest || (Boolean(resolvedLanguage) && (hasDirectiveVerb || hasLanguageWord)) || hasExplicitTarget;
+  const isExplicit =
+    (Boolean(resolvedLanguage) && (hasDirectiveVerb || hasLanguageWord)) || hasExplicitTarget;
 
   if (!isExplicit) {
     return { detected: false, language: null };

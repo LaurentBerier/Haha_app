@@ -31,6 +31,22 @@ describe('conversationLanguage', () => {
     });
   });
 
+  it('does not treat a standalone language name or code as an explicit switch', () => {
+    expect(parseExplicitLanguageSwitch('anglais')).toEqual({ detected: false, language: null });
+    expect(parseExplicitLanguageSwitch('English')).toEqual({ detected: false, language: null });
+  });
+
+  it('still parses directive phrasing for explicit switches', () => {
+    expect(parseExplicitLanguageSwitch('Parle en espagnol')).toEqual({
+      detected: true,
+      language: 'es-ES'
+    });
+  });
+
+  it('maps unknown two-letter words that look like tags to fallback', () => {
+    expect(normalizeConversationLanguage('le', 'fr-CA')).toBe('fr-CA');
+  });
+
   it('flags explicit unknown language requests for clarification', () => {
     expect(parseExplicitLanguageSwitch('parle en klingon')).toEqual({
       detected: true,
