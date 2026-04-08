@@ -4,7 +4,6 @@ const ACTIVE_MIC_STATES = new Set<VoiceConversationStatus>(['starting', 'listeni
 const PAUSED_MIC_STATES = new Set<VoiceConversationStatus>(['paused_manual', 'paused_recovery', 'unsupported', 'error']);
 const OFF_MIC_STATES = new Set<VoiceConversationStatus>([
   'off',
-  'assistant_busy',
   'paused_manual',
   'paused_recovery',
   'unsupported',
