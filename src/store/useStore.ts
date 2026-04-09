@@ -171,6 +171,10 @@ export const useStore = create<StoreState>()((...a) => ({
         ? snapshot.preferences.reduceMotion
         : 'system';
     const nextVoiceAutoPlay = snapshot.preferences?.voiceAutoPlay ?? true;
+    const nextEmojiStyle =
+      snapshot.preferences?.emojiStyle === 'off' || snapshot.preferences?.emojiStyle === 'full'
+        ? snapshot.preferences.emojiStyle
+        : 'classic';
     const nextConversationModeEnabled = snapshot.preferences?.conversationModeEnabled ?? current.conversationModeEnabled;
 
     setI18nLanguage(nextLanguage);
@@ -187,6 +191,7 @@ export const useStore = create<StoreState>()((...a) => ({
       displayMode: snapshot.preferences?.displayMode ? nextDisplayMode : 'dark',
       reduceMotion: snapshot.preferences?.reduceMotion ? nextReduceMotion : current.reduceMotion,
       voiceAutoPlay: snapshot.preferences ? nextVoiceAutoPlay : current.voiceAutoPlay,
+      emojiStyle: snapshot.preferences ? nextEmojiStyle : current.emojiStyle,
       conversationModeEnabled: snapshot.preferences ? nextConversationModeEnabled : current.conversationModeEnabled,
       completedTutorials: snapshot.preferences?.completedTutorials ?? {}
     });
@@ -249,6 +254,7 @@ export function selectPersistedSnapshot(state: StoreState): PersistedStoreSnapsh
       displayMode: state.displayMode,
       reduceMotion: state.reduceMotion,
       voiceAutoPlay: state.voiceAutoPlay,
+      emojiStyle: state.emojiStyle,
       conversationModeEnabled: state.conversationModeEnabled,
       completedTutorials: state.completedTutorials
     }

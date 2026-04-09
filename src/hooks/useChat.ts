@@ -31,6 +31,7 @@ import {
 import { addScore } from '../services/scoreManager';
 import { fetchAndCacheVoice } from '../services/ttsService';
 import { attemptVoiceAutoplayQueue, attemptVoiceAutoplayQueueDetailed } from '../services/voiceAutoplayService';
+import type { EmojiStyle } from '../store/slices/uiSlice';
 import { useStore } from '../store/useStore';
 import { resolveLanguageForTurn } from '../utils/conversationLanguage';
 import { findConversationById } from '../utils/conversationUtils';
@@ -75,6 +76,7 @@ interface StreamJob {
   availableExperiences: ClaudeAvailableExperience[];
   imageIntent: ImageIntent;
   tutorialMode: boolean;
+  emojiStyle: EmojiStyle;
 }
 
 interface MemeDraftState {
@@ -685,7 +687,8 @@ export function useChat(conversationId: string) {
         modeId,
         availableExperiences,
         imageIntent,
-        tutorialMode
+        tutorialMode,
+        emojiStyle
       } = nextJob;
       const jobConversationId = queuedConversationId.trim();
       if (!jobConversationId) {
@@ -1664,6 +1667,7 @@ export function useChat(conversationId: string) {
           language,
           availableExperiences,
           tutorialMode,
+          emojiStyle,
           messages: [...history, claudeUserMessage],
           imageIntent,
           onToken,
@@ -2449,12 +2453,14 @@ export function useChat(conversationId: string) {
     const imageIntentPromptPrefix = getImageIntentPromptPrefix(imageIntent);
     const latestProfile = latestStateForSend.userProfile ?? userProfile;
     const isVoiceModeTurn = Boolean(latestStateForSend.conversationModeEnabled);
+    const latestEmojiStyle = latestStateForSend.emojiStyle ?? 'classic';
     const baseSystemPrompt = buildSystemPromptForArtist(
       targetConversation.artistId,
       modeId,
       latestProfile,
       languageForTurn,
-      sessionDisplayName
+      sessionDisplayName,
+      latestEmojiStyle
     );
     const voiceModeAddendum = isVoiceModeTurn
       ? languageForTurn.toLowerCase().startsWith('en')
@@ -2530,7 +2536,8 @@ export function useChat(conversationId: string) {
       modeId,
       availableExperiences,
       imageIntent,
-      tutorialMode
+      tutorialMode,
+      emojiStyle: latestEmojiStyle
     });
     runNext();
 

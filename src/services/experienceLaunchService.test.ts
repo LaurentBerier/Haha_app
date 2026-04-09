@@ -58,6 +58,7 @@ const storeState = {
   },
   conversationModeEnabled: true,
   voiceAutoPlay: true,
+  emojiStyle: 'classic',
   messagesByConversation: {} as Record<string, { messages: MockMessage[] }>,
   createConversation: createConversationMock,
   addMessage: addMessageMock,

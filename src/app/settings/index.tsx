@@ -10,7 +10,7 @@ import { t } from '../../i18n';
 import { resolveErrorMessage } from '../../config/errorMessages';
 import { deleteAccount, signOut } from '../../services/authService';
 import { getUserTitle } from '../../services/scoreManager';
-import type { AppLanguage, ReduceMotionPreference } from '../../store/slices/uiSlice';
+import type { AppLanguage, EmojiStyle, ReduceMotionPreference } from '../../store/slices/uiSlice';
 import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 import { getAccountTypeLabel } from '../../utils/accountTypeUtils';
@@ -38,9 +38,11 @@ export default function SettingsScreen() {
   const language = useStore((state) => state.language);
   const reduceMotion = useStore((state) => state.reduceMotion);
   const voiceAutoPlay = useStore((state) => state.voiceAutoPlay);
+  const emojiStyle = useStore((state) => state.emojiStyle);
   const setLanguagePreference = useStore((state) => state.setLanguagePreference);
   const setReduceMotion = useStore((state) => state.setReduceMotion);
   const setVoiceAutoPlay = useStore((state) => state.setVoiceAutoPlay);
+  const setEmojiStyle = useStore((state) => state.setEmojiStyle);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -66,6 +68,11 @@ export default function SettingsScreen() {
   const voiceAutoPlayOptions: Array<{ value: boolean; label: string }> = [
     { value: false, label: t('settingsVoiceAutoPlayOff') },
     { value: true, label: t('settingsVoiceAutoPlayOn') }
+  ];
+  const emojiStyleOptions: Array<{ value: EmojiStyle; label: string }> = [
+    { value: 'off', label: t('settingsEmojiStyleOff') },
+    { value: 'classic', label: t('settingsEmojiStyleClassic') },
+    { value: 'full', label: t('settingsEmojiStyleFull') }
   ];
 
   const doLogout = async () => {
@@ -214,6 +221,26 @@ export default function SettingsScreen() {
               >
                 <Text
                   style={[styles.choiceChipLabel, voiceAutoPlay === option.value ? styles.choiceChipLabelActive : null]}
+                >
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+        <View style={styles.preferenceCard}>
+          <Text style={styles.preferenceLabel}>{t('settingsEmojiStyle')}</Text>
+          <Text style={styles.preferenceHint}>{t('settingsEmojiStyleHint')}</Text>
+          <View style={styles.choiceRow}>
+            {emojiStyleOptions.map((option) => (
+              <Pressable
+                key={option.value}
+                onPress={() => setEmojiStyle(option.value)}
+                style={[styles.choiceChip, emojiStyle === option.value ? styles.choiceChipActive : null]}
+                testID={`settings-emoji-style-${option.value}`}
+              >
+                <Text
+                  style={[styles.choiceChipLabel, emojiStyle === option.value ? styles.choiceChipLabelActive : null]}
                 >
                   {option.label}
                 </Text>

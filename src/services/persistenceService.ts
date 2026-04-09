@@ -199,6 +199,7 @@ function isValidPreferences(value: unknown): boolean {
   const displayMode = value.displayMode;
   const reduceMotion = value.reduceMotion;
   const voiceAutoPlay = value.voiceAutoPlay;
+  const emojiStyle = value.emojiStyle;
   const conversationModeEnabled = value.conversationModeEnabled;
   const hasValidLanguage =
     language === undefined || language === 'fr-CA' || language === 'en-CA' || language === 'fr-FR' || language === 'en';
@@ -206,6 +207,8 @@ function isValidPreferences(value: unknown): boolean {
   const hasValidReduceMotion =
     reduceMotion === undefined || reduceMotion === 'system' || reduceMotion === 'on' || reduceMotion === 'off';
   const hasValidVoiceAutoPlay = voiceAutoPlay === undefined || typeof voiceAutoPlay === 'boolean';
+  const hasValidEmojiStyle =
+    emojiStyle === undefined || emojiStyle === 'off' || emojiStyle === 'classic' || emojiStyle === 'full';
   const hasValidConversationModeEnabled =
     conversationModeEnabled === undefined || typeof conversationModeEnabled === 'boolean';
   const completedTutorials = value.completedTutorials;
@@ -220,6 +223,7 @@ function isValidPreferences(value: unknown): boolean {
     hasValidDisplayMode &&
     hasValidReduceMotion &&
     hasValidVoiceAutoPlay &&
+    hasValidEmojiStyle &&
     hasValidConversationModeEnabled &&
     hasValidCompletedTutorials
   );

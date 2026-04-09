@@ -128,6 +128,42 @@ describe('useStore hydration', () => {
     expect(snapshot.preferences?.conversationModeEnabled).toBe(false);
   });
 
+  it('defaults emoji style to classic when absent and preserves off/full', () => {
+    useStore.getState().setEmojiStyle('classic');
+
+    useStore.getState().hydrateStore({
+      ownerUserId: null,
+      selectedArtistId: 'cathy-gauthier',
+      conversations: {},
+      activeConversationId: null,
+      messagesByConversation: {},
+      preferences: {
+        language: 'fr-CA',
+        displayMode: 'dark'
+      }
+    });
+
+    expect(useStore.getState().emojiStyle).toBe('classic');
+
+    useStore.getState().hydrateStore({
+      ownerUserId: null,
+      selectedArtistId: 'cathy-gauthier',
+      conversations: {},
+      activeConversationId: null,
+      messagesByConversation: {},
+      preferences: {
+        language: 'fr-CA',
+        displayMode: 'dark',
+        emojiStyle: 'full'
+      }
+    });
+
+    expect(useStore.getState().emojiStyle).toBe('full');
+
+    const snapshot = selectPersistedSnapshot(useStore.getState());
+    expect(snapshot.preferences?.emojiStyle).toBe('full');
+  });
+
   it('sanitizes stale web blob voice metadata during hydration', () => {
     useStore.getState().hydrateStore({
       ownerUserId: null,

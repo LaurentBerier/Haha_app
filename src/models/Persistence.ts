@@ -7,6 +7,7 @@ export interface PersistedUiPreferences {
   displayMode: 'dark' | 'light' | 'system';
   reduceMotion: 'system' | 'on' | 'off';
   voiceAutoPlay: boolean;
+  emojiStyle?: 'off' | 'classic' | 'full';
   conversationModeEnabled: boolean;
   completedTutorials?: Record<string, boolean>;
 }

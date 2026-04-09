@@ -91,4 +91,22 @@ describe('personalityEngineService', () => {
     expect(prompt).not.toContain('Coach de vie');
     expect(prompt).not.toContain('Meteo');
   });
+
+  it('respects emojiStyle off and full in French Cathy prompt', () => {
+    const offPrompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'on-jase', null, 'fr-CA', null, 'off');
+    expect(offPrompt).toContain("N'utilise aucun emoji dans le corps");
+
+    const fullPrompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'on-jase', null, 'fr-CA', null, 'full');
+    expect(fullPrompt).toMatch(/🤣|💅/);
+  });
+
+  it('includes anti-sycophancy adaptation section in FR and EN', () => {
+    const frPrompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'on-jase', null, 'fr-CA');
+    expect(frPrompt).toContain('## ADAPTATION SANS FLAGORNERIE');
+    expect(frPrompt).toContain('précision du tir');
+
+    const enPrompt = buildSystemPromptForArtist(ARTIST_IDS.CATHY_GAUTHIER, 'on-jase', null, 'en-CA');
+    expect(enPrompt).toContain('## ADAPTATION WITHOUT SYCOPHANCY');
+    expect(enPrompt).toContain('No sycophancy about the user');
+  });
 });

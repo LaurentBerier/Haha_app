@@ -19,7 +19,7 @@ describe('claudeApiService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetState.mockReturnValue({ session: { accessToken: 'token-1' } });
+    mockGetState.mockReturnValue({ session: { accessToken: 'token-1' }, emojiStyle: 'classic' });
   });
 
   afterAll(() => {
@@ -163,6 +163,40 @@ describe('claudeApiService', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? '{}')) as Record<string, unknown>;
     expect(body.tutorialMode).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('forwards emojiStyle from store when param omitted', async () => {
+    const onToken = jest.fn();
+    const onComplete = jest.fn();
+    const onError = jest.fn();
+
+    mockGetState.mockReturnValue({ session: { accessToken: 'token-1' }, emojiStyle: 'full' });
+
+    (globalThis as { navigator?: { product?: string } }).navigator = { product: 'ReactNative' };
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'Ok' }],
+        usage: { output_tokens: 2 }
+      })
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    streamClaudeResponse({
+      artistId: 'cathy-gauthier',
+      modeId: 'default',
+      language: 'fr-CA',
+      messages: [{ role: 'user', content: 'Hi' }],
+      onToken,
+      onComplete,
+      onError
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body ?? '{}')) as Record<string, unknown>;
+    expect(body.emojiStyle).toBe('full');
     expect(onError).not.toHaveBeenCalled();
   });
 });

@@ -42,6 +42,7 @@ interface MockStoreState {
   messagesByConversation: Record<string, MessagePage>;
   conversationModeEnabled: boolean;
   voiceAutoPlay: boolean;
+  emojiStyle: 'off' | 'classic' | 'full';
 }
 
 interface MockStreamParams {
@@ -278,7 +279,8 @@ function createMockStoreState(): MockStoreState {
     conversations: {},
     messagesByConversation: {},
     conversationModeEnabled: false,
-    voiceAutoPlay: false
+    voiceAutoPlay: false,
+    emojiStyle: 'classic'
   } satisfies MockStoreState);
 
   return state as MockStoreState;

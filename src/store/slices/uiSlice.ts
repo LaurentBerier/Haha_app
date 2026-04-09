@@ -8,6 +8,7 @@ export type VoiceStatus = 'idle' | 'recording' | 'transcribing' | 'error';
 export type AppLanguage = 'fr-CA' | 'en-CA';
 export type DisplayMode = 'dark';
 export type ReduceMotionPreference = 'system' | 'on' | 'off';
+export type EmojiStyle = 'off' | 'classic' | 'full';
 
 export interface QueuedChatSendPayload {
   nonce: string;
@@ -54,6 +55,7 @@ export interface UiSlice {
   displayMode: DisplayMode;
   reduceMotion: ReduceMotionPreference;
   voiceAutoPlay: boolean;
+  emojiStyle: EmojiStyle;
   conversationModeEnabled: boolean;
   completedTutorials: Record<string, boolean>;
   greetedArtistIds: Set<string>;
@@ -66,6 +68,7 @@ export interface UiSlice {
   setDisplayMode: (mode: DisplayMode) => void;
   setReduceMotion: (mode: ReduceMotionPreference) => void;
   setVoiceAutoPlay: (enabled: boolean) => void;
+  setEmojiStyle: (style: EmojiStyle) => void;
   setConversationModeEnabled: (enabled: boolean) => void;
   markArtistGreeted: (artistId: string) => void;
   markTutorialCompleted: (tutorialId: string) => void;
@@ -82,6 +85,7 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set, ge
   displayMode: 'dark',
   reduceMotion: 'system',
   voiceAutoPlay: true,
+  emojiStyle: 'classic',
   conversationModeEnabled: true,
   completedTutorials: {},
   greetedArtistIds: new Set<string>(),
@@ -97,6 +101,7 @@ export const createUiSlice: StateCreator<StoreState, [], [], UiSlice> = (set, ge
   setDisplayMode: () => set({ displayMode: 'dark' }),
   setReduceMotion: (mode) => set({ reduceMotion: mode }),
   setVoiceAutoPlay: (enabled) => set({ voiceAutoPlay: enabled }),
+  setEmojiStyle: (style) => set({ emojiStyle: style }),
   setConversationModeEnabled: (enabled) => set({ conversationModeEnabled: enabled }),
   markArtistGreeted: (artistId) =>
     set((state) => {

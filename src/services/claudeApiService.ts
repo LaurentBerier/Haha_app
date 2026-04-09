@@ -1,5 +1,6 @@
 import { API_BASE_URL, CLAUDE_PROXY_URL } from '../config/env';
 import type { ImageIntent } from './imageIntentService';
+import type { EmojiStyle } from '../store/slices/uiSlice';
 import { useStore } from '../store/useStore';
 
 export type ClaudeImageMediaType = 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif';
@@ -41,6 +42,7 @@ export interface ClaudeStreamParams {
   availableExperiences?: ClaudeAvailableExperience[];
   imageIntent?: ImageIntent;
   tutorialMode?: boolean;
+  emojiStyle?: EmojiStyle;
   maxTokens?: number;
   temperature?: number;
   onToken: (token: string) => void;
@@ -241,10 +243,13 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
       availableExperiences,
       imageIntent,
       tutorialMode,
+      emojiStyle: emojiStyleParam,
       messages,
       maxTokens = 300,
       temperature = 0.9
     } = params;
+
+    const resolvedEmojiStyle = emojiStyleParam ?? useStore.getState().emojiStyle ?? 'classic';
 
     if (proxyUrlCandidates.length === 0) {
       emitError(new Error('Missing Claude proxy URL. Set EXPO_PUBLIC_CLAUDE_PROXY_URL.'));
@@ -270,6 +275,7 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
           availableExperiences,
           imageIntent,
           tutorialMode: tutorialMode === true,
+          emojiStyle: resolvedEmojiStyle,
           messages
         }),
         signal: controller.signal

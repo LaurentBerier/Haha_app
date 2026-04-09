@@ -36,6 +36,7 @@ describe('uiSlice', () => {
 
     expect(slice.conversationModeEnabled).toBe(true);
     expect(slice.voiceAutoPlay).toBe(true);
+    expect(slice.emojiStyle).toBe('classic');
     expect(slice.greetedArtistIds.has('cathy-gauthier')).toBe(false);
     expect(slice.completedTutorials).toEqual({});
 
@@ -79,5 +80,15 @@ describe('uiSlice', () => {
     const queued = slice.consumeChatSendPayload('conv-1', 'nonce-1');
     expect(queued).toEqual({ text: 'allo' });
     expect(slice.queuedChatSendPayload).toBeNull();
+  });
+
+  it('updates emoji style preference', () => {
+    const slice = createSliceHarness((set, get) => createUiSlice(set as never, get as never, undefined as never));
+
+    expect(slice.emojiStyle).toBe('classic');
+    slice.setEmojiStyle('full');
+    expect(slice.emojiStyle).toBe('full');
+    slice.setEmojiStyle('off');
+    expect(slice.emojiStyle).toBe('off');
   });
 });
