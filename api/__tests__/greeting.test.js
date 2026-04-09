@@ -7,6 +7,7 @@ function buildSupabaseClient({
   user = { id: 'user-1', user_metadata: { display_name: 'Laurent' } },
   profile = { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 0 },
   missingTutorialCounterColumn = false,
+  missingProfileColumns = [],
   updateError = null
 } = {}) {
   let profileRow = profile;
@@ -15,6 +16,18 @@ function buildSupabaseClient({
       return Promise.resolve({
         data: null,
         error: { code: '42703', message: 'column "greeting_tutorial_sessions_count" does not exist' }
+      });
+    }
+
+    const requestedColumns = String(selectedColumns)
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const missingColumn = missingProfileColumns.find((column) => requestedColumns.includes(column));
+    if (missingColumn) {
+      return Promise.resolve({
+        data: null,
+        error: { code: '42703', message: `column "${missingColumn}" does not exist` }
       });
     }
 
@@ -712,6 +725,37 @@ describe('api/greeting tutorial behavior', () => {
     expect(supabase.spies.profileSelect).toHaveBeenCalledTimes(2);
     expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps persisted tutorial counter when optional profile columns are missing', async () => {
+    const supabase = buildSupabaseClient({
+      profile: { horoscope_sign: 'taurus', greeting_tutorial_sessions_count: 1 },
+      missingProfileColumns: ['age']
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+    const fetchMock = installFetchMock();
+
+    const handler = require('../greeting');
+    const { req, res } = createReqRes({
+      headers: { authorization: 'Bearer token' },
+      body: {
+        artistId: 'cathy-gauthier',
+        language: 'fr-CA',
+        isSessionFirstGreeting: true,
+        availableModes: ['On Jase', 'Jeux'],
+        coords: { lat: 45.5, lon: -73.5 }
+      }
+    });
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.tutorial.active).toBe(false);
+    expect(supabase.spies.profileSelect).toHaveBeenCalledTimes(2);
+    expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
   });
 
   it('returns 503 with Retry-After when Anthropic is overloaded', async () => {

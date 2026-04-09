@@ -914,6 +914,28 @@ function isGreetingTutorialCounterColumnMissingError(error) {
   );
 }
 
+function extractMissingProfileColumn(error) {
+  if (!isRecord(error)) {
+    return null;
+  }
+
+  const code = typeof error.code === 'string' ? error.code : '';
+  if (code !== '42703') {
+    return null;
+  }
+
+  const merged = [
+    typeof error.message === 'string' ? error.message : '',
+    typeof error.details === 'string' ? error.details : '',
+    typeof error.hint === 'string' ? error.hint : ''
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  const match = merged.match(/(?:column|profile column)[^"'`]*["'`]([a-z_]+)["'`]/i);
+  return match?.[1] ?? null;
+}
+
 function createTutorialState({
   isSessionFirstGreeting,
   persistedCount,
@@ -944,31 +966,48 @@ function createTutorialState({
 
 async function fetchUserGreetingProfile(supabaseAdmin, userId, requestId) {
   try {
-    let columns = profileSelectSupportsTutorialCounterColumn
-      ? 'horoscope_sign, greeting_tutorial_sessions_count, age, relationship_status, interests'
-      : 'horoscope_sign, age, relationship_status, interests';
+    const selectedColumns = new Set(['horoscope_sign', 'age', 'relationship_status', 'interests']);
+    if (profileSelectSupportsTutorialCounterColumn) {
+      selectedColumns.add('greeting_tutorial_sessions_count');
+    }
 
-    let result = await supabaseAdmin
-      .from('profiles')
-      .select(columns)
-      .eq('id', userId)
-      .maybeSingle();
+    let result = null;
+    let retriesRemaining = 4;
 
-    if (
-      result.error &&
-      profileSelectSupportsTutorialCounterColumn &&
-      isGreetingTutorialCounterColumnMissingError(result.error)
-    ) {
-      profileSelectSupportsTutorialCounterColumn = false;
-      columns = 'horoscope_sign, age, relationship_status, interests';
+    while (retriesRemaining > 0) {
+      const columns = Array.from(selectedColumns).join(', ');
       result = await supabaseAdmin
         .from('profiles')
         .select(columns)
         .eq('id', userId)
         .maybeSingle();
+
+      if (!result.error) {
+        break;
+      }
+
+      const missingColumn = extractMissingProfileColumn(result.error);
+      if (!missingColumn || !selectedColumns.has(missingColumn)) {
+        break;
+      }
+
+      if (missingColumn === 'greeting_tutorial_sessions_count') {
+        profileSelectSupportsTutorialCounterColumn = false;
+      }
+
+      selectedColumns.delete(missingColumn);
+      retriesRemaining -= 1;
     }
 
-    if (result.error) {
+    if (
+      result?.error &&
+      profileSelectSupportsTutorialCounterColumn &&
+      isGreetingTutorialCounterColumnMissingError(result.error)
+    ) {
+      profileSelectSupportsTutorialCounterColumn = false;
+    }
+
+    if (!result || result.error) {
       console.error(`[api/greeting][${requestId}] Failed to read user profile`, result.error);
       return {
         horoscopeSign: null,
