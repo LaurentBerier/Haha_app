@@ -1,7 +1,7 @@
 import {
   shouldAutoPlayGreetingVoice,
   shouldAutoPlayPendingGreetingVoice
-} from './greetingAutoplayPolicy';
+} from '../../app/mode-select/greetingAutoplayPolicy';
 
 describe('greetingAutoplayPolicy', () => {
   it('forces tutorial greeting autoplay when override is enabled', () => {

@@ -1,7 +1,7 @@
 import {
   hasPlayableGreetingVoice,
   shouldConfirmGreetingAutoplayFailure
-} from './greetingVoiceFailure';
+} from '../../app/mode-select/greetingVoiceFailure';
 
 describe('greetingVoiceFailure', () => {
   it('detects playable voice from queue or direct url', () => {

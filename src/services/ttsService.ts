@@ -30,6 +30,7 @@ interface FetchTtsResponse {
   arrayBuffer?: ArrayBuffer;
   contentType?: string;
   code?: string;
+  requestId?: string;
   retryAfterSeconds?: number;
 }
 
@@ -79,25 +80,44 @@ function parseRetryAfterSeconds(value: string | null): number | undefined {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
-async function extractApiErrorCode(response: Response): Promise<string | null> {
+function isTransientTtsStatus(status: number): boolean {
+  return status === 500 || status === 502 || status === 503 || status === 504 || status === 529;
+}
+
+async function extractApiErrorMetadata(response: Response): Promise<{ code: string | null; requestId: string | null }> {
   const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
   if (!contentType.includes('application/json')) {
-    return null;
+    return { code: null, requestId: null };
   }
 
   try {
     const payload = (await response.clone().json()) as {
-      error?: { code?: unknown };
+      error?: { code?: unknown; requestId?: unknown };
+      requestId?: unknown;
     };
     const code = payload?.error?.code;
-    return typeof code === 'string' && code.trim() ? code.trim() : null;
+    const requestId = (payload as Record<string, unknown>)?.requestId ?? payload?.error?.requestId;
+    return {
+      code: typeof code === 'string' && code.trim() ? code.trim() : null,
+      requestId: typeof requestId === 'string' && requestId.trim() ? requestId.trim() : null
+    };
   } catch {
-    return null;
+    return { code: null, requestId: null };
   }
 }
 
-function buildTtsError(status: number, code?: string): Error & { status: number; code: string; retryAfterSeconds?: number } {
-  const error = new Error('TTS unavailable') as Error & { status: number; code: string; retryAfterSeconds?: number };
+function buildTtsError(status: number, code?: string): Error & {
+  status: number;
+  code: string;
+  retryAfterSeconds?: number;
+  requestId?: string;
+} {
+  const error = new Error('TTS unavailable') as Error & {
+    status: number;
+    code: string;
+    retryAfterSeconds?: number;
+    requestId?: string;
+  };
   error.status = status;
   error.code = normalizeTtsErrorCode(status, code);
   return error;
@@ -183,6 +203,16 @@ function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
 }
 
+function isLikelyLocalDevOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    const hostname = url.hostname.toLowerCase();
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0';
+  } catch {
+    return false;
+  }
+}
+
 function revokeWebObjectUrl(url: string): void {
   if (typeof URL === 'undefined' || typeof URL.revokeObjectURL !== 'function') {
     return;
@@ -259,23 +289,37 @@ export function buildTtsProxyCandidates(): string[] {
     }
   };
 
-  // Web first: try same-origin API routes before cross-origin backends.
+  const normalizedApiBase = normalizeUrl(API_BASE_URL);
+  const normalizedClaudeProxy = normalizeUrl(CLAUDE_PROXY_URL);
+  // Skip same-origin web `/api/tts` on local dev origins (localhost etc.) where
+  // the path resolves to the Expo HTML app server instead of an API backend.
+  const shouldSkipSameOriginWebApiRoute = (() => {
+    if (typeof window === 'undefined' || typeof window.location?.origin !== 'string') {
+      return false;
+    }
+    const origin = normalizeUrl(window.location.origin);
+    if (!origin || !isLikelyLocalDevOrigin(origin)) {
+      return false;
+    }
+    return Boolean(normalizedApiBase || normalizedClaudeProxy);
+  })();
+
   if (typeof window !== 'undefined' && typeof window.location?.origin === 'string' && window.location.origin) {
     const origin = normalizeUrl(window.location.origin);
-    if (origin) {
+    if (origin && !shouldSkipSameOriginWebApiRoute) {
       addCandidate(`${origin}/api/tts`);
     }
   }
-  addCandidate('/api/tts');
-
-  const apiBase = normalizeUrl(API_BASE_URL);
-  if (apiBase) {
-    addCandidate(`${apiBase}/tts`);
+  if (!shouldSkipSameOriginWebApiRoute) {
+    addCandidate('/api/tts');
   }
 
-  const claudeProxy = normalizeUrl(CLAUDE_PROXY_URL);
-  if (claudeProxy) {
-    addCandidate(claudeProxy.replace(/\/claude$/, '/tts'));
+  if (normalizedApiBase) {
+    addCandidate(`${normalizedApiBase}/tts`);
+  }
+
+  if (normalizedClaudeProxy) {
+    addCandidate(normalizedClaudeProxy.replace(/\/claude$/, '/tts'));
   }
   return candidates;
 }
@@ -348,16 +392,13 @@ async function fetchTtsBinary(
   }
   let lastStatus = 0;
   let lastCode: string | undefined;
+  let lastRequestId: string | undefined;
   let lastRetryAfterSeconds: number | undefined;
 
   for (const endpoint of candidates) {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timeoutHandle = setTimeout(() => {
-      controller?.abort();
-    }, TTS_ENDPOINT_TIMEOUT_MS);
-
-    try {
-      const response = await fetch(endpoint, {
+    const requestEndpoint = async () =>
+      fetch(endpoint, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -366,19 +407,40 @@ async function fetchTtsBinary(
         body: JSON.stringify(payload),
         signal: controller?.signal
       });
+    const timeoutHandle = setTimeout(() => {
+      controller?.abort();
+    }, TTS_ENDPOINT_TIMEOUT_MS);
+
+    try {
+      let response = await requestEndpoint();
+      let transientAttempt = 0;
+      const maxTransientRetries = 2;
+      while (
+        !response.ok &&
+        isTransientTtsStatus(response.status) &&
+        !isTerminalTtsStatus(response.status) &&
+        transientAttempt < maxTransientRetries
+      ) {
+        transientAttempt += 1;
+        const backoffMs = transientAttempt * 800;
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        response = await requestEndpoint();
+      }
 
       if (!response.ok) {
-        const responseCode = await extractApiErrorCode(response);
-        const normalizedCode = normalizeTtsErrorCode(response.status, responseCode);
+        const responseMetadata = await extractApiErrorMetadata(response);
+        const normalizedCode = normalizeTtsErrorCode(response.status, responseMetadata.code);
         const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('retry-after'));
         lastStatus = response.status;
         lastCode = normalizedCode;
+        lastRequestId = responseMetadata.requestId ?? undefined;
         lastRetryAfterSeconds = retryAfterSeconds;
         if (isTerminalTtsStatus(response.status)) {
           return {
             ok: false,
             status: response.status,
             code: normalizedCode,
+            requestId: responseMetadata.requestId ?? undefined,
             retryAfterSeconds
           };
         }
@@ -410,6 +472,7 @@ async function fetchTtsBinary(
     ok: false,
     status: lastStatus,
     code: lastCode,
+    requestId: lastRequestId,
     retryAfterSeconds: lastRetryAfterSeconds
   };
 }
@@ -474,6 +537,7 @@ export async function fetchAndCacheVoice(
         if (options?.throwOnError) {
           const error = buildTtsError(response.status, response.code);
           error.retryAfterSeconds = response.retryAfterSeconds;
+          error.requestId = response.requestId;
           throw error;
         }
         return null;
@@ -514,6 +578,7 @@ export async function fetchAndCacheVoice(
       if (options?.throwOnError) {
         const error = buildTtsError(response.status, response.code);
         error.retryAfterSeconds = response.retryAfterSeconds;
+        error.requestId = response.requestId;
         throw error;
       }
       return null;

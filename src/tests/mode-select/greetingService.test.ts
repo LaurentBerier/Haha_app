@@ -7,7 +7,7 @@ jest.mock('../../config/env', () => ({
 import {
   __resetModeSelectGreetingApiBackoffForTest,
   fetchModeSelectGreetingFromApi
-} from './greetingService';
+} from '../../app/mode-select/greetingService';
 
 describe('mode-select greetingService', () => {
   const originalFetch = global.fetch;

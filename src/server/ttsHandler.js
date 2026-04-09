@@ -549,11 +549,12 @@ module.exports = async function handler(req, res) {
   const fetchTimeoutMs = parsePositiveInt(process.env.ELEVENLABS_FETCH_TIMEOUT_MS, 20_000);
   const resolvedLanguageCode = resolveLanguageCode(payload.language);
 
+  const outputFormat = 'mp3_44100_128';
+
   const buildProviderBody = (includeLanguageCode) => {
     const body = {
       text: payload.providerText,
       model_id: modelId,
-      output_format: 'mp3_44100_128',
       voice_settings: getVoiceSettings()
     };
 
@@ -568,7 +569,8 @@ module.exports = async function handler(req, res) {
     const timeoutController = new AbortController();
     const timeout = setTimeout(() => timeoutController.abort(), fetchTimeoutMs);
     try {
-      return await fetch(`${ELEVENLABS_API_BASE}/${encodeURIComponent(voiceId)}`, {
+      const upstreamUrl = `${ELEVENLABS_API_BASE}/${encodeURIComponent(voiceId)}?output_format=${encodeURIComponent(outputFormat)}`;
+      return await fetch(upstreamUrl, {
         method: 'POST',
         headers: {
           'xi-api-key': elevenLabsApiKey,
@@ -583,10 +585,33 @@ module.exports = async function handler(req, res) {
     }
   };
 
+  const isTransientUpstreamStatus = (status) =>
+    status === 500 || status === 502 || status === 503 || status === 504 || status === 529;
+
+  const requestUpstreamWithRetry = async (includeLanguageCode) => {
+    let lastError;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await requestUpstream(includeLanguageCode);
+        if (response.ok || !isTransientUpstreamStatus(response.status) || attempt === 1) {
+          return response;
+        }
+        await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 600));
+      } catch (error) {
+        lastError = error;
+        if (attempt === 1) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 600));
+      }
+    }
+    throw lastError;
+  };
+
   let upstreamResponse;
   let providerPayload = '';
   try {
-    upstreamResponse = await requestUpstream(true);
+    upstreamResponse = await requestUpstreamWithRetry(true);
   } catch (error) {
     if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
       sendError(res, 503, 'TTS provider unavailable.', { code: 'TTS_PROVIDER_ERROR', requestId });
@@ -607,7 +632,7 @@ module.exports = async function handler(req, res) {
 
     if (shouldRetryWithoutLanguageCode(upstreamResponse.status, providerPayload)) {
       try {
-        upstreamResponse = await requestUpstream(false);
+        upstreamResponse = await requestUpstreamWithRetry(false);
         providerPayload = '';
       } catch (error) {
         if (error && typeof error === 'object' && 'name' in error && error.name === 'AbortError') {
