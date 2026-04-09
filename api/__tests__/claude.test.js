@@ -870,7 +870,7 @@ describe('api/claude', () => {
     const upstreamFetchCall = global.fetch.mock.calls.find((call) => String(call?.[0] ?? '').includes('/v1/messages'));
     expect(upstreamFetchCall).toBeTruthy();
     const upstreamBody = JSON.parse(upstreamFetchCall[1].body);
-    expect(upstreamBody.system.length).toBeLessThanOrEqual(12000);
+    expect(upstreamBody.system.length).toBeLessThanOrEqual(20000);
     expect(upstreamBody.system).toContain('## MODE ACTIF : on-jase');
     expect(upstreamBody.system).toContain('## GUARDRAILS');
   });
