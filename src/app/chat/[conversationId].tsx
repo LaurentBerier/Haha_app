@@ -70,6 +70,7 @@ export default function ChatScreen() {
   const accessToken = useStore((state) => state.session?.accessToken ?? '');
   const language = useStore((state) => state.language);
   const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
+  const isVoiceInputBlocked = useStore((state) => state.isVoiceInputBlocked());
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
   const voiceAutoPlay = useStore((state) => state.voiceAutoPlay);
   const consumeChatSendPayload = useStore((state) => state.consumeChatSendPayload);
@@ -105,7 +106,7 @@ export default function ChatScreen() {
     armListeningActivation
   } =
     useVoiceConversation({
-    enabled: conversationModeEnabled && !isChatComposerDisabled,
+    enabled: conversationModeEnabled && !isChatComposerDisabled && !isVoiceInputBlocked,
     disabled: isChatComposerDisabled,
     hasTypedDraft,
     isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
@@ -294,7 +295,7 @@ export default function ChatScreen() {
     }
 
     resumeListening();
-  }, [conversationModeEnabled, isChatComposerDisabled, isValidConversation, resumeListening]);
+  }, [conversationModeEnabled, isChatComposerDisabled, isValidConversation, isVoiceInputBlocked, resumeListening]);
 
   const handleChooseMemeOption = useCallback(
     async (messageId: string): Promise<void> => {

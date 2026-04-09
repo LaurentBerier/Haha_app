@@ -6,6 +6,7 @@ import { theme } from '../../theme';
 interface ModeCardProps {
   mode: Mode;
   onPress: () => void;
+  disabled?: boolean;
 }
 
 const MODE_EMOJI_BY_ID: Record<string, string> = {
@@ -45,7 +46,7 @@ function getModeEmoji(mode: Mode): string {
   return MODE_EMOJI_FALLBACK_POOL[index] ?? '🎭';
 }
 
-export function ModeCard({ mode, onPress }: ModeCardProps) {
+export function ModeCard({ mode, onPress, disabled = false }: ModeCardProps) {
   const emoji = getModeEmoji(mode);
   const isHistoryMode = mode.kind === MODE_IDS.HISTORY;
 
@@ -54,10 +55,12 @@ export function ModeCard({ mode, onPress }: ModeCardProps) {
       testID={`mode-card-${mode.id}`}
       accessibilityRole="button"
       accessibilityLabel={mode.name}
-      onPress={onPress}
+      disabled={disabled}
+      onPress={disabled ? undefined : onPress}
       style={({ pressed }) => [
         styles.card,
         isHistoryMode && styles.cardHistory,
+        disabled && styles.disabled,
         pressed && styles.pressed
       ]}
     >
@@ -100,6 +103,9 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.94,
     transform: [{ scale: 0.995 }]
+  },
+  disabled: {
+    opacity: 0.45
   },
   hovered: {
     borderColor: theme.colors.neonBlue,

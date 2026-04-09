@@ -1,22 +1,27 @@
 import type { StateCreator } from 'zustand';
 import { accountTypesById } from '../../config/accountTypes';
 import {
+  QUOTA_THRESHOLD_ABSOLUTE_PAID_RATIO,
   QUOTA_THRESHOLD_HARD_FREE_RATIO,
-  QUOTA_THRESHOLD_SOFT_1_RATIO,
-  QUOTA_THRESHOLD_SOFT_2_RATIO
+  QUOTA_THRESHOLD_HAIKU_RATIO,
+  QUOTA_THRESHOLD_SOFT_2_RATIO,
+  QUOTA_THRESHOLD_SOFT_3_RATIO
 } from '../../config/quotaThresholds';
 import type { UsageQuota } from '../../models/Usage';
 import type { StoreState } from '../useStore';
 
-export type QuotaThreshold = 'normal' | 'soft1' | 'soft2' | 'exceeded';
+export type QuotaThreshold = 'normal' | 'haiku' | 'soft2' | 'soft3' | 'economy' | 'exceeded';
 
 export interface UsageSlice {
   quota: UsageQuota;
   incrementUsage: () => void;
   isQuotaExceeded: () => boolean;
-  getQuotaThreshold: () => QuotaThreshold;
+  getQuotaThreshold: (accountType?: string) => QuotaThreshold;
   isSoftCapReached: () => boolean;
-  markThresholdMessageShown: (threshold: 1 | 2 | 3 | 4) => void;
+  markThresholdMessageShown: (threshold: 1 | 2 | 3 | 4 | 5) => void;
+  isTtsAvailable: (accountType?: string) => boolean;
+  isExpensiveModeAvailable: (accountType?: string) => boolean;
+  isVoiceInputBlocked: (accountType?: string) => boolean;
   setBlocked: (blocked: boolean) => void;
   resetQuota: () => void;
   hydrateQuota: (messagesUsed: number, accountType: string) => void;
@@ -37,6 +42,7 @@ function normalizeQuotaWindow(quota: UsageQuota): UsageQuota {
       threshold2MessageShown: false,
       threshold3MessageShown: false,
       threshold4MessageShown: false,
+      threshold5MessageShown: false,
       isBlocked: false,
       resetDate: computeNextResetDate(new Date())
     };
@@ -52,16 +58,27 @@ function getRatio(quota: UsageQuota): number {
   return quota.messagesUsed / quota.messagesCap;
 }
 
-function resolveThreshold(quota: UsageQuota): QuotaThreshold {
+function resolveThreshold(quota: UsageQuota, accountType: string): QuotaThreshold {
   const ratio = getRatio(quota);
-  if (ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO) {
+  const normalizedAccountType = (accountType || '').toLowerCase();
+  const isFree = normalizedAccountType === 'free';
+  if (isFree && ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO) {
     return 'exceeded';
+  }
+  if (!isFree && ratio >= QUOTA_THRESHOLD_ABSOLUTE_PAID_RATIO) {
+    return 'exceeded';
+  }
+  if (!isFree && ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO) {
+    return 'economy';
+  }
+  if (ratio >= QUOTA_THRESHOLD_SOFT_3_RATIO) {
+    return 'soft3';
   }
   if (ratio >= QUOTA_THRESHOLD_SOFT_2_RATIO) {
     return 'soft2';
   }
-  if (ratio >= QUOTA_THRESHOLD_SOFT_1_RATIO) {
-    return 'soft1';
+  if (ratio >= QUOTA_THRESHOLD_HAIKU_RATIO) {
+    return 'haiku';
   }
   return 'normal';
 }
@@ -79,6 +96,7 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
     threshold2MessageShown: false,
     threshold3MessageShown: false,
     threshold4MessageShown: false,
+    threshold5MessageShown: false,
     isBlocked: false,
     resetDate: computeNextResetDate(new Date())
   },
@@ -93,22 +111,19 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
       };
     }),
   isQuotaExceeded: () => {
-    const { quota } = get();
+    const { quota, session } = get();
     const normalized = normalizeQuotaWindow(quota);
-    if (normalized.messagesCap === null) {
-      return false;
-    }
-    return normalized.messagesUsed >= normalized.messagesCap;
+    return resolveThreshold(normalized, session?.user.accountType ?? 'free') === 'exceeded';
   },
-  getQuotaThreshold: () => {
-    const { quota } = get();
+  getQuotaThreshold: (accountType) => {
+    const { quota, session } = get();
     const normalized = normalizeQuotaWindow(quota);
-    return resolveThreshold(normalized);
+    return resolveThreshold(normalized, accountType ?? session?.user.accountType ?? 'free');
   },
   isSoftCapReached: () => {
-    const { quota } = get();
+    const { quota, session } = get();
     const normalized = normalizeQuotaWindow(quota);
-    const threshold = resolveThreshold(normalized);
+    const threshold = resolveThreshold(normalized, session?.user.accountType ?? 'free');
     return threshold !== 'normal';
   },
   markThresholdMessageShown: (threshold) =>
@@ -123,8 +138,26 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
       if (threshold === 3) {
         return { quota: { ...normalized, threshold3MessageShown: true } };
       }
-      return { quota: { ...normalized, threshold4MessageShown: true } };
+      if (threshold === 4) {
+        return { quota: { ...normalized, threshold4MessageShown: true } };
+      }
+      return { quota: { ...normalized, threshold5MessageShown: true } };
     }),
+  isTtsAvailable: (accountType) => {
+    const normalized = normalizeQuotaWindow(get().quota);
+    const threshold = resolveThreshold(normalized, accountType ?? get().session?.user.accountType ?? 'free');
+    return threshold === 'normal' || threshold === 'haiku' || threshold === 'soft2';
+  },
+  isExpensiveModeAvailable: (accountType) => {
+    const normalized = normalizeQuotaWindow(get().quota);
+    const threshold = resolveThreshold(normalized, accountType ?? get().session?.user.accountType ?? 'free');
+    return threshold === 'normal' || threshold === 'haiku';
+  },
+  isVoiceInputBlocked: (accountType) => {
+    const normalized = normalizeQuotaWindow(get().quota);
+    const threshold = resolveThreshold(normalized, accountType ?? get().session?.user.accountType ?? 'free');
+    return threshold === 'soft3' || threshold === 'economy' || threshold === 'exceeded';
+  },
   setBlocked: (blocked) =>
     set((state) => ({
       quota: {
@@ -141,6 +174,7 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
         threshold2MessageShown: false,
         threshold3MessageShown: false,
         threshold4MessageShown: false,
+        threshold5MessageShown: false,
         isBlocked: false,
         resetDate: computeNextResetDate(new Date())
       }
@@ -150,17 +184,16 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
     const cap = config?.monthlyMessageCap ?? accountTypesById.free?.monthlyMessageCap ?? 200;
     const normalizedMessagesUsed =
       Number.isFinite(messagesUsed) && messagesUsed > 0 ? Math.floor(messagesUsed) : 0;
-    const clampedMessagesUsed = cap === null ? normalizedMessagesUsed : Math.min(normalizedMessagesUsed, cap);
-
     set((state) => ({
       quota: {
         ...normalizeQuotaWindow(state.quota),
         messagesCap: cap,
-        messagesUsed: clampedMessagesUsed,
+        messagesUsed: normalizedMessagesUsed,
         threshold1MessageShown: false,
         threshold2MessageShown: false,
         threshold3MessageShown: false,
         threshold4MessageShown: false,
+        threshold5MessageShown: false,
         isBlocked: false
       }
     }));
@@ -169,17 +202,16 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
     const cap = typeof messagesCap === 'number' && Number.isFinite(messagesCap) && messagesCap > 0 ? messagesCap : null;
     const normalizedMessagesUsed =
       Number.isFinite(messagesUsed) && messagesUsed > 0 ? Math.floor(messagesUsed) : 0;
-    const clampedMessagesUsed = cap === null ? normalizedMessagesUsed : Math.min(normalizedMessagesUsed, cap);
-
     set((state) => ({
       quota: {
         ...normalizeQuotaWindow(state.quota),
         messagesCap: cap,
-        messagesUsed: clampedMessagesUsed,
+        messagesUsed: normalizedMessagesUsed,
         threshold1MessageShown: false,
         threshold2MessageShown: false,
         threshold3MessageShown: false,
         threshold4MessageShown: false,
+        threshold5MessageShown: false,
         isBlocked: false
       }
     }));

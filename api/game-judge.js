@@ -21,6 +21,7 @@ const {
   writeProfileMonthlyCounter
 } = require('./_quota-utils');
 const { resolveEffectiveAccountType } = require('./_account-tier');
+const { computeQuotaRatioForUser, isExpensiveModesAllowed } = require('./_quota-status');
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -446,6 +447,15 @@ module.exports = async function handler(req, res) {
       res.setHeader('Retry-After', String(getRetryAfterUntilNextMonthSeconds()));
     }
     sendError(res, monthlyQuota.status, monthlyQuota.message, { code: monthlyQuota.code, requestId });
+    return;
+  }
+
+  const ratioResult = await computeQuotaRatioForUser(supabaseAdmin, user.id, accountType, requestId);
+  if (ratioResult.ok && !isExpensiveModesAllowed(ratioResult.ratio)) {
+    sendError(res, 403, 'This feature is paused until your quota resets.', {
+      code: 'EXPENSIVE_MODE_QUOTA_GATED',
+      requestId
+    });
     return;
   }
 

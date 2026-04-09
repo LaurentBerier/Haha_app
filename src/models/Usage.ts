@@ -6,5 +6,6 @@ export interface UsageQuota {
   threshold2MessageShown?: boolean;
   threshold3MessageShown?: boolean;
   threshold4MessageShown?: boolean;
+  threshold5MessageShown?: boolean;
   isBlocked?: boolean;
 }

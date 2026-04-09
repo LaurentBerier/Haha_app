@@ -2,8 +2,9 @@ import { useCallback } from 'react';
 import {
   QUOTA_THRESHOLD_ABSOLUTE_PAID_RATIO,
   QUOTA_THRESHOLD_HARD_FREE_RATIO,
-  QUOTA_THRESHOLD_SOFT_1_RATIO,
-  QUOTA_THRESHOLD_SOFT_2_RATIO
+  QUOTA_THRESHOLD_HAIKU_RATIO,
+  QUOTA_THRESHOLD_SOFT_2_RATIO,
+  QUOTA_THRESHOLD_SOFT_3_RATIO
 } from '../config/quotaThresholds';
 import { t } from '../i18n';
 import type { Message } from '../models/Message';
@@ -15,6 +16,7 @@ interface QuotaSnapshot {
   threshold2MessageShown?: boolean;
   threshold3MessageShown?: boolean;
   threshold4MessageShown?: boolean;
+  threshold5MessageShown?: boolean;
 }
 
 interface QuotaNotice {
@@ -23,7 +25,7 @@ interface QuotaNotice {
 }
 
 interface UseQuotaGuardOptions {
-  markThresholdMessageShown: (threshold: 1 | 2 | 3 | 4) => void;
+  markThresholdMessageShown: (threshold: 1 | 2 | 3 | 4 | 5) => void;
   setBlocked: (blocked: boolean) => void;
 }
 
@@ -34,6 +36,9 @@ interface UseQuotaGuardOptions {
  * @returns {boolean} True when the code indicates a quota hard-stop state.
  */
 function isQuotaBlockedErrorCode(code: string | null): boolean {
+  if (code === 'TTS_MESSAGE_QUOTA_GATED' || code === 'EXPENSIVE_MODE_QUOTA_GATED') {
+    return false;
+  }
   return (
     code === 'QUOTA_EXCEEDED_BLOCKED' ||
     code === 'QUOTA_ABSOLUTE_BLOCKED' ||
@@ -41,9 +46,12 @@ function isQuotaBlockedErrorCode(code: string | null): boolean {
   );
 }
 
-function resolveThresholdMessage(threshold: 1 | 2 | 3 | 4, accountType: string): string {
+function resolveThresholdMessage(threshold: 1 | 2 | 3 | 4 | 5, accountType: string): string {
+  if (threshold === 5) {
+    return t('cathyThreshold5PaidMessage');
+  }
   if (threshold === 4) {
-    return t('cathyThreshold4PaidMessage');
+    return accountType === 'free' ? t('cathyThreshold4FreeMessage') : t('cathyThreshold4PaidMessage');
   }
   if (threshold === 3) {
     return accountType === 'free' ? t('cathyThreshold3FreeMessage') : t('cathyThreshold3PaidMessage');
@@ -62,9 +70,15 @@ export function useQuotaGuard({ markThresholdMessageShown, setBlocked }: UseQuot
     ): {
       postReplyNotices: QuotaNotice[];
       shouldBlockInput: boolean;
+      isTtsAvailable: boolean;
+      isExpensiveModeAvailable: boolean;
+      isVoiceInputBlocked: boolean;
     } => {
       const notices: QuotaNotice[] = [];
       let shouldBlockInput = false;
+      let isTtsAvailable = true;
+      let isExpensiveModeAvailable = true;
+      let isVoiceInputBlocked = false;
 
       if (
         normalizedAccountType !== 'admin' &&
@@ -73,19 +87,26 @@ export function useQuotaGuard({ markThresholdMessageShown, setBlocked }: UseQuot
         latestQuota.messagesCap > 0
       ) {
         const ratio = latestQuota.messagesUsed / latestQuota.messagesCap;
-        let thresholdToShow: 1 | 2 | 3 | 4 | null = null;
+        const isFree = normalizedAccountType === 'free';
+        let thresholdToShow: 1 | 2 | 3 | 4 | 5 | null = null;
 
         if (
+          !isFree &&
           ratio >= QUOTA_THRESHOLD_ABSOLUTE_PAID_RATIO &&
-          normalizedAccountType !== 'free' &&
+          !latestQuota.threshold5MessageShown
+        ) {
+          thresholdToShow = 5;
+        } else if (
+          !isFree &&
+          ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO &&
           !latestQuota.threshold4MessageShown
         ) {
           thresholdToShow = 4;
-        } else if (ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO && !latestQuota.threshold3MessageShown) {
+        } else if (ratio >= QUOTA_THRESHOLD_SOFT_3_RATIO && !latestQuota.threshold3MessageShown) {
           thresholdToShow = 3;
         } else if (ratio >= QUOTA_THRESHOLD_SOFT_2_RATIO && !latestQuota.threshold2MessageShown) {
           thresholdToShow = 2;
-        } else if (ratio >= QUOTA_THRESHOLD_SOFT_1_RATIO && !latestQuota.threshold1MessageShown) {
+        } else if (ratio >= QUOTA_THRESHOLD_HAIKU_RATIO && !latestQuota.threshold1MessageShown) {
           thresholdToShow = 1;
         }
 
@@ -101,18 +122,23 @@ export function useQuotaGuard({ markThresholdMessageShown, setBlocked }: UseQuot
           });
         }
 
-        const shouldBlockFree = normalizedAccountType === 'free' && ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO;
-        const shouldBlockPaidAbsolute =
-          normalizedAccountType !== 'free' && ratio >= QUOTA_THRESHOLD_ABSOLUTE_PAID_RATIO;
+        const shouldBlockFree = isFree && ratio >= QUOTA_THRESHOLD_HARD_FREE_RATIO;
+        const shouldBlockPaidAbsolute = !isFree && ratio >= QUOTA_THRESHOLD_ABSOLUTE_PAID_RATIO;
         shouldBlockInput = shouldBlockFree || shouldBlockPaidAbsolute;
         if (shouldBlockInput) {
           setBlocked(true);
         }
+        isTtsAvailable = ratio < QUOTA_THRESHOLD_SOFT_3_RATIO;
+        isExpensiveModeAvailable = ratio < QUOTA_THRESHOLD_SOFT_2_RATIO;
+        isVoiceInputBlocked = ratio >= QUOTA_THRESHOLD_SOFT_3_RATIO;
       }
 
       return {
         postReplyNotices: notices,
-        shouldBlockInput
+        shouldBlockInput,
+        isTtsAvailable,
+        isExpensiveModeAvailable,
+        isVoiceInputBlocked
       };
     },
     [markThresholdMessageShown, setBlocked]
@@ -121,16 +147,52 @@ export function useQuotaGuard({ markThresholdMessageShown, setBlocked }: UseQuot
   const buildQuotaBlockedMessage = useCallback(
     (normalizedAccountType: string): string => {
       const isFreeAccount = normalizedAccountType === 'free';
-      markThresholdMessageShown(isFreeAccount ? 3 : 4);
+      markThresholdMessageShown(isFreeAccount ? 4 : 5);
       setBlocked(true);
-      return isFreeAccount ? t('cathyThreshold3FreeMessage') : t('cathyThreshold4PaidMessage');
+      return isFreeAccount ? t('cathyThreshold4FreeMessage') : t('cathyThreshold5PaidMessage');
     },
     [markThresholdMessageShown, setBlocked]
   );
 
+  const isTtsAvailable = useCallback((latestQuota: QuotaSnapshot): boolean => {
+    if (
+      typeof latestQuota.messagesCap !== 'number' ||
+      !Number.isFinite(latestQuota.messagesCap) ||
+      latestQuota.messagesCap <= 0
+    ) {
+      return true;
+    }
+    return latestQuota.messagesUsed / latestQuota.messagesCap < QUOTA_THRESHOLD_SOFT_3_RATIO;
+  }, []);
+
+  const isExpensiveModeAvailable = useCallback((latestQuota: QuotaSnapshot): boolean => {
+    if (
+      typeof latestQuota.messagesCap !== 'number' ||
+      !Number.isFinite(latestQuota.messagesCap) ||
+      latestQuota.messagesCap <= 0
+    ) {
+      return true;
+    }
+    return latestQuota.messagesUsed / latestQuota.messagesCap < QUOTA_THRESHOLD_SOFT_2_RATIO;
+  }, []);
+
+  const isVoiceInputBlocked = useCallback((latestQuota: QuotaSnapshot): boolean => {
+    if (
+      typeof latestQuota.messagesCap !== 'number' ||
+      !Number.isFinite(latestQuota.messagesCap) ||
+      latestQuota.messagesCap <= 0
+    ) {
+      return false;
+    }
+    return latestQuota.messagesUsed / latestQuota.messagesCap >= QUOTA_THRESHOLD_SOFT_3_RATIO;
+  }, []);
+
   return {
     isQuotaBlockedErrorCode,
     evaluatePostReplyQuota,
-    buildQuotaBlockedMessage
+    buildQuotaBlockedMessage,
+    isTtsAvailable,
+    isExpensiveModeAvailable,
+    isVoiceInputBlocked
   };
 }

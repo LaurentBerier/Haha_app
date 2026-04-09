@@ -67,33 +67,34 @@ const DEFAULT_CONTEXT_WINDOW_BY_TIER = {
   admin: 20
 };
 const QUOTA_THRESHOLDS = {
-  SOFT1: 0.75,
-  SOFT2: 0.9,
+  HAIKU: 0.65,
+  SOFT2: 0.8,
+  SOFT3: 0.92,
   HARD: 1,
   ABSOLUTE: 1.5
 };
-const SOFT1_MAX_TOKENS_BY_TIER = {
-  free: 360,
-  regular: 180,
-  premium: 280,
-  admin: 300
-};
 const SOFT2_MAX_TOKENS_BY_TIER = {
   free: 280,
-  regular: 130,
-  premium: 200,
+  regular: 150,
+  premium: 220,
   admin: 300
 };
-const SOFT1_CONTEXT_WINDOW_BY_TIER = {
-  free: 10,
-  regular: 12,
-  premium: 20,
-  admin: 20
+const SOFT3_MAX_TOKENS_BY_TIER = {
+  free: 180,
+  regular: 110,
+  premium: 160,
+  admin: 300
 };
 const SOFT2_CONTEXT_WINDOW_BY_TIER = {
-  free: 7,
+  free: 8,
+  regular: 10,
+  premium: 15,
+  admin: 20
+};
+const SOFT3_CONTEXT_WINDOW_BY_TIER = {
+  free: 5,
   regular: 7,
-  premium: 12,
+  premium: 10,
   admin: 20
 };
 const ECONOMY_CONTEXT_WINDOW = 3;
@@ -2277,6 +2278,8 @@ function computeQuotaStatus(messagesUsed, messagesCap, accountType) {
       model: DEFAULT_MODEL,
       maxTokens: baseMaxTokens,
       contextWindow: baseContextWindow,
+      ttsAllowed: true,
+      expensiveModesAllowed: true,
       blocked: false
     };
   }
@@ -2289,6 +2292,8 @@ function computeQuotaStatus(messagesUsed, messagesCap, accountType) {
       model: FALLBACK_MODEL,
       maxTokens: ECONOMY_MAX_TOKENS,
       contextWindow: ECONOMY_CONTEXT_WINDOW,
+      ttsAllowed: false,
+      expensiveModesAllowed: false,
       blocked: true
     };
   }
@@ -2301,6 +2306,8 @@ function computeQuotaStatus(messagesUsed, messagesCap, accountType) {
       model: FALLBACK_MODEL,
       maxTokens: ECONOMY_MAX_TOKENS,
       contextWindow: ECONOMY_CONTEXT_WINDOW,
+      ttsAllowed: false,
+      expensiveModesAllowed: false,
       blocked: true
     };
   }
@@ -2313,6 +2320,22 @@ function computeQuotaStatus(messagesUsed, messagesCap, accountType) {
       model: FALLBACK_MODEL,
       maxTokens: ECONOMY_MAX_TOKENS,
       contextWindow: ECONOMY_CONTEXT_WINDOW,
+      ttsAllowed: false,
+      expensiveModesAllowed: false,
+      blocked: false
+    };
+  }
+
+  if (ratio >= QUOTA_THRESHOLDS.SOFT3) {
+    return {
+      ratio,
+      threshold: 'soft3',
+      mode: 'soft3',
+      model: FALLBACK_MODEL,
+      maxTokens: getTierValueByType(SOFT3_MAX_TOKENS_BY_TIER, normalizedAccountType),
+      contextWindow: getTierValueByType(SOFT3_CONTEXT_WINDOW_BY_TIER, normalizedAccountType),
+      ttsAllowed: false,
+      expensiveModesAllowed: false,
       blocked: false
     };
   }
@@ -2325,18 +2348,22 @@ function computeQuotaStatus(messagesUsed, messagesCap, accountType) {
       model: FALLBACK_MODEL,
       maxTokens: getTierValueByType(SOFT2_MAX_TOKENS_BY_TIER, normalizedAccountType),
       contextWindow: getTierValueByType(SOFT2_CONTEXT_WINDOW_BY_TIER, normalizedAccountType),
+      ttsAllowed: true,
+      expensiveModesAllowed: false,
       blocked: false
     };
   }
 
-  if (ratio >= QUOTA_THRESHOLDS.SOFT1) {
+  if (ratio >= QUOTA_THRESHOLDS.HAIKU) {
     return {
       ratio,
-      threshold: 'soft1',
-      mode: 'soft1',
-      model: DEFAULT_MODEL,
-      maxTokens: getTierValueByType(SOFT1_MAX_TOKENS_BY_TIER, normalizedAccountType),
-      contextWindow: getTierValueByType(SOFT1_CONTEXT_WINDOW_BY_TIER, normalizedAccountType),
+      threshold: 'haiku',
+      mode: 'haiku',
+      model: FALLBACK_MODEL,
+      maxTokens: baseMaxTokens,
+      contextWindow: baseContextWindow,
+      ttsAllowed: true,
+      expensiveModesAllowed: true,
       blocked: false
     };
   }
@@ -2348,6 +2375,8 @@ function computeQuotaStatus(messagesUsed, messagesCap, accountType) {
     model: DEFAULT_MODEL,
     maxTokens: baseMaxTokens,
     contextWindow: baseContextWindow,
+    ttsAllowed: true,
+    expensiveModesAllowed: true,
     blocked: false
   };
 }
@@ -2921,6 +2950,8 @@ module.exports = async function handler(req, res) {
   const quotaStatus = computeQuotaStatus(projectedUsage, monthlyQuota.effectiveCap, effectiveAccountType);
   res.setHeader('X-Quota-Mode', quotaStatus.mode);
   res.setHeader('X-Quota-Ratio', quotaStatus.ratio.toFixed(2));
+  res.setHeader('X-Quota-TTS-Allowed', quotaStatus.ttsAllowed ? '1' : '0');
+  res.setHeader('X-Quota-Expensive-Modes-Allowed', quotaStatus.expensiveModesAllowed ? '1' : '0');
 
   if (quotaStatus.blocked) {
     res.setHeader('Retry-After', String(Math.max(1, Math.ceil((Date.parse(getNextMonthStartIso()) - Date.now()) / 1000))));

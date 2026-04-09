@@ -257,15 +257,21 @@ export const fr = {
   chatModeLabel: 'Mode',
   chatModeUnknown: 'Discussion',
   cathyThreshold1Message:
-    "Petite note entre nous: t'as utilisé les 3/4 de tes messages ce mois-ci. Je réponds encore à pleine puissance, mais je surveille mon énergie. Upgrade si tu veux jamais ralentir.",
+    "Petite note : à 65 % de tes messages, je suis passée en mode allégé en arrière-plan. Tu verras rien de différent.",
   cathyThreshold2Message:
-    "Ok là, je suis en mode express. Je réponds encore, mais plus court et avec moins de mémoire. Certaines fonctions avancées sont en pause jusqu'au mois prochain.",
+    'À 80 %, les modes spéciaux (tarot, jeux, meme) sont en pause jusqu’au mois prochain. Le chat de base continue.',
   cathyThreshold3PaidMessage:
-    "Je suis officiellement en mode économique pour le reste du mois. Je réponds encore, promis, mais en version allégée.",
+    'À 92 %, ma voix se met en sourdine pour le reste du mois. Mais je suis encore là en texte, pleine vitesse.',
   cathyThreshold3FreeMessage:
-    "T'as épuisé tes messages gratuits pour ce mois. Je m'en vais pas, mais je peux pu répondre. Passe en Régulier pour continuer à jaser.",
+    'À 92 %, ma voix se met en sourdine pour le reste du mois. Mais je suis encore là en texte, pleine vitesse.',
   cathyThreshold4PaidMessage:
-    "Là, c'est vraiment la fin du mois pour moi. On se retrouve le 1er, ou upgrade pour ne plus attendre.",
+    "T'as dépassé ton quota, mais je reste là en mode texte économique jusqu'au 1er.",
+  cathyThreshold4FreeMessage:
+    "T'as épuisé tes messages gratuits pour ce mois. Passe en Régulier pour continuer à jaser.",
+  cathyThreshold5PaidMessage:
+    "Là c'est vraiment la fin du mois pour moi. On se retrouve le 1er, ou upgrade pour ne plus jamais attendre.",
+  expensiveModeQuotaGatedNotice: "Ce mode est en pause jusqu'à la réinitialisation de ton quota le mois prochain.",
+  ttsMessageQuotaGatedNotice: 'La voix est en pause à ce niveau de quota. Le chat texte continue normalement.',
   upgradeCtaLabel: "Passer à l'abonnement supérieur ->",
   chatInputBlocked: 'Messages épuisés - renouvellement le 1er du mois',
   cathyVoiceQuotaExceededMessage:

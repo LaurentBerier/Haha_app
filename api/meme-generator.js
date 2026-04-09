@@ -7,6 +7,8 @@ const {
   setCorsHeaders,
   attachRequestId
 } = require('./_utils');
+const { resolveEffectiveAccountType } = require('./_account-tier');
+const { computeQuotaRatioForUser, isExpensiveModesAllowed } = require('./_quota-status');
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -893,7 +895,12 @@ async function validateAuthToken(supabaseAdmin, authorizationHeader, requestId) 
 
     return {
       ok: true,
-      userId: user.id
+      userId: user.id,
+      accountType:
+        typeof user.app_metadata?.account_type === 'string' && user.app_metadata.account_type.trim()
+          ? user.app_metadata.account_type.trim()
+          : 'free',
+      role: typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : null
     };
   } catch (error) {
     console.warn(`[api/meme-generator][${requestId}] Auth validation failed unexpectedly.`, error);
@@ -940,6 +947,15 @@ module.exports = async function handler(req, res) {
   const auth = await validateAuthToken(supabaseAdmin, req.headers.authorization, requestId);
   if (!auth.ok) {
     sendError(res, 401, 'Unauthorized.', { code: 'UNAUTHORIZED', requestId });
+    return;
+  }
+  const accountType = resolveEffectiveAccountType(auth.accountType, auth.role);
+  const ratioResult = await computeQuotaRatioForUser(supabaseAdmin, auth.userId, accountType, requestId);
+  if (ratioResult.ok && !isExpensiveModesAllowed(ratioResult.ratio)) {
+    sendError(res, 403, 'This feature is paused until your quota resets.', {
+      code: 'EXPENSIVE_MODE_QUOTA_GATED',
+      requestId
+    });
     return;
   }
 

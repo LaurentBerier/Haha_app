@@ -6,6 +6,7 @@ import { BackButton } from '../../../components/common/BackButton';
 import { ModeCard } from '../../../components/mode/ModeCard';
 import { MODE_IDS } from '../../../config/constants';
 import { VISIBLE_GAME_IDS } from '../../../config/experienceCatalog';
+import { EXPENSIVE_GAME_IDS, EXPENSIVE_MODE_IDS } from '../../../config/quotaGating';
 import { CATEGORY_MODE_IDS, MODE_CATEGORY_META, isModeCategoryId } from '../../../config/modeCategories';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
 import { getModeById } from '../../../config/modes';
@@ -25,6 +26,7 @@ export default function ModeCategoryScreen() {
 
   const artists = useStore((state) => state.artists);
   const language = useStore((state) => state.language);
+  const isExpensiveModeAvailable = useStore((state) => state.isExpensiveModeAvailable());
 
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
   const categoryId = isModeCategoryId(categoryIdParam) ? categoryIdParam : null;
@@ -141,6 +143,7 @@ export default function ModeCategoryScreen() {
               <ModeCard
                 key={gameMode.id}
                 mode={gameMode}
+                disabled={!isExpensiveModeAvailable && EXPENSIVE_GAME_IDS.has(gameMode.id)}
                 onPress={() => launchVisibleGameRoute(artist.id, gameMode.id)}
               />
             ))}
@@ -148,7 +151,12 @@ export default function ModeCategoryScreen() {
         ) : availableModes.length > 0 ? (
           <View style={styles.modeList}>
             {availableModes.map((mode) => (
-              <ModeCard key={mode.id} mode={mode} onPress={() => handleModeSelect(mode.id)} />
+              <ModeCard
+                key={mode.id}
+                mode={mode}
+                disabled={!isExpensiveModeAvailable && EXPENSIVE_MODE_IDS.has(mode.id)}
+                onPress={() => handleModeSelect(mode.id)}
+              />
             ))}
           </View>
         ) : (

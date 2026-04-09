@@ -135,12 +135,24 @@ export function useImproChain(artistId: string): UseImproChainResult {
           },
           onError: (error) => {
             console.error('[useImproChain] Impro turn failed', error);
+            const maybeCode =
+              typeof error === 'object' && error !== null && 'code' in error ? String(error.code ?? '') : '';
+            if (maybeCode === 'EXPENSIVE_MODE_QUOTA_GATED') {
+              setGameError(t('expensiveModeQuotaGatedNotice'));
+              return;
+            }
             setGameError(t('gameErrorGeneric'));
           }
         });
       } catch (error) {
         console.error('[useImproChain] Unable to start impro stream', error);
         cancelStreamRef.current = null;
+        const maybeCode =
+          typeof error === 'object' && error !== null && 'code' in error ? String(error.code ?? '') : '';
+        if (maybeCode === 'EXPENSIVE_MODE_QUOTA_GATED') {
+          setGameError(t('expensiveModeQuotaGatedNotice'));
+          return;
+        }
         setGameError(t('gameErrorGeneric'));
       }
     },

@@ -257,15 +257,21 @@ export const en = {
   chatModeLabel: 'Mode',
   chatModeUnknown: 'Chat',
   cathyThreshold1Message:
-    "Quick heads-up: you've used about three quarters of your monthly messages. I'm still at full power, just watching my energy.",
+    "Small note: past 65% of your monthly messages, I switched to a lighter model. You won't notice a thing.",
   cathyThreshold2Message:
-    "Alright, express mode is on. I still reply, but shorter with less memory. Some advanced features are paused until next month.",
+    'At 80%, the special modes (tarot, games, meme) are on pause until next month. Basic chat keeps going.',
   cathyThreshold3PaidMessage:
-    "I'm officially in economy mode for the rest of the month. I still reply, promise, just in a lighter version.",
+    "At 92%, my voice goes quiet for the month. But I'm still here in text, full speed.",
   cathyThreshold3FreeMessage:
-    "You've used all your free messages this month. I'm not leaving, but I can't reply anymore. Upgrade to Regular to keep chatting.",
+    "At 92%, my voice goes quiet for the month. But I'm still here in text, full speed.",
   cathyThreshold4PaidMessage:
-    "That is truly the end of the month on my side. See you on the 1st, or upgrade so you never have to wait.",
+    "You're past your monthly limit, but I'm keeping you company in text-only economy mode until the 1st.",
+  cathyThreshold4FreeMessage:
+    "You've used all your free messages this month. Upgrade to Regular to keep chatting.",
+  cathyThreshold5PaidMessage:
+    'That is truly the end of the month. See you on the 1st, or upgrade to never wait again.',
+  expensiveModeQuotaGatedNotice: 'This mode is paused until your quota resets next month.',
+  ttsMessageQuotaGatedNotice: 'Voice is paused at this quota level. Text chat continues normally.',
   upgradeCtaLabel: 'Upgrade my plan ->',
   chatInputBlocked: 'Messages used up - renews on the 1st of next month',
   cathyVoiceQuotaExceededMessage:

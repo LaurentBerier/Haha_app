@@ -11,6 +11,7 @@ const {
   normalizeAccountType,
   resolveEffectiveAccountType: resolveAccountTypeByRole
 } = require('../../api/_account-tier');
+const { computeQuotaRatioForUser, isTtsMessageQuotaAllowed } = require('../../api/_quota-status');
 
 const ELEVENLABS_API_BASE = 'https://api.elevenlabs.io/v1/text-to-speech';
 const DEFAULT_VOICE_ID_GENERIC = 'cgSgspJ2msm6clMCkdW9';
@@ -506,6 +507,19 @@ module.exports = async function handler(req, res) {
     auth.role,
     requestId
   );
+  const ratioResult = await computeQuotaRatioForUser(
+    supabaseAdmin,
+    auth.userId,
+    normalizedAccountType,
+    requestId
+  );
+  if (ratioResult.ok && !isTtsMessageQuotaAllowed(ratioResult.ratio)) {
+    sendError(res, 403, 'Voice is paused at this quota level.', {
+      code: 'TTS_MESSAGE_QUOTA_GATED',
+      requestId
+    });
+    return;
+  }
 
   const monthlyCap = getTtsMonthlyCap(normalizedAccountType);
   const usage = await getMonthlyTtsUsageCount(supabaseAdmin, auth.userId, requestId);

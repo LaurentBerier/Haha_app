@@ -99,6 +99,12 @@ export function useVraiOuInvente(artistId: string): UseVraiOuInventeResult {
         void speak(toSpokenQuestion(question), `${gameId}:question:${questionIndex}`);
       } catch (error) {
         console.error('[useVraiOuInvente] Question fetch failed', error);
+        const maybeCode =
+          typeof error === 'object' && error !== null && 'code' in error ? String(error.code ?? '') : '';
+        if (maybeCode === 'EXPENSIVE_MODE_QUOTA_GATED') {
+          setGameError(t('expensiveModeQuotaGatedNotice'));
+          return;
+        }
         setGameError(t('gameErrorGeneric'));
       } finally {
         requestInFlightRef.current = false;

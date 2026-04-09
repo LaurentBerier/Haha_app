@@ -485,7 +485,7 @@ export function useChat(conversationId: string) {
   const audioPlayer = useAudioPlayer();
   const { extractReadyTtsChunks, resolveVoiceErrorCode } = useTtsPlayback();
   const { detectBattleResult, extractReactionTag, reactionToScoreAction, resolveScoreActions } = useGamificationReactions();
-  const { buildQuotaBlockedMessage, evaluatePostReplyQuota, isQuotaBlockedErrorCode } = useQuotaGuard({
+  const { buildQuotaBlockedMessage, evaluatePostReplyQuota, isQuotaBlockedErrorCode, isTtsAvailable } = useQuotaGuard({
     markThresholdMessageShown,
     setBlocked
   });
@@ -1395,6 +1395,7 @@ export function useChat(conversationId: string) {
           latestState.session?.user.accountType ?? currentAccountType,
           latestState.session?.user.role ?? currentRole
         );
+        const ttsAvailableForQuota = isTtsAvailable(latestQuota);
         const { postReplyNotices, shouldBlockInput } = evaluatePostReplyQuota(latestQuota, normalizedAccountType);
         if (canGenerateVoice && !ignoreTtsUpdates) {
           const fallbackPreviewText = normalizeSpeechText(rawTtsResponseRef.current, { trim: true });
@@ -1432,7 +1433,7 @@ export function useChat(conversationId: string) {
                 markArtistVoiceReady(uri, [uri], [normalizedTextLength]);
 
                 const shouldAutoPlay = shouldAutoPlayForJob();
-                if (shouldAutoPlay && !shouldBlockInput) {
+                if (shouldAutoPlay && !shouldBlockInput && ttsAvailableForQuota) {
                   void autoplayVoiceQueue([uri], artistMessageId);
                 }
               } catch (error: unknown) {
@@ -1485,7 +1486,12 @@ export function useChat(conversationId: string) {
               markArtistVoiceReady(firstVoiceUri, orderedVoiceUris, orderedBoundaries);
 
               const shouldAutoPlay = shouldAutoPlayForJob();
-              if (shouldAutoPlay && !shouldBlockInput && (!hasQueuedAutoplayChunk || !didStartReplyAutoplay)) {
+              if (
+                shouldAutoPlay &&
+                !shouldBlockInput &&
+                ttsAvailableForQuota &&
+                (!hasQueuedAutoplayChunk || !didStartReplyAutoplay)
+              ) {
                 void autoplayVoiceQueue(orderedVoiceUris, artistMessageId).then((state) => {
                   if (state === 'started' || state === 'pending_web_unlock') {
                     didStartReplyAutoplay = true;
@@ -1697,6 +1703,7 @@ export function useChat(conversationId: string) {
     currentRole,
     detectBattleResult,
     evaluatePostReplyQuota,
+    isTtsAvailable,
     extractReactionTag,
     extractReadyTtsChunks,
     incrementUsage,

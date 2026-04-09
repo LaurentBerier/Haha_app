@@ -139,6 +139,12 @@ export function useTarotCathy(artistId: string): UseTarotCathyResult {
         incrementUsage();
       } catch (error) {
         console.error('[useTarotCathy] Reading fetch failed', error);
+        const maybeCode =
+          typeof error === 'object' && error !== null && 'code' in error ? String(error.code ?? '') : '';
+        if (maybeCode === 'EXPENSIVE_MODE_QUOTA_GATED') {
+          setGameError(t('expensiveModeQuotaGatedNotice'));
+          return;
+        }
         setGameError(t('gameErrorGeneric'));
       } finally {
         requestInFlightRef.current = false;
