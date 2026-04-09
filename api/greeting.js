@@ -1780,8 +1780,18 @@ module.exports = async function handler(req, res) {
     persistedCount: userGreetingProfile.tutorialSessionsCount,
     hasPersistedCounter: userGreetingProfile.hasPersistedCounter
   });
+  const currentPersistedCount =
+    typeof userGreetingProfile.tutorialSessionsCount === 'number' &&
+    Number.isFinite(userGreetingProfile.tutorialSessionsCount)
+      ? Math.max(0, Math.floor(userGreetingProfile.tutorialSessionsCount))
+      : 0;
 
-  if (!forcedTutorialGreetingActive && input.isSessionFirstGreeting && userGreetingProfile.hasPersistedCounter) {
+  if (
+    !forcedTutorialGreetingActive &&
+    input.isSessionFirstGreeting &&
+    userGreetingProfile.hasPersistedCounter &&
+    tutorial.nextPersistedCount > currentPersistedCount
+  ) {
     await incrementTutorialSessionCountIfNeeded(
       supabaseAdmin,
       user.id,

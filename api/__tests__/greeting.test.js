@@ -377,6 +377,7 @@ describe('api/greeting tutorial behavior', () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.payload.tutorial.active).toBe(false);
+    expect(supabase.spies.profileUpdate).not.toHaveBeenCalled();
     expect(fetchMock.mock.calls.length).toBeGreaterThan(1);
   });
 
