@@ -53,6 +53,15 @@ async function readProfileMonthlyCounter(supabaseAdmin, userId, requestId) {
 }
 
 async function computeQuotaRatioForUser(supabaseAdmin, userId, accountType, requestId) {
+  if (!supabaseAdmin || typeof supabaseAdmin.from !== 'function') {
+    return {
+      ok: false,
+      ratio: 0,
+      used: 0,
+      effectiveCap: null
+    };
+  }
+
   const normalizedAccountType = normalizeAccountType(accountType);
   if (normalizedAccountType === 'admin') {
     return {

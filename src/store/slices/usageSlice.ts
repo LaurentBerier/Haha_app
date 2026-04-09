@@ -184,11 +184,12 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
     const cap = config?.monthlyMessageCap ?? accountTypesById.free?.monthlyMessageCap ?? 200;
     const normalizedMessagesUsed =
       Number.isFinite(messagesUsed) && messagesUsed > 0 ? Math.floor(messagesUsed) : 0;
+    const clampedMessagesUsed = cap === null ? normalizedMessagesUsed : Math.min(normalizedMessagesUsed, cap);
     set((state) => ({
       quota: {
         ...normalizeQuotaWindow(state.quota),
         messagesCap: cap,
-        messagesUsed: normalizedMessagesUsed,
+        messagesUsed: clampedMessagesUsed,
         threshold1MessageShown: false,
         threshold2MessageShown: false,
         threshold3MessageShown: false,
@@ -202,11 +203,12 @@ export const createUsageSlice: StateCreator<StoreState, [], [], UsageSlice> = (s
     const cap = typeof messagesCap === 'number' && Number.isFinite(messagesCap) && messagesCap > 0 ? messagesCap : null;
     const normalizedMessagesUsed =
       Number.isFinite(messagesUsed) && messagesUsed > 0 ? Math.floor(messagesUsed) : 0;
+    const clampedMessagesUsed = cap === null ? normalizedMessagesUsed : Math.min(normalizedMessagesUsed, cap);
     set((state) => ({
       quota: {
         ...normalizeQuotaWindow(state.quota),
         messagesCap: cap,
-        messagesUsed: normalizedMessagesUsed,
+        messagesUsed: clampedMessagesUsed,
         threshold1MessageShown: false,
         threshold2MessageShown: false,
         threshold3MessageShown: false,
