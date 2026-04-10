@@ -69,6 +69,10 @@ import type { ChatSendPayload } from '../../../models/ChatSendPayload';
 import { shouldRestoreModeSelectMicAfterBlur } from '../micRestore';
 import { resolveGreetingAutoMicDecision } from '../greetingAutoMic';
 import { shouldAutoPlayGreetingVoice, shouldAutoPlayPendingGreetingVoice } from '../greetingAutoplayPolicy';
+import {
+  shouldInsertGreetingFallbackAfterFailure,
+  shouldRecoverGreetingBootstrapConversation
+} from '../greetingBootstrapRecovery';
 import { fetchModeSelectGreetingFromApi, type GreetingCoordinates } from '../greetingService';
 
 interface PendingGreetingAudio {
@@ -796,6 +800,7 @@ export default function ModeSelectHomeScreen() {
   const categoryGridRef = useRef<View>(null);
   const lastLoggedRenderedMessageCountRef = useRef(0);
   const greetingCycleFocusStateRef = useRef(false);
+  const greetingBootstrapRecoveryCycleRef = useRef('');
   const lastInjectedGreetingCycleRef = useRef('');
   const greetingVoiceNoticeKeysRef = useRef<Set<string>>(new Set());
   const sendContextRecoveryLockRef = useRef(false);
@@ -828,50 +833,55 @@ export default function ModeSelectHomeScreen() {
     },
     []
   );
-  const resolveModeSelectSessionHubConversation = useCallback(() => {
-    if (!artist) {
-      return null;
-    }
+  const resolveModeSelectSessionHubConversation = useCallback(
+    (options?: { requireEmptyConversation?: boolean }) => {
+      if (!artist) {
+        return null;
+      }
 
-    const liveState = useStore.getState();
-    const mappedConversationId = liveState.modeSelectSessionHubConversationByArtist[artist.id]?.trim() ?? '';
-    const liveConversationsForArtist = liveState.conversations[artist.id] ?? [];
-    if (mappedConversationId) {
-      const mappedConversation =
+      const requireEmptyConversation = options?.requireEmptyConversation === true;
+      const liveState = useStore.getState();
+      const liveConversationsForArtist = liveState.conversations[artist.id] ?? [];
+      const hasMessagesForConversation = (conversationId: string): boolean => {
+        const conversationMessages = liveState.messagesByConversation[conversationId]?.messages ?? [];
+        return conversationMessages.length > 0;
+      };
+      const resolvePrimaryConversation = (conversationId: string) =>
         liveConversationsForArtist.find(
           (conversation) =>
-            conversation.id === mappedConversationId &&
+            conversation.id === conversationId &&
             normalizeConversationThreadType(conversation.threadType) === 'primary'
         ) ?? null;
-      if (mappedConversation) {
-        return mappedConversation;
-      }
-      setModeSelectSessionHubConversation(artist.id, '');
-    }
 
-    const recoveryAction = resolveModeSelectConversationRecoveryAction(liveConversationsForArtist);
-    if (recoveryAction.type === 'use_existing') {
-      const recoveredConversation =
-        liveConversationsForArtist.find(
-          (conversation) =>
-            conversation.id === recoveryAction.conversationId &&
-            normalizeConversationThreadType(conversation.threadType) === 'primary'
-        ) ?? null;
-      if (recoveredConversation) {
-        setModeSelectSessionHubConversation(artist.id, recoveredConversation.id);
-        return recoveredConversation;
+      const mappedConversationId = liveState.modeSelectSessionHubConversationByArtist[artist.id]?.trim() ?? '';
+      if (mappedConversationId) {
+        const mappedConversation = resolvePrimaryConversation(mappedConversationId);
+        if (mappedConversation && (!requireEmptyConversation || !hasMessagesForConversation(mappedConversation.id))) {
+          return mappedConversation;
+        }
+        setModeSelectSessionHubConversation(artist.id, '');
       }
-    }
 
-    const nextConversation = createConversation(
-      artist.id,
-      resolveGreetingConversationLanguage(artist, language),
-      MODE_IDS.ON_JASE,
-      { threadType: 'primary' }
-    );
-    setModeSelectSessionHubConversation(artist.id, nextConversation.id);
-    return nextConversation;
-  }, [artist, createConversation, language, setModeSelectSessionHubConversation]);
+      const recoveryAction = resolveModeSelectConversationRecoveryAction(liveConversationsForArtist);
+      if (recoveryAction.type === 'use_existing') {
+        const recoveredConversation = resolvePrimaryConversation(recoveryAction.conversationId);
+        if (recoveredConversation && (!requireEmptyConversation || !hasMessagesForConversation(recoveredConversation.id))) {
+          setModeSelectSessionHubConversation(artist.id, recoveredConversation.id);
+          return recoveredConversation;
+        }
+      }
+
+      const nextConversation = createConversation(
+        artist.id,
+        resolveGreetingConversationLanguage(artist, language),
+        MODE_IDS.ON_JASE,
+        { threadType: 'primary' }
+      );
+      setModeSelectSessionHubConversation(artist.id, nextConversation.id);
+      return nextConversation;
+    },
+    [artist, createConversation, language, setModeSelectSessionHubConversation]
+  );
   const recoverModeSelectBoundConversation = useCallback(
     (reason: 'send_recovery' | 'missing_context' | 'audio_mismatch'): string | null => {
       if (!artist) {
@@ -1576,6 +1586,7 @@ export default function ModeSelectHomeScreen() {
     autoMicManualOverrideRef.current = false;
     autoMicTriggeredGreetingIdsRef.current.clear();
     greetingCycleFocusStateRef.current = false;
+    greetingBootstrapRecoveryCycleRef.current = '';
     lastInjectedGreetingCycleRef.current = '';
   }, [artistId]);
 
@@ -1732,6 +1743,62 @@ export default function ModeSelectHomeScreen() {
   }, [measureCategoryGridBottom, shouldCompactModeGrid, viewportHeight, messages.length]);
 
   useEffect(() => {
+    if (E2E_AUTH_BYPASS || !artist) {
+      return;
+    }
+
+    if (
+      !shouldRecoverGreetingBootstrapConversation({
+        artistId: artist.id,
+        greetingOpenCycle,
+        isModeSelectScreenFocused,
+        isGreetingGateSatisfied,
+        modeSelectConversationId
+      })
+    ) {
+      return;
+    }
+
+    const cycleKey = `${artist.id}:${greetingOpenCycle}`;
+    if (greetingBootstrapRecoveryCycleRef.current === cycleKey) {
+      return;
+    }
+    greetingBootstrapRecoveryCycleRef.current = cycleKey;
+
+    const introConversation = resolveModeSelectSessionHubConversation({
+      requireEmptyConversation: true
+    });
+    if (!introConversation) {
+      logModeSelectDebugTrace('greeting_bootstrap_recovery_failed', {
+        artistId: artist.id,
+        cycle: greetingOpenCycle
+      });
+      return;
+    }
+
+    commitBoundConversationId(introConversation.id, 'missing_context');
+    const liveActiveConversationId = useStore.getState().activeConversationId;
+    if (liveActiveConversationId !== introConversation.id) {
+      setActiveConversation(introConversation.id);
+    }
+
+    logModeSelectDebugTrace('greeting_bootstrap_recovered', {
+      artistId: artist.id,
+      cycle: greetingOpenCycle,
+      conversationId: introConversation.id
+    });
+  }, [
+    artist,
+    commitBoundConversationId,
+    greetingOpenCycle,
+    isGreetingGateSatisfied,
+    isModeSelectScreenFocused,
+    modeSelectConversationId,
+    resolveModeSelectSessionHubConversation,
+    setActiveConversation
+  ]);
+
+  useEffect(() => {
     if (!E2E_AUTH_BYPASS || !artist || !isModeSelectScreenFocused || greetingOpenCycle <= 0) {
       return;
     }
@@ -1791,19 +1858,33 @@ export default function ModeSelectHomeScreen() {
 
     let isCancelled = false;
     let hasInsertedGreetingMessage = false;
+    let introConversationId = '';
     const isRunActive = (): boolean => !isCancelled && activeGreetingRunIdRef.current === runId;
 
     const runGreeting = async () => {
       const sessionStateBeforeGreeting = useStore.getState();
       setIsGreetingBooting(true);
+      logModeSelectDebugTrace('greeting_run_started', {
+        artistId: artist.id,
+        cycle: greetingOpenCycle,
+        runId
+      });
 
       try {
         const greetedArtistCount = sessionStateBeforeGreeting.greetedArtistIds.size;
         const isSessionFirstGreeting = greetedArtistCount === 0;
-        const introConversation = resolveModeSelectSessionHubConversation();
+        const introConversation = resolveModeSelectSessionHubConversation({
+          requireEmptyConversation: true
+        });
         if (!introConversation) {
+          logModeSelectDebugTrace('greeting_run_missing_intro_conversation', {
+            artistId: artist.id,
+            cycle: greetingOpenCycle,
+            runId
+          });
           return;
         }
+        introConversationId = introConversation.id;
         commitBoundConversationId(introConversation.id, 'missing_context');
         const liveActiveConversationId = useStore.getState().activeConversationId;
         if (liveActiveConversationId !== introConversation.id) {
@@ -2050,8 +2131,108 @@ export default function ModeSelectHomeScreen() {
             errorCode: greetingVoiceErrorCode
           });
         }
-      } catch {
-        // Finalization handles all loading state transitions.
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logModeSelectDebugTrace('greeting_run_failed', {
+          artistId: artist.id,
+          cycle: greetingOpenCycle,
+          runId,
+          hasInsertedGreetingMessage,
+          errorMessage
+        });
+
+        const fallbackConversationId =
+          introConversationId.trim() ||
+          resolveModeSelectSessionHubConversation({
+            requireEmptyConversation: true
+          })?.id ||
+          '';
+        if (
+          !shouldInsertGreetingFallbackAfterFailure({
+            hasInsertedGreetingMessage,
+            isRunActive: isRunActive(),
+            introConversationId: fallbackConversationId
+          })
+        ) {
+          return;
+        }
+
+        const fallbackSessionState = useStore.getState();
+        const fallbackActivityContext = deriveGreetingActivityContext(fallbackSessionState, artist.id, language);
+        const fallbackAvailableModes = buildAvailableModesForGreeting(artist, language);
+        const fallbackShouldUseTutorial =
+          GREETING_FORCE_TUTORIAL ||
+          (fallbackSessionState.greetedArtistIds.size === 0 &&
+            !fallbackSessionState.completedTutorials.greeting);
+        const fallbackGreetingText = buildFallbackGreetingText(
+          artist,
+          language,
+          preferredName,
+          fallbackAvailableModes,
+          fallbackShouldUseTutorial,
+          {
+            recentActivityFacts: fallbackActivityContext.recentActivityFacts,
+            askActivityFeedback: fallbackActivityContext.askActivityFeedback,
+            lastGreetingSnippet: fallbackActivityContext.lastGreetingSnippet,
+            recentExperienceName: fallbackActivityContext.recentExperienceName,
+            recentExperienceType: fallbackActivityContext.recentExperienceType,
+            activityFeedbackCue: fallbackActivityContext.activityFeedbackCue
+          }
+        );
+        if (!fallbackGreetingText.trim()) {
+          logModeSelectDebugTrace('greeting_run_fallback_empty', {
+            artistId: artist.id,
+            cycle: greetingOpenCycle,
+            runId
+          });
+          return;
+        }
+
+        commitBoundConversationId(fallbackConversationId, 'missing_context');
+        const liveActiveConversationId = useStore.getState().activeConversationId;
+        if (liveActiveConversationId !== fallbackConversationId) {
+          setActiveConversation(fallbackConversationId);
+        }
+
+        const fallbackMessageId = generateId('msg');
+        addMessage(fallbackConversationId, {
+          id: fallbackMessageId,
+          conversationId: fallbackConversationId,
+          role: 'artist',
+          content: fallbackGreetingText,
+          status: 'complete',
+          timestamp: new Date().toISOString(),
+          metadata: {
+            injected: true,
+            tutorialMode: fallbackShouldUseTutorial,
+            injectedType: fallbackShouldUseTutorial ? 'tutorial_greeting' : 'greeting',
+            greetingActivitySnapshot: fallbackActivityContext.currentSnapshot
+          }
+        });
+        markArtistGreeted(artist.id);
+        autoMicManualOverrideRef.current = false;
+        setPendingAutoMicGreetingMessageId(fallbackMessageId);
+        setReplayBarrier({
+          conversationId: fallbackConversationId,
+          messageId: fallbackMessageId
+        });
+        hasInsertedGreetingMessage = true;
+        updateConversation(
+          fallbackConversationId,
+          {
+            lastMessagePreview: fallbackGreetingText.slice(0, 120),
+            title: fallbackGreetingText.slice(0, 30)
+          },
+          artist.id
+        );
+        setGreeting(fallbackGreetingText);
+        setPendingGreetingAudio(null);
+        logModeSelectDebugTrace('greeting_run_fallback_inserted', {
+          artistId: artist.id,
+          cycle: greetingOpenCycle,
+          runId,
+          conversationId: fallbackConversationId
+        });
       } finally {
         finalizeGreetingRun({
           runId,
@@ -2431,13 +2612,12 @@ const styles = StyleSheet.create({
   conversationWindow: {
     width: '100%',
     maxWidth: 784,
+    flex: 1,
     minHeight: 84,
     justifyContent: 'flex-end'
   },
   conversationList: {
-    flexGrow: 0,
-    flexShrink: 1,
-    flexBasis: 'auto'
+    flex: 1
   },
   conversationListContent: {
     paddingTop: theme.spacing.xs,

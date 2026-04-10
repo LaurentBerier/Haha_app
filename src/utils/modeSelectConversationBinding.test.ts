@@ -88,13 +88,46 @@ describe('modeSelectConversationBinding', () => {
     });
   });
 
-  it('returns empty binding when greeting gate is not satisfied and nothing is currently bound', () => {
+  it('returns blocked_not_greeted when greeting gate is not satisfied and bound is invalid even with active primary', () => {
+    const result = resolveModeSelectBoundConversationId({
+      artistId: 'cathy-gauthier',
+      isGreetingGateSatisfied: false,
+      boundConversationId: '',
+      activeConversationId: 'conv-active',
+      conversationsForArtist: [createConversation({ id: 'conv-active' })]
+    });
+
+    expect(result).toEqual({
+      conversationId: '',
+      reason: 'blocked_not_greeted'
+    });
+  });
+
+  it('returns blocked_not_greeted when greeting gate is not satisfied even when latest primary exists', () => {
     const result = resolveModeSelectBoundConversationId({
       artistId: 'cathy-gauthier',
       isGreetingGateSatisfied: false,
       boundConversationId: '',
       activeConversationId: null,
-      conversationsForArtist: [createConversation({ id: 'conv-1' })]
+      conversationsForArtist: [
+        createConversation({ id: 'conv-old', updatedAt: '2026-03-22T08:00:00.000Z' }),
+        createConversation({ id: 'conv-latest', updatedAt: '2026-03-22T12:00:00.000Z' })
+      ]
+    });
+
+    expect(result).toEqual({
+      conversationId: '',
+      reason: 'blocked_not_greeted'
+    });
+  });
+
+  it('returns blocked_not_greeted when greeting gate is not satisfied and no primary exists', () => {
+    const result = resolveModeSelectBoundConversationId({
+      artistId: 'cathy-gauthier',
+      isGreetingGateSatisfied: false,
+      boundConversationId: '',
+      activeConversationId: null,
+      conversationsForArtist: [createConversation({ id: 'mode-only', threadType: 'mode', modeId: MODE_IDS.GRILL })]
     });
 
     expect(result).toEqual({
