@@ -6,6 +6,9 @@ module.exports = {
   testMatch: ['**/*.test.ts', '**/*.test.js'],
   testPathIgnorePatterns: ['<rootDir>/e2e/', '<rootDir>/node_modules/'],
   modulePathIgnorePatterns: ['<rootDir>/dist-web/'],
+  moduleNameMapper: {
+    '\\.(png|jpe?g)$': '<rootDir>/jest.fileMock.cjs'
+  },
   clearMocks: true,
   restoreMocks: true
 };
