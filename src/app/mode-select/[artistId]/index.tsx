@@ -593,7 +593,7 @@ function CategoryMenuButton({ artistId, id, index, compactProgress, isCompact }:
   const glow = useRef(new Animated.Value(0)).current;
   const cardHeight = compactProgress.interpolate({
     inputRange: [0, 1],
-    outputRange: [118, 56]
+    outputRange: [124, 74]
   });
   const cardRadius = compactProgress.interpolate({
     inputRange: [0, 1],
@@ -613,7 +613,7 @@ function CategoryMenuButton({ artistId, id, index, compactProgress, isCompact }:
   });
   const emojiScale = compactProgress.interpolate({
     inputRange: [0, 1],
-    outputRange: [1, 0.52]
+    outputRange: [1, 0.46]
   });
 
   useEffect(() => {
@@ -690,6 +690,7 @@ function CategoryMenuButton({ artistId, id, index, compactProgress, isCompact }:
         testID={`mode-category-${id}`}
         style={({ pressed }) => [
           styles.categoryPressable,
+          isCompact ? styles.categoryPressableCompact : null,
           pressed ? styles.categoryPressablePressed : null
         ]}
         onPress={() => router.push(`/mode-select/${artistId}/${id}`)}
@@ -2731,6 +2732,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.sm,
     paddingVertical: theme.spacing.sm
   },
+  categoryPressableCompact: {
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    gap: 1
+  },
   categoryPressableHover: {
     backgroundColor: theme.colors.surfaceRaised
   },
@@ -2738,14 +2744,15 @@ const styles = StyleSheet.create({
     opacity: 0.96
   },
   categoryIcon: {
-    width: 40,
-    height: 40
+    width: 66,
+    height: 66
   },
   categoryLabel: {
     color: theme.colors.textPrimary,
     fontSize: 16,
     fontWeight: '800',
-    textAlign: 'center'
+    textAlign: 'center',
+    marginTop: -8
   },
   center: {
     flex: 1,

@@ -206,8 +206,8 @@ const styles = StyleSheet.create({
     gap: theme.spacing.xs
   },
   titleIcon: {
-    width: 28,
-    height: 28
+    width: 46,
+    height: 46
   },
   title: {
     color: theme.colors.textPrimary,
