@@ -1,5 +1,9 @@
 import { VISIBLE_MODE_IDS_BY_CATEGORY } from './experienceCatalog';
 import type { ImageSourcePropType } from 'react-native';
+import roastIcon from '../../assets/icons/GM_Roast.png';
+import gadgetIcon from '../../assets/icons/GM_Gadget.png';
+import gamesIcon from '../../assets/icons/GM_Games.png';
+import profileIcon from '../../assets/icons/GM_Profile.png';
 
 export type ModeCategoryId = 'delire' | 'experiences' | 'battles' | 'profile';
 type ModeCategoryLabelKey =
@@ -20,22 +24,22 @@ export const MODE_CATEGORY_META: Record<
 > = {
   delire: {
     emoji: '🤪',
-    icon: require('../../assets/icons/GM_Roast.png'),
+    icon: roastIcon,
     labelKey: 'modeCategoryDelire'
   },
   experiences: {
     emoji: '🧪',
-    icon: require('../../assets/icons/GM_Gadget.png'),
+    icon: gadgetIcon,
     labelKey: 'modeCategoryExperiences'
   },
   battles: {
     emoji: '⚔️',
-    icon: require('../../assets/icons/GM_Games.png'),
+    icon: gamesIcon,
     labelKey: 'modeCategoryBattles'
   },
   profile: {
     emoji: '👤',
-    icon: require('../../assets/icons/GM_Profile.png'),
+    icon: profileIcon,
     labelKey: 'modeCategoryProfile'
   }
 };
