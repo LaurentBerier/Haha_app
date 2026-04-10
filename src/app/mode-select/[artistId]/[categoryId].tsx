@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AmbientGlow } from '../../../components/common/AmbientGlow';
 import { BackButton } from '../../../components/common/BackButton';
 import { ModeCard } from '../../../components/mode/ModeCard';
@@ -102,7 +102,10 @@ export default function ModeCategoryScreen() {
       </View>
       <ScrollView testID="mode-category-screen" style={styles.list} contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <Text style={styles.title}>{`${MODE_CATEGORY_META[categoryId].emoji} ${categoryTitle}`}</Text>
+          <View style={styles.titleRow}>
+            <Image source={MODE_CATEGORY_META[categoryId].icon} style={styles.titleIcon} resizeMode="contain" />
+            <Text style={styles.title}>{categoryTitle}</Text>
+          </View>
           <Text style={styles.subtitle}>{artist.name}</Text>
         </View>
 
@@ -196,6 +199,15 @@ const styles = StyleSheet.create({
     gap: 4,
     marginBottom: theme.spacing.md,
     paddingHorizontal: 2
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: theme.spacing.xs
+  },
+  titleIcon: {
+    width: 28,
+    height: 28
   },
   title: {
     color: theme.colors.textPrimary,

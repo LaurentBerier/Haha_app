@@ -2,6 +2,7 @@ import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -697,7 +698,7 @@ function CategoryMenuButton({ artistId, id, index, compactProgress, isCompact }:
         accessibilityRole="button"
       >
         <Animated.View style={{ transform: [{ scale: emojiScale }] }}>
-          <Text style={styles.categoryEmoji}>{MODE_CATEGORY_META[id].emoji}</Text>
+          <Image source={MODE_CATEGORY_META[id].icon} style={styles.categoryIcon} resizeMode="contain" />
         </Animated.View>
         <Animated.Text
           style={[styles.categoryLabel, { fontSize: labelFontSize, lineHeight: labelLineHeight }]}
@@ -2736,8 +2737,9 @@ const styles = StyleSheet.create({
   categoryPressablePressed: {
     opacity: 0.96
   },
-  categoryEmoji: {
-    fontSize: 36
+  categoryIcon: {
+    width: 40,
+    height: 40
   },
   categoryLabel: {
     color: theme.colors.textPrimary,
