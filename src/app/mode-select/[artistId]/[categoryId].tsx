@@ -166,7 +166,6 @@ export default function ModeCategoryScreen() {
           <View style={styles.emptyState}>
             <Text style={styles.emptyEmoji}>🎭</Text>
             <Text style={styles.emptyTitle}>{t('modeSelectCategoryEmptyTitle')}</Text>
-            <Text style={styles.emptySubtitle}>{t('modeSelectCategoryEmptySubtitle')}</Text>
           </View>
         )}
       </ScrollView>
@@ -296,11 +295,6 @@ const styles = StyleSheet.create({
     color: theme.colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
-    textAlign: 'center'
-  },
-  emptySubtitle: {
-    color: theme.colors.textMuted,
-    fontSize: 13,
     textAlign: 'center'
   }
 });

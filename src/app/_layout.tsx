@@ -1,6 +1,7 @@
 import { Stack, router, usePathname, useSegments } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Image,
   Platform,
@@ -80,6 +81,7 @@ export default function RootLayout() {
   const segments = useSegments();
   const segmentList = segments as readonly string[];
   const pathname = usePathname();
+  const insets = useSafeAreaInsets();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [hasTypedGlobalDraft, setHasTypedGlobalDraft] = useState(false);
@@ -95,6 +97,7 @@ export default function RootLayout() {
   const needsOnboarding =
     isAuthenticated && userProfile ? !userProfile.onboardingCompleted && !userProfile.onboardingSkipped : false;
   const showAccountMenu = isAuthenticated && !inAuthGroup;
+  const showFloatingHeaderControls = showAccountMenu && !pathname.startsWith('/admin');
   const showGlobalChatInput =
     hasHydrated &&
     authStatus !== 'loading' &&
@@ -112,7 +115,17 @@ export default function RootLayout() {
     }
     return findConversationById(conversations, activeConversationId)?.artistId ?? null;
   }, [activeConversationId, conversations]);
-  const headerNavigationArtistId = routeArtistId ?? activeConversationArtistId ?? selectedArtistId ?? null;
+  const headerNavigationArtistId = useMemo(() => {
+    if (routeArtistId) {
+      return routeArtistId;
+    }
+
+    if (isChatRoute && activeConversationArtistId) {
+      return activeConversationArtistId;
+    }
+
+    return null;
+  }, [activeConversationArtistId, isChatRoute, routeArtistId]);
   const targetArtistId = routeArtistId ?? selectedArtistId;
   const globalInputDisabled = !showGlobalChatInput || !targetArtistId;
 
@@ -149,6 +162,11 @@ export default function RootLayout() {
     Platform.OS === 'web'
       ? Math.max(theme.spacing.md, (viewportWidth - headerContentMaxWidth) / 2 + theme.spacing.md)
       : theme.spacing.md;
+  const floatingHeaderTop = Platform.select({
+    web: theme.spacing.md,
+    ios: insets.top + 6,
+    default: Math.max(insets.top, theme.spacing.sm) + 6
+  }) ?? theme.spacing.md;
   const nativeBackgroundHeight = Math.max(viewportHeight, 1);
   const nativeBackgroundWidth = nativeBackgroundHeight * imageAspectRatio;
   const nativeBackgroundLeft = (viewportWidth - nativeBackgroundWidth) / 2;
@@ -615,8 +633,11 @@ export default function RootLayout() {
               <Stack
                 screenOptions={{
                   headerStyle: {
-                    backgroundColor: theme.colors.background
+                    backgroundColor: theme.colors.background,
+                    blurEffect: 'none'
                   },
+                  headerTranslucent: false,
+                  scrollEdgeEffects: { top: 'hidden', bottom: 'hidden', left: 'hidden', right: 'hidden' },
                   headerTintColor: theme.colors.textPrimary,
                   contentStyle: { backgroundColor: theme.colors.background },
                   headerTitleAlign: 'center',
@@ -642,39 +663,8 @@ export default function RootLayout() {
                       )
                     : undefined,
                   headerShadowVisible: false,
-                  headerLeft: () =>
-                    showAccountMenu ? (
-                      <Pressable
-                        onPress={navigateArtistModeSelect}
-                        style={({ pressed }) => [
-                          styles.headerBrandButton,
-                          { marginLeft: headerHorizontalInset },
-                          pressed ? styles.headerPressed : null
-                        ]}
-                        accessibilityRole="button"
-                        accessibilityLabel="header-artist-mode-select-button"
-                        testID="header-home-button"
-                      >
-                        <BrandMark compact />
-                      </Pressable>
-                    ) : null,
-                  headerRight: () =>
-                    showAccountMenu ? (
-                      <Pressable
-                        onPress={toggleAccountMenu}
-                        style={({ pressed }) => [
-                          styles.headerMenuButton,
-                          { marginRight: headerHorizontalInset },
-                          pressed ? styles.headerPressed : null
-                        ]}
-                        accessibilityRole="button"
-                        testID="header-menu-button"
-                      >
-                        <View style={styles.menuBar} />
-                        <View style={styles.menuBar} />
-                        <View style={styles.menuBar} />
-                      </Pressable>
-                    ) : null
+                  headerLeft: () => null,
+                  headerRight: () => null
                 }}
               >
                 <Stack.Screen name="(auth)" options={{ headerShown: false }} />
@@ -682,7 +672,8 @@ export default function RootLayout() {
                 <Stack.Screen
                   name="mode-select/[artistId]/index"
                   options={{
-                    title: t('modeSelectTitle'),
+                    title: '',
+                    headerBackVisible: false,
                     animation: 'fade_from_bottom',
                     animationDuration: 220
                   }}
@@ -690,7 +681,8 @@ export default function RootLayout() {
                 <Stack.Screen
                   name="mode-select/[artistId]/[categoryId]"
                   options={{
-                    title: t('modeSelectTitle'),
+                    title: '',
+                    headerBackVisible: false,
                     animation: 'slide_from_right',
                     animationDuration: 240
                   }}
@@ -742,6 +734,35 @@ export default function RootLayout() {
                 <Stack.Screen name="stats/index" options={{ title: t('settingsStats') }} />
                 <Stack.Screen name="admin" options={{ headerShown: false }} />
               </Stack>
+              {showFloatingHeaderControls ? (
+                <View pointerEvents="box-none" style={[styles.floatingHeaderControls, { top: floatingHeaderTop }]}>
+                  <View style={[styles.floatingHeaderControlsRow, { paddingHorizontal: headerHorizontalInset }]}>
+                    <Pressable
+                      onPress={navigateArtistModeSelect}
+                      style={({ pressed }) => [styles.headerBrandButton, pressed ? styles.headerPressed : null]}
+                      accessibilityRole="button"
+                      accessibilityLabel="header-artist-mode-select-button"
+                      testID="header-home-button"
+                      hitSlop={10}
+                    >
+                      <BrandMark compact />
+                    </Pressable>
+                    <Pressable
+                      onPress={toggleAccountMenu}
+                      style={({ pressed }) => [styles.headerMenuButton, pressed ? styles.headerPressed : null]}
+                      accessibilityRole="button"
+                      testID="header-menu-button"
+                      hitSlop={10}
+                    >
+                      <View style={styles.menuBarsStack}>
+                        <View style={styles.menuBar} />
+                        <View style={styles.menuBar} />
+                        <View style={styles.menuBar} />
+                      </View>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
               <GlobalChatInput
                 visible={showGlobalChatInput}
                 disabled={globalInputDisabled}
@@ -817,34 +838,47 @@ const styles = StyleSheet.create({
     maxWidth: 784,
     alignSelf: 'center'
   },
+  floatingHeaderControls: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20
+  },
+  floatingHeaderControlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
   headerMenuButton: {
-    borderWidth: 1,
-    borderColor: theme.colors.neonBlueSoft,
-    backgroundColor: theme.colors.surfaceSunken,
-    borderRadius: 12,
-    width: 44,
-    height: 40,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    backgroundColor: 'transparent',
+    padding: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    shadowColor: theme.colors.neonBlue,
-    shadowOpacity: 0.34,
-    shadowRadius: 10,
+    shadowColor: 'transparent',
+    shadowOpacity: 0,
+    shadowRadius: 0,
     shadowOffset: { width: 0, height: 0 },
-    elevation: 4
+    elevation: 0
   },
   headerBrandButton: {
-    borderWidth: 1,
-    borderColor: theme.colors.neonBlueSoft,
-    backgroundColor: theme.colors.surfaceSunken,
-    borderRadius: 12,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    shadowColor: theme.colors.neonBlue,
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    backgroundColor: 'transparent',
+    padding: 0,
+    shadowColor: 'transparent',
+    shadowOpacity: 0,
+    shadowRadius: 0,
     shadowOffset: { width: 0, height: 0 },
-    elevation: 4
+    elevation: 0
+  },
+  menuBarsStack: {
+    width: 20,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4
   },
   headerPressed: {
     opacity: 0.9,

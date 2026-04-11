@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Image, Platform, StyleSheet, Text, View } from 'react-native';
 import logoMark from '../../../assets/branding/logo-neon_app.png';
+import logoMarkCompact from '../../../assets/branding/logo-neon_NoText_BIG.png';
 import { theme } from '../../theme';
 
 interface BrandMarkProps {
@@ -11,7 +12,7 @@ interface BrandMarkProps {
 function BrandMarkBase({ compact = false, title }: BrandMarkProps) {
   return (
     <View style={[styles.row, compact ? styles.rowCompact : styles.rowRegular]}>
-      <Image source={logoMark} style={compact ? styles.logoCompact : styles.logoRegular} resizeMode="contain" />
+      <Image source={compact ? logoMarkCompact : logoMark} style={compact ? styles.logoCompact : styles.logoRegular} resizeMode="contain" />
       {compact && title ? (
         <Text style={[styles.title, Platform.OS === 'web' ? styles.titleWeb : null]} numberOfLines={1}>
           {title}

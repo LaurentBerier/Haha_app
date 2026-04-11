@@ -114,6 +114,8 @@ const GREETING_BOOTING_FR_LINES = [
 const MODE_SELECT_DEBUG_TOGGLE_KEY = 'HAHA_MODE_SELECT_DEBUG';
 const GREETING_AUTOPLAY_MAX_ATTEMPTS = 3;
 const GREETING_AUTOPLAY_RETRY_DELAY_MS = 0;
+const MODE_SELECT_VOICE_NEON_MAUVE = '#B56CFF';
+const MODE_SELECT_VOICE_NEON_ROSE = '#FF4FD8';
 
 type TerminalTtsCode = SharedTerminalTtsCode;
 type GreetingVoiceNoticeCode = TerminalTtsCode | 'UNAUTHORIZED' | 'TTS_PROVIDER_ERROR';
@@ -2423,6 +2425,11 @@ export default function ModeSelectHomeScreen() {
         <AmbientGlow variant="mode" />
         <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
           <BackButton testID="mode-select-back" />
+          <View pointerEvents="none" style={styles.topRowArtistNameWrap}>
+            <Text style={styles.topRowArtistName} numberOfLines={1}>
+              {artist.name}
+            </Text>
+          </View>
         </View>
         <ScrollView
           testID="mode-select-screen"
@@ -2435,10 +2442,6 @@ export default function ModeSelectHomeScreen() {
             }
           ]}
         >
-          <View style={styles.header}>
-            <Text style={styles.subtitle}>{artist.name}</Text>
-            <Text style={styles.helperText}>{t('modeSelectCategoryEmptySubtitle')}</Text>
-          </View>
           <View
             style={[styles.categoryGrid, shouldCompactModeGrid ? styles.categoryGridCompact : null]}
             ref={categoryGridRef}
@@ -2580,27 +2583,26 @@ const styles = StyleSheet.create({
     paddingTop: theme.spacing.sm,
     paddingBottom: theme.spacing.xs
   },
+  topRowArtistNameWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  topRowArtistName: {
+    maxWidth: '68%',
+    color: theme.colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center'
+  },
   content: {
     padding: theme.spacing.md,
     paddingBottom: theme.spacing.xl * 2,
     width: '100%',
     maxWidth: 608,
     alignSelf: 'center'
-  },
-  header: {
-    gap: 4,
-    marginBottom: theme.spacing.md,
-    paddingHorizontal: 2
-  },
-  subtitle: {
-    color: theme.colors.textPrimary,
-    fontSize: 18,
-    fontWeight: '700'
-  },
-  helperText: {
-    color: theme.colors.textMuted,
-    fontSize: 12,
-    lineHeight: 16
   },
   conversationOverlay: {
     position: 'absolute',
@@ -2652,34 +2654,45 @@ const styles = StyleSheet.create({
   },
   greetingVoiceIndicator: {
     alignSelf: 'flex-start',
-    marginLeft: theme.spacing.md,
-    marginBottom: 4,
+    marginLeft: theme.spacing.sm,
+    marginBottom: 3,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 3,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: theme.colors.neonBlueSoft,
-    backgroundColor: 'rgba(10, 14, 24, 0.82)',
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 5
+    borderColor: MODE_SELECT_VOICE_NEON_MAUVE,
+    backgroundColor: 'rgba(13, 16, 34, 0.86)',
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+    shadowColor: MODE_SELECT_VOICE_NEON_ROSE,
+    shadowOpacity: 0.6,
+    shadowRadius: 9,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6
   },
   greetingVoiceIndicatorBlocked: {
-    borderColor: theme.colors.accent
+    borderColor: theme.colors.neonRed
   },
   greetingVoiceDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: theme.colors.neonBlue
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.colors.neonBlue,
+    borderWidth: 1,
+    borderColor: MODE_SELECT_VOICE_NEON_ROSE
   },
   greetingVoiceDotBlocked: {
-    backgroundColor: theme.colors.accent
+    backgroundColor: theme.colors.neonRed,
+    borderColor: MODE_SELECT_VOICE_NEON_MAUVE
   },
   greetingVoiceLabel: {
-    color: theme.colors.textPrimary,
-    fontSize: 11,
-    fontWeight: '700'
+    color: MODE_SELECT_VOICE_NEON_MAUVE,
+    fontSize: 9,
+    fontWeight: '700',
+    textShadowColor: theme.colors.neonBlue,
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 7
   },
   modeSelectInputDock: {
     position: 'absolute',

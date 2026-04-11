@@ -11,9 +11,22 @@ interface WaveformButtonProps {
 }
 
 const BAR_COUNT = 4;
-const IDLE_BAR_HEIGHT = 5;
-const MIN_BAR_HEIGHT = 4;
-const MAX_BAR_HEIGHT = 16;
+const ICON_SCALE = 1.05;
+const IDLE_BAR_HEIGHT = 5 * ICON_SCALE;
+const MIN_BAR_HEIGHT = 4 * ICON_SCALE;
+const MAX_BAR_HEIGHT = 16 * ICON_SCALE;
+const NEON_MAUVE = '#B56CFF';
+const NEON_ROSE = '#FF4FD8';
+const BAR_COLORS = [
+  theme.colors.neonBlue,
+  NEON_ROSE,
+  NEON_MAUVE,
+  theme.colors.neonBlue
+] as const;
+
+function resolveWaveBarColor(index: number): string {
+  return BAR_COLORS[index % BAR_COLORS.length];
+}
 
 function WaveformButtonBase({ isPlaying, isLoading, onPress, disabled = false, testID }: WaveformButtonProps) {
   const bars = useRef(
@@ -112,6 +125,7 @@ function WaveformButtonBase({ isPlaying, isLoading, onPress, disabled = false, t
                 styles.bar,
                 index < BAR_COUNT - 1 ? styles.barSpacing : null,
                 {
+                  backgroundColor: resolveWaveBarColor(index),
                   height: bar.value,
                   opacity: isLoading ? loadingOpacity : 1
                 }
@@ -133,14 +147,19 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.xs,
     alignSelf: 'flex-start',
     borderWidth: 1,
-    borderColor: theme.colors.neonBlue,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    borderColor: NEON_MAUVE,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     padding: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(58, 141, 255, 0.08)'
+    backgroundColor: 'rgba(181, 108, 255, 0.16)',
+    shadowColor: NEON_ROSE,
+    shadowOpacity: 0.55,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 7
   },
   buttonPressed: {
     opacity: 0.85
@@ -149,8 +168,8 @@ const styles = StyleSheet.create({
     opacity: 0.6
   },
   barsWrap: {
-    width: 24,
-    height: 18,
+    width: 24 * ICON_SCALE,
+    height: 18 * ICON_SCALE,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center'
@@ -159,23 +178,22 @@ const styles = StyleSheet.create({
     opacity: 0.35
   },
   bar: {
-    width: 3,
-    borderRadius: 999,
-    backgroundColor: '#3A8DFF'
+    width: 3 * ICON_SCALE,
+    borderRadius: 999
   },
   barSpacing: {
-    marginRight: 3
+    marginRight: 3 * ICON_SCALE
   },
   playIcon: {
-    marginLeft: 2,
+    marginLeft: 2 * ICON_SCALE,
     width: 0,
     height: 0,
-    borderTopWidth: 7,
-    borderBottomWidth: 7,
-    borderLeftWidth: 11,
+    borderTopWidth: 7 * ICON_SCALE,
+    borderBottomWidth: 7 * ICON_SCALE,
+    borderLeftWidth: 11 * ICON_SCALE,
     borderTopColor: 'transparent',
     borderBottomColor: 'transparent',
-    borderLeftColor: '#3A8DFF'
+    borderLeftColor: NEON_ROSE
   },
   playIconDisabled: {
     opacity: 0.35
