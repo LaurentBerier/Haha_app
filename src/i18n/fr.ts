@@ -12,7 +12,7 @@ export const fr = {
   chatTitle: 'Discussion',
   modeSelectTitle: 'Choix du mode',
   modeCategoryDelire: 'On Jase?',
-  modeCategoryExperiences: 'Blagues & Gadgets',
+  modeCategoryExperiences: 'Le Lab',
   modeCategoryBattles: 'Jeux',
   modeCategoryProfile: 'Profil',
   modeProfileEditDescription: 'Ajuste les infos utilisées pour personnaliser la conversation.',

@@ -12,7 +12,7 @@ export const en = {
   chatTitle: 'Chat',
   modeSelectTitle: 'Mode selection',
   modeCategoryDelire: "Let's Chat?",
-  modeCategoryExperiences: 'Jokes & Gadgets',
+  modeCategoryExperiences: 'The Lab',
   modeCategoryBattles: 'Games',
   modeCategoryProfile: 'Profile',
   modeProfileEditDescription: 'Adjust the profile data used to personalize the conversation.',

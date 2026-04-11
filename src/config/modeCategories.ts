@@ -21,7 +21,7 @@ export const MODE_CATEGORY_META: Record<
   delire: {
     emoji: '🤪',
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    icon: require('../../assets/icons/GM_Roast.png'),
+    icon: require('../../assets/icons/GM_Roast2.png'),
     labelKey: 'modeCategoryDelire'
   },
   experiences: {
