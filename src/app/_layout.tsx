@@ -124,8 +124,8 @@ export default function RootLayout() {
       return activeConversationArtistId;
     }
 
-    return null;
-  }, [activeConversationArtistId, isChatRoute, routeArtistId]);
+    return selectedArtistId ?? null;
+  }, [activeConversationArtistId, isChatRoute, routeArtistId, selectedArtistId]);
   const targetArtistId = routeArtistId ?? selectedArtistId;
   const globalInputDisabled = !showGlobalChatInput || !targetArtistId;
 

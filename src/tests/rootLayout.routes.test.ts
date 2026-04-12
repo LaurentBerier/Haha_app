@@ -68,6 +68,7 @@ describe('root layout route registration', () => {
     expect(layoutSource).toContain('const headerNavigationArtistId = useMemo(() => {');
     expect(layoutSource).toContain('if (routeArtistId) {');
     expect(layoutSource).toContain('if (isChatRoute && activeConversationArtistId) {');
+    expect(layoutSource).toContain('return selectedArtistId ?? null;');
     expect(layoutSource).toContain("pathname: '/mode-select/[artistId]'");
     expect(layoutSource).toContain('router.replace(\'/\');');
     expect(layoutSource).toContain('testID="header-artist-picker-button"');
