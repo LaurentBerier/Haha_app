@@ -1,8 +1,8 @@
-import { router, useLocalSearchParams, useNavigation } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AmbientGlow } from '../../../components/common/AmbientGlow';
-import { BackButton } from '../../../components/common/BackButton';
+import { ModeTopChipHeader } from '../../../components/common/ModeTopChipHeader';
 import { ModeCard } from '../../../components/mode/ModeCard';
 import { MODE_IDS } from '../../../config/constants';
 import { VISIBLE_GAME_IDS } from '../../../config/experienceCatalog';
@@ -18,7 +18,6 @@ import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
 
 export default function ModeCategoryScreen() {
-  const navigation = useNavigation();
   const params = useLocalSearchParams<{ artistId: string; categoryId: string }>();
   const artistId = params.artistId ?? '';
   const categoryIdParam = params.categoryId ?? '';
@@ -38,11 +37,6 @@ export default function ModeCategoryScreen() {
   }, [categoryIdParam]);
 
   const categoryTitle = categoryId ? t(MODE_CATEGORY_META[categoryId].labelKey) : t('modeSelectTitle');
-  const isLeLabCategory = categoryId === 'experiences';
-
-  useEffect(() => {
-    navigation.setOptions({ title: categoryTitle });
-  }, [categoryTitle, navigation]);
 
   const availableModes = useMemo(() => {
     if (!artist || !categoryId || categoryId === 'profile') {
@@ -98,28 +92,15 @@ export default function ModeCategoryScreen() {
   return (
     <View style={styles.screen}>
       <AmbientGlow variant="mode" />
-      <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
-        <BackButton testID="mode-category-back" />
-        {isLeLabCategory ? (
-          <View pointerEvents="none" style={styles.topRowLeLabWrap}>
-            <View style={styles.leLabChip}>
-              <Image source={MODE_CATEGORY_META.experiences.icon} style={styles.leLabChipIcon} resizeMode="contain" />
-              <Text style={styles.leLabChipTitle}>{categoryTitle}</Text>
-            </View>
-          </View>
-        ) : null}
-      </View>
+      <ModeTopChipHeader
+        title={categoryTitle}
+        subtitle={artist.name}
+        iconSource={MODE_CATEGORY_META[categoryId].icon}
+        horizontalInset={headerHorizontalInset}
+        backTestID="mode-category-back"
+        chipTestID="mode-category-chip"
+      />
       <ScrollView testID="mode-category-screen" style={styles.list} contentContainerStyle={styles.content}>
-        {isLeLabCategory ? null : (
-          <View style={styles.header}>
-            <View style={styles.titleRow}>
-              <Image source={MODE_CATEGORY_META[categoryId].icon} style={styles.titleIcon} resizeMode="contain" />
-              <Text style={styles.title}>{categoryTitle}</Text>
-            </View>
-            <Text style={styles.subtitle}>{artist.name}</Text>
-          </View>
-        )}
-
         {categoryId === 'profile' ? (
           <View style={styles.profileActionGroup}>
             <View style={styles.profileActionCard}>
@@ -193,68 +174,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     flex: 1
   },
-  topRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    paddingHorizontal: theme.spacing.md,
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.sm
-  },
-  topRowLeLabWrap: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    left: 0,
-    position: 'absolute',
-    right: 0
-  },
-  leLabChip: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: theme.spacing.xs,
-    minHeight: 44,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: 4
-  },
-  leLabChipIcon: {
-    height: 36,
-    width: 36
-  },
-  leLabChipTitle: {
-    color: theme.colors.textPrimary,
-    fontSize: 20,
-    fontWeight: '800'
-  },
   content: {
     padding: theme.spacing.md,
     paddingBottom: theme.spacing.xl * 2,
     width: '100%',
     maxWidth: 608,
     alignSelf: 'center'
-  },
-  header: {
-    gap: 4,
-    marginBottom: theme.spacing.md,
-    paddingHorizontal: 2
-  },
-  titleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.xs
-  },
-  titleIcon: {
-    width: 46,
-    height: 46
-  },
-  title: {
-    color: theme.colors.textPrimary,
-    fontSize: 20,
-    fontWeight: '800'
-  },
-  subtitle: {
-    color: theme.colors.textMuted,
-    fontSize: 13,
-    fontWeight: '600'
   },
   modeList: {
     gap: theme.spacing.sm

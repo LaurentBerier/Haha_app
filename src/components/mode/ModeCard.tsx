@@ -1,49 +1,13 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { MODE_IDS } from '../../config/constants';
 import type { Mode } from '../../models/Mode';
 import { theme } from '../../theme';
+import { MODE_IDS } from '../../config/constants';
+import { getModeEmoji } from '../../utils/modeIcon';
 
 interface ModeCardProps {
   mode: Mode;
   onPress: () => void;
   disabled?: boolean;
-}
-
-const MODE_EMOJI_BY_ID: Record<string, string> = {
-  [MODE_IDS.ON_JASE]: '🎤',
-  [MODE_IDS.GRILL]: '🔥',
-  [MODE_IDS.COACH_DE_VIE]: '🧭',
-  [MODE_IDS.MESSAGE_PERSONNALISE]: '🎁',
-  [MODE_IDS.NUMERO_DE_SHOW]: '🎤',
-  [MODE_IDS.HOROSCOPE]: '🔮',
-  [MODE_IDS.METEO]: '⛅',
-  [MODE_IDS.MEME_GENERATOR]: '😂',
-  [MODE_IDS.SCREENSHOT_ANALYZER]: '🔍',
-  [MODE_IDS.ROAST_BATTLE]: '⚔️'
-};
-
-const MODE_EMOJI_FALLBACK_POOL = ['🎭', '🎯', '⚡', '🧨', '🗣️', '🧠', '🎬', '🤹', '🧩', '🎪'];
-
-function hashModeId(modeId: string): number {
-  let hash = 0;
-  for (const char of modeId) {
-    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  }
-  return hash;
-}
-
-function getModeEmoji(mode: Mode): string {
-  if (mode.emoji) {
-    return mode.emoji;
-  }
-
-  const mapped = MODE_EMOJI_BY_ID[mode.id];
-  if (mapped) {
-    return mapped;
-  }
-
-  const index = hashModeId(mode.id) % MODE_EMOJI_FALLBACK_POOL.length;
-  return MODE_EMOJI_FALLBACK_POOL[index] ?? '🎭';
 }
 
 export function ModeCard({ mode, onPress, disabled = false }: ModeCardProps) {

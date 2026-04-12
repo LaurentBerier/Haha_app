@@ -697,6 +697,7 @@ export default function RootLayout() {
                   name="chat/[conversationId]"
                   options={{
                     title: t('chatTitle'),
+                    headerBackVisible: false,
                     animation: 'slide_from_right',
                     animationDuration: 280,
                     gestureEnabled: true
@@ -706,6 +707,7 @@ export default function RootLayout() {
                   name="games/[artistId]/index"
                   options={{
                     title: t('gamesSection'),
+                    headerBackVisible: false,
                     animation: 'slide_from_right',
                     animationDuration: 240
                   }}
@@ -714,6 +716,7 @@ export default function RootLayout() {
                   name="games/[artistId]/impro-chain"
                   options={{
                     title: t('gameImproTitle'),
+                    headerBackVisible: false,
                     animation: 'slide_from_right',
                     animationDuration: 260
                   }}
@@ -722,6 +725,16 @@ export default function RootLayout() {
                   name="games/[artistId]/vrai-ou-invente"
                   options={{
                     title: t('gameVraiInventeTitle'),
+                    headerBackVisible: false,
+                    animation: 'slide_from_right',
+                    animationDuration: 260
+                  }}
+                />
+                <Stack.Screen
+                  name="games/[artistId]/tarot-cathy"
+                  options={{
+                    title: t('gameTarotTitle'),
+                    headerBackVisible: false,
                     animation: 'slide_from_right',
                     animationDuration: 260
                   }}

@@ -5,6 +5,7 @@ import { theme } from '../../theme';
 interface GameLaunchIntroProps {
   title: string;
   subtitle: string;
+  showTitle?: boolean;
   greetingText: string;
   isLoading: boolean;
   loadingLabel: string;
@@ -16,6 +17,7 @@ interface GameLaunchIntroProps {
 export function GameLaunchIntro({
   title,
   subtitle,
+  showTitle = true,
   greetingText,
   isLoading,
   loadingLabel,
@@ -33,8 +35,12 @@ export function GameLaunchIntro({
       testID={`${testIDPrefix}-launch-intro`}
     >
       <View style={styles.inner}>
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.subtitle}>{subtitle}</Text>
+        {showTitle ? (
+          <>
+            <Text style={styles.title}>{title}</Text>
+            <Text style={styles.subtitle}>{subtitle}</Text>
+          </>
+        ) : null}
 
         {isLoading ? (
           <View style={styles.loadingRow} testID={`${testIDPrefix}-launch-intro-loading`}>

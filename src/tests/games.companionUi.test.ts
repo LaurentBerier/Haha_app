@@ -9,6 +9,7 @@ describe('game launch intro integration', () => {
     expect(source).toContain('useGameLaunchGreeting');
     expect(source).toContain('GameLaunchIntro');
     expect(source).toContain('testIDPrefix="tarot"');
+    expect(source).toContain('showTitle={false}');
     expect(source).toContain('if (isIntroVisible)');
     expect(source).not.toContain('useGameCompanionChat');
     expect(source).not.toContain('testID="tarot-game-composer"');
@@ -25,6 +26,7 @@ describe('game launch intro integration', () => {
     expect(source).toContain('useGameLaunchGreeting');
     expect(source).toContain('GameLaunchIntro');
     expect(source).toContain('testIDPrefix="vrai"');
+    expect(source).toContain('showTitle={false}');
     expect(source).toContain('if (isIntroVisible)');
     expect(source).not.toContain('useGameCompanionChat');
     expect(source).not.toContain('testID="vrai-game-composer"');
@@ -41,6 +43,7 @@ describe('game launch intro integration', () => {
     expect(source).toContain('useGameLaunchGreeting');
     expect(source).toContain('GameLaunchIntro');
     expect(source).toContain('testIDPrefix="impro"');
+    expect(source).toContain('showTitle={false}');
     expect(source).toContain('if (isIntroVisible)');
     expect(source).toContain('ChatInput');
     expect(source).toContain('testID="impro-message-list"');

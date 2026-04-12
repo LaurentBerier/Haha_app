@@ -2,9 +2,10 @@ import { useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AmbientGlow } from '../../../components/common/AmbientGlow';
-import { BackButton } from '../../../components/common/BackButton';
+import { ModeTopChipHeader } from '../../../components/common/ModeTopChipHeader';
 import { GameCard } from '../../../components/games/GameCard';
 import { VISIBLE_GAME_IDS } from '../../../config/experienceCatalog';
+import { MODE_CATEGORY_META } from '../../../config/modeCategories';
 import { GAME_TYPE_CONFIGS } from '../../../games/types';
 import { useHeaderHorizontalInset } from '../../../hooks/useHeaderHorizontalInset';
 import { t } from '../../../i18n';
@@ -32,12 +33,15 @@ export default function GamesScreen() {
   return (
     <View style={styles.screen}>
       <AmbientGlow variant="mode" />
-      <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
-        <BackButton testID="games-back" />
-      </View>
+      <ModeTopChipHeader
+        title={t('gameSelectTitle')}
+        subtitle={t('gamesSectionSubtitle')}
+        iconSource={MODE_CATEGORY_META.battles.icon}
+        horizontalInset={headerHorizontalInset}
+        backTestID="games-back"
+        chipTestID="games-mode-chip"
+      />
       <ScrollView contentContainerStyle={styles.content} style={styles.scroll} testID="games-screen">
-        <Text style={styles.title}>{t('gameSelectTitle')}</Text>
-        <Text style={styles.subtitle}>{t('gamesSectionSubtitle')}</Text>
         <Text style={styles.artistName}>{artist.name}</Text>
 
         <View style={styles.list}>
@@ -62,10 +66,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background
   },
-  topRow: {
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.xs
-  },
   scroll: {
     flex: 1
   },
@@ -76,15 +76,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.lg,
     paddingBottom: theme.spacing.xl * 2,
     gap: theme.spacing.sm
-  },
-  title: {
-    color: theme.colors.textPrimary,
-    fontSize: 24,
-    fontWeight: '800'
-  },
-  subtitle: {
-    color: theme.colors.textMuted,
-    fontSize: 13
   },
   artistName: {
     color: theme.colors.textSecondary,

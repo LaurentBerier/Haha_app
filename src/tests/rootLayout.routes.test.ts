@@ -45,6 +45,22 @@ describe('root layout route registration', () => {
     expect(layoutSource).not.toContain('name="history/[artistId]"');
   });
 
+  it('disables native back on mode/game sub-routes and registers tarot route explicitly', () => {
+    const layoutPath = path.resolve(__dirname, '../app/_layout.tsx');
+    const layoutSource = fs.readFileSync(layoutPath, 'utf8');
+
+    expect(layoutSource).toContain('name="mode-select/[artistId]/[categoryId]"');
+    expect(layoutSource).toContain('name="chat/[conversationId]"');
+    expect(layoutSource).toContain('name="games/[artistId]/index"');
+    expect(layoutSource).toContain('name="games/[artistId]/impro-chain"');
+    expect(layoutSource).toContain('name="games/[artistId]/vrai-ou-invente"');
+    expect(layoutSource).toContain('name="games/[artistId]/tarot-cathy"');
+    expect(layoutSource).toContain("title: t('gameTarotTitle')");
+
+    const headerBackHiddenMatches = layoutSource.match(/headerBackVisible:\s*false/g) ?? [];
+    expect(headerBackHiddenMatches.length).toBeGreaterThanOrEqual(7);
+  });
+
   it('uses artist-aware header home navigation and a center artist picker button', () => {
     const layoutPath = path.resolve(__dirname, '../app/_layout.tsx');
     const layoutSource = fs.readFileSync(layoutPath, 'utf8');

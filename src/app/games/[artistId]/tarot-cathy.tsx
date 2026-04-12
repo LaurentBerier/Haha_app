@@ -8,7 +8,7 @@ import {
   Text,
   View
 } from 'react-native';
-import { BackButton } from '../../../components/common/BackButton';
+import { ModeTopChipHeader } from '../../../components/common/ModeTopChipHeader';
 import { ScoreBar } from '../../../components/chat/ScoreBar';
 import { GameLaunchIntro } from '../../../components/games/GameLaunchIntro';
 import { GameResultPanel } from '../../../components/games/GameResultPanel';
@@ -28,6 +28,8 @@ export default function TarotCathyScreen() {
   const artistId = params.artistId ?? '';
   const navigation = useNavigation();
   const headerHorizontalInset = useHeaderHorizontalInset();
+  const gameTitle = t('gameTarotTitle');
+  const gameSubtitle = t('gameTarotDescription');
 
   const artists = useStore((state) => state.artists);
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
@@ -59,8 +61,8 @@ export default function TarotCathyScreen() {
     artistId,
     artistName: artist?.name ?? null,
     gameType: 'tarot-cathy',
-    gameLabel: t('gameTarotTitle'),
-    gameDescription: t('gameTarotDescription'),
+    gameLabel: gameTitle,
+    gameDescription: gameSubtitle,
     enabled: Boolean(artist)
   });
 
@@ -114,17 +116,21 @@ export default function TarotCathyScreen() {
   if (isIntroVisible) {
     return (
       <View style={styles.screen}>
-        <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
-          <BackButton
-            testID="tarot-back"
-            onPress={() => {
-              runProtectedNavigation(navigateBackOrGamesHome);
-            }}
-          />
-        </View>
+        <ModeTopChipHeader
+          title={gameTitle}
+          subtitle={gameSubtitle}
+          iconEmoji="🔮"
+          horizontalInset={headerHorizontalInset}
+          backTestID="tarot-back"
+          onBackPress={() => {
+            runProtectedNavigation(navigateBackOrGamesHome);
+          }}
+          chipTestID="tarot-mode-chip"
+        />
         <GameLaunchIntro
-          title={t('gameTarotTitle')}
-          subtitle={t('gameTarotDescription')}
+          title={gameTitle}
+          subtitle={gameSubtitle}
+          showTitle={false}
           greetingText={greetingText}
           isLoading={isGreetingLoading}
           loadingLabel={t('gameLaunchGreetingLoading')}
@@ -138,21 +144,22 @@ export default function TarotCathyScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
-        <BackButton
-          testID="tarot-back"
-          onPress={() => {
-            runProtectedNavigation(navigateBackOrGamesHome);
-          }}
-        />
-      </View>
+      <ModeTopChipHeader
+        title={gameTitle}
+        subtitle={gameSubtitle}
+        iconEmoji="🔮"
+        horizontalInset={headerHorizontalInset}
+        backTestID="tarot-back"
+        onBackPress={() => {
+          runProtectedNavigation(navigateBackOrGamesHome);
+        }}
+        chipTestID="tarot-mode-chip"
+      />
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: tarotScreenPaddingBottom }]}
         style={styles.scroll}
         testID="tarot-screen"
       >
-        <Text style={styles.title}>{t('gameTarotTitle')}</Text>
-        <Text style={styles.subtitle}>{t('gameTarotDescription')}</Text>
         <ScoreBar />
 
         {game?.error ? (
@@ -330,10 +337,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background
   },
-  topRow: {
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.xs
-  },
   scroll: {
     flex: 1
   },
@@ -349,16 +352,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: theme.colors.background
-  },
-  title: {
-    color: theme.colors.textPrimary,
-    fontSize: 23,
-    fontWeight: '800'
-  },
-  subtitle: {
-    color: theme.colors.textMuted,
-    fontSize: 13,
-    fontWeight: '700'
   },
   errorText: {
     color: theme.colors.error,

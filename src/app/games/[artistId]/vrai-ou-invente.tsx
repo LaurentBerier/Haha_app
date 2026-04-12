@@ -8,7 +8,7 @@ import {
   Text,
   View
 } from 'react-native';
-import { BackButton } from '../../../components/common/BackButton';
+import { ModeTopChipHeader } from '../../../components/common/ModeTopChipHeader';
 import { ScoreBar } from '../../../components/chat/ScoreBar';
 import { GameLaunchIntro } from '../../../components/games/GameLaunchIntro';
 import { GameResultPanel } from '../../../components/games/GameResultPanel';
@@ -26,6 +26,8 @@ export default function VraiOuInventeScreen() {
   const artistId = params.artistId ?? '';
   const navigation = useNavigation();
   const headerHorizontalInset = useHeaderHorizontalInset();
+  const gameTitle = t('gameVraiInventeTitle');
+  const gameSubtitle = t('gameVraiInventeDescription');
 
   const artists = useStore((state) => state.artists);
   const artist = useMemo(() => artists.find((candidate) => candidate.id === artistId) ?? null, [artists, artistId]);
@@ -56,8 +58,8 @@ export default function VraiOuInventeScreen() {
     artistId,
     artistName: artist?.name ?? null,
     gameType: 'vrai-ou-invente',
-    gameLabel: t('gameVraiInventeTitle'),
-    gameDescription: t('gameVraiInventeDescription'),
+    gameLabel: gameTitle,
+    gameDescription: gameSubtitle,
     enabled: Boolean(artist)
   });
 
@@ -113,17 +115,21 @@ export default function VraiOuInventeScreen() {
   if (isIntroVisible) {
     return (
       <View style={styles.screen}>
-        <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
-          <BackButton
-            testID="vrai-back"
-            onPress={() => {
-              runProtectedNavigation(navigateBackOrGamesHome);
-            }}
-          />
-        </View>
+        <ModeTopChipHeader
+          title={gameTitle}
+          subtitle={gameSubtitle}
+          iconEmoji="🎭"
+          horizontalInset={headerHorizontalInset}
+          backTestID="vrai-back"
+          onBackPress={() => {
+            runProtectedNavigation(navigateBackOrGamesHome);
+          }}
+          chipTestID="vrai-mode-chip"
+        />
         <GameLaunchIntro
-          title={t('gameVraiInventeTitle')}
-          subtitle={t('gameVraiInventeDescription')}
+          title={gameTitle}
+          subtitle={gameSubtitle}
+          showTitle={false}
           greetingText={greetingText}
           isLoading={isGreetingLoading}
           loadingLabel={t('gameLaunchGreetingLoading')}
@@ -137,21 +143,22 @@ export default function VraiOuInventeScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
-        <BackButton
-          testID="vrai-back"
-          onPress={() => {
-            runProtectedNavigation(navigateBackOrGamesHome);
-          }}
-        />
-      </View>
+      <ModeTopChipHeader
+        title={gameTitle}
+        subtitle={gameSubtitle}
+        iconEmoji="🎭"
+        horizontalInset={headerHorizontalInset}
+        backTestID="vrai-back"
+        onBackPress={() => {
+          runProtectedNavigation(navigateBackOrGamesHome);
+        }}
+        chipTestID="vrai-mode-chip"
+      />
       <ScrollView
         contentContainerStyle={[styles.content, { paddingBottom: vraiScreenPaddingBottom }]}
         style={styles.scroll}
         testID="vrai-screen"
       >
-        <Text style={styles.title}>{t('gameVraiInventeTitle')}</Text>
-        <Text style={styles.subtitle}>{t('gameVraiInventeDescription')}</Text>
         <ScoreBar />
 
         {game?.error ? <Text style={styles.gameError}>{game.error}</Text> : null}
@@ -242,10 +249,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background
   },
-  topRow: {
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.xs
-  },
   scroll: {
     flex: 1
   },
@@ -255,16 +258,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     paddingHorizontal: theme.spacing.lg,
     gap: theme.spacing.sm
-  },
-  title: {
-    color: theme.colors.textPrimary,
-    fontSize: 23,
-    fontWeight: '800'
-  },
-  subtitle: {
-    color: theme.colors.textMuted,
-    fontSize: 13,
-    fontWeight: '700'
   },
   panel: {
     borderWidth: 1.3,

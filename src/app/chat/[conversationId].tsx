@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLocalSearchParams, useNavigation } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
 import { ChatInput } from '../../components/chat/ChatInput';
 import { MessageList } from '../../components/chat/MessageList';
 import { StreamingIndicator } from '../../components/chat/StreamingIndicator';
-import { ThreadModeHeader } from '../../components/chat/ThreadModeHeader';
+import { ModeTopChipHeader } from '../../components/common/ModeTopChipHeader';
 import { useToast } from '../../components/common/ToastProvider';
-import { BackButton } from '../../components/common/BackButton';
 import { resolveModeIdCompat } from '../../config/modeCompat';
 import { getModeById } from '../../config/modes';
 import { useHeaderHorizontalInset } from '../../hooks/useHeaderHorizontalInset';
@@ -23,6 +22,7 @@ import { useStore } from '../../store/useStore';
 import { theme } from '../../theme';
 import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../../utils/accountTypeUtils';
 import { findConversationById } from '../../utils/conversationUtils';
+import { getModeEmoji } from '../../utils/modeIcon';
 import { resolveModeNudgeAutoArmDecision } from './chatAutoArm';
 
 function formatUserDisplayName(displayName: string | null, email: string): string {
@@ -48,7 +48,6 @@ function formatArtistDisplayName(artistName: string | null): string {
 }
 
 export default function ChatScreen() {
-  const navigation = useNavigation();
   const params = useLocalSearchParams<{
     conversationId?: string | string[];
     queuedNonce?: string | string[];
@@ -144,8 +143,8 @@ export default function ChatScreen() {
     [sessionUser?.accountType, sessionUser?.role]
   );
   const activeModeLabel = isPrimaryThread ? t('primaryThreadTitle') : activeMode?.name ?? t('chatModeUnknown');
-  const activeModeEmoji = isPrimaryThread ? '💬' : activeMode?.emoji ?? '💬';
-  const chatHeaderTitle = `${activeModeEmoji} ${activeModeLabel}`;
+  const activeModeEmoji = isPrimaryThread ? '💬' : getModeEmoji(activeMode);
+  const activeModeSubtitle = isPrimaryThread ? t('primaryThreadSubtitle') : activeMode?.description ?? '';
   const shouldUseVoiceFiller = Boolean(
       conversationModeEnabled &&
       currentConversation?.artistId &&
@@ -207,12 +206,6 @@ export default function ChatScreen() {
   useEffect(() => {
     sendWithFillerRef.current = sendWithFiller;
   }, [sendWithFiller]);
-
-  useEffect(() => {
-    navigation.setOptions({
-      title: isValidConversation ? chatHeaderTitle : t('chatTitle')
-    });
-  }, [chatHeaderTitle, isValidConversation, navigation]);
 
   useEffect(() => {
     if (!shouldUseVoiceFiller || !currentConversation?.artistId) {
@@ -366,17 +359,17 @@ export default function ChatScreen() {
       testID="chat-screen"
       keyboardVerticalOffset={88}
     >
-      <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
-        <BackButton testID="chat-back" />
-      </View>
+      <ModeTopChipHeader
+        title={activeModeLabel}
+        subtitle={activeModeSubtitle}
+        iconEmoji={activeModeEmoji}
+        horizontalInset={headerHorizontalInset}
+        backTestID="chat-back"
+        chipTestID="chat-mode-chip"
+      />
       <View style={styles.container}>
         {isValidConversation ? (
           <>
-            <ThreadModeHeader
-              title={activeModeLabel}
-              subtitle={isPrimaryThread ? t('primaryThreadSubtitle') : activeMode?.description ?? ''}
-              testID="chat-thread-mode-header"
-            />
             <MessageList
               messages={messages}
               userDisplayName={userDisplayName}
@@ -437,10 +430,6 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 784,
     alignSelf: 'center'
-  },
-  topRow: {
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.xs
   },
   error: {
     color: theme.colors.error,

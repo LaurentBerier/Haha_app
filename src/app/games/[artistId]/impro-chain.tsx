@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { ChatInput } from '../../../components/chat/ChatInput';
 import { MessageList } from '../../../components/chat/MessageList';
-import { BackButton } from '../../../components/common/BackButton';
+import { ModeTopChipHeader } from '../../../components/common/ModeTopChipHeader';
 import { ScoreBar } from '../../../components/chat/ScoreBar';
 import { GameLaunchIntro } from '../../../components/games/GameLaunchIntro';
 import { GameResultPanel } from '../../../components/games/GameResultPanel';
@@ -427,6 +427,8 @@ export default function ImproChainScreen() {
   const artistId = params.artistId ?? '';
   const navigation = useNavigation();
   const headerHorizontalInset = useHeaderHorizontalInset();
+  const gameTitle = t('gameImproTitle');
+  const gameSubtitle = t('gameImproDescription');
   const [hasTypedDraft, setHasTypedDraft] = useState(false);
   const [improTailFollowSignal, setImproTailFollowSignal] = useState(0);
   const [selectedTheme, setSelectedTheme] = useState<ImproTheme | null>(null);
@@ -455,8 +457,8 @@ export default function ImproChainScreen() {
     artistId,
     artistName: artist?.name ?? null,
     gameType: 'impro-chain',
-    gameLabel: t('gameImproTitle'),
-    gameDescription: t('gameImproDescription'),
+    gameLabel: gameTitle,
+    gameDescription: gameSubtitle,
     enabled: Boolean(artist)
   });
 
@@ -701,12 +703,19 @@ export default function ImproChainScreen() {
   if (isIntroVisible) {
     return (
       <View style={styles.screen}>
-        <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
-          <BackButton testID="impro-back" onPress={handleBack} />
-        </View>
+        <ModeTopChipHeader
+          title={gameTitle}
+          subtitle={gameSubtitle}
+          iconEmoji="📖"
+          horizontalInset={headerHorizontalInset}
+          backTestID="impro-back"
+          onBackPress={handleBack}
+          chipTestID="impro-mode-chip"
+        />
         <GameLaunchIntro
-          title={t('gameImproTitle')}
-          subtitle={t('gameImproDescription')}
+          title={gameTitle}
+          subtitle={gameSubtitle}
+          showTitle={false}
           greetingText={greetingText}
           isLoading={isGreetingLoading}
           loadingLabel={t('gameLaunchGreetingLoading')}
@@ -720,9 +729,15 @@ export default function ImproChainScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
-        <BackButton testID="impro-back" onPress={handleBack} />
-      </View>
+      <ModeTopChipHeader
+        title={gameTitle}
+        subtitle={gameSubtitle}
+        iconEmoji="📖"
+        horizontalInset={headerHorizontalInset}
+        backTestID="impro-back"
+        onBackPress={handleBack}
+        chipTestID="impro-mode-chip"
+      />
       {showActiveGameView ? (
         <KeyboardAvoidingView
           behavior={Platform.select({ ios: 'padding', default: undefined })}
@@ -731,8 +746,6 @@ export default function ImproChainScreen() {
           testID="impro-screen"
         >
           <View style={styles.activeGameHeader}>
-            <Text style={styles.title}>{t('gameImproTitle')}</Text>
-            <Text style={styles.subtitle}>{t('gameImproDescription')}</Text>
             <ScoreBar />
             {game?.error ? <Text style={styles.errorText}>{game.error}</Text> : null}
           </View>
@@ -807,8 +820,6 @@ export default function ImproChainScreen() {
         </KeyboardAvoidingView>
       ) : (
         <ScrollView contentContainerStyle={styles.content} style={styles.scroll} testID="impro-screen">
-          <Text style={styles.title}>{t('gameImproTitle')}</Text>
-          <Text style={styles.subtitle}>{t('gameImproDescription')}</Text>
           <ScoreBar />
 
           {showLobby ? (
@@ -948,10 +959,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: theme.colors.background
   },
-  topRow: {
-    paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.xs
-  },
   scroll: {
     flex: 1
   },
@@ -962,16 +969,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.lg,
     paddingBottom: theme.spacing.xl * 2,
     gap: theme.spacing.sm
-  },
-  title: {
-    color: theme.colors.textPrimary,
-    fontSize: 23,
-    fontWeight: '800'
-  },
-  subtitle: {
-    color: theme.colors.textMuted,
-    fontSize: 13,
-    fontWeight: '700'
   },
   activeGameContainer: {
     flex: 1,
