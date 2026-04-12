@@ -36,8 +36,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   logoCompact: {
-    width: 28,
-    height: 28
+    width: 42,
+    aspectRatio: 1
   },
   logoRegular: {
     width: 132,

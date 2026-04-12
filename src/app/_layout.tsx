@@ -1,7 +1,6 @@
 import { Stack, router, usePathname, useSegments } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Image,
   Platform,
@@ -21,6 +20,7 @@ import { MODE_IDS } from '../config/constants';
 import { useAuth } from '../hooks/useAuth';
 import { useLayoutAuthGate } from '../hooks/useLayoutAuthGate';
 import { usePrimaryThreadCloudSync } from '../hooks/usePrimaryThreadCloudSync';
+import { useHeaderHorizontalInset } from '../hooks/useHeaderHorizontalInset';
 import { useVoiceConversation } from '../hooks/useVoiceConversation';
 import { useStorePersistence } from '../hooks/useStorePersistence';
 import { t } from '../i18n';
@@ -40,12 +40,13 @@ import {
 } from '../utils/routeRestore';
 import { findConversationById } from '../utils/conversationUtils';
 import cleanBackground from '../../assets/branding/Clean_BG.jpg';
-import neonTitleMark from '../../assets/branding/logo-neon-Trans.png';
+import neonTitleMark from '../../assets/branding/logo-simple-neon-Trans.png';
 
 type AccountMenuRoute = '/settings' | '/settings/subscription' | '/stats' | '/admin' | '/history';
 const WEB_BACKGROUND_MIN_HEIGHT_VH = 100;
 const WEB_BACKGROUND_MAX_HEIGHT_VH = 170;
 const WEB_RESUME_ROUTE_RESTORE_FLAG_KEY = 'ha-ha:web-resume-route-restore:v1';
+const WEB_NATIVE_HEADER_EDGE_PADDING = 16;
 
 function resolveArtistIdFromPath(pathname: string): string | null {
   const match = pathname.match(/^\/(?:mode-select|games)\/([^/]+)/);
@@ -81,7 +82,6 @@ export default function RootLayout() {
   const segments = useSegments();
   const segmentList = segments as readonly string[];
   const pathname = usePathname();
-  const insets = useSafeAreaInsets();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [hasTypedGlobalDraft, setHasTypedGlobalDraft] = useState(false);
@@ -157,16 +157,11 @@ export default function RootLayout() {
     Math.min(WEB_BACKGROUND_MAX_HEIGHT_VH, requiredFillHeightVh)
   );
   const webBackgroundSize = `auto ${webBackgroundHeightVh.toFixed(1)}vh`;
-  const headerContentMaxWidth = 680;
-  const headerHorizontalInset =
-    Platform.OS === 'web'
-      ? Math.max(theme.spacing.md, (viewportWidth - headerContentMaxWidth) / 2 + theme.spacing.md)
-      : theme.spacing.md;
-  const floatingHeaderTop = Platform.select({
-    web: theme.spacing.md,
-    ios: insets.top + 6,
-    default: Math.max(insets.top, theme.spacing.sm) + 6
-  }) ?? theme.spacing.md;
+  const headerHorizontalInset = useHeaderHorizontalInset();
+  const webHeaderInnerOffset =
+    Platform.OS === 'web' ? Math.max(0, headerHorizontalInset - WEB_NATIVE_HEADER_EDGE_PADDING) : 0;
+  const accountMenuHorizontalInset =
+    Platform.OS === 'web' ? WEB_NATIVE_HEADER_EDGE_PADDING + webHeaderInnerOffset : headerHorizontalInset;
   const nativeBackgroundHeight = Math.max(viewportHeight, 1);
   const nativeBackgroundWidth = nativeBackgroundHeight * imageAspectRatio;
   const nativeBackgroundLeft = (viewportWidth - nativeBackgroundWidth) / 2;
@@ -661,8 +656,45 @@ export default function RootLayout() {
                       )
                     : undefined,
                   headerShadowVisible: false,
-                  headerLeft: () => null,
-                  headerRight: () => null
+                  headerLeft: showFloatingHeaderControls
+                    ? () => (
+                        <Pressable
+                          onPress={navigateArtistModeSelect}
+                          style={({ pressed }) => [
+                            styles.headerBrandButton,
+                            Platform.OS === 'web' ? { marginLeft: webHeaderInnerOffset } : null,
+                            pressed ? styles.headerPressed : null
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityLabel="header-artist-mode-select-button"
+                          testID="header-home-button"
+                          hitSlop={10}
+                        >
+                          <BrandMark compact />
+                        </Pressable>
+                      )
+                    : () => null,
+                  headerRight: showFloatingHeaderControls
+                    ? () => (
+                        <Pressable
+                          onPress={toggleAccountMenu}
+                          style={({ pressed }) => [
+                            styles.headerMenuButton,
+                            Platform.OS === 'web' ? { marginRight: webHeaderInnerOffset } : null,
+                            pressed ? styles.headerPressed : null
+                          ]}
+                          accessibilityRole="button"
+                          testID="header-menu-button"
+                          hitSlop={10}
+                        >
+                          <View style={styles.menuBarsStack}>
+                            <View style={styles.menuBar} />
+                            <View style={styles.menuBar} />
+                            <View style={styles.menuBar} />
+                          </View>
+                        </Pressable>
+                      )
+                    : () => null
                 }}
               >
                 <Stack.Screen name="(auth)" options={{ headerShown: false }} />
@@ -745,35 +777,6 @@ export default function RootLayout() {
                 <Stack.Screen name="stats/index" options={{ title: t('settingsStats') }} />
                 <Stack.Screen name="admin" options={{ headerShown: false }} />
               </Stack>
-              {showFloatingHeaderControls ? (
-                <View pointerEvents="box-none" style={[styles.floatingHeaderControls, { top: floatingHeaderTop }]}>
-                  <View style={[styles.floatingHeaderControlsRow, { paddingHorizontal: headerHorizontalInset }]}>
-                    <Pressable
-                      onPress={navigateArtistModeSelect}
-                      style={({ pressed }) => [styles.headerBrandButton, pressed ? styles.headerPressed : null]}
-                      accessibilityRole="button"
-                      accessibilityLabel="header-artist-mode-select-button"
-                      testID="header-home-button"
-                      hitSlop={10}
-                    >
-                      <BrandMark compact />
-                    </Pressable>
-                    <Pressable
-                      onPress={toggleAccountMenu}
-                      style={({ pressed }) => [styles.headerMenuButton, pressed ? styles.headerPressed : null]}
-                      accessibilityRole="button"
-                      testID="header-menu-button"
-                      hitSlop={10}
-                    >
-                      <View style={styles.menuBarsStack}>
-                        <View style={styles.menuBar} />
-                        <View style={styles.menuBar} />
-                        <View style={styles.menuBar} />
-                      </View>
-                    </Pressable>
-                  </View>
-                </View>
-              ) : null}
               <GlobalChatInput
                 visible={showGlobalChatInput}
                 disabled={globalInputDisabled}
@@ -799,7 +802,7 @@ export default function RootLayout() {
                 isAuthenticated={isAuthenticated}
                 authMenuLabel={authMenuLabel}
                 items={accountMenuItems}
-                headerHorizontalInset={headerHorizontalInset}
+                headerHorizontalInset={accountMenuHorizontalInset}
                 onClose={closeAccountMenu}
                 onNavigate={(route) => {
                   navigateFromAccountMenu(route as AccountMenuRoute);
@@ -849,21 +852,12 @@ const styles = StyleSheet.create({
     maxWidth: 784,
     alignSelf: 'center'
   },
-  floatingHeaderControls: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 20
-  },
-  floatingHeaderControlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between'
-  },
   headerMenuButton: {
     borderWidth: 0,
     borderColor: 'transparent',
     backgroundColor: 'transparent',
+    width: 42,
+    height: 42,
     padding: 0,
     alignItems: 'center',
     justifyContent: 'center',
@@ -877,7 +871,11 @@ const styles = StyleSheet.create({
     borderWidth: 0,
     borderColor: 'transparent',
     backgroundColor: 'transparent',
+    width: 42,
+    height: 42,
     padding: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: 'transparent',
     shadowOpacity: 0,
     shadowRadius: 0,
@@ -898,8 +896,8 @@ const styles = StyleSheet.create({
   headerArtistPickerButton: {
     backgroundColor: 'transparent',
     borderRadius: 999,
-    width: 74,
-    height: 42,
+    width: 160,
+    height: 46,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'visible'
