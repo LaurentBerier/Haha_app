@@ -84,10 +84,19 @@ export function useStorePersistence(): void {
       flushSnapshot();
     };
 
-    if (typeof document !== 'undefined') {
+    const canUseDocumentVisibilityEvents =
+      typeof document !== 'undefined' &&
+      typeof document.addEventListener === 'function' &&
+      typeof document.removeEventListener === 'function';
+    const canUseWindowPageHideEvents =
+      typeof window !== 'undefined' &&
+      typeof window.addEventListener === 'function' &&
+      typeof window.removeEventListener === 'function';
+
+    if (canUseDocumentVisibilityEvents) {
       document.addEventListener('visibilitychange', handleVisibilityChange);
     }
-    if (typeof window !== 'undefined') {
+    if (canUseWindowPageHideEvents) {
       window.addEventListener('pagehide', handlePageHide);
     }
 
@@ -100,10 +109,10 @@ export function useStorePersistence(): void {
       }
       const snapshot = selectPersistedSnapshot(useStore.getState());
       void savePersistedSnapshot(snapshot);
-      if (typeof document !== 'undefined') {
+      if (canUseDocumentVisibilityEvents) {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       }
-      if (typeof window !== 'undefined') {
+      if (canUseWindowPageHideEvents) {
         window.removeEventListener('pagehide', handlePageHide);
       }
     };

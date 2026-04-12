@@ -60,5 +60,28 @@ target 'HaHaai' do
         end
       end
     end
+
+    # Xcode 26.x + fmt 11 may fail to compile consteval format strings in some environments.
+    # Keep the workaround scoped to fmt only.
+    installer.pods_project.targets.each do |target|
+      next unless target.name == 'fmt'
+
+      target.build_configurations.each do |config|
+        config.build_settings['CLANG_CXX_LANGUAGE_STANDARD'] = 'gnu++17'
+        existing_flags = config.build_settings['OTHER_CPLUSPLUSFLAGS']
+        normalized_flags = if existing_flags.nil?
+          ['$(inherited)']
+        elsif existing_flags.is_a?(Array)
+          existing_flags
+        else
+          [existing_flags]
+        end
+
+        unless normalized_flags.any? { |flag| flag.to_s.include?('FMT_USE_CONSTEXPR=0') }
+          normalized_flags << '-DFMT_USE_CONSTEXPR=0'
+        end
+        config.build_settings['OTHER_CPLUSPLUSFLAGS'] = normalized_flags
+      end
+    end
   end
 end

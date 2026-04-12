@@ -9,6 +9,23 @@ jest.mock('./ttsService', () => ({
   fetchAndCacheVoice: jest.fn()
 }));
 
+jest.mock('expo-constants', () => ({
+  __esModule: true,
+  default: {
+    executionEnvironment: 'bare',
+    appOwnership: null
+  },
+  ExecutionEnvironment: {
+    Bare: 'bare',
+    Standalone: 'standalone',
+    StoreClient: 'storeClient'
+  }
+}));
+
+jest.mock('expo', () => ({
+  requireOptionalNativeModule: jest.fn(() => null)
+}));
+
 import { startVoiceListeningSession } from './voiceEngine';
 
 class MockSpeechRecognition {

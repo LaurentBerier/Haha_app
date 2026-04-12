@@ -37,7 +37,8 @@
         {
           "locationWhenInUsePermission": "Ha-Ha.ai uses your location to personalize Cathy's greeting with local weather."
         }
-      ]
+      ],
+      "@sentry/react-native"
     ],
     "experiments": {
       "typedRoutes": true

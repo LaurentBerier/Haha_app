@@ -1,4 +1,6 @@
 import { Platform } from 'react-native';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
+import { requireOptionalNativeModule } from 'expo';
 import { fetchAndCacheVoice, type FetchVoiceOptions } from './ttsService';
 
 type Listener = { remove: () => void };
@@ -146,12 +148,21 @@ function getSpeechRecognitionModule(): SpeechRecognitionModule | null {
     return cachedModule;
   }
 
+  if (
+    Constants.executionEnvironment === ExecutionEnvironment.StoreClient ||
+    Constants.appOwnership === 'expo'
+  ) {
+    cachedModule = null;
+    if (!hasLoggedMissingNativeSpeechModule) {
+      hasLoggedMissingNativeSpeechModule = true;
+      console.warn('[voiceEngine] ExpoSpeechRecognition is unavailable in Expo Go. Use a development build.');
+    }
+    return cachedModule;
+  }
+
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const loaded = require('expo-speech-recognition') as { ExpoSpeechRecognitionModule?: unknown };
-    cachedModule = hasRequiredNativeSpeechModuleApi(loaded?.ExpoSpeechRecognitionModule)
-      ? loaded.ExpoSpeechRecognitionModule
-      : null;
+    const loaded = requireOptionalNativeModule<unknown>('ExpoSpeechRecognition');
+    cachedModule = hasRequiredNativeSpeechModuleApi(loaded) ? loaded : null;
     if (!cachedModule && !hasLoggedMissingNativeSpeechModule) {
       hasLoggedMissingNativeSpeechModule = true;
       console.warn('[voiceEngine] ExpoSpeechRecognition native module is missing in this build.');
@@ -162,7 +173,7 @@ function getSpeechRecognitionModule(): SpeechRecognitionModule | null {
       hasLoggedMissingNativeSpeechModule = true;
       const reason =
         error instanceof Error ? error.message : typeof error === 'string' ? error : 'unknown error';
-      console.warn('[voiceEngine] Unable to load expo-speech-recognition module:', reason);
+      console.warn('[voiceEngine] Unable to load ExpoSpeechRecognition native module:', reason);
     }
   }
 
@@ -410,21 +421,27 @@ function extractWebTranscript(event: WebSpeechRecognitionEvent): string {
 }
 
 export async function requestVoicePermission(): Promise<boolean> {
-  if (Platform.OS === 'web') {
-    return Boolean(getWebSpeechRecognitionCtor());
-  }
+  try {
+    if (Platform.OS === 'web') {
+      return Boolean(getWebSpeechRecognitionCtor());
+    }
 
-  const module = getSpeechRecognitionModule();
-  if (module) {
-    try {
+    const module = getSpeechRecognitionModule();
+    if (module) {
       const result = await module.requestPermissionsAsync();
       return result.granted;
-    } catch {
-      return false;
     }
-  }
 
-  return false;
+    return false;
+  } catch (error) {
+    if (!hasLoggedMissingNativeSpeechModule) {
+      hasLoggedMissingNativeSpeechModule = true;
+      const reason =
+        error instanceof Error ? error.message : typeof error === 'string' ? error : 'unknown error';
+      console.warn('[voiceEngine] Voice permission unavailable because speech module failed to initialize:', reason);
+    }
+    return false;
+  }
 }
 
 export function startVoiceListeningSession({
