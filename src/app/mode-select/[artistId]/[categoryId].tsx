@@ -38,6 +38,7 @@ export default function ModeCategoryScreen() {
   }, [categoryIdParam]);
 
   const categoryTitle = categoryId ? t(MODE_CATEGORY_META[categoryId].labelKey) : t('modeSelectTitle');
+  const isLeLabCategory = categoryId === 'experiences';
 
   useEffect(() => {
     navigation.setOptions({ title: categoryTitle });
@@ -99,15 +100,25 @@ export default function ModeCategoryScreen() {
       <AmbientGlow variant="mode" />
       <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
         <BackButton testID="mode-category-back" />
+        {isLeLabCategory ? (
+          <View pointerEvents="none" style={styles.topRowLeLabWrap}>
+            <View style={styles.leLabChip}>
+              <Image source={MODE_CATEGORY_META.experiences.icon} style={styles.leLabChipIcon} resizeMode="contain" />
+              <Text style={styles.leLabChipTitle}>{categoryTitle}</Text>
+            </View>
+          </View>
+        ) : null}
       </View>
       <ScrollView testID="mode-category-screen" style={styles.list} contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <View style={styles.titleRow}>
-            <Image source={MODE_CATEGORY_META[categoryId].icon} style={styles.titleIcon} resizeMode="contain" />
-            <Text style={styles.title}>{categoryTitle}</Text>
+        {isLeLabCategory ? null : (
+          <View style={styles.header}>
+            <View style={styles.titleRow}>
+              <Image source={MODE_CATEGORY_META[categoryId].icon} style={styles.titleIcon} resizeMode="contain" />
+              <Text style={styles.title}>{categoryTitle}</Text>
+            </View>
+            <Text style={styles.subtitle}>{artist.name}</Text>
           </View>
-          <Text style={styles.subtitle}>{artist.name}</Text>
-        </View>
+        )}
 
         {categoryId === 'profile' ? (
           <View style={styles.profileActionGroup}>
@@ -183,9 +194,36 @@ const styles = StyleSheet.create({
     flex: 1
   },
   topRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
     paddingHorizontal: theme.spacing.md,
     paddingTop: theme.spacing.sm,
-    paddingBottom: theme.spacing.xs
+    paddingBottom: theme.spacing.sm
+  },
+  topRowLeLabWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0
+  },
+  leLabChip: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: theme.spacing.xs,
+    minHeight: 44,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: 4
+  },
+  leLabChipIcon: {
+    height: 36,
+    width: 36
+  },
+  leLabChipTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 20,
+    fontWeight: '800'
   },
   content: {
     padding: theme.spacing.md,
