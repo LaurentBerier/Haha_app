@@ -3,11 +3,17 @@ type NativeListener = (event?: { results?: Array<{ transcript?: string }>; messa
 function loadNativeVoiceEngine({
   os = 'ios',
   version = '17.0',
-  isRecognitionAvailable = true
+  isRecognitionAvailable = true,
+  executionEnvironment = 'bare',
+  appOwnership = null as string | null,
+  nativeModuleMode = 'available'
 }: {
   os?: 'ios' | 'android';
   version?: string | number;
   isRecognitionAvailable?: boolean;
+  executionEnvironment?: 'bare' | 'standalone' | 'storeClient';
+  appOwnership?: string | null;
+  nativeModuleMode?: 'available' | 'missing' | 'throws';
 } = {}) {
   jest.resetModules();
 
@@ -37,8 +43,29 @@ function loadNativeVoiceEngine({
     fetchAndCacheVoice: jest.fn()
   }));
 
-  jest.doMock('expo-speech-recognition', () => ({
-    ExpoSpeechRecognitionModule: nativeModule
+  jest.doMock('expo-constants', () => ({
+    __esModule: true,
+    default: {
+      executionEnvironment,
+      appOwnership
+    },
+    ExecutionEnvironment: {
+      Bare: 'bare',
+      Standalone: 'standalone',
+      StoreClient: 'storeClient'
+    }
+  }));
+
+  jest.doMock('expo', () => ({
+    requireOptionalNativeModule: jest.fn(() => {
+      if (nativeModuleMode === 'available') {
+        return nativeModule;
+      }
+      if (nativeModuleMode === 'throws') {
+        throw new Error("Cannot find native module 'ExpoSpeechRecognition'");
+      }
+      return null;
+    })
   }));
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -111,5 +138,23 @@ describe('voiceEngine native behavior', () => {
         addsPunctuation: false
       })
     );
+  });
+
+  it('returns false instead of throwing when the native speech module cannot be loaded', async () => {
+    const { voiceEngine } = loadNativeVoiceEngine({
+      nativeModuleMode: 'throws'
+    });
+
+    await expect(voiceEngine.requestVoicePermission()).resolves.toBe(false);
+  });
+
+  it('does not attempt loading native speech recognition while running in Expo Go', async () => {
+    const { voiceEngine } = loadNativeVoiceEngine({
+      executionEnvironment: 'storeClient',
+      appOwnership: 'expo',
+      nativeModuleMode: 'throws'
+    });
+
+    await expect(voiceEngine.requestVoicePermission()).resolves.toBe(false);
   });
 });

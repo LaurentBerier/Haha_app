@@ -648,17 +648,27 @@ module.exports = async function handler(req, res) {
   }
 
   if (!upstreamResponse.ok) {
-    if (upstreamResponse.status === 402 || upstreamResponse.status === 429) {
-      sendError(res, 429, 'Voice quota exceeded.', { code: 'TTS_QUOTA_EXCEEDED', requestId });
-      return;
-    }
-
     if (!providerPayload) {
       try {
         providerPayload = await upstreamResponse.text();
       } catch {
         providerPayload = '';
       }
+    }
+
+    const isUpstreamQuotaExhausted =
+      upstreamResponse.status === 402 ||
+      upstreamResponse.status === 429 ||
+      (upstreamResponse.status === 401 && providerPayload.includes('quota_exceeded'));
+
+    if (isUpstreamQuotaExhausted) {
+      console.error(`[api/tts][${requestId}] ElevenLabs quota exhausted (${upstreamResponse.status})`, {
+        providerPayload: providerPayload || '(empty body)',
+        modelId,
+        voiceId
+      });
+      sendError(res, 429, 'Voice quota exceeded.', { code: 'TTS_QUOTA_EXCEEDED', requestId });
+      return;
     }
 
     console.error(`[api/tts][${requestId}] ElevenLabs returned ${upstreamResponse.status}`, {
