@@ -49,9 +49,9 @@ describe('root layout route registration', () => {
     const layoutPath = path.resolve(__dirname, '../app/_layout.tsx');
     const layoutSource = fs.readFileSync(layoutPath, 'utf8');
 
-    expect(layoutSource).toContain(
-      'const headerNavigationArtistId = routeArtistId ?? activeConversationArtistId ?? selectedArtistId ?? null;'
-    );
+    expect(layoutSource).toContain('const headerNavigationArtistId = useMemo(() => {');
+    expect(layoutSource).toContain('if (routeArtistId) {');
+    expect(layoutSource).toContain('if (isChatRoute && activeConversationArtistId) {');
     expect(layoutSource).toContain("pathname: '/mode-select/[artistId]'");
     expect(layoutSource).toContain('router.replace(\'/\');');
     expect(layoutSource).toContain('testID="header-artist-picker-button"');
