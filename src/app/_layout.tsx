@@ -633,10 +633,8 @@ export default function RootLayout() {
               <Stack
                 screenOptions={{
                   headerStyle: {
-                    backgroundColor: theme.colors.background,
-                    blurEffect: 'none'
+                    backgroundColor: theme.colors.background
                   },
-                  headerTranslucent: false,
                   scrollEdgeEffects: { top: 'hidden', bottom: 'hidden', left: 'hidden', right: 'hidden' },
                   headerTintColor: theme.colors.textPrimary,
                   contentStyle: { backgroundColor: theme.colors.background },

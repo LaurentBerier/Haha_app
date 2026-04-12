@@ -25,7 +25,7 @@ const BAR_COLORS = [
 ] as const;
 
 function resolveWaveBarColor(index: number): string {
-  return BAR_COLORS[index % BAR_COLORS.length];
+  return BAR_COLORS[index % BAR_COLORS.length] ?? NEON_ROSE;
 }
 
 function WaveformButtonBase({ isPlaying, isLoading, onPress, disabled = false, testID }: WaveformButtonProps) {
