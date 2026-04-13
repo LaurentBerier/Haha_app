@@ -1,12 +1,27 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { Link, router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableWithoutFeedback,
+  View
+} from 'react-native';
 import { t } from '../../i18n';
 import { signInWithApple, signUpWithEmail } from '../../services/authService';
 import { theme } from '../../theme';
 
 export default function SignupScreen() {
+  const emailKeyboardType: 'email-address' | 'ascii-capable' =
+    Platform.OS === 'ios' ? 'ascii-capable' : 'email-address';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -82,89 +97,133 @@ export default function SignupScreen() {
 
   if (showVerifyMessage) {
     return (
-      <View style={styles.screen} testID="signup-screen">
-        <Text style={styles.title}>{t('signupVerifyEmailTitle')}</Text>
-        <Text style={styles.subtitle}>{t('signupVerifyEmailBody')}</Text>
-        <Link href="/(auth)/login" asChild>
-          <Pressable>
-            <Text style={styles.link}>{t('signupBackToLogin')}</Text>
-          </Pressable>
-        </Link>
-      </View>
+      <KeyboardAvoidingView
+        behavior={Platform.select({ ios: 'padding', default: undefined })}
+        style={styles.screen}
+      >
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.form} testID="signup-screen">
+              <Text style={styles.title}>{t('signupVerifyEmailTitle')}</Text>
+              <Text style={styles.subtitle}>{t('signupVerifyEmailBody')}</Text>
+              <Link href="/(auth)/login" asChild>
+                <Pressable>
+                  <Text style={styles.link}>{t('signupBackToLogin')}</Text>
+                </Pressable>
+              </Link>
+            </View>
+          </ScrollView>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     );
   }
 
   return (
-    <View style={styles.screen} testID="signup-screen">
-      <Text style={styles.title}>{t('signupTitle')}</Text>
+    <KeyboardAvoidingView
+      behavior={Platform.select({ ios: 'padding', default: undefined })}
+      style={styles.screen}
+    >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.form} testID="signup-screen">
+            <Text style={styles.title}>{t('signupTitle')}</Text>
 
-      <TextInput
-        value={email}
-        onChangeText={setEmail}
-        placeholder={t('signupEmailPlaceholder')}
-        placeholderTextColor={theme.colors.textDisabled}
-        keyboardType="email-address"
-        autoCapitalize="none"
-        style={styles.input}
-      />
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              placeholder={t('signupEmailPlaceholder')}
+              placeholderTextColor={theme.colors.textDisabled}
+              keyboardType={emailKeyboardType}
+              inputMode="email"
+              textContentType="emailAddress"
+              autoComplete="email"
+              autoCapitalize="none"
+              autoCorrect={false}
+              spellCheck={false}
+              style={styles.input}
+            />
 
-      <TextInput
-        value={password}
-        onChangeText={setPassword}
-        placeholder={t('signupPasswordPlaceholder')}
-        placeholderTextColor={theme.colors.textDisabled}
-        secureTextEntry
-        style={styles.input}
-      />
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder={t('signupPasswordPlaceholder')}
+              placeholderTextColor={theme.colors.textDisabled}
+              secureTextEntry
+              style={styles.input}
+            />
 
-      <TextInput
-        value={confirmPassword}
-        onChangeText={setConfirmPassword}
-        placeholder={t('signupConfirmPasswordPlaceholder')}
-        placeholderTextColor={theme.colors.textDisabled}
-        secureTextEntry
-        style={styles.input}
-      />
+            <TextInput
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder={t('signupConfirmPasswordPlaceholder')}
+              placeholderTextColor={theme.colors.textDisabled}
+              secureTextEntry
+              style={styles.input}
+            />
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+            {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <Pressable
-        style={[styles.button, isSubmitting && styles.buttonDisabled]}
-        onPress={onSubmit}
-        disabled={isSubmitting || !email.trim() || !password || !confirmPassword}
-      >
-        {isSubmitting ? (
-          <ActivityIndicator color={theme.colors.textPrimary} />
-        ) : (
-          <Text style={styles.buttonLabel}>{t('signupSubmit')}</Text>
-        )}
-      </Pressable>
+            <Pressable
+              style={[styles.button, isSubmitting && styles.buttonDisabled]}
+              onPress={onSubmit}
+              disabled={isSubmitting || !email.trim() || !password || !confirmPassword}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color={theme.colors.textPrimary} />
+              ) : (
+                <Text style={styles.buttonLabel}>{t('signupSubmit')}</Text>
+              )}
+            </Pressable>
 
-      {appleAvailable ? (
-        <AppleAuthentication.AppleAuthenticationButton
-          buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP}
-          buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
-          cornerRadius={12}
-          style={styles.appleButton}
-          onPress={onApple}
-        />
-      ) : null}
+            {appleAvailable ? (
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+                cornerRadius={12}
+                style={styles.appleButton}
+                onPress={onApple}
+              />
+            ) : null}
 
-      <Link href="/(auth)/login" asChild>
-        <Pressable>
-          <Text style={styles.link}>{t('signupAlreadyHaveAccount')}</Text>
-        </Pressable>
-      </Link>
-    </View>
+            <Link href="/(auth)/login" asChild>
+              <Pressable>
+                <Text style={styles.link}>{t('signupAlreadyHaveAccount')}</Text>
+              </Pressable>
+            </Link>
+          </View>
+        </ScrollView>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+    backgroundColor: theme.colors.background
+  },
+  scroll: {
+    flex: 1
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
     paddingHorizontal: theme.spacing.xl,
-    backgroundColor: theme.colors.background,
+    paddingVertical: theme.spacing.xl
+  },
+  form: {
     gap: theme.spacing.md
   },
   title: {

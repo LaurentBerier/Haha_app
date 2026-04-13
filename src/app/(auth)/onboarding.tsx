@@ -1,6 +1,19 @@
 import { router } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Animated, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Animated,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableWithoutFeedback,
+  View
+} from 'react-native';
 import {
   HOROSCOPE_OPTIONS,
   INTEREST_OPTIONS,
@@ -258,216 +271,233 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.screen} testID="onboarding-screen">
-      <Text style={styles.progress}>{progress}</Text>
-      <View style={styles.progressBar}>
-        {Array.from({ length: TOTAL_STEPS }).map((_, index) => {
-          const isDone = index < step;
-          const isActive = index === step;
-          return (
-            <View
-              key={`progress-${index}`}
-              style={[styles.progressSegment, isDone ? styles.progressSegmentDone : null, isActive ? styles.progressSegmentActive : null]}
-            />
-          );
-        })}
-      </View>
-      <Text style={styles.title}>Personnalisation</Text>
-      {step === 0 ? (
-        <Text style={styles.privacy}>
-          Ces questions nous permettent de personnaliser ton expérience avec Cathy. Tes réponses ne seront jamais partagées avec des tiers.
-        </Text>
-      ) : null}
-      {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+    <KeyboardAvoidingView
+      behavior={Platform.select({ ios: 'padding', default: undefined })}
+      style={styles.screenWrapper}
+    >
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+        <ScrollView
+          contentContainerStyle={styles.screen}
+          testID="onboarding-screen"
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.progress}>{progress}</Text>
+          <View style={styles.progressBar}>
+            {Array.from({ length: TOTAL_STEPS }).map((_, index) => {
+              const isDone = index < step;
+              const isActive = index === step;
+              return (
+                <View
+                  key={`progress-${index}`}
+                  style={[styles.progressSegment, isDone ? styles.progressSegmentDone : null, isActive ? styles.progressSegmentActive : null]}
+                />
+              );
+            })}
+          </View>
+          <Text style={styles.title}>Personnalisation</Text>
+          {step === 0 ? (
+            <Text style={styles.privacy}>
+              Ces questions nous permettent de personnaliser ton expérience avec Cathy. Tes réponses ne seront jamais partagées avec des tiers.
+            </Text>
+          ) : null}
+          {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
 
-      {step === 0 ? (
-        <View style={styles.stepBlock}>
-          <Text style={styles.question}>{t('onboardingPreferredNameQuestion')}</Text>
-          <TextInput
-            value={preferredNameInput}
-            onChangeText={(value) => {
-              setPreferredNameInput(value);
-              if (preferredNameError) {
-                setPreferredNameError(null);
-              }
-            }}
-            placeholder={t('onboardingPreferredNamePlaceholder')}
-            placeholderTextColor={theme.colors.textDisabled}
-            style={styles.input}
-            maxLength={40}
-            autoCapitalize="words"
-          />
-          {preferredNameError ? <Text style={styles.errorText}>{preferredNameError}</Text> : null}
-          <Pressable
-            style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
-            onPress={onPreferredNameNext}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? <ActivityIndicator color={theme.colors.textPrimary} /> : <Text style={styles.primaryLabel}>Continuer</Text>}
-          </Pressable>
-        </View>
-      ) : null}
-
-      {step === 1 ? (
-        <View style={styles.stepBlock}>
-          <Text style={styles.question}>Quel est ton âge ?</Text>
-          <TextInput
-            value={ageInput}
-            onChangeText={(value) => {
-              setAgeInput(value);
-              if (ageError) {
-                setAgeError(null);
-              }
-            }}
-            keyboardType="number-pad"
-            placeholder="Ex: 28"
-            placeholderTextColor={theme.colors.textDisabled}
-            style={styles.input}
-          />
-          {ageError ? <Text style={styles.errorText}>{ageError}</Text> : null}
-          <Pressable
-            style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
-            onPress={onAgeNext}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? <ActivityIndicator color={theme.colors.textPrimary} /> : <Text style={styles.primaryLabel}>Continuer</Text>}
-          </Pressable>
-        </View>
-      ) : null}
-
-      {step === 2 ? (
-        <View style={styles.stepBlock}>
-          <Text style={styles.question}>Comment tu te identifies ?</Text>
-          <Animated.View style={[styles.optionsWrap, { transform: [{ scale: optionPulse }] }]}>
-            {SEX_OPTIONS.map((option) => (
-              <Pressable
-                key={option.value}
-                style={[styles.optionButton, answers.sex === option.value && styles.optionButtonSelected]}
-                onPress={() => {
-                  if (isSubmitting) {
-                    return;
+          {step === 0 ? (
+            <View style={styles.stepBlock}>
+              <Text style={styles.question}>{t('onboardingPreferredNameQuestion')}</Text>
+              <TextInput
+                value={preferredNameInput}
+                onChangeText={(value) => {
+                  setPreferredNameInput(value);
+                  if (preferredNameError) {
+                    setPreferredNameError(null);
                   }
-                  animateOptionSelection();
-                  setAnswers((prev) => ({ ...prev, sex: option.value }));
-                  goNext();
                 }}
+                placeholder={t('onboardingPreferredNamePlaceholder')}
+                placeholderTextColor={theme.colors.textDisabled}
+                style={styles.input}
+                maxLength={40}
+                autoCapitalize="words"
+              />
+              {preferredNameError ? <Text style={styles.errorText}>{preferredNameError}</Text> : null}
+              <Pressable
+                style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
+                onPress={onPreferredNameNext}
                 disabled={isSubmitting}
               >
-                <Text style={styles.optionLabel}>{option.label}</Text>
+                {isSubmitting ? <ActivityIndicator color={theme.colors.textPrimary} /> : <Text style={styles.primaryLabel}>Continuer</Text>}
               </Pressable>
-            ))}
-          </Animated.View>
-        </View>
-      ) : null}
+            </View>
+          ) : null}
 
-      {step === 3 ? (
-        <View style={styles.stepBlock}>
-          <Text style={styles.question}>Ton statut amoureux ?</Text>
-          <Animated.View style={[styles.optionsWrap, { transform: [{ scale: optionPulse }] }]}>
-            {RELATIONSHIP_OPTIONS.map((option) => (
-              <Pressable
-                key={option.value}
-                style={[
-                  styles.optionButton,
-                  answers.relationshipStatus === option.value && styles.optionButtonSelected
-                ]}
-                onPress={() => {
-                  if (isSubmitting) {
-                    return;
+          {step === 1 ? (
+            <View style={styles.stepBlock}>
+              <Text style={styles.question}>Quel est ton âge ?</Text>
+              <TextInput
+                value={ageInput}
+                onChangeText={(value) => {
+                  setAgeInput(value);
+                  if (ageError) {
+                    setAgeError(null);
                   }
-                  animateOptionSelection();
-                  setAnswers((prev) => ({ ...prev, relationshipStatus: option.value }));
-                  goNext();
                 }}
-                disabled={isSubmitting}
-              >
-                <Text style={styles.optionLabel}>{option.label}</Text>
-              </Pressable>
-            ))}
-          </Animated.View>
-        </View>
-      ) : null}
-
-      {step === 4 ? (
-        <View style={styles.stepBlock}>
-          <Text style={styles.question}>Ton signe astrologique ?</Text>
-          <Animated.View style={[styles.gridWrap, { transform: [{ scale: optionPulse }] }]}>
-            {HOROSCOPE_OPTIONS.map((option) => (
+                keyboardType="number-pad"
+                placeholder="Ex: 28"
+                placeholderTextColor={theme.colors.textDisabled}
+                style={styles.input}
+              />
+              {ageError ? <Text style={styles.errorText}>{ageError}</Text> : null}
               <Pressable
-                key={option.value}
-                style={[
-                  styles.gridButton,
-                  answers.horoscopeSign === option.value && styles.optionButtonSelected
-                ]}
-                onPress={() => {
-                  if (isSubmitting) {
-                    return;
-                  }
-                  animateOptionSelection();
-                  setAnswers((prev) => ({ ...prev, horoscopeSign: option.value }));
-                  goNext();
-                }}
+                style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
+                onPress={onAgeNext}
                 disabled={isSubmitting}
               >
-                <Text style={styles.optionLabel}>{option.label}</Text>
+                {isSubmitting ? <ActivityIndicator color={theme.colors.textPrimary} /> : <Text style={styles.primaryLabel}>Continuer</Text>}
               </Pressable>
-            ))}
-          </Animated.View>
-        </View>
-      ) : null}
+            </View>
+          ) : null}
 
-      {step === 5 ? (
-        <View style={styles.stepBlock}>
-          <Text style={styles.question}>Tes centres d'intérêt ?</Text>
-          <Animated.View style={[styles.optionsWrap, { transform: [{ scale: optionPulse }] }]}>
-            {INTEREST_OPTIONS.map((interest) => (
+          {step === 2 ? (
+            <View style={styles.stepBlock}>
+              <Text style={styles.question}>Comment tu te identifies ?</Text>
+              <Animated.View style={[styles.optionsWrap, { transform: [{ scale: optionPulse }] }]}>
+                {SEX_OPTIONS.map((option) => (
+                  <Pressable
+                    key={option.value}
+                    style={[styles.optionButton, answers.sex === option.value && styles.optionButtonSelected]}
+                    onPress={() => {
+                      if (isSubmitting) {
+                        return;
+                      }
+                      animateOptionSelection();
+                      setAnswers((prev) => ({ ...prev, sex: option.value }));
+                      goNext();
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    <Text style={styles.optionLabel}>{option.label}</Text>
+                  </Pressable>
+                ))}
+              </Animated.View>
+            </View>
+          ) : null}
+
+          {step === 3 ? (
+            <View style={styles.stepBlock}>
+              <Text style={styles.question}>Ton statut amoureux ?</Text>
+              <Animated.View style={[styles.optionsWrap, { transform: [{ scale: optionPulse }] }]}>
+                {RELATIONSHIP_OPTIONS.map((option) => (
+                  <Pressable
+                    key={option.value}
+                    style={[
+                      styles.optionButton,
+                      answers.relationshipStatus === option.value && styles.optionButtonSelected
+                    ]}
+                    onPress={() => {
+                      if (isSubmitting) {
+                        return;
+                      }
+                      animateOptionSelection();
+                      setAnswers((prev) => ({ ...prev, relationshipStatus: option.value }));
+                      goNext();
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    <Text style={styles.optionLabel}>{option.label}</Text>
+                  </Pressable>
+                ))}
+              </Animated.View>
+            </View>
+          ) : null}
+
+          {step === 4 ? (
+            <View style={styles.stepBlock}>
+              <Text style={styles.question}>Ton signe astrologique ?</Text>
+              <Animated.View style={[styles.gridWrap, { transform: [{ scale: optionPulse }] }]}>
+                {HOROSCOPE_OPTIONS.map((option) => (
+                  <Pressable
+                    key={option.value}
+                    style={[
+                      styles.gridButton,
+                      answers.horoscopeSign === option.value && styles.optionButtonSelected
+                    ]}
+                    onPress={() => {
+                      if (isSubmitting) {
+                        return;
+                      }
+                      animateOptionSelection();
+                      setAnswers((prev) => ({ ...prev, horoscopeSign: option.value }));
+                      goNext();
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    <Text style={styles.optionLabel}>{option.label}</Text>
+                  </Pressable>
+                ))}
+              </Animated.View>
+            </View>
+          ) : null}
+
+          {step === 5 ? (
+            <View style={styles.stepBlock}>
+              <Text style={styles.question}>Tes centres d'intérêt ?</Text>
+              <Animated.View style={[styles.optionsWrap, { transform: [{ scale: optionPulse }] }]}>
+                {INTEREST_OPTIONS.map((interest) => (
+                  <Pressable
+                    key={interest}
+                    style={[
+                      styles.optionButton,
+                      answers.interests.includes(interest) && styles.optionButtonSelected
+                    ]}
+                    onPress={() => {
+                      animateOptionSelection();
+                      toggleInterest(interest);
+                    }}
+                    disabled={isSubmitting}
+                  >
+                    <Text style={styles.optionLabel}>{interest}</Text>
+                  </Pressable>
+                ))}
+              </Animated.View>
+
               <Pressable
-                key={interest}
-                style={[
-                  styles.optionButton,
-                  answers.interests.includes(interest) && styles.optionButtonSelected
-                ]}
-                onPress={() => {
-                  animateOptionSelection();
-                  toggleInterest(interest);
-                }}
+                style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
+                onPress={finishOnboarding}
                 disabled={isSubmitting}
               >
-                <Text style={styles.optionLabel}>{interest}</Text>
+                {isSubmitting ? (
+                  <ActivityIndicator color={theme.colors.textPrimary} />
+                ) : (
+                  <Text style={styles.primaryLabel}>Tout est prêt ! Bienvenue chez Ha-Ha.</Text>
+                )}
               </Pressable>
-            ))}
-          </Animated.View>
+            </View>
+          ) : null}
 
-          <Pressable
-            style={[styles.primaryButton, isSubmitting && styles.primaryButtonDisabled]}
-            onPress={finishOnboarding}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator color={theme.colors.textPrimary} />
-            ) : (
-              <Text style={styles.primaryLabel}>Tout est prêt ! Bienvenue chez Ha-Ha.</Text>
-            )}
+          <Pressable onPress={skipCurrent} disabled={isSubmitting}>
+            <Text style={styles.secondaryLink}>Passer</Text>
           </Pressable>
-        </View>
-      ) : null}
-
-      <Pressable onPress={skipCurrent} disabled={isSubmitting}>
-        <Text style={styles.secondaryLink}>Passer</Text>
-      </Pressable>
-      <Pressable onPress={() => void skipAll()} disabled={isSubmitting}>
-        <Text style={styles.secondaryLink}>Passer toutes les questions</Text>
-      </Pressable>
-    </ScrollView>
+          <Pressable onPress={() => void skipAll()} disabled={isSubmitting}>
+            <Text style={styles.secondaryLink}>Passer toutes les questions</Text>
+          </Pressable>
+        </ScrollView>
+      </TouchableWithoutFeedback>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
+  screenWrapper: {
+    flex: 1,
+    backgroundColor: theme.colors.background
+  },
   screen: {
+    flexGrow: 1,
     paddingVertical: theme.spacing.xl,
     paddingHorizontal: theme.spacing.lg,
     backgroundColor: theme.colors.background,
-    minHeight: '100%',
     gap: theme.spacing.md
   },
   progress: {
