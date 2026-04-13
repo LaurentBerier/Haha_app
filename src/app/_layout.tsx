@@ -493,7 +493,7 @@ export default function RootLayout() {
     if (!hasHydrated || authStatus === 'loading') {
       return;
     }
-    if (!isHomeArtistPickerRoute || inAuthGroup || isAuthCallbackRoute) {
+    if ((!isHomeArtistPickerRoute && !isModeSelectContextRoute) || inAuthGroup || isAuthCallbackRoute) {
       return;
     }
 
@@ -525,6 +525,7 @@ export default function RootLayout() {
     inAuthGroup,
     isAuthCallbackRoute,
     isHomeArtistPickerRoute,
+    isModeSelectContextRoute,
     getWebSessionStorage,
     pathname
   ]);
@@ -533,13 +534,13 @@ export default function RootLayout() {
     if (Platform.OS !== 'web') {
       return;
     }
-    if (pathname === '/') {
+    if (pathname === '/' || isModeSelectContextRoute) {
       return;
     }
 
     pendingWebResumeRouteRestoreRef.current = false;
     clearPersistedPendingWebResumeRestore();
-  }, [clearPersistedPendingWebResumeRestore, pathname]);
+  }, [clearPersistedPendingWebResumeRestore, isModeSelectContextRoute, pathname]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || !webBackgroundUri || typeof document === 'undefined') {
@@ -922,7 +923,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 40
+    zIndex: 9999
   },
   menuBackdrop: {
     ...StyleSheet.absoluteFillObject,

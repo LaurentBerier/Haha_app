@@ -293,8 +293,11 @@ function classifyWebErrorReason(event: WebSpeechRecognitionErrorEvent): VoiceSes
   if (code === 'aborted') {
     return 'aborted';
   }
-  if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture') {
+  if (code === 'not-allowed' || code === 'audio-capture') {
     return 'permission';
+  }
+  if (code === 'service-not-allowed') {
+    return 'unsupported';
   }
   return 'transient';
 }

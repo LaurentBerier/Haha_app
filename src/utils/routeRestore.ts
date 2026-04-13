@@ -18,6 +18,10 @@ function isAuthRoute(pathname: string): boolean {
   return pathname === '/auth' || pathname.startsWith('/auth/') || pathname.startsWith('/(auth)');
 }
 
+export function isModeSelectRoute(pathname: string): boolean {
+  return /^\/mode-select\/[^/]+(?:\/[^/]+)?\/?$/.test(pathname);
+}
+
 export function isRouteEligibleForPersistence(pathname: string): boolean {
   if (typeof pathname !== 'string') {
     return false;
@@ -96,7 +100,8 @@ export function resolveRouteToRestoreFromSnapshot({
   nowMs?: number;
   maxAgeMs?: number;
 }): string | null {
-  if (normalizePathname(currentPathname) !== '/') {
+  const normalizedCurrent = normalizePathname(currentPathname);
+  if (normalizedCurrent !== '/' && !isModeSelectRoute(normalizedCurrent)) {
     return null;
   }
 
@@ -106,6 +111,10 @@ export function resolveRouteToRestoreFromSnapshot({
   }
 
   if (!isRouteEligibleForPersistence(parsed.route)) {
+    return null;
+  }
+
+  if (parsed.route === normalizedCurrent) {
     return null;
   }
 
