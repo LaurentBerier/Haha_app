@@ -256,7 +256,7 @@ describe('api/admin-account-type', () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.payload.error.code).toBe('SERVER_ERROR');
-    expect(res.payload.error.message).toBe('profile update failed');
+    expect(res.payload.error.message).toBe('Failed to update account type.');
     expect(supabase.spies.updateUserById).not.toHaveBeenCalled();
   });
 
@@ -276,7 +276,7 @@ describe('api/admin-account-type', () => {
 
     expect(res.statusCode).toBe(500);
     expect(res.payload.error.code).toBe('SERVER_ERROR');
-    expect(res.payload.error.message).toBe('metadata update failed');
+    expect(res.payload.error.message).toBe('Failed to update account type.');
     expect(supabase.spies.profileUpdateEq).toHaveBeenCalledTimes(2);
     expect(supabase.spies.profileUpdateEq).toHaveBeenNthCalledWith(1, 'id', 'user-2');
     expect(supabase.spies.profileUpdateEq).toHaveBeenNthCalledWith(2, 'id', 'user-2');

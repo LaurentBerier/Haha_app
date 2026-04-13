@@ -205,7 +205,7 @@ module.exports = async function handler(req, res) {
         requestId,
         error: usersError
       });
-      sendError(res, 500, usersError.message, { code: 'SERVER_ERROR', requestId });
+      sendError(res, 500, 'Failed to load users.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 
@@ -245,12 +245,11 @@ module.exports = async function handler(req, res) {
       limit
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown server error';
     log('error', 'Unhandled error', {
       scope: 'api/admin-users',
       requestId,
       error: err
     });
-    sendError(res, 500, message, { code: 'SERVER_ERROR', requestId });
+    sendError(res, 500, 'Failed to load users.', { code: 'SERVER_ERROR', requestId });
   }
 };

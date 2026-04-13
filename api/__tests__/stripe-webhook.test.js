@@ -381,7 +381,7 @@ describe('api/stripe-webhook', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(500);
-    expect(res.payload.error.message).toBe('metadata update failed');
+    expect(res.payload.error.message).toBe('Failed to process webhook event.');
     expect(supabase.spies.profilesUpdate).toHaveBeenNthCalledWith(1, { account_type_id: 'premium' });
     expect(supabase.spies.profilesUpdate).toHaveBeenNthCalledWith(2, { account_type_id: 'free' });
     expect(supabase.spies.profilesEq).toHaveBeenNthCalledWith(1, 'id', 'user-1');

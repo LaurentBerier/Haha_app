@@ -173,6 +173,6 @@ describe('api/delete-account', () => {
     expect(deleteUser).toHaveBeenCalledWith('user-123');
     expect(res.statusCode).toBe(500);
     expect(res.payload.error.code).toBe('SERVER_ERROR');
-    expect(res.payload.error.message).toBe('delete failed');
+    expect(res.payload.error.message).toBe('Failed to delete account.');
   });
 });

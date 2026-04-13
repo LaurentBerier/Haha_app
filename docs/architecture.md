@@ -499,7 +499,8 @@ User-controlled profile fields (`preferredName`, `interests`) are wrapped in `<u
 
 ### API Error Responses
 
-API error responses return only generic messages to clients. Full Supabase/PostgreSQL error details (table names, column names, constraint messages) are logged server-side only. This prevents DB schema enumeration via error probing.
+API error responses return generic client-safe messages only. Full Supabase/PostgreSQL/provider details remain server-side (`log(...)` + Sentry context).  
+Validated in latest review: [`docs/code-review-2026-04-13.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-13.md).
 
 ### Rate Limiting
 
@@ -529,9 +530,9 @@ Vercel functions require project dependencies at runtime; `.vercelignore` must i
 - API tests: `api/__tests__/`
 - Store slice tests: `src/store/slices/*.test.ts`
 - Command: `npm run test:unit`
-- Latest unit/lint/type baseline (2026-04-05): `99` suites, `550` tests, plus PASS on `typecheck` and `lint`
-- Latest full cross-check including `verify:profile-prompt` + smoke: 2026-04-04 (see `docs/qa-run-2026-04-04.md`)
-- Latest comprehensive security + performance audit: 2026-04-04 (see `docs/code-review-2026-04-04b.md`)
+- Latest unit/lint/type baseline (2026-04-13): `111` suites, `621` tests, plus PASS on `typecheck` and `lint`
+- Latest validation snapshot: 2026-04-13 (see `docs/qa-run-2026-04-13.md`)
+- Latest full code-review snapshot: 2026-04-13 (see `docs/code-review-2026-04-13.md`)
 
 ## Repos and Hosting Topology
 

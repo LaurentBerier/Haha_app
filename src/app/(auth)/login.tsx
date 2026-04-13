@@ -124,7 +124,7 @@ export default function LoginScreen() {
     setIsEmailSubmitting(true);
 
     try {
-      await requestMagicLink(email.trim(), 'signin');
+      await requestMagicLink(email.trim(), 'auto');
       setMagicLinkSent(true);
       setCooldownSeconds(MAGIC_LINK_COOLDOWN_SECONDS);
     } catch (err) {

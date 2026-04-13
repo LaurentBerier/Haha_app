@@ -439,8 +439,7 @@ module.exports = async function handler(req, res) {
       totalRevenueCents
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown server error';
     console.error(`[api/admin-stats][${requestId}] Unhandled error`, err);
-    sendError(res, 500, message, { code: 'SERVER_ERROR', requestId });
+    sendError(res, 500, 'Failed to load admin stats.', { code: 'SERVER_ERROR', requestId });
   }
 };

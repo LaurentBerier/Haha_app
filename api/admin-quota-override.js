@@ -115,7 +115,7 @@ module.exports = async function handler(req, res) {
 
     if (updateError) {
       console.error(`[api/admin-quota-override][${requestId}] Failed to update profile`, updateError);
-      sendError(res, 500, updateError.message, { code: 'SERVER_ERROR', requestId });
+      sendError(res, 500, 'Failed to update quota override.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 
@@ -139,8 +139,7 @@ module.exports = async function handler(req, res) {
       monthlyCap
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown server error';
     console.error(`[api/admin-quota-override][${requestId}] Unhandled error`, err);
-    sendError(res, 500, message, { code: 'SERVER_ERROR', requestId });
+    sendError(res, 500, 'Failed to update quota override.', { code: 'SERVER_ERROR', requestId });
   }
 };

@@ -1,6 +1,6 @@
 # Phase 4 Status (Conversation Naturelle)
 
-Last updated: **2026-04-05**
+Last updated: **2026-04-13**
 
 ## Scope
 
@@ -139,6 +139,12 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
 
 ## QA Status
 
+Full regression validation on **2026-04-13** (auth flow + API error-surface review baseline):
+
+- `npm run typecheck` -> PASS
+- `npm run lint` -> PASS
+- `npm run test:unit` -> PASS (`111` suites, `621` tests)
+
 Full regression validation on **2026-04-05** (greeting guard imperative read fix + free tier limit increases):
 
 - `npm run typecheck` -> PASS
@@ -204,6 +210,7 @@ Prior targeted mode-select layout baseline remains available from **2026-03-23**
 
 Detailed run logs:
 
+- [`docs/qa-run-2026-04-13.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-13.md)
 - [`docs/qa-run-2026-04-05.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-05.md)
 - [`docs/qa-run-2026-04-04.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-04.md)
 - [`docs/qa-run-2026-04-03.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-03.md)
@@ -216,8 +223,8 @@ Detailed run logs:
 - [`docs/qa-run-2026-03-19.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-19.md)
 - [`docs/qa-run-2026-03-18.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-18.md)
 - [`docs/qa-run-2026-03-17.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-03-17.md)
-- Latest code review snapshot: [`docs/code-review-2026-04-04b.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-04b.md) (comprehensive security + performance audit)
-- Previous code review: [`docs/code-review-2026-04-04.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-04.md)
+- Latest code review snapshot: [`docs/code-review-2026-04-13.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-13.md) (full auth + API error-surface review)
+- Previous code review: [`docs/code-review-2026-04-04b.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-04b.md)
 
 ## Games & Prompt Quality (2026-03-25)
 

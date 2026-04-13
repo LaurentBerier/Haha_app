@@ -530,7 +530,7 @@ module.exports = async function handler(req, res) {
       );
 
       if (linkError) {
-        sendError(res, 500, linkError.message, { code: 'SERVER_ERROR', requestId });
+        sendError(res, 500, 'Failed to process webhook event.', { code: 'SERVER_ERROR', requestId });
         return;
       }
     }
@@ -554,7 +554,7 @@ module.exports = async function handler(req, res) {
         res.status(200).json({ ok: true, duplicate: true, type: event.type });
         return;
       }
-      sendError(res, 500, eventError.message, { code: 'SERVER_ERROR', requestId });
+      sendError(res, 500, 'Failed to process webhook event.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 
@@ -566,7 +566,7 @@ module.exports = async function handler(req, res) {
         .eq('id', userId);
 
       if (profileError) {
-        sendError(res, 500, profileError.message, { code: 'SERVER_ERROR', requestId });
+        sendError(res, 500, 'Failed to process webhook event.', { code: 'SERVER_ERROR', requestId });
         return;
       }
 
@@ -580,7 +580,7 @@ module.exports = async function handler(req, res) {
         if (rollbackError) {
           console.error(`[api/stripe-webhook][${requestId}] Failed to rollback profile account type`, rollbackError);
         }
-        sendError(res, 500, metadataError.message, { code: 'SERVER_ERROR', requestId });
+        sendError(res, 500, 'Failed to process webhook event.', { code: 'SERVER_ERROR', requestId });
         return;
       }
 
@@ -611,8 +611,7 @@ module.exports = async function handler(req, res) {
       type: event.type
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown server error';
     console.error(`[api/stripe-webhook][${requestId}] Unhandled error`, error);
-    sendError(res, 500, message, { code: 'SERVER_ERROR', requestId });
+    sendError(res, 500, 'Failed to process webhook event.', { code: 'SERVER_ERROR', requestId });
   }
 };

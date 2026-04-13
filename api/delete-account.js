@@ -105,18 +105,17 @@ module.exports = async function handler(req, res) {
 
     const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(user.id);
     if (deleteError) {
-      sendError(res, 500, deleteError.message, { code: 'SERVER_ERROR', requestId });
+      sendError(res, 500, 'Failed to delete account.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 
     res.status(200).json({ ok: true, deletedUserId: user.id });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown server error';
     log('error', 'Unhandled error', {
       scope: 'api/delete-account',
       requestId,
       error
     });
-    sendError(res, 500, message, { code: 'SERVER_ERROR', requestId });
+    sendError(res, 500, 'Failed to delete account.', { code: 'SERVER_ERROR', requestId });
   }
 };

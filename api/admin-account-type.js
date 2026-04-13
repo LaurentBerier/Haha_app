@@ -180,7 +180,7 @@ module.exports = async function handler(req, res) {
       .eq('id', userId);
 
     if (profileError) {
-      sendError(res, 500, profileError.message, { code: 'SERVER_ERROR', requestId });
+      sendError(res, 500, 'Failed to update account type.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 
@@ -195,7 +195,7 @@ module.exports = async function handler(req, res) {
       if (rollbackError) {
         console.error(`[api/admin-account-type][${requestId}] Failed to rollback profile account type`, rollbackError);
       }
-      sendError(res, 500, metadataError.message, { code: 'SERVER_ERROR', requestId });
+      sendError(res, 500, 'Failed to update account type.', { code: 'SERVER_ERROR', requestId });
       return;
     }
 
@@ -222,8 +222,7 @@ module.exports = async function handler(req, res) {
       accountTypeId
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown server error';
     console.error(`[api/admin-account-type][${requestId}] Unhandled error`, error);
-    sendError(res, 500, message, { code: 'SERVER_ERROR', requestId });
+    sendError(res, 500, 'Failed to update account type.', { code: 'SERVER_ERROR', requestId });
   }
 };

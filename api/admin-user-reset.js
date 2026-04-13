@@ -194,8 +194,7 @@ module.exports = async function handler(req, res) {
       monthlyResetAt: monthStartIso
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown server error';
     console.error(`[api/admin-user-reset][${requestId}] Unhandled error`, error);
-    sendError(res, 500, message, { code: 'SERVER_ERROR', requestId });
+    sendError(res, 500, 'Failed to reset user usage.', { code: 'SERVER_ERROR', requestId });
   }
 };

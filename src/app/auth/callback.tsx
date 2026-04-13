@@ -102,8 +102,6 @@ export default function AuthCallbackScreen() {
         return;
       }
       inFlightRef.current = true;
-      setIsResolving(true);
-      setErrorMessage(null);
       try {
         assertSupabaseConfigured();
 
@@ -117,6 +115,11 @@ export default function AuthCallbackScreen() {
         }
         if (callbackUrl) {
           lastHandledUrlRef.current = callbackUrl;
+        }
+
+        if (isMounted) {
+          setIsResolving(true);
+          setErrorMessage(null);
         }
 
         if (Platform.OS === 'web' && callbackUrl) {

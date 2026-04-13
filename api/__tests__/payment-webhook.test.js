@@ -255,7 +255,7 @@ describe('api/payment-webhook', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(500);
-    expect(res.payload.error.message).toBe('metadata update failed');
+    expect(res.payload.error.message).toBe('Failed to process webhook event.');
     expect(updateProfile).toHaveBeenNthCalledWith(1, { account_type_id: 'premium' });
     expect(updateProfile).toHaveBeenNthCalledWith(2, { account_type_id: 'free' });
     expect(updateProfileEq).toHaveBeenNthCalledWith(1, 'id', 'user-1');
