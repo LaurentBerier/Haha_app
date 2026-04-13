@@ -19,6 +19,7 @@ export interface UsageSummary {
   softCapReached?: boolean;
   economyMode?: boolean;
 }
+export type MagicLinkIntent = 'signin' | 'signup';
 
 const SESSION_REFRESH_LEEWAY_SECONDS = 30;
 
@@ -173,6 +174,90 @@ export async function signInWithEmail(email: string, password: string): Promise<
   return toAuthSession(data.session);
 }
 
+type MagicLinkApiError = Error & {
+  code?: string;
+  status?: number;
+  retryAfterSeconds?: number;
+};
+
+function parseRetryAfterSeconds(value: string | null): number | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function toMagicLinkApiError(status: number, message: string, response: Response, code?: string): MagicLinkApiError {
+  const error = new Error(message) as MagicLinkApiError;
+  error.status = status;
+  if (code) {
+    error.code = code;
+  }
+
+  const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('Retry-After'));
+  if (retryAfterSeconds !== null) {
+    error.retryAfterSeconds = retryAfterSeconds;
+  }
+
+  return error;
+}
+
+export async function requestMagicLink(email: string, intent: MagicLinkIntent): Promise<void> {
+  const baseUrl = toBackendBaseUrl();
+  if (!baseUrl) {
+    throw new Error('Missing backend API base URL. Set EXPO_PUBLIC_API_BASE_URL or EXPO_PUBLIC_CLAUDE_PROXY_URL.');
+  }
+
+  const response = await withNetworkRetry(() =>
+    fetch(`${baseUrl}/auth-magic-link`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email,
+        intent
+      })
+    })
+  );
+
+  if (response.ok) {
+    return;
+  }
+
+  let message = "Impossible d'envoyer le lien de connexion.";
+  let code: string | undefined;
+
+  try {
+    const payload: unknown = await response.json();
+    if (
+      payload &&
+      typeof payload === 'object' &&
+      'error' in payload &&
+      payload.error &&
+      typeof payload.error === 'object'
+    ) {
+      const apiError = payload.error as { message?: unknown; code?: unknown };
+      if (typeof apiError.message === 'string' && apiError.message.trim()) {
+        message = apiError.message;
+      }
+      if (typeof apiError.code === 'string' && apiError.code.trim()) {
+        code = apiError.code;
+      }
+    }
+  } catch {
+    // Keep fallback message.
+  }
+
+  throw toMagicLinkApiError(response.status, message, response, code);
+}
+
 export async function signUpWithEmail(email: string, password: string): Promise<SignUpResult> {
   assertSupabaseConfigured();
   const { data, error } = await withNetworkRetry(() =>
@@ -249,6 +334,32 @@ export async function updatePreferredDisplayName(displayName: string | null): Pr
 
 export async function signInWithApple(): Promise<AuthSession> {
   assertSupabaseConfigured();
+  if (Platform.OS === 'web') {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'apple',
+      options: {
+        redirectTo: getAuthCallbackUrl(),
+        skipBrowserRedirect: true
+      }
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    if (typeof window !== 'undefined' && typeof window.location?.assign === 'function' && data?.url) {
+      window.location.assign(data.url);
+      return null;
+    }
+
+    throw new Error("Apple Sign-In n'est pas disponible sur cette plateforme web.");
+  }
+
+  const appleAvailable = await AppleAuthentication.isAvailableAsync();
+  if (!appleAvailable) {
+    throw new Error("Apple Sign-In est indisponible sur cet appareil ou cette build iOS.");
+  }
+
   const credential = await AppleAuthentication.signInAsync({
     requestedScopes: [AppleAuthentication.AppleAuthenticationScope.FULL_NAME, AppleAuthentication.AppleAuthenticationScope.EMAIL]
   });

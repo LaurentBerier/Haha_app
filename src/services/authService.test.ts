@@ -10,6 +10,7 @@ jest.mock('./supabaseClient', () => ({
   supabase: {
     auth: {
       signInWithPassword: jest.fn(),
+      signInWithOAuth: jest.fn(),
       signUp,
       resetPasswordForEmail: jest.fn(),
       updateUser: jest.fn(),
@@ -24,6 +25,7 @@ jest.mock('./supabaseClient', () => ({
 
 jest.mock('expo-apple-authentication', () => ({
   signInAsync: jest.fn(),
+  isAvailableAsync: jest.fn().mockResolvedValue(true),
   AppleAuthenticationScope: {
     FULL_NAME: 'FULL_NAME',
     EMAIL: 'EMAIL'
@@ -36,7 +38,7 @@ jest.mock('react-native', () => ({
   }
 }));
 
-import { deleteAccount, getStoredSession, getUsageSummary, signUpWithEmail } from './authService';
+import { deleteAccount, getStoredSession, getUsageSummary, requestMagicLink, signUpWithEmail } from './authService';
 import { supabase } from './supabaseClient';
 
 function buildSession(overrides: Partial<Record<string, unknown>> = {}) {
@@ -178,6 +180,51 @@ describe('authService', () => {
       expect.objectContaining({
         accessToken: 'fresh-access-token',
         refreshToken: 'fresh-refresh-token'
+      })
+    );
+  });
+
+  it('calls backend auth-magic-link endpoint for signin intent', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true
+    }) as unknown as typeof fetch;
+
+    await requestMagicLink('user@example.com', 'signin');
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.ha-ha.ai/auth-magic-link',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'user@example.com',
+          intent: 'signin'
+        })
+      })
+    );
+  });
+
+  it('propagates retry-after metadata when auth-magic-link endpoint rate-limits', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      headers: {
+        get: (name: string) => (name === 'Retry-After' ? '75' : null)
+      },
+      json: jest.fn().mockResolvedValue({
+        error: {
+          message: 'Rate limit exceeded.',
+          code: 'RATE_LIMIT_EXCEEDED'
+        }
+      })
+    }) as unknown as typeof fetch;
+
+    await expect(requestMagicLink('user@example.com', 'signin')).rejects.toEqual(
+      expect.objectContaining({
+        message: 'Rate limit exceeded.',
+        code: 'RATE_LIMIT_EXCEEDED',
+        status: 429,
+        retryAfterSeconds: 75
       })
     );
   });

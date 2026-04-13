@@ -38,6 +38,7 @@
           "locationWhenInUsePermission": "Ha-Ha.ai uses your location to personalize Cathy's greeting with local weather."
         }
       ],
+      "expo-apple-authentication",
       "@sentry/react-native"
     ],
     "experiments": {
@@ -46,6 +47,7 @@
     "ios": {
       "icon": "./assets/branding/HaHa_APP_Icon_trans.png",
       "bundleIdentifier": "com.laurentbernier.hahaai.dev",
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "Ha-Ha.ai uses your microphone to transcribe voice messages.",
         "NSSpeechRecognitionUsageDescription": "Ha-Ha.ai converts your spoken words into text messages.",

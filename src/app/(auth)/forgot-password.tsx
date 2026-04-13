@@ -1,10 +1,13 @@
 import { Link } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { requestPasswordReset } from '../../services/authService';
 import { theme } from '../../theme';
 
 export default function ForgotPasswordScreen() {
+  const emailKeyboardType: 'email-address' | 'ascii-capable' =
+    Platform.OS === 'ios' ? 'ascii-capable' : 'email-address';
+
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -36,8 +39,13 @@ export default function ForgotPasswordScreen() {
         onChangeText={setEmail}
         placeholder="Email"
         placeholderTextColor={theme.colors.textDisabled}
-        keyboardType="email-address"
+        keyboardType={emailKeyboardType}
+        inputMode="email"
+        textContentType="emailAddress"
+        autoComplete="email"
         autoCapitalize="none"
+        autoCorrect={false}
+        spellCheck={false}
         style={styles.input}
       />
 
@@ -48,7 +56,7 @@ export default function ForgotPasswordScreen() {
         {isSubmitting ? <ActivityIndicator color={theme.colors.textPrimary} /> : <Text style={styles.buttonLabel}>Envoyer le lien</Text>}
       </Pressable>
 
-      <Link href="/(auth)/login" asChild>
+      <Link href="/(auth)/login-password" asChild>
         <Pressable>
           <Text style={styles.link}>Retour à la connexion</Text>
         </Pressable>

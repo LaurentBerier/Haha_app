@@ -15,24 +15,58 @@ import {
   View
 } from 'react-native';
 import { t } from '../../i18n';
-import { signInWithApple, signInWithEmail } from '../../services/authService';
+import { requestMagicLink, signInWithApple } from '../../services/authService';
 import { theme } from '../../theme';
+
+const MAGIC_LINK_COOLDOWN_SECONDS = 45;
+
+function parseRetryAfterSeconds(error: unknown): number | null {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+
+  const value = (error as { retryAfterSeconds?: unknown }).retryAfterSeconds;
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+}
+
+function isAppleRequestCancelled(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const withCode = error as { code?: unknown; message?: unknown };
+  const code = typeof withCode.code === 'string' ? withCode.code.toLowerCase() : '';
+  const message = typeof withCode.message === 'string' ? withCode.message.toLowerCase() : '';
+  return code.includes('canceled') || message.includes('canceled') || message.includes('cancelled');
+}
 
 export default function LoginScreen() {
   const emailKeyboardType: 'email-address' | 'ascii-capable' =
     Platform.OS === 'ios' ? 'ascii-capable' : 'email-address';
 
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEmailSubmitting, setIsEmailSubmitting] = useState(false);
+  const [isAppleSubmitting, setIsAppleSubmitting] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
+  const [cooldownSeconds, setCooldownSeconds] = useState(0);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
 
   const formatAuthError = (error: unknown, fallback: string): string => {
+    if (error && typeof error === 'object') {
+      const maybeCode = (error as { code?: unknown }).code;
+      if (typeof maybeCode === 'string' && maybeCode === 'RATE_LIMIT_EXCEEDED') {
+        return t('authMagicLinkRateLimitError');
+      }
+    }
+
     if (error instanceof Error) {
       const message = error.message.trim();
       if (/network request failed|failed to fetch/i.test(message)) {
         return t('authNetworkError');
+      }
+      if (/apple sign-in est indisponible|apple sign-in is unavailable|apple sign-in n'est pas disponible/i.test(message)) {
+        return t('authAppleUnavailableError');
       }
       if (message) {
         return message;
@@ -44,6 +78,11 @@ export default function LoginScreen() {
 
   useEffect(() => {
     const checkAppleAvailability = async () => {
+      if (Platform.OS === 'web') {
+        setAppleAvailable(true);
+        return;
+      }
+
       const available = await AppleAuthentication.isAvailableAsync();
       setAppleAvailable(available);
     };
@@ -51,37 +90,71 @@ export default function LoginScreen() {
     checkAppleAvailability().catch(() => setAppleAvailable(false));
   }, []);
 
+  useEffect(() => {
+    if (cooldownSeconds <= 0) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setCooldownSeconds((current) => (current > 0 ? current - 1 : 0));
+    }, 1000);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [cooldownSeconds]);
+
   const onSubmit = async () => {
     setError(null);
-    setIsSubmitting(true);
+    setMagicLinkSent(false);
+
+    if (cooldownSeconds > 0) {
+      return;
+    }
+
+    setIsEmailSubmitting(true);
 
     try {
-      await signInWithEmail(email.trim(), password);
-      router.replace('/');
+      await requestMagicLink(email.trim(), 'signin');
+      setMagicLinkSent(true);
+      setCooldownSeconds(MAGIC_LINK_COOLDOWN_SECONDS);
     } catch (err) {
-      console.error('[Login] signInWithEmail failed', err);
-      const message = formatAuthError(err, t('loginError'));
+      console.error('[Login] requestMagicLink failed', err);
+      const retryAfterSeconds = parseRetryAfterSeconds(err);
+      if (retryAfterSeconds !== null) {
+        setCooldownSeconds(retryAfterSeconds);
+      }
+      const message = formatAuthError(err, t('authMagicLinkError'));
       setError(message);
     } finally {
-      setIsSubmitting(false);
+      setIsEmailSubmitting(false);
     }
   };
 
   const onApple = async () => {
     setError(null);
-    setIsSubmitting(true);
+    setIsAppleSubmitting(true);
 
     try {
       await signInWithApple();
-      router.replace('/');
+      if (Platform.OS !== 'web') {
+        router.replace('/');
+      }
     } catch (err) {
+      if (isAppleRequestCancelled(err)) {
+        return;
+      }
       console.error('[Login] signInWithApple failed', err);
       const message = formatAuthError(err, t('loginAppleError'));
       setError(message);
     } finally {
-      setIsSubmitting(false);
+      setIsAppleSubmitting(false);
     }
   };
+
+  const isSubmitting = isEmailSubmitting || isAppleSubmitting;
+  const emailButtonLabel =
+    cooldownSeconds > 0 ? `${t('authMagicLinkResendIn')} ${cooldownSeconds}s` : t('loginContinueWithEmail');
 
   return (
     <KeyboardAvoidingView
@@ -115,38 +188,50 @@ export default function LoginScreen() {
               style={styles.input}
             />
 
-            <TextInput
-              value={password}
-              onChangeText={setPassword}
-              placeholder={t('loginPasswordPlaceholder')}
-              placeholderTextColor={theme.colors.textDisabled}
-              secureTextEntry
-              style={styles.input}
-            />
-
             {error ? <Text style={styles.error}>{error}</Text> : null}
+            {magicLinkSent ? <Text style={styles.success}>{t('authMagicLinkSentNeutral')}</Text> : null}
 
             <Pressable
               style={[styles.button, isSubmitting && styles.buttonDisabled]}
               onPress={onSubmit}
-              disabled={isSubmitting || !email.trim() || !password}
+              disabled={isSubmitting || !email.trim() || cooldownSeconds > 0}
             >
-              {isSubmitting ? (
+              {isEmailSubmitting ? (
                 <ActivityIndicator color={theme.colors.textPrimary} />
               ) : (
-                <Text style={styles.buttonLabel}>{t('loginSubmit')}</Text>
+                <Text style={styles.buttonLabel}>{emailButtonLabel}</Text>
               )}
             </Pressable>
 
             {appleAvailable ? (
-              <AppleAuthentication.AppleAuthenticationButton
-                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
-                cornerRadius={12}
-                style={styles.appleButton}
-                onPress={onApple}
-              />
+              Platform.OS === 'web' ? (
+                <Pressable
+                  style={[styles.appleButtonFallback, isSubmitting && styles.buttonDisabled]}
+                  onPress={onApple}
+                  disabled={isSubmitting}
+                >
+                  {isAppleSubmitting ? (
+                    <ActivityIndicator color={'#111827'} />
+                  ) : (
+                    <Text style={styles.appleButtonFallbackLabel}>{t('loginAppleCta')}</Text>
+                  )}
+                </Pressable>
+              ) : (
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                  buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+                  cornerRadius={12}
+                  style={styles.appleButton}
+                  onPress={onApple}
+                />
+              )
             ) : null}
+
+            <Link href="/(auth)/login-password" asChild>
+              <Pressable>
+                <Text style={styles.link}>{t('loginUsePassword')}</Text>
+              </Pressable>
+            </Link>
 
             <Link href="/(auth)/forgot-password" asChild>
               <Pressable>
@@ -222,6 +307,20 @@ const styles = StyleSheet.create({
     width: '100%',
     height: 48
   },
+  appleButtonFallback: {
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D1D5DB',
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  appleButtonFallbackLabel: {
+    color: '#111827',
+    fontSize: 17,
+    fontWeight: '700'
+  },
   link: {
     marginTop: theme.spacing.xs,
     color: theme.colors.textSecondary,
@@ -230,6 +329,10 @@ const styles = StyleSheet.create({
   },
   error: {
     color: theme.colors.error,
+    fontSize: 13
+  },
+  success: {
+    color: theme.colors.textSecondary,
     fontSize: 13
   }
 });
