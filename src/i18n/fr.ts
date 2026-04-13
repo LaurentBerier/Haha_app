@@ -212,12 +212,12 @@ export const fr = {
   statsProgression: 'Progression',
   menuAuthSignIn: 'Se connecter',
   menuAuthSignUp: 'Créer un compte',
-  loginTitle: 'Se connecter',
-  loginSubtitle: 'Accede a ton compte Ha-Ha.ai',
+  loginTitle: 'Connexion sécurisée',
+  loginSubtitle: 'Entre ton email pour recevoir un lien de connexion sécurisé.',
   loginEmailPlaceholder: 'Email',
   loginPasswordPlaceholder: 'Mot de passe',
   loginSubmit: 'Se connecter',
-  loginContinueWithEmail: 'Continuer avec email',
+  loginContinueWithEmail: 'Envoyer le lien de connexion',
   loginAppleCta: 'Continuer avec Apple',
   loginForgotPassword: 'Mot de passe oublie ?',
   loginUsePassword: 'Connexion avec mot de passe',
@@ -229,9 +229,8 @@ export const fr = {
   loginAppleError: 'Connexion Apple impossible.',
   authMagicLinkError: "Impossible d'envoyer le lien de connexion.",
   authMagicLinkRateLimitError: 'Trop de tentatives. Reessaie dans quelques instants.',
-  authMagicLinkSentNeutral: "Si l'email est valide, un lien de connexion a ete envoye.",
-  authMagicLinkSigninHint:
-    "Si c'est ta premiere connexion, utilise \"Creer un compte\". Pense aussi a verifier tes indésirables.",
+  authMagicLinkSentNeutral:
+    "Si l'email est valide, un lien de connexion a ete envoye. Vérifie aussi ton dossier indésirables.",
   authMagicLinkResendIn: 'Renvoyer dans',
   authAppleUnavailableError: "Apple Sign-In est indisponible sur cet appareil.",
   authNetworkError:

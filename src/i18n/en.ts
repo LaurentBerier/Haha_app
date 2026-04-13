@@ -212,12 +212,12 @@ export const en = {
   statsProgression: 'Progression',
   menuAuthSignIn: 'Sign in',
   menuAuthSignUp: 'Sign up',
-  loginTitle: 'Sign in',
-  loginSubtitle: 'Access your Ha-Ha.ai account',
+  loginTitle: 'Secure sign-in',
+  loginSubtitle: 'Enter your email to receive a secure sign-in link.',
   loginEmailPlaceholder: 'Email',
   loginPasswordPlaceholder: 'Password',
   loginSubmit: 'Sign in',
-  loginContinueWithEmail: 'Continue with email',
+  loginContinueWithEmail: 'Send sign-in link',
   loginAppleCta: 'Continue with Apple',
   loginForgotPassword: 'Forgot password?',
   loginUsePassword: 'Use password instead',
@@ -229,9 +229,8 @@ export const en = {
   loginAppleError: 'Apple sign-in failed.',
   authMagicLinkError: 'Unable to send the sign-in link.',
   authMagicLinkRateLimitError: 'Too many attempts. Try again in a moment.',
-  authMagicLinkSentNeutral: 'If the email is valid, a sign-in link has been sent.',
-  authMagicLinkSigninHint:
-    'If this is your first time, use "Create account" first. Also check your spam or junk folder.',
+  authMagicLinkSentNeutral:
+    'If the email is valid, a sign-in link has been sent. Also check your spam or junk folder.',
   authMagicLinkResendIn: 'Resend in',
   authAppleUnavailableError: 'Apple Sign-In is unavailable on this device.',
   authNetworkError:

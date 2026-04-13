@@ -143,11 +143,7 @@ export default function RootLayout() {
   if (isAdmin) {
     accountMenuItems.unshift({ label: 'Admin Dashboard', route: '/admin' });
   }
-  const authMenuLabel = isAuthenticated
-    ? t('settingsLogout')
-    : segmentList[1] === 'login'
-      ? t('menuAuthSignUp')
-      : t('menuAuthSignIn');
+  const authMenuLabel = isAuthenticated ? t('settingsLogout') : t('menuAuthSignIn');
   const webBackgroundUri = (cleanBackground as { uri?: string }).uri;
   const imageAspectRatio = 1200 / 1753;
   const viewportAspectRatio = viewportWidth / Math.max(viewportHeight, 1);
@@ -214,11 +210,6 @@ export default function RootLayout() {
         clearSession();
         router.replace('/(auth)/login');
       }
-      return;
-    }
-
-    if (segmentList[1] === 'login') {
-      router.replace('/(auth)/signup');
       return;
     }
 

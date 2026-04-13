@@ -184,7 +184,27 @@ describe('authService', () => {
     );
   });
 
-  it('calls backend auth-magic-link endpoint for signin intent', async () => {
+  it('calls backend auth-magic-link endpoint with default auto intent', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true
+    }) as unknown as typeof fetch;
+
+    await requestMagicLink('user@example.com');
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      'https://api.ha-ha.ai/auth-magic-link',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: 'user@example.com',
+          intent: 'auto'
+        })
+      })
+    );
+  });
+
+  it('supports explicit legacy signin intent for backward compatibility', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: true
     }) as unknown as typeof fetch;
@@ -194,8 +214,6 @@ describe('authService', () => {
     expect(global.fetch).toHaveBeenCalledWith(
       'https://api.ha-ha.ai/auth-magic-link',
       expect.objectContaining({
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: 'user@example.com',
           intent: 'signin'

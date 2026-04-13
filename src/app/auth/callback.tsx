@@ -24,12 +24,12 @@ function getParamValue(value: string | string[] | undefined): string | null {
 function toFriendlyError(message: string): string {
   const normalized = message.toLowerCase();
   if (normalized.includes('invalid') || normalized.includes('expired')) {
-    return "Le lien de validation est invalide ou expiré. Connecte-toi pour reprendre la création de ton profil, ou relance l'inscription.";
+    return "Le lien de validation est invalide ou expiré. Reviens à la connexion pour demander un nouveau lien.";
   }
   if (normalized.includes('already') && normalized.includes('confirmed')) {
-    return 'Ce compte est déjà confirmé. Connecte-toi pour reprendre la création de ton profil.';
+    return 'Ce compte est déjà confirmé. Connecte-toi pour continuer.';
   }
-  return 'La validation du compte a échoué. Tu peux te connecter pour reprendre, ou recommencer la création du compte.';
+  return 'La validation du compte a échoué. Reviens à la connexion pour réessayer.';
 }
 
 function getWebCurrentUrl(): string | null {
@@ -196,7 +196,7 @@ export default function AuthCallbackScreen() {
           console.warn('[AuthCallback] Callback handling failed:', error);
         }
         if (isMounted) {
-          setErrorMessage('Une erreur technique est survenue. Connecte-toi pour reprendre la création du profil.');
+          setErrorMessage('Une erreur technique est survenue. Reviens à la connexion pour demander un nouveau lien.');
         }
       } finally {
         if (isMounted) {
@@ -224,14 +224,7 @@ export default function AuthCallbackScreen() {
           <Text style={styles.title}>Impossible de valider ce lien</Text>
           <Text style={styles.subtitle}>{errorMessage}</Text>
           <Pressable style={styles.primaryButton} onPress={() => router.replace('/(auth)/login')} testID="callback-go-login">
-            <Text style={styles.primaryButtonLabel}>Se connecter pour reprendre</Text>
-          </Pressable>
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={() => router.replace('/(auth)/signup')}
-            testID="callback-go-signup"
-          >
-            <Text style={styles.secondaryButtonLabel}>Recommencer l'inscription</Text>
+            <Text style={styles.primaryButtonLabel}>Retour à la connexion</Text>
           </Pressable>
         </>
       ) : null}
@@ -273,21 +266,6 @@ const styles = StyleSheet.create({
   primaryButtonLabel: {
     color: theme.colors.textPrimary,
     fontWeight: '700',
-    fontSize: 15
-  },
-  secondaryButton: {
-    minHeight: 46,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceSunken,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: theme.spacing.lg
-  },
-  secondaryButtonLabel: {
-    color: theme.colors.textPrimary,
-    fontWeight: '600',
     fontSize: 15
   }
 });

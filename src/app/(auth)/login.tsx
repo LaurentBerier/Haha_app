@@ -57,7 +57,10 @@ export default function LoginScreen() {
   const formatAuthError = (error: unknown, fallback: string): string => {
     if (error && typeof error === 'object') {
       const maybeCode = (error as { code?: unknown }).code;
-      if (typeof maybeCode === 'string' && maybeCode === 'RATE_LIMIT_EXCEEDED') {
+      if (
+        typeof maybeCode === 'string' &&
+        (maybeCode === 'RATE_LIMIT_EXCEEDED' || maybeCode === 'EMAIL_RATE_LIMIT_EXCEEDED')
+      ) {
         return t('authMagicLinkRateLimitError');
       }
     }
@@ -117,7 +120,7 @@ export default function LoginScreen() {
     setIsEmailSubmitting(true);
 
     try {
-      await requestMagicLink(email.trim(), 'signin');
+      await requestMagicLink(email.trim());
       setMagicLinkSent(true);
       setCooldownSeconds(MAGIC_LINK_COOLDOWN_SECONDS);
     } catch (err) {
@@ -192,7 +195,6 @@ export default function LoginScreen() {
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
             {magicLinkSent ? <Text style={styles.success}>{t('authMagicLinkSentNeutral')}</Text> : null}
-            {magicLinkSent ? <Text style={styles.hint}>{t('authMagicLinkSigninHint')}</Text> : null}
 
             <Pressable
               style={[styles.button, isSubmitting && styles.buttonDisabled]}
@@ -242,11 +244,6 @@ export default function LoginScreen() {
               </Pressable>
             </Link>
 
-            <Link href="/(auth)/signup" asChild>
-              <Pressable>
-                <Text style={styles.link}>{t('loginCreateAccount')}</Text>
-              </Pressable>
-            </Link>
           </View>
         </ScrollView>
       </TouchableWithoutFeedback>
@@ -340,9 +337,5 @@ const styles = StyleSheet.create({
   success: {
     color: theme.colors.textSecondary,
     fontSize: 13
-  },
-  hint: {
-    color: theme.colors.textMuted,
-    fontSize: 12
   }
 });

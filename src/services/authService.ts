@@ -19,7 +19,7 @@ export interface UsageSummary {
   softCapReached?: boolean;
   economyMode?: boolean;
 }
-export type MagicLinkIntent = 'signin' | 'signup';
+export type MagicLinkIntent = 'auto' | 'signin' | 'signup';
 
 const SESSION_REFRESH_LEEWAY_SECONDS = 30;
 
@@ -208,7 +208,7 @@ function toMagicLinkApiError(status: number, message: string, response: Response
   return error;
 }
 
-export async function requestMagicLink(email: string, intent: MagicLinkIntent): Promise<void> {
+export async function requestMagicLink(email: string, intent: MagicLinkIntent = 'auto'): Promise<void> {
   const baseUrl = toBackendBaseUrl();
   if (!baseUrl) {
     throw new Error('Missing backend API base URL. Set EXPO_PUBLIC_API_BASE_URL or EXPO_PUBLIC_CLAUDE_PROXY_URL.');
