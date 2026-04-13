@@ -59,6 +59,7 @@ Recommended callback allowlist:
 - `https://haha-app-delta.vercel.app/auth/callback` (optional preview/alias)
 
 Email templates should use `{{ .ConfirmationURL }}` (not hardcoded callback links).
+Magic Link FR/EN template reference: [`docs/supabase-magic-link-email-template.md`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-magic-link-email-template.md)
 
 ## Deployment Flow
 

@@ -57,6 +57,8 @@ Email template requirement (critical):
 
 - Use `{{ .ConfirmationURL }}` for confirmation/reset links.
 - Do not build links manually with `{{ .SiteURL }}/auth/callback?token_hash=...`.
+- For Magic Link email copy/style (FR + EN), use the reference template:
+  - [`docs/supabase-magic-link-email-template.md`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-magic-link-email-template.md)
 
 User guidance:
 
@@ -69,6 +71,9 @@ Validation tip:
 
 - In the received email link, confirm `redirect_to=` points to `hahaha://auth/callback` (URL-encoded).
 - If not, update template/config and send a brand new confirmation email.
+- On iOS, test with both:
+  - app closed then open link
+  - app already open (warm start) then open link
 
 ## 3) Password reset link opens but does not reach reset screen
 

@@ -232,6 +232,8 @@ export const fr = {
   authMagicLinkSentNeutral:
     "Si l'email est valide, un lien de connexion a ete envoye. Vérifie aussi ton dossier indésirables.",
   authMagicLinkResendIn: 'Renvoyer dans',
+  authMagicLinkExpoGoWarning:
+    "Tu es dans Expo Go sur iPhone: le magic link peut etre instable. Utilise un Development Build iOS pour valider le deep-link natif.",
   authAppleUnavailableError: "Apple Sign-In est indisponible sur cet appareil.",
   authNetworkError:
     "Connexion au service d'auth impossible. Verifie la connexion internet et la config Supabase (URL + cle publique).",

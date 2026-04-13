@@ -232,6 +232,8 @@ export const en = {
   authMagicLinkSentNeutral:
     'If the email is valid, a sign-in link has been sent. Also check your spam or junk folder.',
   authMagicLinkResendIn: 'Resend in',
+  authMagicLinkExpoGoWarning:
+    'You are using Expo Go on iPhone: native magic link handling can be unreliable. Use an iOS Development Build to validate deep links.',
   authAppleUnavailableError: 'Apple Sign-In is unavailable on this device.',
   authNetworkError:
     'Unable to reach the auth service. Check your internet connection and Supabase setup (URL + public key).',

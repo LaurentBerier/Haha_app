@@ -310,6 +310,7 @@ Supabase URL configuration should include:
 Supabase email templates should use:
 
 - `{{ .ConfirmationURL }}`
+- For Magic Link FR/EN copy, use [`docs/supabase-magic-link-email-template.md`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-magic-link-email-template.md)
 
 Do not hardcode callback links with `{{ .SiteURL }}/auth/callback?...` in templates, otherwise mobile deep links can break.
 

@@ -1,25 +1,17 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Linking from 'expo-linking';
 import { AUTH_CALLBACK_SCHEME_URL } from '../../config/constants';
 import { assertSupabaseConfigured, supabase } from '../../services/supabaseClient';
 import { theme } from '../../theme';
-
-type OtpType = 'signup' | 'email' | 'recovery' | 'invite' | 'magiclink' | 'email_change';
-
-function getParamValue(value: string | string[] | undefined): string | null {
-  if (typeof value === 'string' && value.trim()) {
-    return value.trim();
-  }
-  if (Array.isArray(value)) {
-    const first = value[0];
-    if (typeof first === 'string' && first.trim()) {
-      return first.trim();
-    }
-  }
-  return null;
-}
+import {
+  buildNativeCallbackUrl,
+  hasAuthPayload,
+  parseAuthCallbackParams,
+  resolveAuthCallbackSession,
+  resolveAuthCallbackUrl
+} from './callbackLogic';
 
 function toFriendlyError(message: string): string {
   const normalized = message.toLowerCase();
@@ -40,10 +32,17 @@ function getWebCurrentUrl(): string | null {
   return typeof window.location?.href === 'string' && window.location.href ? window.location.href : null;
 }
 
-function hasAuthPayload(url: URL): boolean {
-  const hashParams = new URLSearchParams(url.hash.replace(/^#/, ''));
-  const keys = ['code', 'token_hash', 'type', 'access_token', 'refresh_token', 'error', 'error_description', 'flow'] as const;
-  return keys.some((key) => Boolean(url.searchParams.get(key) || hashParams.get(key)));
+function toSafeDebugError(error: unknown): { name: string; message: string } | { message: string } {
+  if (error instanceof Error) {
+    return {
+      name: error.name || 'Error',
+      message: error.message || 'Unknown error'
+    };
+  }
+  if (typeof error === 'string' && error.trim()) {
+    return { message: error.trim() };
+  }
+  return { message: 'Unknown error' };
 }
 
 function shouldTryOpenNativeApp(url: URL): boolean {
@@ -78,13 +77,6 @@ function shouldTryOpenNativeApp(url: URL): boolean {
   return true;
 }
 
-function buildNativeCallbackUrl(url: URL): string {
-  const nextSearch = new URLSearchParams(url.searchParams);
-  nextSearch.set('opened_in_app', '1');
-  const search = nextSearch.toString();
-  const hash = url.hash || '';
-  return `${AUTH_CALLBACK_SCHEME_URL}${search ? `?${search}` : ''}${hash}`;
-}
 
 export default function AuthCallbackScreen() {
   const params = useLocalSearchParams<{
@@ -99,74 +91,53 @@ export default function AuthCallbackScreen() {
   }>();
   const [isResolving, setIsResolving] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const lastHandledUrlRef = useRef<string | null>(null);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
 
-    const resolveCallback = async () => {
+    const resolveCallback = async (incomingUrlOverride: string | null = null) => {
+      if (inFlightRef.current) {
+        return;
+      }
+      inFlightRef.current = true;
       setIsResolving(true);
       setErrorMessage(null);
       try {
         assertSupabaseConfigured();
 
-        const incomingUrl = await Linking.getInitialURL();
-        const callbackUrl = incomingUrl ?? getWebCurrentUrl();
+        const fallbackWebUrl = Platform.OS === 'web' ? getWebCurrentUrl() : null;
+        const initialUrl = incomingUrlOverride ?? (await Linking.getInitialURL()) ?? fallbackWebUrl;
+        const resolvedUrl = resolveAuthCallbackUrl(initialUrl);
+        const callbackUrl = resolvedUrl?.toString() ?? null;
+
+        if (callbackUrl && lastHandledUrlRef.current === callbackUrl) {
+          return;
+        }
+        if (callbackUrl) {
+          lastHandledUrlRef.current = callbackUrl;
+        }
+
         if (Platform.OS === 'web' && callbackUrl) {
           try {
             const webUrl = new URL(callbackUrl);
             if (shouldTryOpenNativeApp(webUrl)) {
-              const nativeUrl = buildNativeCallbackUrl(webUrl);
+              const nativeUrl = buildNativeCallbackUrl(webUrl, AUTH_CALLBACK_SCHEME_URL);
               window.sessionStorage.setItem('haha-auth-native-handoff-url', webUrl.href);
               window.location.assign(nativeUrl);
+              return;
             }
           } catch {
             // Keep normal callback flow as fallback.
           }
         }
+
         const url = callbackUrl ? new URL(callbackUrl) : null;
         const hash = new URLSearchParams(url?.hash.replace(/^#/, ''));
         const query = url?.searchParams ?? new URLSearchParams();
-
-        const code = query.get('code') ?? getParamValue(params.code);
-        const tokenHash = query.get('token_hash') ?? hash.get('token_hash') ?? getParamValue(params.token_hash);
-        const type = (query.get('type') ?? hash.get('type') ?? getParamValue(params.type)) as OtpType | null;
-        const flow = query.get('flow') ?? getParamValue(params.flow);
-        const accessToken = query.get('access_token') ?? hash.get('access_token') ?? getParamValue(params.access_token);
-        const refreshToken = query.get('refresh_token') ?? hash.get('refresh_token') ?? getParamValue(params.refresh_token);
-        const callbackError =
-          query.get('error_description') ??
-          hash.get('error_description') ??
-          query.get('error') ??
-          hash.get('error') ??
-          getParamValue(params.error_description) ??
-          getParamValue(params.error);
-        const isRecovery = flow === 'recovery' || type === 'recovery';
-        let authErrorMessage: string | null = null;
-
-        if (accessToken && refreshToken) {
-          const { error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken
-          });
-          if (error) {
-            authErrorMessage = error.message;
-          }
-        } else if (code && callbackUrl) {
-          const { error } = await supabase.auth.exchangeCodeForSession(callbackUrl);
-          if (error) {
-            authErrorMessage = error.message;
-          }
-        } else if (tokenHash && type) {
-          const { error } = await supabase.auth.verifyOtp({
-            token_hash: tokenHash,
-            type
-          });
-          if (error) {
-            authErrorMessage = error.message;
-          }
-        } else if (callbackError) {
-          authErrorMessage = callbackError;
-        }
+        const callbackParams = parseAuthCallbackParams({ query, hash, params });
+        const authErrorMessage = await resolveAuthCallbackSession(supabase.auth, callbackParams);
 
         if (authErrorMessage && __DEV__) {
           console.warn('[AuthCallback] auth callback failed:', authErrorMessage);
@@ -181,7 +152,7 @@ export default function AuthCallbackScreen() {
         }
 
         if (session) {
-          router.replace(isRecovery ? '/(auth)/reset-password' : '/');
+          router.replace(callbackParams.isRecovery ? '/(auth)/reset-password' : '/');
           return;
         }
 
@@ -193,12 +164,13 @@ export default function AuthCallbackScreen() {
         setErrorMessage(toFriendlyError('invalid or expired'));
       } catch (error) {
         if (__DEV__) {
-          console.warn('[AuthCallback] Callback handling failed:', error);
+          console.warn('[AuthCallback] Callback handling failed:', toSafeDebugError(error));
         }
         if (isMounted) {
           setErrorMessage('Une erreur technique est survenue. Reviens à la connexion pour demander un nouveau lien.');
         }
       } finally {
+        inFlightRef.current = false;
         if (isMounted) {
           setIsResolving(false);
         }
@@ -206,9 +178,16 @@ export default function AuthCallbackScreen() {
     };
 
     void resolveCallback();
+    const urlSubscription = Linking.addEventListener('url', ({ url }) => {
+      if (!isMounted) {
+        return;
+      }
+      void resolveCallback(url ?? null);
+    });
 
     return () => {
       isMounted = false;
+      urlSubscription.remove();
     };
   }, [params.access_token, params.code, params.flow, params.refresh_token, params.token_hash, params.type]);
 

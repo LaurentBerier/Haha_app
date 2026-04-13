@@ -1,4 +1,5 @@
 import * as AppleAuthentication from 'expo-apple-authentication';
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { Link, router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
@@ -53,6 +54,9 @@ export default function LoginScreen() {
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const dismissKeyboardOnBackgroundPress = Platform.OS === 'web' ? undefined : Keyboard.dismiss;
+  const isExpoGoOnIos =
+    Platform.OS === 'ios' &&
+    (Constants.executionEnvironment === ExecutionEnvironment.StoreClient || Constants.appOwnership === 'expo');
 
   const formatAuthError = (error: unknown, fallback: string): string => {
     if (error && typeof error === 'object') {
@@ -120,7 +124,7 @@ export default function LoginScreen() {
     setIsEmailSubmitting(true);
 
     try {
-      await requestMagicLink(email.trim());
+      await requestMagicLink(email.trim(), 'signin');
       setMagicLinkSent(true);
       setCooldownSeconds(MAGIC_LINK_COOLDOWN_SECONDS);
     } catch (err) {
@@ -177,6 +181,7 @@ export default function LoginScreen() {
           <View style={styles.form} testID="login-screen">
             <Text style={styles.title}>{t('loginTitle')}</Text>
             <Text style={styles.subtitle}>{t('loginSubtitle')}</Text>
+            {isExpoGoOnIos ? <Text style={styles.info}>{t('authMagicLinkExpoGoWarning')}</Text> : null}
 
             <TextInput
               value={email}
@@ -337,5 +342,10 @@ const styles = StyleSheet.create({
   success: {
     color: theme.colors.textSecondary,
     fontSize: 13
+  },
+  info: {
+    color: theme.colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18
   }
 });
