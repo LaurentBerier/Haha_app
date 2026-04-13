@@ -19,6 +19,7 @@ import { requestMagicLink, signInWithApple } from '../../services/authService';
 import { theme } from '../../theme';
 
 const MAGIC_LINK_COOLDOWN_SECONDS = 45;
+const AUTH_FORM_MAX_WIDTH = 608;
 
 function parseRetryAfterSeconds(error: unknown): number | null {
   if (!error || typeof error !== 'object') {
@@ -266,6 +267,9 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.xl
   },
   form: {
+    width: '100%',
+    maxWidth: AUTH_FORM_MAX_WIDTH,
+    alignSelf: 'center',
     gap: theme.spacing.md
   },
   title: {
