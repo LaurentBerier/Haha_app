@@ -192,6 +192,7 @@ export default function LoginScreen() {
 
             {error ? <Text style={styles.error}>{error}</Text> : null}
             {magicLinkSent ? <Text style={styles.success}>{t('authMagicLinkSentNeutral')}</Text> : null}
+            {magicLinkSent ? <Text style={styles.hint}>{t('authMagicLinkSigninHint')}</Text> : null}
 
             <Pressable
               style={[styles.button, isSubmitting && styles.buttonDisabled]}
@@ -339,5 +340,9 @@ const styles = StyleSheet.create({
   success: {
     color: theme.colors.textSecondary,
     fontSize: 13
+  },
+  hint: {
+    color: theme.colors.textMuted,
+    fontSize: 12
   }
 });

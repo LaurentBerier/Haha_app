@@ -230,6 +230,8 @@ export const en = {
   authMagicLinkError: 'Unable to send the sign-in link.',
   authMagicLinkRateLimitError: 'Too many attempts. Try again in a moment.',
   authMagicLinkSentNeutral: 'If the email is valid, a sign-in link has been sent.',
+  authMagicLinkSigninHint:
+    'If this is your first time, use "Create account" first. Also check your spam or junk folder.',
   authMagicLinkResendIn: 'Resend in',
   authAppleUnavailableError: 'Apple Sign-In is unavailable on this device.',
   authNetworkError:

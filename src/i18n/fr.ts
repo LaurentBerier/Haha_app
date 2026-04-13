@@ -230,6 +230,8 @@ export const fr = {
   authMagicLinkError: "Impossible d'envoyer le lien de connexion.",
   authMagicLinkRateLimitError: 'Trop de tentatives. Reessaie dans quelques instants.',
   authMagicLinkSentNeutral: "Si l'email est valide, un lien de connexion a ete envoye.",
+  authMagicLinkSigninHint:
+    "Si c'est ta premiere connexion, utilise \"Creer un compte\". Pense aussi a verifier tes indésirables.",
   authMagicLinkResendIn: 'Renvoyer dans',
   authAppleUnavailableError: "Apple Sign-In est indisponible sur cet appareil.",
   authNetworkError:
