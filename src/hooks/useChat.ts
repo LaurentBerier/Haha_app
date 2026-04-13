@@ -994,6 +994,7 @@ export function useChat(conversationId: string) {
       let nextPlayableChunkIndex = 0;
       let hasQueuedAutoplayChunk = false;
       let didStartReplyAutoplay = false;
+      let didAttemptAutoplay = false;
       let autoplayChunkGeneration = 0;
       let pendingVoiceNoticeCode: TerminalTtsCode | null = null;
       let pendingVoiceErrorCode: VoiceErrorCode | null = null;
@@ -1112,6 +1113,7 @@ export function useChat(conversationId: string) {
           if (uri && shouldAutoPlay) {
             if (nextPlayableChunkIndex === 0 && !hasQueuedAutoplayChunk) {
               hasQueuedAutoplayChunk = true;
+              didAttemptAutoplay = true;
               const gen = ++autoplayChunkGeneration;
               void autoplayVoiceQueue([uri], artistMessageId).then((state) => {
                 if (state === 'started' || state === 'pending_web_unlock') {
@@ -1123,7 +1125,7 @@ export function useChat(conversationId: string) {
                   hasQueuedAutoplayChunk = false;
                 }
               });
-            } else if (hasQueuedAutoplayChunk) {
+            } else if (hasQueuedAutoplayChunk || didAttemptAutoplay) {
               audioPlayer.appendToQueue(uri, { messageId: artistMessageId });
             }
           }
