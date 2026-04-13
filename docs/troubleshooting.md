@@ -506,7 +506,7 @@ If still blocked:
 
 1. Open `/(auth)/login` and sign in with the same email/password.
 2. If password unknown, use `/(auth)/forgot-password`.
-3. If signup was never finalized, restart from `/(auth)/signup` and use the newest email link only.
+3. If signup was never finalized, restart from `/(auth)/login` and request a fresh magic link with the newest email only.
 
 ## 20) Subscription plan CTAs are visible but disabled (grey)
 

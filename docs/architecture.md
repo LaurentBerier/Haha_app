@@ -31,7 +31,6 @@ Supabase is the source of truth for:
 - Current operational/admin UX state is tracked in [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md).
 - Auth routes:
   - `/(auth)/login`
-  - `/(auth)/signup`
   - `/(auth)/forgot-password`
   - `/(auth)/reset-password`
   - `/(auth)/onboarding`
