@@ -76,6 +76,20 @@ export function resolveAudioPlaybackFailureReason(error: unknown): AudioPlayback
   return 'playback_error';
 }
 
+let persistentWebAudio: WebAudioLike | null = null;
+
+function getOrCreatePersistentWebAudio(): WebAudioLike | null {
+  if (persistentWebAudio) {
+    return persistentWebAudio;
+  }
+  const WebAudioCtor = (globalThis as { Audio?: new () => WebAudioLike }).Audio;
+  if (!WebAudioCtor) {
+    return null;
+  }
+  persistentWebAudio = new WebAudioCtor();
+  return persistentWebAudio;
+}
+
 export function useAudioPlayer(): AudioPlayerController {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -100,9 +114,10 @@ export function useAudioPlayer(): AudioPlayerController {
 
   const releaseWebAudio = useCallback(() => {
     clearWebListeners();
-    if (webAudioRef.current) {
-      webAudioRef.current.pause();
-      webAudioRef.current.src = '';
+    const audio = webAudioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.src = '';
     }
     webAudioRef.current = null;
   }, [clearWebListeners]);
@@ -228,13 +243,13 @@ export function useAudioPlayer(): AudioPlayerController {
         };
 
         if (Platform.OS === 'web') {
-          const WebAudioCtor = (globalThis as { Audio?: new (src?: string) => WebAudioLike }).Audio;
-          if (!WebAudioCtor) {
+          const webAudio = getOrCreatePersistentWebAudio();
+          if (!webAudio) {
             await stop();
             return toPlaybackFailureResult('playback_error');
           }
 
-          const webAudio = new WebAudioCtor(uri);
+          webAudio.src = uri;
           webAudio.volume = 1;
           webAudioRef.current = webAudio;
 
