@@ -60,6 +60,9 @@ export function markWebAutoplaySessionUnlocked(): void {
 }
 
 export function queueLatestWebAutoplayUnlockRetry(retry: UnlockRetryCallback): void {
+  // #region agent log
+  if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'unlock:queueRetry',d:{unlocked:isSessionUnlocked,immediate:isWebRuntime()&&isSessionUnlocked}});console.warn('[DBG]unlockRetry',{unlocked:isSessionUnlocked});}
+  // #endregion
   if (!isWebRuntime()) {
     retry();
     return;

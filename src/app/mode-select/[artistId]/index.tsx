@@ -1545,6 +1545,12 @@ export default function ModeSelectHomeScreen() {
     replayOnFocus: false
   });
 
+  // #region agent log
+  useEffect(() => {
+    if(typeof window!=='undefined'){const snap={t:Date.now(),l:'hub:state',d:{strm:hasStreaming,aPlay:audioPlayer.isPlaying,aLoad:audioPlayer.isLoading,aMid:audioPlayer.currentMessageId,pGA:Boolean(pendingGreetingAudio),gVA:isGreetingVoiceActive,compDis:isModeSelectComposerDisabled,valid:isValidConversation,sendRdy:isSendContextReady,convMode:conversationModeEnabled,listen:isListening,nMsg:messages.length,lastSt:messages.length>0?messages[messages.length-1]?.status:null,lastR:messages.length>0?messages[messages.length-1]?.role:null}};((window as any).__dbg=((window as any).__dbg||[])).push(snap);console.warn('[DBG]hub',snap.d);}
+  }, [hasStreaming, audioPlayer.isPlaying, audioPlayer.isLoading, audioPlayer.currentMessageId, pendingGreetingAudio, isGreetingVoiceActive, isModeSelectComposerDisabled, isValidConversation, isSendContextReady, conversationModeEnabled, isListening, messages]);
+  // #endregion
+
   useEffect(() => {
     if (!isModeSelectDebugLoggingEnabled()) {
       return;

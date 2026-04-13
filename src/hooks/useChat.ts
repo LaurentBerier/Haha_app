@@ -1104,9 +1104,11 @@ export function useChat(conversationId: string) {
 
         while (ttsChunkUrisByIndex.has(nextPlayableChunkIndex)) {
           const uri = ttsChunkUrisByIndex.get(nextPlayableChunkIndex);
+          // #region agent log
+          if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'chat:flushChunk',d:{idx:nextPlayableChunkIndex,hasUri:Boolean(uri),autoPlay:shouldAutoPlay,queued:hasQueuedAutoplayChunk,started:didStartReplyAutoplay}});console.warn('[DBG]flushChunk',{idx:nextPlayableChunkIndex,autoPlay:shouldAutoPlay,queued:hasQueuedAutoplayChunk});}
+          // #endregion
           if (uri && shouldAutoPlay) {
             if (nextPlayableChunkIndex === 0 && !hasQueuedAutoplayChunk) {
-              // First real chunk interrupts any filler currently playing.
               hasQueuedAutoplayChunk = true;
               void autoplayVoiceQueue([uri], artistMessageId).then((state) => {
                 if (state === 'started' || state === 'pending_web_unlock') {
@@ -1248,6 +1250,9 @@ export function useChat(conversationId: string) {
       };
 
       const onComplete = ({ tokensUsed }: { tokensUsed: number }) => {
+        // #region agent log
+        if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'chat:onComplete',d:{cid:jobConversationId.slice(-8),amid:artistMessageId.slice(-8),tok:tokensUsed,voice:canGenerateVoice,chunked:shouldUseChunkedTts,chunks:ttsChunkCount,voiceStarted:hasStartedVoiceGeneration,ignoreTts:ignoreTtsUpdates}});console.warn('[DBG]onComplete',{tok:tokensUsed,chunks:ttsChunkCount,voice:canGenerateVoice});}
+        // #endregion
         if (!isCurrentStream()) {
           return;
         }
@@ -1541,10 +1546,16 @@ export function useChat(conversationId: string) {
           })();
         }
         resetStreamState();
+        // #region agent log
+        if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'chat:onCompleteDone',d:{cid:jobConversationId.slice(-8),amid:artistMessageId.slice(-8),streaming:isStreamingRef.current}});console.warn('[DBG]onCompleteDone',{streaming:isStreamingRef.current});}
+        // #endregion
         runNext();
       };
 
       const failStream = (error: Error) => {
+        // #region agent log
+        if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'chat:failStream',d:{cid:jobConversationId.slice(-8),amid:artistMessageId.slice(-8),err:error?.message?.slice(0,100),code:(error as any)?.code,status:(error as any)?.status}});console.warn('[DBG]failStream',{err:error?.message?.slice(0,100)});}
+        // #endregion
         ignoreTtsUpdates = true;
         if (!isCurrentStream()) {
           return;

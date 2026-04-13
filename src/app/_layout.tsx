@@ -6,6 +6,7 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  Text,
   View,
   type ImageStyle,
   useWindowDimensions
@@ -803,6 +804,30 @@ export default function RootLayout() {
                   void handleAuthMenuAction();
                 }}
               />
+              {/* #region agent log */}
+              {Platform.OS === 'web' ? (
+                <Pressable
+                  onPress={() => {
+                    try {
+                      const logs = (window as any).__dbg ?? [];
+                      const text = JSON.stringify(logs, null, 1);
+                      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                        navigator.clipboard.writeText(text).then(() => {
+                          alert(`Copied ${logs.length} debug logs to clipboard`);
+                        }).catch(() => {
+                          prompt('Copy these logs:', text.slice(0, 4000));
+                        });
+                      } else {
+                        prompt('Copy these logs:', text.slice(0, 4000));
+                      }
+                    } catch { alert('No logs'); }
+                  }}
+                  style={{ position: 'absolute', bottom: 4, left: 4, zIndex: 99999, backgroundColor: 'rgba(255,0,0,0.7)', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4 }}
+                >
+                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>DBG</Text>
+                </Pressable>
+              ) : null}
+              {/* #endregion */}
             </>
           )}
         </View>
