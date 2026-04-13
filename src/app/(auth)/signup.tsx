@@ -52,6 +52,7 @@ export default function SignupScreen() {
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [cooldownSeconds, setCooldownSeconds] = useState(0);
   const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const dismissKeyboardOnBackgroundPress = Platform.OS === 'web' ? undefined : Keyboard.dismiss;
 
   const formatAuthError = (error: unknown, fallback: string): string => {
     if (error && typeof error === 'object') {
@@ -162,7 +163,7 @@ export default function SignupScreen() {
       behavior={Platform.select({ ios: 'padding', default: undefined })}
       style={styles.screen}
     >
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <TouchableWithoutFeedback onPress={dismissKeyboardOnBackgroundPress} accessible={false}>
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}

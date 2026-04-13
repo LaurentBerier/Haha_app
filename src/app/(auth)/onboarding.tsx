@@ -63,6 +63,7 @@ export default function OnboardingScreen() {
   const [ageError, setAgeError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const dismissKeyboardOnBackgroundPress = Platform.OS === 'web' ? undefined : Keyboard.dismiss;
   const [answers, setAnswers] = useState<OnboardingAnswers>({
     preferredName: null,
     age: null,
@@ -275,7 +276,7 @@ export default function OnboardingScreen() {
       behavior={Platform.select({ ios: 'padding', default: undefined })}
       style={styles.screenWrapper}
     >
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <TouchableWithoutFeedback onPress={dismissKeyboardOnBackgroundPress} accessible={false}>
         <ScrollView
           contentContainerStyle={styles.screen}
           testID="onboarding-screen"

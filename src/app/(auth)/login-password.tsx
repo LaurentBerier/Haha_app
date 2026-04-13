@@ -25,6 +25,7 @@ export default function LoginPasswordScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const dismissKeyboardOnBackgroundPress = Platform.OS === 'web' ? undefined : Keyboard.dismiss;
 
   const formatAuthError = (error: unknown, fallback: string): string => {
     if (error instanceof Error) {
@@ -61,7 +62,7 @@ export default function LoginPasswordScreen() {
       behavior={Platform.select({ ios: 'padding', default: undefined })}
       style={styles.screen}
     >
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+      <TouchableWithoutFeedback onPress={dismissKeyboardOnBackgroundPress} accessible={false}>
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
