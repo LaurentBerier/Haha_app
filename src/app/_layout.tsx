@@ -809,6 +809,7 @@ export default function RootLayout() {
                 <Pressable
                   onPress={() => {
                     try {
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
                       const logs = (window as any).__dbg ?? [];
                       const text = JSON.stringify(logs, null, 1);
                       if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {

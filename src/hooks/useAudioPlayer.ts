@@ -177,6 +177,7 @@ export function useAudioPlayer(): AudioPlayerController {
     queueIndexRef.current = 0;
     await releaseAllAudio();
     // #region agent log
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'audioPlayer:stop',d:{newToken:playbackTokenRef.current,mounted:isMountedRef.current}});console.warn('[DBG]stop',{tok:playbackTokenRef.current});}
     // #endregion
     resetState();
@@ -229,6 +230,7 @@ export function useAudioPlayer(): AudioPlayerController {
         setIsLoading(true);
         setIsPlaying(false);
         // #region agent log
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'audioPlayer:playIndex',d:{index,token,uri:uri.slice(0,60),mid:queueItem.messageId,qLen:queue.length}});console.warn('[DBG]playIndex',{index,token,uri:uri.slice(0,60),mid:queueItem.messageId});}
         // #endregion
 
@@ -297,6 +299,7 @@ export function useAudioPlayer(): AudioPlayerController {
           try {
             await webAudio.play();
             // #region agent log
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'audioPlayer:playOK',d:{token,uri:uri.slice(0,60),mid:queueItem.messageId}});console.warn('[DBG]playOK',{token,mid:queueItem.messageId});}
             // #endregion
             if (isMountedRef.current && playbackTokenRef.current === token) {
@@ -308,6 +311,7 @@ export function useAudioPlayer(): AudioPlayerController {
           } catch (error: unknown) {
             const reason = resolveAudioPlaybackFailureReason(error);
             // #region agent log
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'audioPlayer:playERR',d:{token,reason,eName:(error as any)?.name,eMsg:(error as any)?.message?.slice(0,100)}});console.warn('[DBG]playERR',{token,reason,eName:(error as any)?.name});}
             // #endregion
             if (reason === 'web_autoplay_blocked') {

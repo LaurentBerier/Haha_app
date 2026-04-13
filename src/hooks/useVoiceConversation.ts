@@ -630,6 +630,7 @@ export function useVoiceConversation({
         return;
       }
       // #region agent log
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:focusLoss',d:{reason,status:stateRef.current.status,enabled:enabledRef.current}});console.warn('[DBG]voice:focusLoss',reason);}
       // #endregion
 
@@ -777,6 +778,7 @@ export function useVoiceConversation({
         recoveryAttempt: stateRef.current.recoveryAttempt
       });
       // #region agent log
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:sessionEnd',d:{sid:event.sessionId,reason:event.reason,msg:event.message?.slice(0,80),recAttempt:stateRef.current.recoveryAttempt,enabled:enabledRef.current,disabled:disabledRef.current,status:stateRef.current.status,isPlaying:isPlayingRef.current}});console.warn('[DBG]voice:sessionEnd',event.reason);}
       // #endregion
 
@@ -875,6 +877,7 @@ export function useVoiceConversation({
 
       if (startInFlightRef.current) {
         // #region agent log
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:startBlocked',d:{origin,reason:'inFlight'}});console.warn('[DBG]voice:startBlocked inFlight',origin);}
         // #endregion
         return;
@@ -901,12 +904,14 @@ export function useVoiceConversation({
 
       if (!canStart) {
         // #region agent log
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:startBlocked',d:{origin,reason:'cannotStart',status:latestStatus,enabled:enabledRef.current,disabled:disabledRef.current,isPlaying:isPlayingRef.current,hasTypedDraft:hasTypedDraftRef.current,webTabActive:webTabActiveRef.current,hasUserActivation:hasUserActivatedListeningRef.current}});console.warn('[DBG]voice:startBlocked',origin);}
         // #endregion
         return;
       }
 
       // #region agent log
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:startOK',d:{origin,status:latestStatus}});console.warn('[DBG]voice:startOK',origin);}
       // #endregion
       startInFlightRef.current = true;
