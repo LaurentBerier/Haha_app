@@ -629,6 +629,9 @@ export function useVoiceConversation({
       if (Platform.OS !== 'web') {
         return;
       }
+      // #region agent log
+      if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:focusLoss',d:{reason,status:stateRef.current.status,enabled:enabledRef.current}});console.warn('[DBG]voice:focusLoss',reason);}
+      // #endregion
 
       webTabActiveRef.current = false;
       const shouldSuspend = shouldSuspendMicForWebFocusLoss({
@@ -773,6 +776,9 @@ export function useVoiceConversation({
         message: event.message,
         recoveryAttempt: stateRef.current.recoveryAttempt
       });
+      // #region agent log
+      if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:sessionEnd',d:{sid:event.sessionId,reason:event.reason,msg:event.message?.slice(0,80),recAttempt:stateRef.current.recoveryAttempt,enabled:enabledRef.current,disabled:disabledRef.current,status:stateRef.current.status,isPlaying:isPlayingRef.current}});console.warn('[DBG]voice:sessionEnd',event.reason);}
+      // #endregion
 
       if (event.reason === 'permission') {
         hasPermissionRef.current = false;
@@ -868,6 +874,9 @@ export function useVoiceConversation({
       }
 
       if (startInFlightRef.current) {
+        // #region agent log
+        if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:startBlocked',d:{origin,reason:'inFlight'}});console.warn('[DBG]voice:startBlocked inFlight',origin);}
+        // #endregion
         return;
       }
 
@@ -891,9 +900,15 @@ export function useVoiceConversation({
             webTabActiveRef.current;
 
       if (!canStart) {
+        // #region agent log
+        if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:startBlocked',d:{origin,reason:'cannotStart',status:latestStatus,enabled:enabledRef.current,disabled:disabledRef.current,isPlaying:isPlayingRef.current,hasTypedDraft:hasTypedDraftRef.current,webTabActive:webTabActiveRef.current,hasUserActivation:hasUserActivatedListeningRef.current}});console.warn('[DBG]voice:startBlocked',origin);}
+        // #endregion
         return;
       }
 
+      // #region agent log
+      if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:startOK',d:{origin,status:latestStatus}});console.warn('[DBG]voice:startOK',origin);}
+      // #endregion
       startInFlightRef.current = true;
       try {
         clearRecoveryTimer();

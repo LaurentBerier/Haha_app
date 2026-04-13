@@ -69,9 +69,20 @@ export function isWebAutoplayBlockedError(error: unknown): boolean {
   return name === 'NotAllowedError';
 }
 
+function isWebAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const name = 'name' in error && typeof error.name === 'string' ? error.name : '';
+  return name === 'AbortError';
+}
+
 export function resolveAudioPlaybackFailureReason(error: unknown): AudioPlaybackFailureReason {
   if (isWebAutoplayBlockedError(error)) {
     return 'web_autoplay_blocked';
+  }
+  if (Platform.OS === 'web' && isWebAbortError(error)) {
+    return 'interrupted';
   }
   return 'playback_error';
 }
@@ -302,6 +313,9 @@ export function useAudioPlayer(): AudioPlayerController {
             if (reason === 'web_autoplay_blocked') {
               await stop();
               return toPlaybackFailureResult(reason);
+            }
+            if (reason === 'interrupted' || playbackTokenRef.current !== token) {
+              return toPlaybackFailureResult('interrupted');
             }
             onChunkEnd();
             return toPlaybackFailureResult(reason);

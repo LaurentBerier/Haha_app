@@ -77,18 +77,73 @@ function shouldTryOpenNativeApp(url: URL): boolean {
   return true;
 }
 
+type CallbackRouteParams = {
+  code?: string | string[];
+  token_hash?: string | string[];
+  type?: string | string[];
+  flow?: string | string[];
+  access_token?: string | string[];
+  refresh_token?: string | string[];
+  error?: string | string[];
+  error_description?: string | string[];
+  url?: string | string[];
+  redirect_to?: string | string[];
+  redirect_url?: string | string[];
+  link?: string | string[];
+} & Record<string, string | string[] | undefined>;
+
+const CALLBACK_ROUTE_PARAM_KEYS = [
+  'code',
+  'token_hash',
+  'type',
+  'flow',
+  'access_token',
+  'refresh_token',
+  'error',
+  'error_description',
+  'url',
+  'redirect_to',
+  'redirect_url',
+  'link'
+] as const;
+
+function getFirstRouteParamValue(value: string | string[] | undefined): string | null {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+
+  if (Array.isArray(value)) {
+    const first = value[0];
+    if (typeof first === 'string' && first.trim()) {
+      return first.trim();
+    }
+  }
+
+  return null;
+}
+
+function buildCallbackCandidateFromRouteParams(params: CallbackRouteParams): string | null {
+  const search = new URLSearchParams();
+
+  for (const key of CALLBACK_ROUTE_PARAM_KEYS) {
+    const value = getFirstRouteParamValue(params[key]);
+    if (!value) {
+      continue;
+    }
+    search.set(key, value);
+  }
+
+  const query = search.toString();
+  if (!query) {
+    return null;
+  }
+
+  return `${AUTH_CALLBACK_SCHEME_URL}?${query}`;
+}
+
 
 export default function AuthCallbackScreen() {
-  const params = useLocalSearchParams<{
-    code?: string;
-    token_hash?: string;
-    type?: string;
-    flow?: string;
-    access_token?: string;
-    refresh_token?: string;
-    error?: string;
-    error_description?: string;
-  }>();
+  const params = useLocalSearchParams() as CallbackRouteParams;
   const [isResolving, setIsResolving] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const lastHandledUrlRef = useRef<string | null>(null);
@@ -106,8 +161,27 @@ export default function AuthCallbackScreen() {
         assertSupabaseConfigured();
 
         const fallbackWebUrl = Platform.OS === 'web' ? getWebCurrentUrl() : null;
-        const initialUrl = incomingUrlOverride ?? (await Linking.getInitialURL()) ?? fallbackWebUrl;
-        const resolvedUrl = resolveAuthCallbackUrl(initialUrl);
+        const initialUrl = incomingUrlOverride ?? (await Linking.getInitialURL());
+        const routeParamsCandidate = buildCallbackCandidateFromRouteParams(params);
+        const rawCandidates = [incomingUrlOverride, initialUrl, fallbackWebUrl, routeParamsCandidate];
+
+        let resolvedUrl: URL | null = null;
+        for (const rawCandidate of rawCandidates) {
+          const candidate = resolveAuthCallbackUrl(rawCandidate ?? null);
+          if (!candidate) {
+            continue;
+          }
+
+          if (!resolvedUrl) {
+            resolvedUrl = candidate;
+          }
+
+          if (hasAuthPayload(candidate)) {
+            resolvedUrl = candidate;
+            break;
+          }
+        }
+
         const callbackUrl = resolvedUrl?.toString() ?? null;
 
         if (callbackUrl && lastHandledUrlRef.current === callbackUrl) {
@@ -129,7 +203,6 @@ export default function AuthCallbackScreen() {
               const nativeUrl = buildNativeCallbackUrl(webUrl, AUTH_CALLBACK_SCHEME_URL);
               window.sessionStorage.setItem('haha-auth-native-handoff-url', webUrl.href);
               window.location.assign(nativeUrl);
-              return;
             }
           } catch {
             // Keep normal callback flow as fallback.

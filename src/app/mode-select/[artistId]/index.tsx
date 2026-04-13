@@ -223,7 +223,7 @@ function resolveGreetingVoiceNoticeCode(errorCode: string): GreetingVoiceNoticeC
 }
 
 function shouldRetryGreetingAutoplayFailure(failureReason: string | null): boolean {
-  return failureReason === 'interrupted' || failureReason === 'playback_error';
+  return failureReason === 'playback_error';
 }
 
 async function attemptGreetingAutoplayWithRetries(params: {

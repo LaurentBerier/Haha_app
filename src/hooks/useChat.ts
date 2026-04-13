@@ -574,7 +574,7 @@ export function useChat(conversationId: string) {
             return result.state;
           }
 
-          if (result.failureReason !== 'interrupted' && result.failureReason !== 'playback_error') {
+          if (result.failureReason !== 'playback_error') {
             return 'failed';
           }
 
