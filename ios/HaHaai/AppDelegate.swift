@@ -56,8 +56,12 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
   // Extension point for config-plugins
 
   override func sourceURL(for bridge: RCTBridge) -> URL? {
-    // needed to return the correct URL for expo-dev-client.
-    bridge.bundleURL ?? bundleURL()
+    // Expo dev-client may occasionally provide `/expo/.virtual-metro-entry`,
+    // while Metro serves `/.expo/.virtual-metro-entry`.
+    if let bridgeURL = bridge.bundleURL {
+      return normalizedDevBundleURL(bridgeURL)
+    }
+    return bundleURL()
   }
 
   override func bundleURL() -> URL? {
@@ -78,6 +82,22 @@ class ReactNativeDelegate: ExpoReactNativeFactoryDelegate {
     return URL(string: "http://localhost:8081/\(bundleRoot).bundle?platform=ios&dev=true&minify=false")
 #else
     return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
+#endif
+  }
+
+  private func normalizedDevBundleURL(_ url: URL) -> URL {
+#if DEBUG
+    let legacyPath = "/expo/.virtual-metro-entry.bundle"
+    let expectedPath = "/.expo/.virtual-metro-entry.bundle"
+    guard url.path == legacyPath,
+      var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+    else {
+      return url
+    }
+    components.path = expectedPath
+    return components.url ?? url
+#else
+    return url
 #endif
   }
 }
