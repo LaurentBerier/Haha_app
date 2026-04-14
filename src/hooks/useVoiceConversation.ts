@@ -16,6 +16,7 @@ const parsedBusyLoadingTimeout = Number.parseInt(process.env.EXPO_PUBLIC_BUSY_LO
 const BUSY_LOADING_TIMEOUT_MS =
   Number.isFinite(parsedBusyLoadingTimeout) && parsedBusyLoadingTimeout >= 3000 ? parsedBusyLoadingTimeout : 12000;
 const RECOVERY_DELAYS_MS = [250, 800, 2000] as const;
+const WEB_VOICE_LIVENESS_MS = 5_000;
 export const VOICE_DUPLICATE_SEND_WINDOW_MS = 3_000;
 
 const GARBLED_STT_STANDALONE_WORDS = new Set([
@@ -528,6 +529,7 @@ export function useVoiceConversation({
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const livenessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumeAfterTypedDraftRef = useRef(false);
   const pendingManualResumeRef = useRef(false);
   const hasUserActivatedListeningRef = useRef(Platform.OS !== 'web');
@@ -614,11 +616,21 @@ export function useVoiceConversation({
     busyLoadingTimerRef.current = null;
   }, []);
 
+  const clearLivenessTimer = useCallback(() => {
+    if (!livenessTimerRef.current) {
+      return;
+    }
+
+    clearTimeout(livenessTimerRef.current);
+    livenessTimerRef.current = null;
+  }, []);
+
   const stopActiveSession = useCallback(() => {
+    clearLivenessTimer();
     const activeSession = activeSessionRef.current;
     activeSessionRef.current = null;
     activeSession?.stop();
-  }, []);
+  }, [clearLivenessTimer]);
 
   const clearTranscript = useCallback(() => {
     dispatch({ type: 'clear_transcript' });
@@ -968,6 +980,8 @@ export function useVoiceConversation({
         });
 
         let audioStartFired = false;
+        let resultReceived = false;
+        clearLivenessTimer();
         const audioStartTimeoutId = setTimeout(() => {
           if (!audioStartFired && isMountedRef.current) {
             dispatch({ type: 'listening' });
@@ -978,15 +992,33 @@ export function useVoiceConversation({
           locale: languageRef.current,
           fallbackLocale: fallbackLanguageRef.current,
           onResult: (event) => {
+            resultReceived = true;
+            clearLivenessTimer();
             handleSessionResult(event.sessionId, event.transcript);
           },
           onEnd: (event) => {
             clearTimeout(audioStartTimeoutId);
+            clearLivenessTimer();
             handleSessionEnd(event);
           },
           onAudioStart: () => {
             audioStartFired = true;
             clearTimeout(audioStartTimeoutId);
+            if (Platform.OS === 'web') {
+              clearLivenessTimer();
+              livenessTimerRef.current = setTimeout(() => {
+                livenessTimerRef.current = null;
+                if (!resultReceived && activeSessionRef.current?.id === session.id && isMountedRef.current) {
+                  // #region agent log
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:livenessKill',d:{sid:session.id}});console.warn('[DBG]voice:livenessKill',session.id);}
+                  fetch('http://127.0.0.1:7589/ingest/a8ac1d46-cb01-432f-baa8-71bc84b7e043',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'da8964'},body:JSON.stringify({sessionId:'da8964',location:'useVoiceConversation.ts:liveness',message:'voice:livenessKill',data:{sid:session.id},timestamp:Date.now()})}).catch(()=>{});
+                  // #endregion
+                  logVoiceDebug('liveness_watchdog_kill', { sessionId: session.id });
+                  session.stop();
+                }
+              }, WEB_VOICE_LIVENESS_MS);
+            }
             if (isMountedRef.current) {
               dispatch({ type: 'listening' });
             }
@@ -1005,6 +1037,7 @@ export function useVoiceConversation({
       }
     },
     [
+      clearLivenessTimer,
       clearRecoveryTimer,
       clearSilenceTimer,
       clearTranscript,
