@@ -2,8 +2,7 @@ export type GreetingAutoMicDecision =
   | 'skip'
   | 'consume_without_auto_arm'
   | 'arm_listening'
-  | 'force_enable_and_resume'
-  | 'force_enable_without_resume';
+  | 'force_enable_and_resume';
 
 export interface ResolveGreetingAutoMicDecisionParams {
   hasPendingGreetingMessageId: boolean;
@@ -18,7 +17,6 @@ export interface ResolveGreetingAutoMicDecisionParams {
   isGreetingVoiceActive: boolean;
   isGreetingBooting: boolean;
   conversationModeEnabled: boolean;
-  isIosMobileWebRuntime: boolean;
 }
 
 function isEligibleGreetingInjectedType(value: string | null | undefined): value is 'greeting' | 'tutorial_greeting' {
@@ -53,9 +51,6 @@ export function resolveGreetingAutoMicDecision(
   }
 
   if (params.injectedType === 'tutorial_greeting') {
-    if (params.isIosMobileWebRuntime) {
-      return 'force_enable_without_resume';
-    }
     return 'force_enable_and_resume';
   }
 

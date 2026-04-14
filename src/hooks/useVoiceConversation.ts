@@ -29,7 +29,8 @@ const BUSY_LOADING_TIMEOUT_MS =
     ? parsedBusyLoadingTimeout
     : DEFAULT_BUSY_LOADING_TIMEOUT_MS;
 const RECOVERY_DELAYS_MS = VOICE_RECOVERY_DELAYS_MS;
-const WEB_VOICE_LIVENESS_MS = 5_000;
+const WEB_VOICE_LIVENESS_MS = 8_000;
+const ASSISTANT_BUSY_RECOVERY_DELAY_MS = 1_000;
 export const VOICE_DUPLICATE_SEND_WINDOW_MS = 3_000;
 
 const GARBLED_STT_STANDALONE_WORDS = new Set([
@@ -163,6 +164,18 @@ interface BusyLoadingRecoveryState {
   enabled: boolean;
   disabled: boolean;
   hasTypedDraft: boolean;
+  isAudioPlaybackLoading: boolean;
+  status: VoiceConversationStatus;
+  startInFlight: boolean;
+  hasActiveSession: boolean;
+  hasRecoveryTimer: boolean;
+}
+
+interface AssistantBusyRecoveryState {
+  enabled: boolean;
+  disabled: boolean;
+  hasTypedDraft: boolean;
+  isPlaying: boolean;
   isAudioPlaybackLoading: boolean;
   status: VoiceConversationStatus;
   startInFlight: boolean;
@@ -521,6 +534,24 @@ export function shouldRecoverFromBusyLoadingStall(state: BusyLoadingRecoveryStat
   return !state.startInFlight && !state.hasActiveSession && !state.hasRecoveryTimer;
 }
 
+export function shouldRecoverFromAssistantBusyStall(state: AssistantBusyRecoveryState): boolean {
+  if (
+    !state.enabled ||
+    state.disabled ||
+    state.hasTypedDraft ||
+    state.isPlaying ||
+    state.isAudioPlaybackLoading
+  ) {
+    return false;
+  }
+
+  if (state.status !== 'assistant_busy') {
+    return false;
+  }
+
+  return !state.startInFlight && !state.hasActiveSession && !state.hasRecoveryTimer;
+}
+
 export function useVoiceConversation({
   enabled,
   disabled,
@@ -542,6 +573,7 @@ export function useVoiceConversation({
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const assistantBusyRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const livenessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumeAfterTypedDraftRef = useRef(false);
   const pendingManualResumeRef = useRef(false);
@@ -629,6 +661,15 @@ export function useVoiceConversation({
     busyLoadingTimerRef.current = null;
   }, []);
 
+  const clearAssistantBusyRecoveryTimer = useCallback(() => {
+    if (!assistantBusyRecoveryTimerRef.current) {
+      return;
+    }
+
+    clearTimeout(assistantBusyRecoveryTimerRef.current);
+    assistantBusyRecoveryTimerRef.current = null;
+  }, []);
+
   const clearLivenessTimer = useCallback(() => {
     if (!livenessTimerRef.current) {
       return;
@@ -654,10 +695,6 @@ export function useVoiceConversation({
       if (Platform.OS !== 'web') {
         return;
       }
-      // #region agent log
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:focusLoss',d:{reason,status:stateRef.current.status,enabled:enabledRef.current}});console.warn('[DBG]voice:focusLoss',reason);}
-      // #endregion
 
       webTabActiveRef.current = false;
       const shouldSuspend = shouldSuspendMicForWebFocusLoss({
@@ -802,10 +839,6 @@ export function useVoiceConversation({
         message: event.message,
         recoveryAttempt: stateRef.current.recoveryAttempt
       });
-      // #region agent log
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:sessionEnd',d:{sid:event.sessionId,reason:event.reason,msg:event.message?.slice(0,80),recAttempt:stateRef.current.recoveryAttempt,enabled:enabledRef.current,disabled:disabledRef.current,status:stateRef.current.status,isPlaying:isPlayingRef.current}});console.warn('[DBG]voice:sessionEnd',event.reason);}
-      // #endregion
 
       if (event.reason === 'permission') {
         hasPermissionRef.current = false;
@@ -901,10 +934,6 @@ export function useVoiceConversation({
       }
 
       if (startInFlightRef.current) {
-        // #region agent log
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:startBlocked',d:{origin,reason:'inFlight'}});console.warn('[DBG]voice:startBlocked inFlight',origin);}
-        // #endregion
         return;
       }
 
@@ -928,17 +957,9 @@ export function useVoiceConversation({
             webTabActiveRef.current;
 
       if (!canStart) {
-        // #region agent log
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:startBlocked',d:{origin,reason:'cannotStart',status:latestStatus,enabled:enabledRef.current,disabled:disabledRef.current,isPlaying:isPlayingRef.current,hasTypedDraft:hasTypedDraftRef.current,webTabActive:webTabActiveRef.current,hasUserActivation:hasUserActivatedListeningRef.current}});console.warn('[DBG]voice:startBlocked',origin);}
-        // #endregion
         return;
       }
 
-      // #region agent log
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:startOK',d:{origin,status:latestStatus}});console.warn('[DBG]voice:startOK',origin);}
-      // #endregion
       startInFlightRef.current = true;
       try {
         clearRecoveryTimer();
@@ -1022,11 +1043,6 @@ export function useVoiceConversation({
               livenessTimerRef.current = setTimeout(() => {
                 livenessTimerRef.current = null;
                 if (!resultReceived && activeSessionRef.current?.id === session.id && isMountedRef.current) {
-                  // #region agent log
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  if(typeof window!=='undefined'){((window as any).__dbg=((window as any).__dbg||[])).push({t:Date.now(),l:'voice:livenessKill',d:{sid:session.id}});console.warn('[DBG]voice:livenessKill',session.id);}
-                  fetch('http://127.0.0.1:7589/ingest/a8ac1d46-cb01-432f-baa8-71bc84b7e043',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'da8964'},body:JSON.stringify({sessionId:'da8964',location:'useVoiceConversation.ts:liveness',message:'voice:livenessKill',data:{sid:session.id},timestamp:Date.now()})}).catch(()=>{});
-                  // #endregion
                   logVoiceDebug('liveness_watchdog_kill', { sessionId: session.id });
                   session.stop();
                 }
@@ -1113,6 +1129,7 @@ export function useVoiceConversation({
       if (disabled) {
         pendingManualResumeRef.current = false;
       }
+      clearAssistantBusyRecoveryTimer();
       clearBusyLoadingTimer();
       clearRecoveryTimer();
       clearSilenceTimer();
@@ -1128,6 +1145,7 @@ export function useVoiceConversation({
         status: stateRef.current.status,
         hasActiveSession: Boolean(activeSessionRef.current)
       });
+      clearAssistantBusyRecoveryTimer();
       clearBusyLoadingTimer();
       clearRecoveryTimer();
       clearSilenceTimer();
@@ -1199,6 +1217,7 @@ export function useVoiceConversation({
 
     clearBusyLoadingTimer();
   }, [
+    clearAssistantBusyRecoveryTimer,
     clearBusyLoadingTimer,
     clearRecoveryTimer,
     clearSilenceTimer,
@@ -1263,6 +1282,63 @@ export function useVoiceConversation({
 
   useEffect(() => {
     if (
+      !shouldRecoverFromAssistantBusyStall({
+        enabled,
+        disabled,
+        hasTypedDraft,
+        isPlaying,
+        isAudioPlaybackLoading,
+        status: state.status,
+        startInFlight: startInFlightRef.current,
+        hasActiveSession: Boolean(activeSessionRef.current),
+        hasRecoveryTimer: Boolean(recoveryTimerRef.current)
+      })
+    ) {
+      clearAssistantBusyRecoveryTimer();
+      return;
+    }
+
+    if (assistantBusyRecoveryTimerRef.current) {
+      return;
+    }
+
+    assistantBusyRecoveryTimerRef.current = setTimeout(() => {
+      assistantBusyRecoveryTimerRef.current = null;
+      if (
+        !isMountedRef.current ||
+        !shouldRecoverFromAssistantBusyStall({
+          enabled: enabledRef.current,
+          disabled: disabledRef.current,
+          hasTypedDraft: hasTypedDraftRef.current,
+          isPlaying: isPlayingRef.current,
+          isAudioPlaybackLoading: isAudioPlaybackLoadingRef.current,
+          status: stateRef.current.status,
+          startInFlight: startInFlightRef.current,
+          hasActiveSession: Boolean(activeSessionRef.current),
+          hasRecoveryTimer: Boolean(recoveryTimerRef.current)
+        })
+      ) {
+        return;
+      }
+
+      logVoiceDebug('assistant_busy_stall_recovery', {
+        status: stateRef.current.status
+      });
+      hasUserActivatedListeningRef.current = true;
+      void startListeningFlowRef.current?.('recovery');
+    }, ASSISTANT_BUSY_RECOVERY_DELAY_MS);
+  }, [
+    clearAssistantBusyRecoveryTimer,
+    disabled,
+    enabled,
+    hasTypedDraft,
+    isAudioPlaybackLoading,
+    isPlaying,
+    state.status
+  ]);
+
+  useEffect(() => {
+    if (
       !shouldAttemptAutoListen({
         shouldAutoListen,
         webTabActive: webTabActiveRef.current,
@@ -1289,15 +1365,17 @@ export function useVoiceConversation({
     shouldResumeAfterWebFocusLossRef.current = false;
     pendingManualResumeRef.current = false;
     resumeAfterTypedDraftRef.current = false;
+    clearAssistantBusyRecoveryTimer();
     clearBusyLoadingTimer();
     clearRecoveryTimer();
     clearSilenceTimer();
     stopActiveSession();
     dispatch({ type: 'pause_manual' });
-  }, [clearBusyLoadingTimer, clearRecoveryTimer, clearSilenceTimer, stopActiveSession]);
+  }, [clearAssistantBusyRecoveryTimer, clearBusyLoadingTimer, clearRecoveryTimer, clearSilenceTimer, stopActiveSession]);
 
   const resumeListening = useCallback(() => {
     shouldResumeAfterWebFocusLossRef.current = false;
+    clearAssistantBusyRecoveryTimer();
     clearBusyLoadingTimer();
     if (disabledRef.current) {
       pendingManualResumeRef.current = false;
@@ -1348,13 +1426,14 @@ export function useVoiceConversation({
     dispatch({ type: 'set_off' });
     dispatch({ type: 'starting' });
     void startListeningFlow('resume');
-  }, [clearBusyLoadingTimer, startListeningFlow]);
+  }, [clearAssistantBusyRecoveryTimer, clearBusyLoadingTimer, startListeningFlow]);
 
   const interruptAndListen = useCallback(() => {
     logVoiceDebug('interrupt_and_listen', { fromStatus: stateRef.current.status });
     shouldResumeAfterWebFocusLossRef.current = false;
     pendingManualResumeRef.current = false;
     resumeAfterTypedDraftRef.current = false;
+    clearAssistantBusyRecoveryTimer();
     clearBusyLoadingTimer();
     clearRecoveryTimer();
     clearSilenceTimer();
@@ -1368,7 +1447,13 @@ export function useVoiceConversation({
     dispatch({ type: 'set_off' });
     dispatch({ type: 'starting' });
     void startListeningFlow('interrupt');
-  }, [clearBusyLoadingTimer, clearRecoveryTimer, clearSilenceTimer, startListeningFlow]);
+  }, [
+    clearAssistantBusyRecoveryTimer,
+    clearBusyLoadingTimer,
+    clearRecoveryTimer,
+    clearSilenceTimer,
+    startListeningFlow
+  ]);
 
   const armListeningActivation = useCallback(() => {
     hasUserActivatedListeningRef.current = true;
@@ -1412,12 +1497,19 @@ export function useVoiceConversation({
     return () => {
       isMountedRef.current = false;
       shouldResumeAfterWebFocusLossRef.current = false;
+      clearAssistantBusyRecoveryTimer();
       clearBusyLoadingTimer();
       clearRecoveryTimer();
       clearSilenceTimer();
       stopActiveSession();
     };
-  }, [clearBusyLoadingTimer, clearRecoveryTimer, clearSilenceTimer, stopActiveSession]);
+  }, [
+    clearAssistantBusyRecoveryTimer,
+    clearBusyLoadingTimer,
+    clearRecoveryTimer,
+    clearSilenceTimer,
+    stopActiveSession
+  ]);
 
   const hint = useMemo(() => getVoiceConversationHint(state.status), [state.status]);
 

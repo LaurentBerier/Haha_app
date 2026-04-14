@@ -29,6 +29,10 @@ describe('root layout route registration', () => {
     expect(layoutSource).toContain('WEB_RESUME_ROUTE_RESTORE_FLAG_KEY');
     expect(WEB_RESUME_ROUTE_RESTORE_FLAG_KEY.length).toBeGreaterThan(10);
     expect(layoutSource).toContain('const shouldAttemptResumeRestore');
+    expect(layoutSource).toContain('WEB_IOS_FOREGROUND_RELOAD_TS_KEY');
+    expect(layoutSource).toContain("window.addEventListener('pageshow', handlePageShow);");
+    expect(layoutSource).toContain('window.location.reload()');
+    expect(layoutSource).toContain('isIosMobileWebRuntime');
   });
 
   it('hides global chat input on game routes', () => {

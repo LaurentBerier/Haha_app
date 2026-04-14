@@ -16,11 +16,12 @@ describe('chatInputMicState', () => {
     expect(shouldUseOffMicAsset(false, 'listening')).toBe(true);
     expect(shouldUseOffMicAsset(true, 'paused_manual')).toBe(true);
     expect(shouldUseOffMicAsset(true, 'unsupported')).toBe(true);
-    expect(shouldUseOffMicAsset(true, 'assistant_busy')).toBe(false);
+    expect(shouldUseOffMicAsset(true, 'assistant_busy')).toBe(true);
     expect(shouldUseOffMicAsset(true, 'listening')).toBe(false);
   });
 
   it('marks recovery and manual pause as paused ui states', () => {
+    expect(isChatInputMicPaused(true, 'assistant_busy')).toBe(true);
     expect(isChatInputMicPaused(true, 'paused_manual')).toBe(true);
     expect(isChatInputMicPaused(true, 'paused_recovery')).toBe(true);
     expect(isChatInputMicPaused(true, 'listening')).toBe(false);

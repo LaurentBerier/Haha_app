@@ -6,7 +6,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   View,
   type ImageStyle,
   useWindowDimensions
@@ -31,6 +30,7 @@ import { initSentry } from '../services/sentry';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme';
 import { E2E_AUTH_BYPASS } from '../config/env';
+import { isIosMobileWebRuntime } from '../platform/platformCapabilities';
 import {
   createPersistedRouteSnapshot,
   isModeSelectRoute,
@@ -47,6 +47,8 @@ type AccountMenuRoute = '/settings' | '/settings/subscription' | '/stats' | '/ad
 const WEB_BACKGROUND_MIN_HEIGHT_VH = 100;
 const WEB_BACKGROUND_MAX_HEIGHT_VH = 170;
 const WEB_NATIVE_HEADER_EDGE_PADDING = 16;
+const WEB_IOS_FOREGROUND_RELOAD_TS_KEY = 'ha-ha:web-ios-foreground-reload-ts:v1';
+const WEB_IOS_FOREGROUND_RELOAD_COOLDOWN_MS = 15_000;
 
 function resolveArtistIdFromPath(pathname: string): string | null {
   const match = pathname.match(/^\/(?:mode-select|games)\/([^/]+)/);
@@ -82,7 +84,9 @@ export default function RootLayout() {
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [hasTypedGlobalDraft, setHasTypedGlobalDraft] = useState(false);
   const pendingWebResumeRouteRestoreRef = useRef(false);
+  const wasWebHiddenRef = useRef(false);
   const latestPathnameRef = useRef(pathname);
+  const isIosMobileWeb = isIosMobileWebRuntime();
   const inAuthGroup = segmentList[0] === '(auth)';
   const isAuthCallbackRoute = segmentList[0] === 'auth' && segmentList[1] === 'callback';
   const isOnboardingRoute = segmentList[1] === 'onboarding';
@@ -384,6 +388,50 @@ export default function RootLayout() {
     }
   }, [getWebSessionStorage]);
 
+  const shouldAllowIosForegroundReload = useCallback((): boolean => {
+    const storage = getWebSessionStorage();
+    if (!storage) {
+      return false;
+    }
+
+    const nowMs = Date.now();
+    try {
+      const previousRaw = storage.getItem(WEB_IOS_FOREGROUND_RELOAD_TS_KEY);
+      const previousTs = Number.parseInt(previousRaw ?? '', 10);
+      if (Number.isFinite(previousTs) && nowMs - previousTs < WEB_IOS_FOREGROUND_RELOAD_COOLDOWN_MS) {
+        return false;
+      }
+      storage.setItem(WEB_IOS_FOREGROUND_RELOAD_TS_KEY, String(nowMs));
+      return true;
+    } catch {
+      return false;
+    }
+  }, [getWebSessionStorage]);
+
+  const triggerIosForegroundReload = useCallback(() => {
+    if (Platform.OS !== 'web' || !isIosMobileWeb || typeof window === 'undefined') {
+      return;
+    }
+
+    const routeToPersist = latestPathnameRef.current;
+    if (!isRouteEligibleForPersistence(routeToPersist)) {
+      return;
+    }
+
+    if (!shouldAllowIosForegroundReload()) {
+      return;
+    }
+
+    persistWebRouteSnapshot(routeToPersist);
+    markWebResumeRouteRestorePending();
+    window.location.reload();
+  }, [
+    isIosMobileWeb,
+    markWebResumeRouteRestorePending,
+    persistWebRouteSnapshot,
+    shouldAllowIosForegroundReload
+  ]);
+
   useEffect(() => {
     persistWebRouteSnapshot(pathname);
   }, [pathname, persistWebRouteSnapshot]);
@@ -427,6 +475,51 @@ export default function RootLayout() {
       window.removeEventListener('blur', handleWindowBlur);
     };
   }, [markWebResumeRouteRestorePending, persistWebRouteSnapshot]);
+
+  useEffect(() => {
+    if (
+      Platform.OS !== 'web' ||
+      !isIosMobileWeb ||
+      typeof window === 'undefined' ||
+      typeof document === 'undefined'
+    ) {
+      return;
+    }
+
+    wasWebHiddenRef.current = document.visibilityState === 'hidden';
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        wasWebHiddenRef.current = true;
+        return;
+      }
+
+      if (!wasWebHiddenRef.current) {
+        return;
+      }
+
+      wasWebHiddenRef.current = false;
+      triggerIosForegroundReload();
+    };
+
+    const handlePageShow = (event: Event) => {
+      const persisted = 'persisted' in event && Boolean((event as PageTransitionEvent).persisted);
+      if (!persisted && !wasWebHiddenRef.current) {
+        return;
+      }
+
+      wasWebHiddenRef.current = false;
+      triggerIosForegroundReload();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('pageshow', handlePageShow);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pageshow', handlePageShow);
+    };
+  }, [isIosMobileWeb, triggerIosForegroundReload]);
 
   useEffect(() => {
     const storage = getWebSessionStorage();
@@ -751,31 +844,6 @@ export default function RootLayout() {
                   void handleAuthMenuAction();
                 }}
               />
-              {/* #region agent log */}
-              {Platform.OS === 'web' ? (
-                <Pressable
-                  onPress={() => {
-                    try {
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      const logs = (window as any).__dbg ?? [];
-                      const text = JSON.stringify(logs, null, 1);
-                      if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
-                        navigator.clipboard.writeText(text).then(() => {
-                          alert(`Copied ${logs.length} debug logs to clipboard`);
-                        }).catch(() => {
-                          prompt('Copy these logs:', text.slice(0, 4000));
-                        });
-                      } else {
-                        prompt('Copy these logs:', text.slice(0, 4000));
-                      }
-                    } catch { alert('No logs'); }
-                  }}
-                  style={{ position: 'absolute', bottom: 4, left: 4, zIndex: 99999, backgroundColor: 'rgba(255,0,0,0.7)', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 4 }}
-                >
-                  <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>DBG</Text>
-                </Pressable>
-              ) : null}
-              {/* #endregion */}
             </>
           )}
         </View>

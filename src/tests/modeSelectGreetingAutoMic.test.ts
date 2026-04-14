@@ -13,22 +13,11 @@ function buildBaseParams() {
     hasStreaming: false,
     isGreetingVoiceActive: false,
     isGreetingBooting: false,
-    conversationModeEnabled: true,
-    isIosMobileWebRuntime: false
+    conversationModeEnabled: true
   } as const;
 }
 
 describe('modeSelect greeting auto-mic', () => {
-  it('forces enable without resume for tutorial greeting on iOS mobile web', () => {
-    const decision = resolveGreetingAutoMicDecision({
-      ...buildBaseParams(),
-      injectedType: 'tutorial_greeting',
-      isIosMobileWebRuntime: true
-    });
-
-    expect(decision).toBe('force_enable_without_resume');
-  });
-
   it('forces enable + resume for tutorial greeting when conversation mode is off', () => {
     const decision = resolveGreetingAutoMicDecision({
       ...buildBaseParams(),

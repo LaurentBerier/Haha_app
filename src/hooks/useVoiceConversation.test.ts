@@ -23,6 +23,7 @@ import {
   shouldDeferQueuedManualResume,
   shouldQueueManualResume,
   shouldResumeMicAfterTypedDraft,
+  shouldRecoverFromAssistantBusyStall,
   shouldRecoverFromBusyLoadingStall,
   shouldSuppressDuplicateVoiceTranscript,
   shouldSuspendMicForWebFocusLoss,
@@ -339,6 +340,50 @@ describe('useVoiceConversation helpers', () => {
         disabled: false,
         hasTypedDraft: false,
         isAudioPlaybackLoading: false,
+        status: 'assistant_busy',
+        startInFlight: false,
+        hasActiveSession: false,
+        hasRecoveryTimer: false
+      })
+    ).toBe(false);
+  });
+
+  it('recovers assistant_busy stalls when playback/loading are both cleared', () => {
+    expect(
+      shouldRecoverFromAssistantBusyStall({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: false,
+        isAudioPlaybackLoading: false,
+        status: 'assistant_busy',
+        startInFlight: false,
+        hasActiveSession: false,
+        hasRecoveryTimer: false
+      })
+    ).toBe(true);
+
+    expect(
+      shouldRecoverFromAssistantBusyStall({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: true,
+        isAudioPlaybackLoading: false,
+        status: 'assistant_busy',
+        startInFlight: false,
+        hasActiveSession: false,
+        hasRecoveryTimer: false
+      })
+    ).toBe(false);
+
+    expect(
+      shouldRecoverFromAssistantBusyStall({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: false,
+        isAudioPlaybackLoading: true,
         status: 'assistant_busy',
         startInFlight: false,
         hasActiveSession: false,

@@ -41,7 +41,7 @@ import { synthesizeVoice } from '../../../services/voiceEngine';
 import { clearTerminalCooldownForPurpose } from '../../../services/ttsService';
 import { attemptVoiceAutoplayUri, attemptVoiceAutoplayUriDetailed } from '../../../services/voiceAutoplayService';
 import { markWebAutoplaySessionUnlocked, queueLatestWebAutoplayUnlockRetry, clearPendingWebAutoplayUnlockRetry } from '../../../services/webAutoplayUnlockService';
-import { isIosMobileWebRuntime, isNativeMobileApp } from '../../../platform/platformCapabilities';
+import { isNativeMobileApp } from '../../../platform/platformCapabilities';
 import { attemptExperienceLaunchBeforeSend } from '../../../services/conversationSendOrchestrator';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voiceFillerService';
 import { useStore } from '../../../store/useStore';
@@ -1219,7 +1219,6 @@ export default function ModeSelectHomeScreen() {
   const isGreetingVoiceActive =
     greeting !== null &&
     (audioPlayer.isLoading || audioPlayer.isPlaying || isGreetingVoicePendingGesture);
-  const isIosMobileWeb = isIosMobileWebRuntime();
   const greetingVoiceLabel = isEnglishLanguage
     ? isGreetingVoicePendingGesture
       ? 'Tap anywhere to enable Cathy audio.'
@@ -1558,13 +1557,6 @@ export default function ModeSelectHomeScreen() {
     replayOnFocus: false
   });
 
-  // #region agent log
-  useEffect(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if(typeof window!=='undefined'){const snap={t:Date.now(),l:'hub:state',d:{strm:hasStreaming,aPlay:audioPlayer.isPlaying,aLoad:audioPlayer.isLoading,aMid:audioPlayer.currentMessageId,pGA:Boolean(pendingGreetingAudio),gVA:isGreetingVoiceActive,vGen:isLatestArtistVoiceGenerating,compDis:isModeSelectComposerDisabled,valid:isValidConversation,sendRdy:isSendContextReady,convMode:conversationModeEnabled,listen:isListening,nMsg:messages.length,lastSt:messages.length>0?messages[messages.length-1]?.status:null,lastR:messages.length>0?messages[messages.length-1]?.role:null}};((window as any).__dbg=((window as any).__dbg||[])).push(snap);console.warn('[DBG]hub',snap.d);}
-  }, [hasStreaming, audioPlayer.isPlaying, audioPlayer.isLoading, audioPlayer.currentMessageId, pendingGreetingAudio, isGreetingVoiceActive, isLatestArtistVoiceGenerating, isModeSelectComposerDisabled, isValidConversation, isSendContextReady, conversationModeEnabled, isListening, messages]);
-  // #endregion
-
   useEffect(() => {
     if (!isModeSelectDebugLoggingEnabled()) {
       return;
@@ -1643,8 +1635,7 @@ export default function ModeSelectHomeScreen() {
       hasStreaming,
       isGreetingVoiceActive,
       isGreetingBooting,
-      conversationModeEnabled,
-      isIosMobileWebRuntime: isIosMobileWeb
+      conversationModeEnabled
     });
 
     if (decision === 'skip') {
@@ -1653,9 +1644,6 @@ export default function ModeSelectHomeScreen() {
 
     if (decision === 'arm_listening') {
       armListeningActivation();
-    } else if (decision === 'force_enable_without_resume') {
-      setConversationModeEnabled(true);
-      pauseListening();
     } else if (decision === 'force_enable_and_resume') {
       setConversationModeEnabled(true);
       resumeListening();
@@ -1668,7 +1656,6 @@ export default function ModeSelectHomeScreen() {
   }, [
     armListeningActivation,
     conversationModeEnabled,
-    isIosMobileWeb,
     isGreetingBooting,
     isGreetingVoiceActive,
     isModeSelectScreenFocused,
@@ -1677,7 +1664,6 @@ export default function ModeSelectHomeScreen() {
     isQuotaBlocked,
     isValidConversation,
     messages,
-    pauseListening,
     pendingAutoMicGreetingMessageId,
     resumeListening,
     setConversationModeEnabled
