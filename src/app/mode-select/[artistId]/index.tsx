@@ -55,7 +55,6 @@ import {
   type ModeSelectReplayBarrier
 } from '../../../utils/modeSelectReplayBarrier';
 import { shouldSkipModeSelectGreetingInjection } from '../../../utils/modeSelectGreetingDedup';
-import { stripAudioTags } from '../../../utils/audioTags';
 import { generateId } from '../../../utils/generateId';
 import { toVoicePlaybackOutcome } from '../../../utils/voicePlaybackPolicy';
 import {
@@ -112,7 +111,6 @@ const GREETING_BOOTING_FR_LINES = [
   "Synchronisation avec ton sens de l'humour... erreur detectee",
   "Injection d'opinions non sollicitees... en cours"
 ] as const;
-const MODE_SELECT_DEBUG_TOGGLE_KEY = 'HAHA_MODE_SELECT_DEBUG';
 const GREETING_AUTOPLAY_MAX_ATTEMPTS = 3;
 const GREETING_AUTOPLAY_RETRY_DELAY_MS = 0;
 const MODE_SELECT_VOICE_NEON_MAUVE = '#B56CFF';
@@ -120,83 +118,6 @@ const MODE_SELECT_VOICE_NEON_ROSE = '#FF4FD8';
 
 type TerminalTtsCode = SharedTerminalTtsCode;
 type GreetingVoiceNoticeCode = TerminalTtsCode | 'UNAUTHORIZED' | 'TTS_PROVIDER_ERROR';
-
-function parseDebugToggleValue(value: unknown): boolean | null {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'number') {
-    if (value === 1) {
-      return true;
-    }
-    if (value === 0) {
-      return false;
-    }
-    return null;
-  }
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (!normalized) {
-      return null;
-    }
-    if (normalized === '1' || normalized === 'true' || normalized === 'on' || normalized === 'yes') {
-      return true;
-    }
-    if (normalized === '0' || normalized === 'false' || normalized === 'off' || normalized === 'no') {
-      return false;
-    }
-  }
-  return null;
-}
-
-function isModeSelectDebugLoggingEnabled(): boolean {
-  if (!__DEV__) {
-    return false;
-  }
-
-  const globalObject = globalThis as Record<string, unknown>;
-  const globalToggle = parseDebugToggleValue(globalObject.__HAHA_MODE_SELECT_DEBUG__);
-  if (globalToggle !== null) {
-    return globalToggle;
-  }
-
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const queryToggle = parseDebugToggleValue(params.get('modeSelectDebug') ?? params.get('msdebug'));
-    if (queryToggle !== null) {
-      return queryToggle;
-    }
-  } catch {
-    // Ignore URL parsing errors in non-browser runtimes.
-  }
-
-  try {
-    const storageToggle = parseDebugToggleValue(window.localStorage?.getItem(MODE_SELECT_DEBUG_TOGGLE_KEY));
-    if (storageToggle !== null) {
-      return storageToggle;
-    }
-  } catch {
-    // Ignore storage access errors (private mode / non-browser runtime).
-  }
-
-  return false;
-}
-
-function logModeSelectDebugTrace(event: string, payload: Record<string, unknown> = {}): void {
-  if (!isModeSelectDebugLoggingEnabled()) {
-    return;
-  }
-
-  console.log('[mode-select] trace', {
-    event,
-    ts: Date.now(),
-    ...payload
-  });
-}
 
 function isGreetingTerminalTtsCode(value: string): value is TerminalTtsCode {
   return value === 'TTS_QUOTA_EXCEEDED' || value === 'RATE_LIMIT_EXCEEDED' || value === 'TTS_FORBIDDEN';
@@ -803,14 +724,12 @@ export default function ModeSelectHomeScreen() {
   const modeGridCompactProgress = useRef(new Animated.Value(0)).current;
   const rootLayoutRef = useRef<View>(null);
   const categoryGridRef = useRef<View>(null);
-  const lastLoggedRenderedMessageCountRef = useRef(0);
   const greetingCycleFocusStateRef = useRef(false);
   const greetingBootstrapRecoveryCycleRef = useRef('');
   const lastInjectedGreetingCycleRef = useRef('');
   const greetingVoiceNoticeKeysRef = useRef<Set<string>>(new Set());
   const sendContextRecoveryLockRef = useRef(false);
   const sendContextRecoveryResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastLoggedEmptyArtistMessageIdRef = useRef<string | null>(null);
   const autoMicTriggeredGreetingIdsRef = useRef<Set<string>>(new Set());
   const autoMicManualOverrideRef = useRef(false);
   const shouldRestoreMicAfterBlurRef = useRef(false);
@@ -820,6 +739,7 @@ export default function ModeSelectHomeScreen() {
   }, []);
   const commitBoundConversationId = useCallback(
     (nextConversationId: string, reason: ModeSelectRuntimeRebindReason): boolean => {
+      void reason;
       const normalizedNext = nextConversationId.trim();
       const normalizedCurrent = boundConversationIdRef.current.trim();
       if (normalizedCurrent === normalizedNext) {
@@ -829,11 +749,6 @@ export default function ModeSelectHomeScreen() {
       boundConversationIdRef.current = normalizedNext;
       modeSelectConversationIdRef.current = normalizedNext;
       setBoundConversationId(normalizedNext);
-      logModeSelectDebugTrace('mode_select_rebind', {
-        from: normalizedCurrent || null,
-        to: normalizedNext || null,
-        reason
-      });
       return true;
     },
     []
@@ -901,16 +816,13 @@ export default function ModeSelectHomeScreen() {
       }
 
       let recoveredConversationId = '';
-      let recoveryActionLabel: 'mapped_hub' | 'use_existing' | 'create_new' = 'create_new';
       const mappedHubConversationId = liveState.modeSelectSessionHubConversationByArtist[artist.id]?.trim() ?? '';
       if (mappedHubConversationId && isValidBoundModeSelectConversation(mappedHubConversationId, liveConversationsForArtist)) {
         recoveredConversationId = mappedHubConversationId;
-        recoveryActionLabel = 'mapped_hub';
       } else {
         const recoveryAction = resolveModeSelectConversationRecoveryAction(liveConversationsForArtist);
         if (recoveryAction.type === 'use_existing') {
           recoveredConversationId = recoveryAction.conversationId;
-          recoveryActionLabel = 'use_existing';
         } else {
           const recoveryConversation = createConversation(
             artist.id,
@@ -919,27 +831,15 @@ export default function ModeSelectHomeScreen() {
             { threadType: 'primary' }
           );
           recoveredConversationId = recoveryConversation.id;
-          recoveryActionLabel = 'create_new';
           setModeSelectSessionHubConversation(artist.id, recoveryConversation.id);
         }
       }
 
       const normalizedRecoveredId = recoveredConversationId.trim();
       if (!normalizedRecoveredId) {
-        logModeSelectDebugTrace('mode_select_recovery_failed', {
-          reason,
-          action: recoveryActionLabel,
-          artistId: artist.id
-        });
         return null;
       }
 
-      logModeSelectDebugTrace('mode_select_recovery', {
-        reason,
-        action: recoveryActionLabel,
-        from: currentBound || null,
-        to: normalizedRecoveredId
-      });
       commitBoundConversationId(normalizedRecoveredId, reason);
       if (activeConversationId !== normalizedRecoveredId) {
         setActiveConversation(normalizedRecoveredId);
@@ -996,12 +896,6 @@ export default function ModeSelectHomeScreen() {
       const normalizedTargetConversationId = targetConversationId.trim();
       const liveSendContext = resolveChatSendContextFromState(liveState, normalizedTargetConversationId);
       if (!liveSendContext.conversation || !liveSendContext.artist || liveSendContext.reason !== null) {
-        logModeSelectDebugTrace('send_blocked', {
-          reason: liveSendContext.reason,
-          liveConversationId: normalizedTargetConversationId || null,
-          uiConversationId: modeSelectConversationId || null,
-          artistId
-        });
         return { code: 'invalidConversation' as const };
       }
 
@@ -1036,19 +930,8 @@ export default function ModeSelectHomeScreen() {
       }
 
       setTailFollowRequestSignal((previous) => previous + 1);
-      logModeSelectDebugTrace('send_dispatched', {
-        conversationId: normalizedTargetConversationId,
-        uiConversationId: modeSelectConversationId || null,
-        boundConversationId: boundConversationIdRef.current.trim() || null,
-        hasImage: Boolean(payload.image),
-        textLength: payload.text.length
-      });
       const sendError = sendMessage(payload, {
         conversationId: normalizedTargetConversationId
-      });
-      logModeSelectDebugTrace('send_result', {
-        conversationId: normalizedTargetConversationId,
-        code: sendError?.code ?? null
       });
       return sendError;
     },
@@ -1112,21 +995,10 @@ export default function ModeSelectHomeScreen() {
 
       const targetConversationId = resolveModeSelectSendTargetConversationId();
       if (!targetConversationId) {
-        logModeSelectDebugTrace('send_blocked', {
-          reason: 'missing_target_conversation',
-          uiConversationId: modeSelectConversationId || null,
-          boundConversationId: boundConversationIdRef.current.trim() || null
-        });
         return { code: 'invalidConversation' as const };
       }
 
       if (targetConversationId !== modeSelectConversationId) {
-        logModeSelectDebugTrace('send_target_rebind', {
-          from: modeSelectConversationId || null,
-          to: targetConversationId,
-          hasImage: Boolean(payload.image),
-          textLength: payload.text.length
-        });
         commitBoundConversationId(targetConversationId, 'send_recovery');
         if (activeConversationId !== targetConversationId) {
           setActiveConversation(targetConversationId);
@@ -1296,7 +1168,7 @@ export default function ModeSelectHomeScreen() {
       allowCycleReopen: boolean;
       reason: string;
     }) => {
-      const { runId, cycleKey, hasInsertedGreetingMessage, allowCycleReopen, reason } = params;
+      const { runId, cycleKey, hasInsertedGreetingMessage, allowCycleReopen } = params;
 
       if (activeGreetingRunIdRef.current === runId) {
         activeGreetingRunIdRef.current = 0;
@@ -1309,10 +1181,6 @@ export default function ModeSelectHomeScreen() {
         lastInjectedGreetingCycleRef.current === cycleKey
       ) {
         lastInjectedGreetingCycleRef.current = '';
-        logModeSelectDebugTrace('greeting_cycle_reopened', {
-          cycleKey,
-          reason
-        });
       }
     },
     []
@@ -1416,19 +1284,9 @@ export default function ModeSelectHomeScreen() {
     }
 
     if (hasStreaming) {
-      logModeSelectDebugTrace('audio_mismatch_skipped_streaming', {
-        from: boundConversationIdRef.current.trim() || null,
-        to: playbackConversationId,
-        messageId: currentMessageId
-      });
       return;
     }
 
-    logModeSelectDebugTrace('audio_mismatch_rebind', {
-      from: boundConversationIdRef.current.trim() || null,
-      to: playbackConversationId,
-      messageId: currentMessageId
-    });
     commitBoundConversationId(playbackConversationId, 'audio_mismatch');
     if (activeConversationId !== playbackConversationId) {
       setActiveConversation(playbackConversationId);
@@ -1474,10 +1332,6 @@ export default function ModeSelectHomeScreen() {
     const currentBound = boundConversationIdRef.current.trim();
     const nextBound = resolvedBoundConversation.conversationId.trim();
     if (!nextBound && resolvedBoundConversation.reason === 'missing_context' && currentBound && hasStreaming) {
-      logModeSelectDebugTrace('mode_select_rebind_skipped_streaming', {
-        from: currentBound,
-        reason: resolvedBoundConversation.reason
-      });
       return;
     }
 
@@ -1526,28 +1380,6 @@ export default function ModeSelectHomeScreen() {
     recoverModeSelectBoundConversation
   ]);
 
-  useEffect(() => {
-    if (!isModeSelectDebugLoggingEnabled()) {
-      return;
-    }
-
-    const nextCount = messages.length;
-    if (nextCount === lastLoggedRenderedMessageCountRef.current) {
-      return;
-    }
-    lastLoggedRenderedMessageCountRef.current = nextCount;
-
-    const latestMessage = nextCount > 0 ? messages[nextCount - 1] : null;
-    logModeSelectDebugTrace('messages_rendered', {
-      conversationId: modeSelectConversationId || null,
-      messageCount: nextCount,
-      latestMessageId: latestMessage?.id ?? null,
-      latestRole: latestMessage?.role ?? null,
-      latestStatus: latestMessage?.status ?? null,
-      latestContentLength: latestMessage?.content.length ?? 0
-    });
-  }, [messages, modeSelectConversationId]);
-
   useAutoReplayLastArtistMessage({
     messages: replayEligibleMessages,
     audioPlayer,
@@ -1556,40 +1388,6 @@ export default function ModeSelectHomeScreen() {
     voiceAutoPlay: voiceAutoPlay || conversationModeEnabled,
     replayOnFocus: false
   });
-
-  useEffect(() => {
-    if (!isModeSelectDebugLoggingEnabled()) {
-      return;
-    }
-
-    const latestCompleteArtistMessage = messages
-      .slice()
-      .reverse()
-      .find((message) => message.role === 'artist' && message.status === 'complete');
-    if (!latestCompleteArtistMessage) {
-      return;
-    }
-
-    const normalizedVisibleText = stripAudioTags(latestCompleteArtistMessage.content, { trim: true });
-    if (normalizedVisibleText.length > 0) {
-      return;
-    }
-
-    if (lastLoggedEmptyArtistMessageIdRef.current === latestCompleteArtistMessage.id) {
-      return;
-    }
-    lastLoggedEmptyArtistMessageIdRef.current = latestCompleteArtistMessage.id;
-
-    logModeSelectDebugTrace('artist_complete_empty', {
-      conversationId: modeSelectConversationId || null,
-      messageId: latestCompleteArtistMessage.id,
-      rawLength: latestCompleteArtistMessage.content.length,
-      voiceStatus: latestCompleteArtistMessage.metadata?.voiceStatus ?? null,
-      voiceQueueLength: Array.isArray(latestCompleteArtistMessage.metadata?.voiceQueue)
-        ? latestCompleteArtistMessage.metadata.voiceQueue.length
-        : 0
-    });
-  }, [messages, modeSelectConversationId]);
 
   useEffect(() => {
     setIsInputFocused(false);
@@ -1785,10 +1583,6 @@ export default function ModeSelectHomeScreen() {
       requireEmptyConversation: true
     });
     if (!introConversation) {
-      logModeSelectDebugTrace('greeting_bootstrap_recovery_failed', {
-        artistId: artist.id,
-        cycle: greetingOpenCycle
-      });
       return;
     }
 
@@ -1798,11 +1592,6 @@ export default function ModeSelectHomeScreen() {
       setActiveConversation(introConversation.id);
     }
 
-    logModeSelectDebugTrace('greeting_bootstrap_recovered', {
-      artistId: artist.id,
-      cycle: greetingOpenCycle,
-      conversationId: introConversation.id
-    });
   }, [
     artist,
     commitBoundConversationId,
@@ -1846,9 +1635,6 @@ export default function ModeSelectHomeScreen() {
 
   useEffect(() => {
     if (E2E_AUTH_BYPASS) {
-      logModeSelectDebugTrace('greeting_skipped_bypass', {
-        artistId: artist?.id ?? null
-      });
       return;
     }
 
@@ -1880,11 +1666,6 @@ export default function ModeSelectHomeScreen() {
     const runGreeting = async () => {
       const sessionStateBeforeGreeting = useStore.getState();
       setIsGreetingBooting(true);
-      logModeSelectDebugTrace('greeting_run_started', {
-        artistId: artist.id,
-        cycle: greetingOpenCycle,
-        runId
-      });
 
       try {
         const greetedArtistCount = sessionStateBeforeGreeting.greetedArtistIds.size;
@@ -1893,11 +1674,6 @@ export default function ModeSelectHomeScreen() {
           requireEmptyConversation: true
         });
         if (!introConversation) {
-          logModeSelectDebugTrace('greeting_run_missing_intro_conversation', {
-            artistId: artist.id,
-            cycle: greetingOpenCycle,
-            runId
-          });
           return;
         }
         introConversationId = introConversation.id;
@@ -1910,11 +1686,6 @@ export default function ModeSelectHomeScreen() {
           sessionStateBeforeGreeting.messagesByConversation[introConversation.id]?.messages ?? []
         );
         if (shouldSkipBeforeApi) {
-          logModeSelectDebugTrace('greeting_skipped_tail_dedupe_pre_api', {
-            artistId: artist.id,
-            conversationId: introConversation.id,
-            cycle: greetingOpenCycle
-          });
           return;
         }
 
@@ -1942,25 +1713,10 @@ export default function ModeSelectHomeScreen() {
             recentExperienceName: greetingActivityContext.recentExperienceName,
             recentExperienceType: greetingActivityContext.recentExperienceType,
             activityFeedbackCue: greetingActivityContext.activityFeedbackCue
-          },
-          {
-            onTrace: (event, payload) => {
-              logModeSelectDebugTrace(`greeting_api_${event}`, {
-                artistId: artist.id,
-                cycle: greetingOpenCycle,
-                ...(payload ?? {})
-              });
-            }
           }
         );
         if (!isRunActive()) {
           return;
-        }
-        if (fetchedResult.timedOut) {
-          logModeSelectDebugTrace('greeting_api_timeout_fallback', {
-            artistId: artist.id,
-            cycle: greetingOpenCycle
-          });
         }
         const tutorialAlreadyCompleted = Boolean(sessionStateBeforeGreeting.completedTutorials.greeting);
         const fallbackTutorialMode = isSessionFirstGreeting && !tutorialAlreadyCompleted;
@@ -1991,11 +1747,6 @@ export default function ModeSelectHomeScreen() {
           useStore.getState().messagesByConversation[introConversation.id]?.messages ?? []
         );
         if (shouldSkipBeforeInsert) {
-          logModeSelectDebugTrace('greeting_skipped_tail_dedupe_pre_insert', {
-            artistId: artist.id,
-            conversationId: introConversation.id,
-            cycle: greetingOpenCycle
-          });
           return;
         }
 
@@ -2110,11 +1861,6 @@ export default function ModeSelectHomeScreen() {
             return;
           }
           if (playbackOutcome.state === 'failed') {
-            logModeSelectDebugTrace('greeting_autoplay_failed_non_fatal', {
-              conversationId: introConversation.id,
-              messageId: greetingMessageId,
-              failureReason: playbackOutcome.failureReason
-            });
             // Queue for retry when the screen re-focuses or the user interacts.
             setPendingGreetingAudio({
               conversationId: introConversation.id,
@@ -2147,16 +1893,7 @@ export default function ModeSelectHomeScreen() {
             errorCode: greetingVoiceErrorCode
           });
         }
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        logModeSelectDebugTrace('greeting_run_failed', {
-          artistId: artist.id,
-          cycle: greetingOpenCycle,
-          runId,
-          hasInsertedGreetingMessage,
-          errorMessage
-        });
-
+      } catch {
         const fallbackConversationId =
           introConversationId.trim() ||
           resolveModeSelectSessionHubConversation({
@@ -2196,11 +1933,6 @@ export default function ModeSelectHomeScreen() {
           }
         );
         if (!fallbackGreetingText.trim()) {
-          logModeSelectDebugTrace('greeting_run_fallback_empty', {
-            artistId: artist.id,
-            cycle: greetingOpenCycle,
-            runId
-          });
           return;
         }
 
@@ -2243,12 +1975,6 @@ export default function ModeSelectHomeScreen() {
         );
         setGreeting(fallbackGreetingText);
         setPendingGreetingAudio(null);
-        logModeSelectDebugTrace('greeting_run_fallback_inserted', {
-          artistId: artist.id,
-          cycle: greetingOpenCycle,
-          runId,
-          conversationId: fallbackConversationId
-        });
       } finally {
         finalizeGreetingRun({
           runId,
@@ -2326,7 +2052,7 @@ export default function ModeSelectHomeScreen() {
       if (!modeSelectScreenFocusedRef.current) {
         return;
       }
-      const playbackOutcome = await attemptGreetingAutoplayWithRetries({
+      await attemptGreetingAutoplayWithRetries({
         audioPlayer: audioPlayerRef.current,
         uri: pendingAudio.uri,
         messageId: pendingAudio.messageId
@@ -2335,13 +2061,6 @@ export default function ModeSelectHomeScreen() {
         return;
       }
       setPendingGreetingAudio(null);
-      if (playbackOutcome.state === 'failed') {
-        logModeSelectDebugTrace('greeting_autoplay_retry_native_failed_non_fatal', {
-          conversationId: pendingAudio.conversationId,
-          messageId: pendingAudio.messageId,
-          failureReason: playbackOutcome.failureReason
-        });
-      }
     })();
   }, [
     audioPlayer.isLoading,
@@ -2391,13 +2110,6 @@ export default function ModeSelectHomeScreen() {
         }
         if (playbackOutcome.state === 'started' || playbackOutcome.state === 'failed') {
           setPendingGreetingAudio(null);
-        }
-        if (playbackOutcome.state === 'failed') {
-          logModeSelectDebugTrace('greeting_autoplay_retry_failed_non_fatal', {
-            conversationId: pendingAudio.conversationId,
-            messageId: pendingAudio.messageId,
-            failureReason: playbackOutcome.failureReason
-          });
         }
       })();
     });
@@ -2518,12 +2230,6 @@ export default function ModeSelectHomeScreen() {
                 maxToRenderPerBatch={48}
                 removeClippedSubviews={false}
                 disableVirtualization
-                onTailFollowChanged={({ shouldFollowTail, distanceFromBottom }) => {
-                  logModeSelectDebugTrace('tail_follow_changed', {
-                    following: shouldFollowTail,
-                    distanceFromBottom: Math.round(distanceFromBottom)
-                  });
-                }}
               />
               {hasStreaming ? <StreamingIndicator /> : null}
             </View>

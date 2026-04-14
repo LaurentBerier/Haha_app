@@ -431,17 +431,9 @@ function voiceConversationReducer(
   }
 }
 
-function logVoiceDebug(event: string, payload?: Record<string, unknown>): void {
-  if (!__DEV__) {
-    return;
-  }
-
-  if (payload) {
-    console.log('[useVoiceConversation]', event, payload);
-    return;
-  }
-
-  console.log('[useVoiceConversation]', event);
+function logVoiceDebug(..._args: unknown[]): void {
+  // Dev tracing removed: extra console + focus hooks contributed to instability on some mobile builds.
+  void _args;
 }
 
 export function getVoiceRecoveryDelayMs(attempt: number): number | null {

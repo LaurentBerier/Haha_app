@@ -967,20 +967,7 @@ cd /Users/laurentbernier/Documents/HAHA_app
 npx expo start -c
 ```
 
-2. Enable mode-select traces in browser console:
-   - type `allow pasting` in DevTools console (Chrome safeguard), press Enter once
-   - run:
-
-```js
-window.__HAHA_MODE_SELECT_DEBUG__ = true;
-localStorage.setItem('HAHA_MODE_SELECT_DEBUG', '1');
-```
-
-3. Reproduce and filter logs by `mode-select` + `trace`. Expect progression events:
-   - `send_dispatched`
-   - `send_result`
-   - `messages_rendered`
-4. If `send_result` is `null` (success) but UI still looks frozen, capture the latest `messages_rendered` entries (message count + latest id/status) and compare with visible bubble count.
+2. If the issue persists after a clean restart, capture a short screen recording plus the last few user/Cathy turns (text only). Mode-select inline tracing hooks were removed because they caused instability on some mobile builds.
 
 Implementation note (current build):
 

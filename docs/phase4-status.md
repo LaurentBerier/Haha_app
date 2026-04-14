@@ -57,11 +57,7 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
     - `FlatList` keyed by bound conversation id
     - larger render window/batch sizing
     - clipping/virtualization disabled in inline overlay context
-  - targeted DEV observability events for mode-select:
-    - `mode_select_rebind`
-    - `send_dispatched`
-    - `send_result`
-    - `messages_rendered`
+  - mode-select console/trace hooks (`mode_select_*`, query/localStorage toggles) were **removed** after they contributed to instability on some mobile builds; use Xcode/Android logcat or web DevTools for native logging instead
   - greeting run lifecycle hardening:
     - each greeting cycle now owns a run token (`runId`) so stale async runs are ignored
     - `finalizeGreetingRun(...)` closes `isGreetingBooting` on all exits (success, cancellation, timeout fallback, cleanup/unmount)
