@@ -277,17 +277,6 @@ export function useAudioPlayer(): AudioPlayerController {
             setIsLoading(false);
             setIsPlaying(true);
           };
-          const handlePause = () => {
-            if (!isMountedRef.current || playbackTokenRef.current !== token) {
-              return;
-            }
-            if (Platform.OS === 'web' && queueIndexRef.current >= queueRef.current.length - 1) {
-              webAudio.src = '';
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              if (typeof (webAudio as any).load === 'function') (webAudio as any).load();
-            }
-            setIsPlaying(false);
-          };
           const handleError = () => {
             onChunkEnd();
           };
@@ -295,12 +284,10 @@ export function useAudioPlayer(): AudioPlayerController {
           clearWebListeners();
           webAudio.addEventListener('ended', handleEnded);
           webAudio.addEventListener('playing', handlePlaying);
-          webAudio.addEventListener('pause', handlePause);
           webAudio.addEventListener('error', handleError);
           detachWebListenersRef.current = () => {
             webAudio.removeEventListener('ended', handleEnded);
             webAudio.removeEventListener('playing', handlePlaying);
-            webAudio.removeEventListener('pause', handlePause);
             webAudio.removeEventListener('error', handleError);
           };
 
