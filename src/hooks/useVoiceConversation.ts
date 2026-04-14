@@ -2,6 +2,15 @@ import { Platform } from 'react-native';
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 import { t } from '../i18n';
 import {
+  DEFAULT_BUSY_LOADING_TIMEOUT_MS,
+  DEFAULT_SILENCE_AUTO_SEND_MS,
+  ENV_BUSY_LOADING_TIMEOUT_MS,
+  ENV_SILENCE_TIMEOUT_MS,
+  MIN_BUSY_LOADING_TIMEOUT_MS,
+  MIN_SILENCE_AUTO_SEND_MS,
+  VOICE_RECOVERY_DELAYS_MS
+} from '../contracts/conversationContracts';
+import {
   requestVoicePermission,
   startVoiceListeningSession,
   type VoiceListeningEndEvent,
@@ -9,13 +18,17 @@ import {
   type VoiceSessionEndReason
 } from '../services/voiceEngine';
 
-const parsedSilenceTimeout = Number.parseInt(process.env.EXPO_PUBLIC_SILENCE_TIMEOUT_MS ?? '', 10);
+const parsedSilenceTimeout = Number.parseInt(process.env[ENV_SILENCE_TIMEOUT_MS] ?? '', 10);
 const SILENCE_TIMEOUT_MS =
-  Number.isFinite(parsedSilenceTimeout) && parsedSilenceTimeout >= 1200 ? parsedSilenceTimeout : 1800;
-const parsedBusyLoadingTimeout = Number.parseInt(process.env.EXPO_PUBLIC_BUSY_LOADING_TIMEOUT_MS ?? '', 10);
+  Number.isFinite(parsedSilenceTimeout) && parsedSilenceTimeout >= MIN_SILENCE_AUTO_SEND_MS
+    ? parsedSilenceTimeout
+    : DEFAULT_SILENCE_AUTO_SEND_MS;
+const parsedBusyLoadingTimeout = Number.parseInt(process.env[ENV_BUSY_LOADING_TIMEOUT_MS] ?? '', 10);
 const BUSY_LOADING_TIMEOUT_MS =
-  Number.isFinite(parsedBusyLoadingTimeout) && parsedBusyLoadingTimeout >= 3000 ? parsedBusyLoadingTimeout : 12000;
-const RECOVERY_DELAYS_MS = [250, 800, 2000] as const;
+  Number.isFinite(parsedBusyLoadingTimeout) && parsedBusyLoadingTimeout >= MIN_BUSY_LOADING_TIMEOUT_MS
+    ? parsedBusyLoadingTimeout
+    : DEFAULT_BUSY_LOADING_TIMEOUT_MS;
+const RECOVERY_DELAYS_MS = VOICE_RECOVERY_DELAYS_MS;
 const WEB_VOICE_LIVENESS_MS = 5_000;
 export const VOICE_DUPLICATE_SEND_WINDOW_MS = 3_000;
 

@@ -41,7 +41,8 @@ import { synthesizeVoice } from '../../../services/voiceEngine';
 import { clearTerminalCooldownForPurpose } from '../../../services/ttsService';
 import { attemptVoiceAutoplayUri, attemptVoiceAutoplayUriDetailed } from '../../../services/voiceAutoplayService';
 import { markWebAutoplaySessionUnlocked, queueLatestWebAutoplayUnlockRetry, clearPendingWebAutoplayUnlockRetry } from '../../../services/webAutoplayUnlockService';
-import { tryLaunchExperienceFromText } from '../../../services/experienceLaunchService';
+import { isNativeMobileApp } from '../../../platform/platformCapabilities';
+import { attemptExperienceLaunchBeforeSend } from '../../../services/conversationSendOrchestrator';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voiceFillerService';
 import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
@@ -1097,9 +1098,10 @@ export default function ModeSelectHomeScreen() {
     (payload: ChatSendPayload): ChatError | null => {
       const normalizedText = payload.text.trim();
       if (normalizedText && !payload.image && artist?.id) {
-        const launchOutcome = tryLaunchExperienceFromText({
+        const launchOutcome = attemptExperienceLaunchBeforeSend({
           artistId: artist.id,
           text: normalizedText,
+          image: payload.image,
           fallbackLanguage: language,
           preferredConversationLanguage: modeSelectConversationLanguage
         });
@@ -1164,7 +1166,7 @@ export default function ModeSelectHomeScreen() {
   const isLatestArtistVoiceGenerating = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const message = messages[i];
-      if (message.role === 'artist') {
+      if (message?.role === 'artist') {
         return message.metadata?.voiceStatus === 'generating';
       }
     }
@@ -1213,7 +1215,7 @@ export default function ModeSelectHomeScreen() {
     isValidConversation &&
     (hasVisibleConversationText ||
       hasStreaming ||
-      ((Platform.OS === 'ios' || Platform.OS === 'android') && isInputFocused));
+      (isNativeMobileApp() && isInputFocused));
   const isGreetingVoiceActive =
     greeting !== null &&
     (audioPlayer.isLoading || audioPlayer.isPlaying || isGreetingVoicePendingGesture);
@@ -1224,7 +1226,7 @@ export default function ModeSelectHomeScreen() {
     : isGreetingVoicePendingGesture
       ? "Touchez l'écran pour activer la voix de Cathy."
       : 'Cathy parle...';
-  const isNativeMobile = Platform.OS === 'ios' || Platform.OS === 'android';
+  const isNativeMobile = isNativeMobileApp();
   const fallbackOverlayTop = Math.floor(
     viewportHeight * (
       shouldCompactModeGrid

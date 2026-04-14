@@ -15,7 +15,7 @@ import { useVoiceConversation } from '../../hooks/useVoiceConversation';
 import { t } from '../../i18n';
 import type { ChatSendPayload } from '../../models/ChatSendPayload';
 import { normalizeConversationThreadType } from '../../models/Conversation';
-import { tryLaunchExperienceFromText } from '../../services/experienceLaunchService';
+import { attemptExperienceLaunchBeforeSend } from '../../services/conversationSendOrchestrator';
 import { attemptVoiceAutoplayUri } from '../../services/voiceAutoplayService';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../services/voiceFillerService';
 import { useStore } from '../../store/useStore';
@@ -156,9 +156,10 @@ export default function ChatScreen() {
     (payload: ChatSendPayload) => {
       const normalizedText = payload.text.trim();
       if (normalizedText && !payload.image && currentConversation?.artistId) {
-        const launchOutcome = tryLaunchExperienceFromText({
+        const launchOutcome = attemptExperienceLaunchBeforeSend({
           artistId: currentConversation.artistId,
           text: normalizedText,
+          image: payload.image,
           fallbackLanguage: language,
           preferredConversationLanguage: conversationLanguage
         });

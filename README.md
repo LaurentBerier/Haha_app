@@ -28,7 +28,7 @@ Implemented in this repository:
   - `Profil`
 - Artist selection now distinguishes available vs upcoming artists with a clear CTA for available artists and "Disponible bientôt" cards for locked artists.
 - Tier-aware voice strategy is on ElevenLabs v3 (Free/Regular/Premium/Admin) with emotional audio tags support and display-safe tag stripping.
-- Conversation naturelle (Phase 4) is integrated across chat and mode-select:
+- Conversation naturelle (Phase 4) is integrated across chat and mode-select (architecture map: [`docs/conversation-flow-architecture.md`](docs/conversation-flow-architecture.md)):
   - default-on conversation mode with shared composer UX and explicit mic states (`off`, `starting`, `listening`, `assistant_busy`, `paused_manual`, `recovering`, `paused_recovery`, `unsupported`, `error`)
   - conversation language resolution is per-conversation with explicit intent handling:
     - explicit switch command -> immediate switch on the active conversation
@@ -309,7 +309,7 @@ Supabase URL configuration should include:
 
 Supabase email templates should use:
 
-- `{{ .ConfirmationURL }}`
+- `{{ .ConfirmationURL }}` (do not append `&type=signup` in Magic Link templates)
 - For Magic Link FR/EN copy, use [`docs/supabase-magic-link-email-template.md`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-magic-link-email-template.md)
 
 Do not hardcode callback links with `{{ .SiteURL }}/auth/callback?...` in templates, otherwise mobile deep links can break.

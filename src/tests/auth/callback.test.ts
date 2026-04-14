@@ -1,4 +1,4 @@
-import { buildNativeCallbackUrl, parseAuthCallbackParams, resolveAuthCallbackSession, resolveAuthCallbackUrl } from './callbackLogic';
+import { buildNativeCallbackUrl, parseAuthCallbackParams, resolveAuthCallbackSession, resolveAuthCallbackUrl } from '../../app/auth/callbackLogic';
 
 describe('auth callback logic', () => {
   it('exchanges PKCE code using the extracted code value', async () => {

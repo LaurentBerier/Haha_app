@@ -16,7 +16,8 @@ import {
   View
 } from 'react-native';
 import { t } from '../../i18n';
-import { requestMagicLink, signInWithApple } from '../../services/authService';
+import { requestLoginMagicLink } from '../../services/authMagicLinkUi';
+import { signInWithApple } from '../../services/authService';
 import { theme } from '../../theme';
 
 const MAGIC_LINK_COOLDOWN_SECONDS = 45;
@@ -124,7 +125,7 @@ export default function LoginScreen() {
     setIsEmailSubmitting(true);
 
     try {
-      await requestMagicLink(email.trim(), 'auto');
+      await requestLoginMagicLink(email);
       setMagicLinkSent(true);
       setCooldownSeconds(MAGIC_LINK_COOLDOWN_SECONDS);
     } catch (err) {

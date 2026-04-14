@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { WEB_RESUME_ROUTE_RESTORE_FLAG_KEY } from '../utils/routeRestore';
 
 describe('root layout route registration', () => {
   it('registers admin as a nested route entry and not direct child screen names', () => {
@@ -26,6 +27,7 @@ describe('root layout route registration', () => {
     expect(layoutSource).toContain('window.sessionStorage');
     expect(layoutSource).not.toContain('window.localStorage');
     expect(layoutSource).toContain('WEB_RESUME_ROUTE_RESTORE_FLAG_KEY');
+    expect(WEB_RESUME_ROUTE_RESTORE_FLAG_KEY.length).toBeGreaterThan(10);
     expect(layoutSource).toContain('const shouldAttemptResumeRestore');
   });
 

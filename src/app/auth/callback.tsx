@@ -5,6 +5,8 @@ import * as Linking from 'expo-linking';
 import { AUTH_CALLBACK_SCHEME_URL } from '../../config/constants';
 import { assertSupabaseConfigured, supabase } from '../../services/supabaseClient';
 import { theme } from '../../theme';
+import { shouldShortCircuitDuplicateAuthCallback } from '../../auth/authCallbackGuards';
+import { rememberAuthNativeHandoffUrl, shouldTryAuthNativeHandoff } from '../../platform/platformCapabilities';
 import {
   buildNativeCallbackUrl,
   hasAuthPayload,
@@ -43,38 +45,6 @@ function toSafeDebugError(error: unknown): { name: string; message: string } | {
     return { message: error.trim() };
   }
   return { message: 'Unknown error' };
-}
-
-function shouldTryOpenNativeApp(url: URL): boolean {
-  if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof navigator === 'undefined') {
-    return false;
-  }
-
-  const userAgent = navigator.userAgent.toLowerCase();
-  const isMobileBrowser = /iphone|ipad|ipod|android/.test(userAgent);
-  if (!isMobileBrowser) {
-    return false;
-  }
-
-  if (!hasAuthPayload(url)) {
-    return false;
-  }
-
-  const alreadyOpenedInApp = url.searchParams.get('opened_in_app') === '1';
-  if (alreadyOpenedInApp) {
-    return false;
-  }
-
-  try {
-    const previous = window.sessionStorage.getItem('haha-auth-native-handoff-url');
-    if (previous === url.href) {
-      return false;
-    }
-  } catch {
-    // Ignore unavailable session storage.
-  }
-
-  return true;
 }
 
 type CallbackRouteParams = {
@@ -184,7 +154,7 @@ export default function AuthCallbackScreen() {
 
         const callbackUrl = resolvedUrl?.toString() ?? null;
 
-        if (callbackUrl && lastHandledUrlRef.current === callbackUrl) {
+        if (shouldShortCircuitDuplicateAuthCallback(callbackUrl, lastHandledUrlRef.current)) {
           return;
         }
         if (callbackUrl) {
@@ -196,12 +166,17 @@ export default function AuthCallbackScreen() {
           setErrorMessage(null);
         }
 
-        if (Platform.OS === 'web' && callbackUrl) {
+        if (Platform.OS === 'web' && callbackUrl && typeof window !== 'undefined') {
           try {
             const webUrl = new URL(callbackUrl);
-            if (shouldTryOpenNativeApp(webUrl)) {
+            if (
+              shouldTryAuthNativeHandoff(webUrl, {
+                hasAuthPayload,
+                sessionStorageGetItem: (key) => window.sessionStorage.getItem(key)
+              })
+            ) {
               const nativeUrl = buildNativeCallbackUrl(webUrl, AUTH_CALLBACK_SCHEME_URL);
-              window.sessionStorage.setItem('haha-auth-native-handoff-url', webUrl.href);
+              rememberAuthNativeHandoffUrl(webUrl.href, (key, value) => window.sessionStorage.setItem(key, value));
               window.location.assign(nativeUrl);
             }
           } catch {

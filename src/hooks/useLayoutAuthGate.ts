@@ -27,6 +27,11 @@ export function useLayoutAuthGate({
       return;
     }
 
+    // Auth callback route owns navigation until session exchange completes (see contracts/authLifecycleContracts.ts).
+    if (isAuthCallbackRoute) {
+      return;
+    }
+
     if (!isAuthenticated) {
       if (e2eAuthBypass) {
         if (inAuthGroup) {

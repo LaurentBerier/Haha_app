@@ -4,6 +4,8 @@ Last updated: **2026-04-13**
 
 ## Scope
 
+Canonical module map (send path, auth handoff, tests): [`docs/conversation-flow-architecture.md`](conversation-flow-architecture.md).
+
 Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
 
 - always-on conversation mode (voice + text) with shared UI

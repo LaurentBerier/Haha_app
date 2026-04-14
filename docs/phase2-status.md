@@ -65,7 +65,7 @@ Core targets:
 - `POST /api/claude` protected with bearer token validation
   - server-side model whitelist
   - server-side artist-aware prompt assembly (Cathy + placeholder artists)
-  - prompt language alignment (FR/EN) based on active app language
+  - prompt language alignment (FR/EN) based on active app language for proxy/system assembly (Phase 4 client UX uses **per-conversation** language for Cathy replies; see [`docs/phase4-status.md`](phase4-status.md))
   - server-side monthly quota enforcement by tier
   - soft-cap/economy degradation path (Haiku fallback + reduced context/tokens instead of hard chat block)
   - profile-backed monthly counter support (with graceful fallback to `usage_events` count)
@@ -243,3 +243,4 @@ Supabase URL config must include:
 Supabase email templates must use:
 
 - `{{ .ConfirmationURL }}` (avoid hardcoded `{{ .SiteURL }}/auth/callback?...` links)
+- For Magic Link templates, keep `href="{{ .ConfirmationURL }}"` (do not append `&type=signup`)

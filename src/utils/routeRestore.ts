@@ -1,4 +1,6 @@
 export const LAST_USEFUL_ROUTE_STORAGE_KEY = 'ha-ha:last-useful-route:v1';
+/** Session flag: user left the tab mid-route; restore last useful route after reload. */
+export const WEB_RESUME_ROUTE_RESTORE_FLAG_KEY = 'ha-ha:web-resume-route-restore:v1';
 export const DEFAULT_ROUTE_RESTORE_MAX_AGE_MS = 10 * 60_000;
 
 interface PersistedRouteSnapshot {

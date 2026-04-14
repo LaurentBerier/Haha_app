@@ -3,7 +3,7 @@ import path from 'node:path';
 
 describe('auth callback warm-start handling', () => {
   it('subscribes to Linking URL events while callback screen is mounted', () => {
-    const screenPath = path.resolve(__dirname, './callback.tsx');
+    const screenPath = path.resolve(__dirname, '../../app/auth/callback.tsx');
     const source = fs.readFileSync(screenPath, 'utf8');
 
     expect(source).toContain("Linking.addEventListener('url'");
@@ -11,10 +11,10 @@ describe('auth callback warm-start handling', () => {
   });
 
   it('checks duplicate callback URLs before clearing visible error state', () => {
-    const screenPath = path.resolve(__dirname, './callback.tsx');
+    const screenPath = path.resolve(__dirname, '../../app/auth/callback.tsx');
     const source = fs.readFileSync(screenPath, 'utf8');
 
-    const duplicateGuardIndex = source.indexOf('if (callbackUrl && lastHandledUrlRef.current === callbackUrl)');
+    const duplicateGuardIndex = source.indexOf('shouldShortCircuitDuplicateAuthCallback');
     const clearErrorIndex = source.indexOf('setErrorMessage(null);');
 
     expect(duplicateGuardIndex).toBeGreaterThan(-1);

@@ -56,6 +56,7 @@ Checklist in Supabase `Authentication -> URL Configuration`:
 Email template requirement (critical):
 
 - Use `{{ .ConfirmationURL }}` for confirmation/reset links.
+- In Magic Link templates, keep `href="{{ .ConfirmationURL }}"` as-is (do not append `&type=signup`).
 - Do not build links manually with `{{ .SiteURL }}/auth/callback?token_hash=...`.
 - For Magic Link email copy/style (FR + EN), use the reference template:
   - [`docs/supabase-magic-link-email-template.md`](/Users/laurentbernier/Documents/HAHA_app/docs/supabase-magic-link-email-template.md)
@@ -74,6 +75,21 @@ Validation tip:
 - On iOS, test with both:
   - app closed then open link
   - app already open (warm start) then open link
+
+### 2b) Kicked to login while `/auth/callback` is still resolving
+
+Cause:
+
+- Root auth gate redirecting before the callback screen finishes the session exchange.
+
+Expected:
+
+- [`useLayoutAuthGate`](../src/hooks/useLayoutAuthGate.ts) returns early on `isAuthCallbackRoute` so the callback screen owns navigation until success or error UI.
+
+If this regresses:
+
+- Confirm `segments` still expose `auth/callback` while on the callback route.
+- See [`docs/conversation-flow-architecture.md`](conversation-flow-architecture.md) (auth section).
 
 ## 3) Password reset link opens but does not reach reset screen
 

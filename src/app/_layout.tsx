@@ -17,7 +17,6 @@ import { BrandMark } from '../components/common/BrandMark';
 import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ToastProvider } from '../components/common/ToastProvider';
-import { MODE_IDS } from '../config/constants';
 import { useAuth } from '../hooks/useAuth';
 import { useLayoutAuthGate } from '../hooks/useLayoutAuthGate';
 import { usePrimaryThreadCloudSync } from '../hooks/usePrimaryThreadCloudSync';
@@ -26,18 +25,19 @@ import { useVoiceConversation } from '../hooks/useVoiceConversation';
 import { useStorePersistence } from '../hooks/useStorePersistence';
 import { t } from '../i18n';
 import type { ChatSendPayload } from '../models/ChatSendPayload';
-import { normalizeConversationThreadType } from '../models/Conversation';
 import { signOut } from '../services/authService';
-import { tryLaunchExperienceFromText } from '../services/experienceLaunchService';
+import { planGlobalComposerSend } from '../services/conversationSendOrchestrator';
 import { initSentry } from '../services/sentry';
 import { useStore } from '../store/useStore';
 import { theme } from '../theme';
 import { E2E_AUTH_BYPASS } from '../config/env';
 import {
   createPersistedRouteSnapshot,
+  isModeSelectRoute,
   isRouteEligibleForPersistence,
   LAST_USEFUL_ROUTE_STORAGE_KEY,
-  resolveRouteToRestoreFromSnapshot
+  resolveRouteToRestoreFromSnapshot,
+  WEB_RESUME_ROUTE_RESTORE_FLAG_KEY
 } from '../utils/routeRestore';
 import { findConversationById } from '../utils/conversationUtils';
 import cleanBackground from '../../assets/branding/Clean_BG.jpg';
@@ -46,7 +46,6 @@ import neonTitleMark from '../../assets/branding/logo-simple-neon-Trans.png';
 type AccountMenuRoute = '/settings' | '/settings/subscription' | '/stats' | '/admin' | '/history';
 const WEB_BACKGROUND_MIN_HEIGHT_VH = 100;
 const WEB_BACKGROUND_MAX_HEIGHT_VH = 170;
-const WEB_RESUME_ROUTE_RESTORE_FLAG_KEY = 'ha-ha:web-resume-route-restore:v1';
 const WEB_NATIVE_HEADER_EDGE_PADDING = 16;
 
 function resolveArtistIdFromPath(pathname: string): string | null {
@@ -60,10 +59,6 @@ function resolveArtistIdFromPath(pathname: string): string | null {
   } catch {
     return match[1];
   }
-}
-
-function isModeSelectRoute(pathname: string): boolean {
-  return /^\/mode-select\/[^/]+(?:\/[^/]+)?\/?$/.test(pathname);
 }
 
 export default function RootLayout() {
@@ -219,83 +214,35 @@ export default function RootLayout() {
 
   const sendGlobalMessage = useCallback(
     (payload: ChatSendPayload) => {
-      const normalizedText = payload.text.trim();
-      const normalizedPayload: ChatSendPayload = {
-        text: normalizedText,
-        image: payload.image ?? null
-      };
-      if ((!normalizedText && !normalizedPayload.image) || !targetArtistId) {
+      const plan = planGlobalComposerSend({
+        payload,
+        targetArtistId,
+        pathname,
+        language,
+        conversations,
+        activeConversationId,
+        hasUserMessageInConversation: (conversationId) => {
+          const page = useStore.getState().messagesByConversation[conversationId];
+          return (page?.messages ?? []).some((message) => message.role === 'user');
+        },
+        createConversation
+      });
+
+      if (plan.action === 'abort' || plan.action === 'launched') {
         return;
       }
 
-      if (normalizedText && !normalizedPayload.image) {
-        const launchOutcome = tryLaunchExperienceFromText({
-          artistId: targetArtistId,
-          text: normalizedText,
-          fallbackLanguage: language
-        });
-        if (launchOutcome.launched) {
-          return;
-        }
-      }
-
-      const isModeSelectContext = isModeSelectRoute(pathname);
-      const artistConversations = conversations[targetArtistId] ?? [];
-      let conversationId: string | null = null;
-
-      if (isModeSelectContext) {
-        const activeConversation = artistConversations.find((conversation) => conversation.id === activeConversationId) ?? null;
-        const activeCandidateId =
-          activeConversationId &&
-          activeConversation &&
-          normalizeConversationThreadType(activeConversation.threadType) === 'primary'
-            ? activeConversationId
-            : null;
-
-        if (activeCandidateId) {
-          const page = useStore.getState().messagesByConversation[activeCandidateId];
-          const hasUserTurns = (page?.messages ?? []).some((message) => message.role === 'user');
-          if (!hasUserTurns) {
-            conversationId = activeCandidateId;
-          }
-        }
-      } else {
-        conversationId =
-          activeConversationId && artistConversations.some((conversation) => conversation.id === activeConversationId)
-            ? activeConversationId
-            : null;
-
-        if (!conversationId && artistConversations.length > 0) {
-          const [latestPrimaryConversation] = artistConversations
-            .filter((conversation) => normalizeConversationThreadType(conversation.threadType) === 'primary')
-            .slice()
-            .sort((left, right) => {
-              const rightTime = Date.parse(right.updatedAt);
-              const leftTime = Date.parse(left.updatedAt);
-              return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
-            });
-          conversationId = latestPrimaryConversation?.id ?? null;
-        }
-      }
-
-      if (!conversationId) {
-        conversationId = createConversation(targetArtistId, language, MODE_IDS.ON_JASE, {
-          threadType: 'primary'
-        }).id;
-      }
-
-      setActiveConversation(conversationId);
-      const queuedNonce = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setActiveConversation(plan.conversationId);
       queueChatSendPayload({
-        conversationId,
-        nonce: queuedNonce,
-        payload: normalizedPayload
+        conversationId: plan.conversationId,
+        nonce: plan.nonce,
+        payload: plan.payload
       });
       router.push({
         pathname: '/chat/[conversationId]',
         params: {
-          conversationId,
-          queuedNonce
+          conversationId: plan.conversationId,
+          queuedNonce: plan.nonce
         }
       });
     },

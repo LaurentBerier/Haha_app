@@ -1,3 +1,4 @@
+import { GREETING_GLOBAL_RETRY_BUDGET_MS } from '../../contracts/conversationContracts';
 import { API_BASE_URL, CLAUDE_PROXY_URL, GREETING_FORCE_TUTORIAL } from '../../config/env';
 
 export interface GreetingCoordinates {
@@ -52,7 +53,7 @@ interface GreetingEndpointResponse {
 const GREETING_API_BACKOFF_MS = 5 * 60_000;
 const GREETING_API_REQUEST_TIMEOUT_MS = 12_000;
 const GREETING_API_RETRY_BASE_DELAY_MS = 850;
-const GREETING_API_TOTAL_BUDGET_MS = 25_000;
+const GREETING_API_TOTAL_BUDGET_MS = GREETING_GLOBAL_RETRY_BUDGET_MS;
 const GREETING_API_MAX_ATTEMPT_ROUNDS = 12;
 const MAX_RETRY_DELAY_MS = 6_000;
 const MIN_REQUEST_TIMEOUT_MS = 250;
