@@ -1,6 +1,9 @@
 import { Platform } from 'react-native';
 
 const MOBILE_WEB_UA_PATTERN = /iphone|ipad|ipod|android/i;
+const IOS_MOBILE_WEB_UA_PATTERN = /iphone|ipad|ipod/i;
+const IPADOS_DESKTOP_UA_PATTERN = /macintosh/i;
+const MOBILE_HINT_UA_PATTERN = /mobile/i;
 
 /**
  * True when running in React Native Web (browser).
@@ -27,11 +30,39 @@ export function isMobileWebUserAgent(userAgent: string | undefined | null): bool
   return MOBILE_WEB_UA_PATTERN.test(userAgent.toLowerCase());
 }
 
+/**
+ * Best-effort: iOS/iPadOS browser session in RN Web (Safari / WKWebView style UA).
+ */
+export function isIosMobileWebUserAgent(userAgent: string | undefined | null): boolean {
+  if (!userAgent || typeof userAgent !== 'string') {
+    return false;
+  }
+
+  const normalized = userAgent.toLowerCase();
+  if (IOS_MOBILE_WEB_UA_PATTERN.test(normalized)) {
+    return true;
+  }
+
+  // iPadOS desktop-class Safari can report "Macintosh" with a "Mobile" hint.
+  return IPADOS_DESKTOP_UA_PATTERN.test(normalized) && MOBILE_HINT_UA_PATTERN.test(normalized);
+}
+
 export function getNavigatorUserAgent(): string | null {
   if (typeof navigator === 'undefined' || typeof navigator.userAgent !== 'string') {
     return null;
   }
   return navigator.userAgent;
+}
+
+/**
+ * True when running in iOS/iPadOS mobile browser context (RN Web only).
+ */
+export function isIosMobileWebRuntime(): boolean {
+  if (!isReactNativeWeb()) {
+    return false;
+  }
+
+  return isIosMobileWebUserAgent(getNavigatorUserAgent());
 }
 
 export type AuthNativeHandoffDeps = {

@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { shouldTryAuthNativeHandoff } from './platformCapabilities';
+import { isIosMobileWebRuntime, isIosMobileWebUserAgent, shouldTryAuthNativeHandoff } from './platformCapabilities';
 
 jest.mock('react-native', () => ({
   Platform: { OS: 'web' }
@@ -53,5 +53,29 @@ describe('platformCapabilities', () => {
         sessionStorageGetItem: () => null
       })
     ).toBe(false);
+  });
+
+  it('isIosMobileWebUserAgent detects iPhone/iPad and iPadOS desktop-class UA', () => {
+    expect(isIosMobileWebUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)')).toBe(true);
+    expect(isIosMobileWebUserAgent('Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)')).toBe(true);
+    expect(
+      isIosMobileWebUserAgent(
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1'
+      )
+    ).toBe(true);
+  });
+
+  it('isIosMobileWebUserAgent returns false for Android and desktop', () => {
+    expect(isIosMobileWebUserAgent('Mozilla/5.0 (Linux; Android 14; Pixel 8)')).toBe(false);
+    expect(isIosMobileWebUserAgent('Mozilla/5.0 Macintosh')).toBe(false);
+  });
+
+  it('isIosMobileWebRuntime follows web + navigator user agent detection', () => {
+    global.window = {} as Window & typeof globalThis;
+    global.navigator = { userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)' } as Navigator;
+    expect(isIosMobileWebRuntime()).toBe(true);
+
+    global.navigator = { userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8)' } as Navigator;
+    expect(isIosMobileWebRuntime()).toBe(false);
   });
 });

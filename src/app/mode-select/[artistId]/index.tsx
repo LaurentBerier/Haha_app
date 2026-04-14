@@ -41,7 +41,7 @@ import { synthesizeVoice } from '../../../services/voiceEngine';
 import { clearTerminalCooldownForPurpose } from '../../../services/ttsService';
 import { attemptVoiceAutoplayUri, attemptVoiceAutoplayUriDetailed } from '../../../services/voiceAutoplayService';
 import { markWebAutoplaySessionUnlocked, queueLatestWebAutoplayUnlockRetry, clearPendingWebAutoplayUnlockRetry } from '../../../services/webAutoplayUnlockService';
-import { isNativeMobileApp } from '../../../platform/platformCapabilities';
+import { isIosMobileWebRuntime, isNativeMobileApp } from '../../../platform/platformCapabilities';
 import { attemptExperienceLaunchBeforeSend } from '../../../services/conversationSendOrchestrator';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voiceFillerService';
 import { useStore } from '../../../store/useStore';
@@ -1219,6 +1219,7 @@ export default function ModeSelectHomeScreen() {
   const isGreetingVoiceActive =
     greeting !== null &&
     (audioPlayer.isLoading || audioPlayer.isPlaying || isGreetingVoicePendingGesture);
+  const isIosMobileWeb = isIosMobileWebRuntime();
   const greetingVoiceLabel = isEnglishLanguage
     ? isGreetingVoicePendingGesture
       ? 'Tap anywhere to enable Cathy audio.'
@@ -1642,7 +1643,8 @@ export default function ModeSelectHomeScreen() {
       hasStreaming,
       isGreetingVoiceActive,
       isGreetingBooting,
-      conversationModeEnabled
+      conversationModeEnabled,
+      isIosMobileWebRuntime: isIosMobileWeb
     });
 
     if (decision === 'skip') {
@@ -1651,6 +1653,9 @@ export default function ModeSelectHomeScreen() {
 
     if (decision === 'arm_listening') {
       armListeningActivation();
+    } else if (decision === 'force_enable_without_resume') {
+      setConversationModeEnabled(true);
+      pauseListening();
     } else if (decision === 'force_enable_and_resume') {
       setConversationModeEnabled(true);
       resumeListening();
@@ -1663,6 +1668,7 @@ export default function ModeSelectHomeScreen() {
   }, [
     armListeningActivation,
     conversationModeEnabled,
+    isIosMobileWeb,
     isGreetingBooting,
     isGreetingVoiceActive,
     isModeSelectScreenFocused,
@@ -1671,6 +1677,7 @@ export default function ModeSelectHomeScreen() {
     isQuotaBlocked,
     isValidConversation,
     messages,
+    pauseListening,
     pendingAutoMicGreetingMessageId,
     resumeListening,
     setConversationModeEnabled
