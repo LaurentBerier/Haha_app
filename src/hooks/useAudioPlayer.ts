@@ -281,6 +281,11 @@ export function useAudioPlayer(): AudioPlayerController {
             if (!isMountedRef.current || playbackTokenRef.current !== token) {
               return;
             }
+            if (Platform.OS === 'web' && queueIndexRef.current >= queueRef.current.length - 1) {
+              webAudio.src = '';
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              if (typeof (webAudio as any).load === 'function') (webAudio as any).load();
+            }
             setIsPlaying(false);
           };
           const handleError = () => {
