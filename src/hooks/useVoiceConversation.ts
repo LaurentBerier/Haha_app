@@ -29,7 +29,6 @@ const BUSY_LOADING_TIMEOUT_MS =
     ? parsedBusyLoadingTimeout
     : DEFAULT_BUSY_LOADING_TIMEOUT_MS;
 const RECOVERY_DELAYS_MS = VOICE_RECOVERY_DELAYS_MS;
-const WEB_VOICE_LIVENESS_MS = 8_000;
 const ASSISTANT_BUSY_RECOVERY_DELAY_MS = 1_000;
 export const VOICE_DUPLICATE_SEND_WINDOW_MS = 3_000;
 
@@ -431,11 +430,6 @@ function voiceConversationReducer(
   }
 }
 
-function logVoiceDebug(..._args: unknown[]): void {
-  // Dev tracing removed: extra console + focus hooks contributed to instability on some mobile builds.
-  void _args;
-}
-
 export function getVoiceRecoveryDelayMs(attempt: number): number | null {
   return RECOVERY_DELAYS_MS[attempt - 1] ?? null;
 }
@@ -566,7 +560,6 @@ export function useVoiceConversation({
   const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const assistantBusyRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const livenessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumeAfterTypedDraftRef = useRef(false);
   const pendingManualResumeRef = useRef(false);
   const hasUserActivatedListeningRef = useRef(Platform.OS !== 'web');
@@ -662,21 +655,11 @@ export function useVoiceConversation({
     assistantBusyRecoveryTimerRef.current = null;
   }, []);
 
-  const clearLivenessTimer = useCallback(() => {
-    if (!livenessTimerRef.current) {
-      return;
-    }
-
-    clearTimeout(livenessTimerRef.current);
-    livenessTimerRef.current = null;
-  }, []);
-
   const stopActiveSession = useCallback(() => {
-    clearLivenessTimer();
     const activeSession = activeSessionRef.current;
     activeSessionRef.current = null;
     activeSession?.stop();
-  }, [clearLivenessTimer]);
+  }, []);
 
   const clearTranscript = useCallback(() => {
     dispatch({ type: 'clear_transcript' });
@@ -703,7 +686,6 @@ export function useVoiceConversation({
       }
 
       shouldResumeAfterWebFocusLossRef.current = true;
-      logVoiceDebug('web_focus_loss_suspend', { reason, status: stateRef.current.status });
       clearRecoveryTimer();
       clearSilenceTimer();
       stopActiveSession();
@@ -741,7 +723,6 @@ export function useVoiceConversation({
       }
 
       shouldResumeAfterWebFocusLossRef.current = false;
-      logVoiceDebug('web_focus_gain_resume', { reason, status: stateRef.current.status });
       dispatch({ type: 'set_off' });
       dispatch({ type: 'starting' });
       void startListeningFlowRef.current?.('resume');
@@ -790,14 +771,6 @@ export function useVoiceConversation({
           windowMs: VOICE_DUPLICATE_SEND_WINDOW_MS
         })
       ) {
-        if (__DEV__) {
-          const lastSentAtMs = lastSentTranscriptAtMsRef.current;
-          const elapsedMs = typeof lastSentAtMs === 'number' ? nowMs - lastSentAtMs : null;
-          logVoiceDebug('duplicate_transcript_suppressed', {
-            elapsedMs,
-            windowMs: VOICE_DUPLICATE_SEND_WINDOW_MS
-          });
-        }
         clearTranscript();
         return;
       }
@@ -810,7 +783,6 @@ export function useVoiceConversation({
       } catch (sendError) {
         const message =
           sendError instanceof Error && sendError.message.trim() ? sendError.message.trim() : t('voiceError');
-        logVoiceDebug('send_failed', { message });
         stopActiveSession();
         dispatch({ type: 'error', message });
       }
@@ -825,12 +797,6 @@ export function useVoiceConversation({
 
       activeSessionRef.current = null;
       clearSilenceTimer();
-      logVoiceDebug('session_end', {
-        sessionId: event.sessionId,
-        reason: event.reason,
-        message: event.message,
-        recoveryAttempt: stateRef.current.recoveryAttempt
-      });
 
       if (event.reason === 'permission') {
         hasPermissionRef.current = false;
@@ -856,23 +822,11 @@ export function useVoiceConversation({
         const recoveryPlan = getVoiceRecoveryPlan(event.reason, stateRef.current.recoveryAttempt);
 
         if (recoveryPlan.consumesBudget && recoveryPlan.delayMs === null) {
-          logVoiceDebug('recovery_exhausted', {
-            sessionId: event.sessionId,
-            reason: event.reason,
-            recoveryAttempt: stateRef.current.recoveryAttempt
-          });
           dispatch({ type: 'pause_recovery' });
           return;
         }
 
         dispatch({ type: 'recovery_scheduled', attempt: recoveryPlan.attempt });
-        logVoiceDebug('recovery_scheduled', {
-          sessionId: event.sessionId,
-          reason: event.reason,
-          attempt: recoveryPlan.attempt,
-          delayMs: recoveryPlan.delayMs,
-          consumesBudget: recoveryPlan.consumesBudget
-        });
         clearRecoveryTimer();
         recoveryTimerRef.current = setTimeout(() => {
           recoveryTimerRef.current = null;
@@ -999,15 +953,7 @@ export function useVoiceConversation({
           return;
         }
 
-        logVoiceDebug('session_start', {
-          origin,
-          statusBeforeStart: latestStatus,
-          recoveryAttempt: stateRef.current.recoveryAttempt
-        });
-
         let audioStartFired = false;
-        let resultReceived = false;
-        clearLivenessTimer();
         const audioStartTimeoutId = setTimeout(() => {
           if (!audioStartFired && isMountedRef.current) {
             dispatch({ type: 'listening' });
@@ -1018,28 +964,15 @@ export function useVoiceConversation({
           locale: languageRef.current,
           fallbackLocale: fallbackLanguageRef.current,
           onResult: (event) => {
-            resultReceived = true;
-            clearLivenessTimer();
             handleSessionResult(event.sessionId, event.transcript);
           },
           onEnd: (event) => {
             clearTimeout(audioStartTimeoutId);
-            clearLivenessTimer();
             handleSessionEnd(event);
           },
           onAudioStart: () => {
             audioStartFired = true;
             clearTimeout(audioStartTimeoutId);
-            if (Platform.OS === 'web') {
-              clearLivenessTimer();
-              livenessTimerRef.current = setTimeout(() => {
-                livenessTimerRef.current = null;
-                if (!resultReceived && activeSessionRef.current?.id === session.id && isMountedRef.current) {
-                  logVoiceDebug('liveness_watchdog_kill', { sessionId: session.id });
-                  session.stop();
-                }
-              }, WEB_VOICE_LIVENESS_MS);
-            }
             if (isMountedRef.current) {
               dispatch({ type: 'listening' });
             }
@@ -1057,16 +990,7 @@ export function useVoiceConversation({
         startInFlightRef.current = false;
       }
     },
-    [
-      clearLivenessTimer,
-      clearRecoveryTimer,
-      clearSilenceTimer,
-      clearTranscript,
-      handleSessionEnd,
-      handleSessionResult,
-      shouldAutoListen,
-      stopActiveSession
-    ]
+    [clearRecoveryTimer, clearSilenceTimer, clearTranscript, handleSessionEnd, handleSessionResult, shouldAutoListen, stopActiveSession]
   );
 
   useEffect(() => {
@@ -1167,9 +1091,7 @@ export function useVoiceConversation({
 
       pendingManualResumeRef.current = false;
       resumeAfterTypedDraftRef.current = false;
-      const fromStatus = stateRef.current.status;
       hasUserActivatedListeningRef.current = true;
-      logVoiceDebug('manual_resume_flushed', { fromStatus });
       dispatch({ type: 'set_off' });
       dispatch({ type: 'starting' });
       void startListeningFlow('resume');
@@ -1182,9 +1104,7 @@ export function useVoiceConversation({
       }
 
       resumeAfterTypedDraftRef.current = false;
-      const fromStatus = stateRef.current.status;
       hasUserActivatedListeningRef.current = true;
-      logVoiceDebug('typed_draft_resume', { fromStatus });
       dispatch({ type: 'set_off' });
       dispatch({ type: 'starting' });
       void startListeningFlow('resume');
@@ -1262,10 +1182,6 @@ export function useVoiceConversation({
         return;
       }
 
-      logVoiceDebug('busy_loading_stall_reset', {
-        status: stateRef.current.status,
-        isPlaying: isPlayingRef.current
-      });
       pendingManualResumeRef.current = true;
       onStopAudioRef.current();
       dispatch({ type: 'set_off' });
@@ -1313,9 +1229,6 @@ export function useVoiceConversation({
         return;
       }
 
-      logVoiceDebug('assistant_busy_stall_recovery', {
-        status: stateRef.current.status
-      });
       hasUserActivatedListeningRef.current = true;
       void startListeningFlowRef.current?.('recovery');
     }, ASSISTANT_BUSY_RECOVERY_DELAY_MS);
@@ -1353,7 +1266,6 @@ export function useVoiceConversation({
   }, [disabled, enabled, hasTypedDraft, isPlaying, shouldAutoListen, startListeningFlow, state.status]);
 
   const pauseListening = useCallback(() => {
-    logVoiceDebug('manual_pause');
     shouldResumeAfterWebFocusLossRef.current = false;
     pendingManualResumeRef.current = false;
     resumeAfterTypedDraftRef.current = false;
@@ -1393,19 +1305,11 @@ export function useVoiceConversation({
       if (shouldArmBusyWhileQueuedResume(queueState)) {
         dispatch({ type: 'assistant_busy' });
       }
-      logVoiceDebug('manual_resume_queued', {
-        enabled: queueState.enabled,
-        hasTypedDraft: queueState.hasTypedDraft,
-        isPlaying: queueState.isPlaying,
-        armedBusy: shouldArmBusyWhileQueuedResume(queueState),
-        fromStatus: stateRef.current.status
-      });
       return;
     }
 
     pendingManualResumeRef.current = false;
     resumeAfterTypedDraftRef.current = false;
-    const fromStatus = stateRef.current.status;
     hasUserActivatedListeningRef.current = true;
     stateRef.current = {
       ...stateRef.current,
@@ -1414,14 +1318,12 @@ export function useVoiceConversation({
       transcript: '',
       error: null
     };
-    logVoiceDebug('manual_resume', { fromStatus });
     dispatch({ type: 'set_off' });
     dispatch({ type: 'starting' });
     void startListeningFlow('resume');
   }, [clearAssistantBusyRecoveryTimer, clearBusyLoadingTimer, startListeningFlow]);
 
   const interruptAndListen = useCallback(() => {
-    logVoiceDebug('interrupt_and_listen', { fromStatus: stateRef.current.status });
     shouldResumeAfterWebFocusLossRef.current = false;
     pendingManualResumeRef.current = false;
     resumeAfterTypedDraftRef.current = false;
@@ -1470,19 +1372,6 @@ export function useVoiceConversation({
     dispatch({ type: 'set_off' });
     void startListeningFlow('auto');
   }, [startListeningFlow]);
-
-  useEffect(() => {
-    if (!__DEV__) {
-      return;
-    }
-
-    logVoiceDebug('state_transition', {
-      status: state.status,
-      recoveryAttempt: state.recoveryAttempt,
-      hasTranscript: state.transcript.length > 0,
-      error: state.error
-    });
-  }, [state.error, state.recoveryAttempt, state.status, state.transcript]);
 
   useEffect(() => {
     isMountedRef.current = true;
