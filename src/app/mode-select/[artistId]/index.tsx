@@ -1161,6 +1161,15 @@ export default function ModeSelectHomeScreen() {
       setActiveConversation
     ]
   );
+  const isLatestArtistVoiceGenerating = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const message = messages[i];
+      if (message.role === 'artist') {
+        return message.metadata?.voiceStatus === 'generating';
+      }
+    }
+    return false;
+  }, [messages]);
   const {
     isListening,
     transcript,
@@ -1174,7 +1183,8 @@ export default function ModeSelectHomeScreen() {
     enabled: isValidConversation && isSendContextReady && conversationModeEnabled && !isQuotaBlocked,
     disabled: isModeSelectComposerDisabled,
     hasTypedDraft,
-    isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
+    isPlaying:
+      audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming || isLatestArtistVoiceGenerating,
     isAudioPlaybackLoading: audioPlayer.isLoading,
     onSend: (text) => {
       const normalized = text.trim();
@@ -1548,8 +1558,8 @@ export default function ModeSelectHomeScreen() {
   // #region agent log
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if(typeof window!=='undefined'){const snap={t:Date.now(),l:'hub:state',d:{strm:hasStreaming,aPlay:audioPlayer.isPlaying,aLoad:audioPlayer.isLoading,aMid:audioPlayer.currentMessageId,pGA:Boolean(pendingGreetingAudio),gVA:isGreetingVoiceActive,compDis:isModeSelectComposerDisabled,valid:isValidConversation,sendRdy:isSendContextReady,convMode:conversationModeEnabled,listen:isListening,nMsg:messages.length,lastSt:messages.length>0?messages[messages.length-1]?.status:null,lastR:messages.length>0?messages[messages.length-1]?.role:null}};((window as any).__dbg=((window as any).__dbg||[])).push(snap);console.warn('[DBG]hub',snap.d);}
-  }, [hasStreaming, audioPlayer.isPlaying, audioPlayer.isLoading, audioPlayer.currentMessageId, pendingGreetingAudio, isGreetingVoiceActive, isModeSelectComposerDisabled, isValidConversation, isSendContextReady, conversationModeEnabled, isListening, messages]);
+    if(typeof window!=='undefined'){const snap={t:Date.now(),l:'hub:state',d:{strm:hasStreaming,aPlay:audioPlayer.isPlaying,aLoad:audioPlayer.isLoading,aMid:audioPlayer.currentMessageId,pGA:Boolean(pendingGreetingAudio),gVA:isGreetingVoiceActive,vGen:isLatestArtistVoiceGenerating,compDis:isModeSelectComposerDisabled,valid:isValidConversation,sendRdy:isSendContextReady,convMode:conversationModeEnabled,listen:isListening,nMsg:messages.length,lastSt:messages.length>0?messages[messages.length-1]?.status:null,lastR:messages.length>0?messages[messages.length-1]?.role:null}};((window as any).__dbg=((window as any).__dbg||[])).push(snap);console.warn('[DBG]hub',snap.d);}
+  }, [hasStreaming, audioPlayer.isPlaying, audioPlayer.isLoading, audioPlayer.currentMessageId, pendingGreetingAudio, isGreetingVoiceActive, isLatestArtistVoiceGenerating, isModeSelectComposerDisabled, isValidConversation, isSendContextReady, conversationModeEnabled, isListening, messages]);
   // #endregion
 
   useEffect(() => {
