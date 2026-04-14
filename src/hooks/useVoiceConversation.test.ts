@@ -27,6 +27,7 @@ import {
   shouldRecoverFromBusyLoadingStall,
   shouldSuppressDuplicateVoiceTranscript,
   shouldSuspendMicForWebFocusLoss,
+  shouldArmWebLivenessWatchdog,
   shouldAttemptAutoListen,
   shouldConsumeVoiceRecoveryBudget
 } from './useVoiceConversation';
@@ -145,6 +146,40 @@ describe('useVoiceConversation helpers', () => {
         isPlaying: false,
         hasTypedDraft: false,
         status: 'off'
+      })
+    ).toBe(false);
+  });
+
+  it('arms iOS web liveness watchdog only for post-playback starts', () => {
+    expect(
+      shouldArmWebLivenessWatchdog({
+        isIosWebRuntime: true,
+        origin: 'recovery',
+        statusBeforeStart: 'off'
+      })
+    ).toBe(true);
+
+    expect(
+      shouldArmWebLivenessWatchdog({
+        isIosWebRuntime: true,
+        origin: 'resume',
+        statusBeforeStart: 'assistant_busy'
+      })
+    ).toBe(true);
+
+    expect(
+      shouldArmWebLivenessWatchdog({
+        isIosWebRuntime: true,
+        origin: 'resume',
+        statusBeforeStart: 'off'
+      })
+    ).toBe(false);
+
+    expect(
+      shouldArmWebLivenessWatchdog({
+        isIosWebRuntime: false,
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy'
       })
     ).toBe(false);
   });

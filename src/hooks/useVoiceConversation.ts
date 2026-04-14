@@ -10,6 +10,7 @@ import {
   MIN_SILENCE_AUTO_SEND_MS,
   VOICE_RECOVERY_DELAYS_MS
 } from '../contracts/conversationContracts';
+import { isIosMobileWebRuntime } from '../platform/platformCapabilities';
 import {
   requestVoicePermission,
   startVoiceListeningSession,
@@ -29,7 +30,9 @@ const BUSY_LOADING_TIMEOUT_MS =
     ? parsedBusyLoadingTimeout
     : DEFAULT_BUSY_LOADING_TIMEOUT_MS;
 const RECOVERY_DELAYS_MS = VOICE_RECOVERY_DELAYS_MS;
-const ASSISTANT_BUSY_RECOVERY_DELAY_MS = 1_000;
+const IOS_WEB_RUNTIME = isIosMobileWebRuntime();
+const WEB_VOICE_LIVENESS_MS = 8_000;
+const ASSISTANT_BUSY_RECOVERY_DELAY_MS = IOS_WEB_RUNTIME ? 1_500 : 1_000;
 export const VOICE_DUPLICATE_SEND_WINDOW_MS = 3_000;
 
 const GARBLED_STT_STANDALONE_WORDS = new Set([
@@ -214,6 +217,12 @@ export interface VoiceTranscriptDedupState {
   windowMs?: number;
 }
 
+export interface WebLivenessWatchdogState {
+  isIosWebRuntime: boolean;
+  origin: 'auto' | 'recovery' | 'resume' | 'interrupt';
+  statusBeforeStart: VoiceConversationStatus;
+}
+
 type VoiceConversationAction =
   | { type: 'set_off' }
   | { type: 'starting' }
@@ -339,6 +348,14 @@ export function shouldSuppressDuplicateVoiceTranscript(state: VoiceTranscriptDed
   }
 
   return elapsedMs < windowMs;
+}
+
+export function shouldArmWebLivenessWatchdog(state: WebLivenessWatchdogState): boolean {
+  if (!state.isIosWebRuntime) {
+    return false;
+  }
+
+  return state.origin === 'recovery' || state.statusBeforeStart === 'assistant_busy';
 }
 
 function voiceConversationReducer(
@@ -558,6 +575,7 @@ export function useVoiceConversation({
   const startInFlightRef = useRef(false);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const recoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const livenessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const assistantBusyRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumeAfterTypedDraftRef = useRef(false);
@@ -637,6 +655,15 @@ export function useVoiceConversation({
     recoveryTimerRef.current = null;
   }, []);
 
+  const clearLivenessTimer = useCallback(() => {
+    if (!livenessTimerRef.current) {
+      return;
+    }
+
+    clearTimeout(livenessTimerRef.current);
+    livenessTimerRef.current = null;
+  }, []);
+
   const clearBusyLoadingTimer = useCallback(() => {
     if (!busyLoadingTimerRef.current) {
       return;
@@ -656,10 +683,11 @@ export function useVoiceConversation({
   }, []);
 
   const stopActiveSession = useCallback(() => {
+    clearLivenessTimer();
     const activeSession = activeSessionRef.current;
     activeSessionRef.current = null;
     activeSession?.stop();
-  }, []);
+  }, [clearLivenessTimer]);
 
   const clearTranscript = useCallback(() => {
     dispatch({ type: 'clear_transcript' });
@@ -909,6 +937,7 @@ export function useVoiceConversation({
       startInFlightRef.current = true;
       try {
         clearRecoveryTimer();
+        clearLivenessTimer();
         clearSilenceTimer();
         stopActiveSession();
         clearTranscript();
@@ -954,6 +983,12 @@ export function useVoiceConversation({
         }
 
         let audioStartFired = false;
+        let resultReceived = false;
+        const shouldArmLivenessWatchdog = shouldArmWebLivenessWatchdog({
+          isIosWebRuntime: IOS_WEB_RUNTIME,
+          origin,
+          statusBeforeStart: latestStatus
+        });
         const audioStartTimeoutId = setTimeout(() => {
           if (!audioStartFired && isMountedRef.current) {
             dispatch({ type: 'listening' });
@@ -964,15 +999,48 @@ export function useVoiceConversation({
           locale: languageRef.current,
           fallbackLocale: fallbackLanguageRef.current,
           onResult: (event) => {
+            resultReceived = true;
+            clearLivenessTimer();
             handleSessionResult(event.sessionId, event.transcript);
           },
           onEnd: (event) => {
             clearTimeout(audioStartTimeoutId);
+            clearLivenessTimer();
             handleSessionEnd(event);
           },
           onAudioStart: () => {
             audioStartFired = true;
             clearTimeout(audioStartTimeoutId);
+            if (shouldArmLivenessWatchdog) {
+              clearLivenessTimer();
+              livenessTimerRef.current = setTimeout(() => {
+                livenessTimerRef.current = null;
+                if (resultReceived || activeSessionRef.current?.id !== session.id || !isMountedRef.current) {
+                  return;
+                }
+
+                stopActiveSession();
+                const nextAttempt = stateRef.current.recoveryAttempt + 1;
+                const baseDelayMs = RECOVERY_DELAYS_MS[nextAttempt] ?? null;
+                if (baseDelayMs === null) {
+                  dispatch({ type: 'pause_recovery' });
+                  return;
+                }
+
+                const delayMs = Math.max(baseDelayMs, ASSISTANT_BUSY_RECOVERY_DELAY_MS);
+                dispatch({ type: 'recovery_scheduled', attempt: nextAttempt });
+                clearRecoveryTimer();
+                recoveryTimerRef.current = setTimeout(() => {
+                  recoveryTimerRef.current = null;
+                  if (!isMountedRef.current || !enabledRef.current || disabledRef.current) {
+                    return;
+                  }
+                  dispatch({ type: 'starting' });
+                  void startListeningFlowRef.current?.('recovery');
+                }, delayMs);
+              }, WEB_VOICE_LIVENESS_MS);
+            }
+
             if (isMountedRef.current) {
               dispatch({ type: 'listening' });
             }
@@ -981,6 +1049,7 @@ export function useVoiceConversation({
 
         if (!isMountedRef.current) {
           clearTimeout(audioStartTimeoutId);
+          clearLivenessTimer();
           session.stop();
           return;
         }
@@ -990,7 +1059,16 @@ export function useVoiceConversation({
         startInFlightRef.current = false;
       }
     },
-    [clearRecoveryTimer, clearSilenceTimer, clearTranscript, handleSessionEnd, handleSessionResult, shouldAutoListen, stopActiveSession]
+    [
+      clearLivenessTimer,
+      clearRecoveryTimer,
+      clearSilenceTimer,
+      clearTranscript,
+      handleSessionEnd,
+      handleSessionResult,
+      shouldAutoListen,
+      stopActiveSession
+    ]
   );
 
   useEffect(() => {
