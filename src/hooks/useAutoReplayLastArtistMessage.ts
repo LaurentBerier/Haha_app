@@ -80,7 +80,10 @@ export function shouldAttemptInterruptedReplayOnAppActive(
 export function resolveReplayTrackingStateAfterAttempt(
   previousLastStartedMessageId: string | null,
   messageId: string,
-  status: ReplayAttemptStatus
+  status: ReplayAttemptStatus,
+  options?: {
+    shouldTrackPendingReplay?: boolean;
+  }
 ): {
   nextLastStartedMessageId: string | null;
   nextPendingReplay: PendingReplayState | null;
@@ -93,6 +96,14 @@ export function resolveReplayTrackingStateAfterAttempt(
   }
 
   if (status === 'pending_blockers' || status === 'pending_web_unlock') {
+    const shouldTrackPendingReplay = options?.shouldTrackPendingReplay ?? true;
+    if (!shouldTrackPendingReplay) {
+      return {
+        nextLastStartedMessageId: previousLastStartedMessageId,
+        nextPendingReplay: null
+      };
+    }
+
     return {
       nextLastStartedMessageId: previousLastStartedMessageId,
       nextPendingReplay: {
@@ -119,6 +130,11 @@ export function shouldRetryPendingReplayWhenUnblocked(params: {
   }
 
   return !params.hasStreaming && !params.isPlaying && !params.isLoading;
+}
+
+function hasExplicitReplayMessageId(options?: AttemptReplayOptions): boolean {
+  const normalizedMessageId = typeof options?.messageId === 'string' ? options.messageId.trim() : '';
+  return normalizedMessageId.length > 0;
 }
 
 export function useAutoReplayLastArtistMessage({
@@ -166,10 +182,14 @@ export function useAutoReplayLastArtistMessage({
     }
 
     if (hasStreaming || audioPlayer.isPlaying || audioPlayer.isLoading) {
+      const shouldTrackPendingReplay = hasExplicitReplayMessageId(options);
       const trackingState = resolveReplayTrackingStateAfterAttempt(
         lastStartedReplayMessageIdRef.current,
         latestReplayable.messageId,
-        'pending_blockers'
+        'pending_blockers',
+        {
+          shouldTrackPendingReplay
+        }
       );
       lastStartedReplayMessageIdRef.current = trackingState.nextLastStartedMessageId;
       pendingReplayRef.current = trackingState.nextPendingReplay;
@@ -215,11 +235,10 @@ export function useAutoReplayLastArtistMessage({
       return;
     }
 
+    hasRunInitialReplayRef.current = true;
     if (!resolveReplayableMessage()) {
       return;
     }
-
-    hasRunInitialReplayRef.current = true;
     void attemptReplayRef.current();
   }, [enabled, resolveReplayableMessage, voiceAutoPlay]);
 
