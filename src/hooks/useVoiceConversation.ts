@@ -694,7 +694,7 @@ export function useVoiceConversation({
   }, []);
 
   const suspendMicForWebFocusLoss = useCallback(
-    (reason: 'hidden' | 'blur') => {
+    () => {
       if (Platform.OS !== 'web') {
         return;
       }
@@ -727,7 +727,7 @@ export function useVoiceConversation({
   );
 
   const resumeMicAfterWebFocusGain = useCallback(
-    (reason: 'visible' | 'focus') => {
+    () => {
       if (Platform.OS !== 'web') {
         return;
       }
@@ -1084,23 +1084,23 @@ export function useVoiceConversation({
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        suspendMicForWebFocusLoss('hidden');
+        suspendMicForWebFocusLoss();
         return;
       }
 
-      resumeMicAfterWebFocusGain('visible');
+      resumeMicAfterWebFocusGain();
     };
 
     const handleWindowBlur = () => {
-      suspendMicForWebFocusLoss('blur');
+      suspendMicForWebFocusLoss();
     };
 
     const handleWindowFocus = () => {
-      resumeMicAfterWebFocusGain('focus');
+      resumeMicAfterWebFocusGain();
     };
 
     const handlePageHide = () => {
-      suspendMicForWebFocusLoss('hidden');
+      suspendMicForWebFocusLoss();
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
