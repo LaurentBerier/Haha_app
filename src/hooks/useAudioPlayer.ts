@@ -129,6 +129,9 @@ export function useAudioPlayer(): AudioPlayerController {
     if (audio) {
       audio.pause();
       audio.src = '';
+      // Force iOS Safari to release the audio session so the mic can reclaim it
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (typeof (audio as any).load === 'function') (audio as any).load();
     }
     webAudioRef.current = null;
   }, [clearWebListeners]);
