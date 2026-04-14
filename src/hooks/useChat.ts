@@ -1118,11 +1118,13 @@ export function useChat(conversationId: string) {
               void autoplayVoiceQueue([uri], artistMessageId).then((state) => {
                 if (state === 'started' || state === 'pending_web_unlock') {
                   didStartReplyAutoplay = true;
-                  return;
-                }
-
-                if (autoplayChunkGeneration === gen) {
+                } else if (autoplayChunkGeneration === gen) {
                   hasQueuedAutoplayChunk = false;
+                }
+                const { orderedVoiceUris: readyUris, orderedBoundaries: readyBounds } = buildVoicePlaybackData();
+                const readyFirst = readyUris[0];
+                if (readyFirst) {
+                  markArtistVoiceReady(readyFirst, readyUris, readyBounds);
                 }
               });
             } else if (hasQueuedAutoplayChunk || didAttemptAutoplay) {
@@ -1143,7 +1145,11 @@ export function useChat(conversationId: string) {
           return;
         }
 
-        markArtistVoiceReady(firstVoiceUri, orderedVoiceUris, orderedBoundaries);
+        const autoplayVoiceReadyStillPending =
+          shouldAutoPlay && hasQueuedAutoplayChunk && !didStartReplyAutoplay;
+        if (!autoplayVoiceReadyStillPending) {
+          markArtistVoiceReady(firstVoiceUri, orderedVoiceUris, orderedBoundaries);
+        }
       };
 
       const queueTtsChunk = (chunk: string, options?: { allowShortChunk?: boolean }) => {
@@ -1496,15 +1502,15 @@ export function useChat(conversationId: string) {
                 markArtistVoiceUnavailable(pendingVoiceErrorCode ?? 'TTS_PROVIDER_ERROR');
                 return;
               }
-              markArtistVoiceReady(firstVoiceUri, orderedVoiceUris, orderedBoundaries);
 
               const shouldAutoPlay = shouldAutoPlayForJob();
-              if (
+              const willAutoplay =
                 shouldAutoPlay &&
                 !shouldBlockInput &&
                 ttsAvailableForQuota &&
-                (!hasQueuedAutoplayChunk || !didStartReplyAutoplay)
-              ) {
+                (!hasQueuedAutoplayChunk || !didStartReplyAutoplay);
+
+              if (willAutoplay) {
                 const gen = ++autoplayChunkGeneration;
                 void autoplayVoiceQueue(orderedVoiceUris, artistMessageId).then((state) => {
                   if (state === 'started' || state === 'pending_web_unlock') {
@@ -1513,7 +1519,10 @@ export function useChat(conversationId: string) {
                   } else if (autoplayChunkGeneration === gen) {
                     hasQueuedAutoplayChunk = false;
                   }
+                  markArtistVoiceReady(firstVoiceUri, orderedVoiceUris, orderedBoundaries);
                 });
+              } else {
+                markArtistVoiceReady(firstVoiceUri, orderedVoiceUris, orderedBoundaries);
               }
             });
           }
