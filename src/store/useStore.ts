@@ -44,7 +44,10 @@ function normalizeConversations(input: Record<string, PersistedConversation[]>):
       const modeId = typeof conversation.modeId === 'string' && conversation.modeId.trim()
         ? conversation.modeId.trim()
         : MODE_IDS.ON_JASE;
-      const threadType = normalizeConversationThreadType(conversation.threadType);
+      const threadType =
+        conversation.threadType === undefined && modeId === MODE_IDS.ON_JASE
+          ? 'primary'
+          : normalizeConversationThreadType(conversation.threadType);
 
       return {
         ...conversation,
