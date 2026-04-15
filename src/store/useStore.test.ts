@@ -8,6 +8,7 @@ describe('useStore hydration', () => {
       selectedArtistId: 'cathy-gauthier',
       conversations: {
         'cathy-gauthier': [
+          // @ts-expect-error legacy persisted payload can omit threadType
           {
             id: 'legacy-primary',
             artistId: 'cathy-gauthier',
@@ -18,6 +19,7 @@ describe('useStore hydration', () => {
             updatedAt: '2026-03-22T12:00:00.000Z',
             lastMessagePreview: ''
           },
+          // @ts-expect-error legacy persisted payload can omit threadType
           {
             id: 'legacy-mode',
             artistId: 'cathy-gauthier',
