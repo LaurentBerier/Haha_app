@@ -141,6 +141,8 @@ Store-level account isolation:
   - STT/TTS mutual exclusion (`assistant_busy` while audio is active)
   - transcript auto-send after silence timeout (`1800ms`, override with `EXPO_PUBLIC_SILENCE_TIMEOUT_MS`)
   - bounded recovery policy for transient ends: `250ms`, `800ms`, `2000ms`, then `paused_recovery` until manual resume
+  - native post-playback startup failures (`assistant_busy` -> restart) are treated as a dedicated bounded retry class and do not immediately consume the generic hard-stop budget
+  - post-playback startup retry counter resets when a real transcript result arrives
   - manual pause always wins over auto-listen/recovery
   - web auto-listen requires explicit user activation (`hasUserActivation`), then can auto-restart when eligible
   - dedicated control API: `pauseListening()`, `resumeListening()`, `interruptAndListen()`, `armListeningActivation()`
@@ -193,10 +195,11 @@ Store-level account isolation:
   - queues chunk playback as soon as first URI is ready
   - appends subsequent chunks in-order without waiting for all chunks
   - keeps successful chunks when some chunk generation fails
-  - performs final full-text fallback synthesis only when needed
+  - performs final full-text fallback synthesis when no chunk is usable
+  - when some chunks succeed but boundaries reveal missing tail text, synthesizes a tail-rescue audio segment and appends it to replay/autoplay queue
   - stabilizes metadata transitions (`voiceStatus: generating -> ready|unavailable`)
   - stores `voiceChunkBoundaries` for text/voice synchronization
-  - concurrent TTS fetches capped at `MAX_TTS_CONCURRENT = 3` via semaphore + draining queue (prevents 30+ simultaneous ElevenLabs requests during long responses)
+  - concurrent TTS fetches are serialized (`MAX_TTS_CONCURRENT = 1`) via semaphore + draining queue (prevents burst rate-limit failures and preserves chunk order deterministically)
 - `useAudioPlayer` tracks playback context by `currentMessageId` so sync/playback targets are message-identity based (not URI based).
 - `ChatBubble` progressively reveals text only for the active `currentMessageId`; non-active bubbles render full text.
 - Eligible Cathy bubbles expose explicit voice UI states:

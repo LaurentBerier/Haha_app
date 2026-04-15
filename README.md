@@ -40,6 +40,7 @@ Implemented in this repository:
   - STT starts with conversation locale and retries once with app locale when startup fails due to locale support
   - TTS forwards ISO language code when supported and retries once without `language_code` if provider rejects locale
   - session-based STT ownership (stale callbacks are ignored) + bounded recovery policy (`250ms`, `800ms`, `2000ms`, then explicit paused-recovery state)
+  - iOS/native post-playback STT startup failures are handled by a dedicated bounded auto-recovery loop (no premature hard-lock in `paused_recovery`), and the startup retry counter resets as soon as a real transcript result is received
   - right-mic action model: mode-off => enable+listen, active => pause, paused/recovery => resume, assistant-speaking => pause
   - inline mode-select conversation stack (no forced route switch)
   - mode-select greeting/tutorial auto-arms mic once per injected greeting message, while respecting manual user override
@@ -49,6 +50,7 @@ Implemented in this repository:
   - first-session greeting with weather/news signal context
   - replay remains one-message-at-a-time and current-conversation scoped, but web focus/visibility auto-replay is disabled to avoid surprise replays
   - chunk-synced text/voice playback keyed by `message.id` with animated waveform replay control (`loading`, `playing`, `idle/play`)
+  - chunked TTS now repairs missing mid-stream gaps at completion by synthesizing the missing tail from the last valid text boundary, then appending it to replay/autoplay queue for full-response coverage (except terminal provider/auth/quota failures)
   - mode-select conversation overlay expands up to compact top controls (instead of fixed half-screen clamp)
   - compact mode-select now disables background page scrolling to prevent the duplicate right-edge scrollbar on web while keeping message-list scroll active
   - mode-select conversation binding is stabilized with explicit `boundConversationId` ownership, send-time target recovery, and no silent send drops on transient context mismatch
@@ -93,7 +95,7 @@ Implemented in this repository:
 - [`docs/phase3-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase3-status.md)
 - [`docs/phase4-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/phase4-status.md)
 - Admin dashboard status: [`docs/admin-dashboard-status.md`](/Users/laurentbernier/Documents/HAHA_app/docs/admin-dashboard-status.md)
-- Latest QA run: [`docs/qa-run-2026-04-13.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-13.md)
+- Latest QA run: [`docs/qa-run-2026-04-14.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-14.md)
 - Latest code-review snapshot: [`docs/code-review-2026-04-13.md`](/Users/laurentbernier/Documents/HAHA_app/docs/code-review-2026-04-13.md) (full auth + API error-surface review)
 - Pre-release conversation reset checklist: [`docs/pre-release-reset-checklist.md`](/Users/laurentbernier/Documents/HAHA_app/docs/pre-release-reset-checklist.md)
 
