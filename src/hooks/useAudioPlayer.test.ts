@@ -4,36 +4,17 @@ jest.mock('react-native', () => ({
   }
 }));
 
-jest.mock('expo-av', () => ({
-  Audio: {
-    Sound: class {
-      setOnPlaybackStatusUpdate(): void {
-        // noop in web-focused tests
-      }
-      async stopAsync(): Promise<void> {
-        // noop
-      }
-      async unloadAsync(): Promise<void> {
-        // noop
-      }
-      async getStatusAsync(): Promise<{ isLoaded: boolean; isPlaying: boolean }> {
-        return {
-          isLoaded: true,
-          isPlaying: false
-        };
-      }
-      async pauseAsync(): Promise<void> {
-        // noop
-      }
-      async loadAsync(): Promise<void> {
-        // noop
-      }
-      async setVolumeAsync(): Promise<void> {
-        // noop
-      }
-    },
-    setAudioModeAsync: jest.fn(async () => undefined)
-  }
+jest.mock('expo-audio', () => ({
+  createAudioPlayer: jest.fn(() => ({
+    play: jest.fn(),
+    pause: jest.fn(),
+    remove: jest.fn(),
+    addListener: jest.fn(() => ({ remove: jest.fn() })),
+    volume: 1,
+    playing: false,
+    isLoaded: false
+  })),
+  setAudioModeAsync: jest.fn(async () => undefined)
 }));
 
 import React from 'react';
