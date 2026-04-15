@@ -32,7 +32,7 @@ const BUSY_LOADING_TIMEOUT_MS =
 const RECOVERY_DELAYS_MS = VOICE_RECOVERY_DELAYS_MS;
 const IOS_WEB_RUNTIME = isIosMobileWebRuntime();
 const WEB_VOICE_LIVENESS_MS = 8_000;
-const ASSISTANT_BUSY_RECOVERY_DELAY_MS = IOS_WEB_RUNTIME ? 1_500 : 1_000;
+const ASSISTANT_BUSY_RECOVERY_DELAY_MS = IOS_WEB_RUNTIME ? 600 : 1_000;
 export const VOICE_DUPLICATE_SEND_WINDOW_MS = 3_000;
 
 const GARBLED_STT_STANDALONE_WORDS = new Set([
@@ -190,6 +190,7 @@ interface WebFocusSuspendState {
   disabled: boolean;
   hasTypedDraft: boolean;
   isPlaying: boolean;
+  isAudioPlaybackLoading: boolean;
   status: VoiceConversationStatus;
   hasActiveSession: boolean;
   hasRecoveryTimer: boolean;
@@ -281,7 +282,7 @@ function isWebTabActive(): boolean {
 }
 
 export function shouldSuspendMicForWebFocusLoss(state: WebFocusSuspendState): boolean {
-  if (!state.enabled || state.disabled || state.hasTypedDraft || state.isPlaying) {
+  if (!state.enabled || state.disabled || state.hasTypedDraft || state.isPlaying || state.isAudioPlaybackLoading) {
     return false;
   }
 
@@ -636,6 +637,7 @@ export function useVoiceConversation({
   const livenessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const busyLoadingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const assistantBusyRecoveryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blurDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumeAfterTypedDraftRef = useRef(false);
   const pendingManualResumeRef = useRef(false);
   const hasUserActivatedListeningRef = useRef(Platform.OS !== 'web');
@@ -766,6 +768,7 @@ export function useVoiceConversation({
         disabled: disabledRef.current,
         hasTypedDraft: hasTypedDraftRef.current,
         isPlaying: isPlayingRef.current,
+        isAudioPlaybackLoading: isAudioPlaybackLoadingRef.current,
         status: stateRef.current.status,
         hasActiveSession: Boolean(activeSessionRef.current),
         hasRecoveryTimer: Boolean(recoveryTimerRef.current)
@@ -1221,15 +1224,38 @@ export function useVoiceConversation({
       resumeMicAfterWebFocusGain();
     };
 
+    const cancelBlurDebounce = () => {
+      if (blurDebounceTimerRef.current) {
+        clearTimeout(blurDebounceTimerRef.current);
+        blurDebounceTimerRef.current = null;
+      }
+    };
+
     const handleWindowBlur = () => {
-      suspendMicForWebFocusLoss();
+      // Debounce by 300 ms: iOS Safari fires a spurious blur/focus pair when
+      // HTMLAudioElement.play() acquires the media session.  Real tab-switch
+      // blurs are not cancelled by an immediate focus event, so they still go
+      // through after the debounce window.
+      cancelBlurDebounce();
+      blurDebounceTimerRef.current = setTimeout(() => {
+        blurDebounceTimerRef.current = null;
+        suspendMicForWebFocusLoss();
+      }, 300);
     };
 
     const handleWindowFocus = () => {
+      // If a blur debounce is pending it was spurious — cancel it instead of
+      // treating this as a real resume (which would also be a no-op, but
+      // cancelling makes the intent explicit).
+      if (blurDebounceTimerRef.current) {
+        cancelBlurDebounce();
+        return;
+      }
       resumeMicAfterWebFocusGain();
     };
 
     const handlePageHide = () => {
+      cancelBlurDebounce();
       suspendMicForWebFocusLoss();
     };
 
@@ -1239,6 +1265,7 @@ export function useVoiceConversation({
     window.addEventListener('pagehide', handlePageHide);
 
     return () => {
+      cancelBlurDebounce();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('focus', handleWindowFocus);

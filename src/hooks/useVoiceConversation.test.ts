@@ -547,6 +547,7 @@ describe('useVoiceConversation helpers', () => {
         disabled: false,
         hasTypedDraft: false,
         isPlaying: false,
+        isAudioPlaybackLoading: false,
         status: 'listening',
         hasActiveSession: true,
         hasRecoveryTimer: false
@@ -559,11 +560,44 @@ describe('useVoiceConversation helpers', () => {
         disabled: false,
         hasTypedDraft: false,
         isPlaying: false,
+        isAudioPlaybackLoading: false,
         status: 'off',
         hasActiveSession: false,
         hasRecoveryTimer: false
       })
     ).toBe(false);
+  });
+
+  it('does not suspend mic when audio is loading (guards against stale isPlaying ref on iOS)', () => {
+    // iOS Safari fires blur before the playing event, so isPlayingRef can still
+    // be false while audio is loading.  isAudioPlaybackLoading must block suspension
+    // so the assistant_busy → listening recovery path is not corrupted.
+    expect(
+      shouldSuspendMicForWebFocusLoss({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: false,
+        isAudioPlaybackLoading: true,
+        status: 'assistant_busy',
+        hasActiveSession: false,
+        hasRecoveryTimer: false
+      })
+    ).toBe(false);
+
+    // Confirm that the same scenario without loading DOES suspend (baseline).
+    expect(
+      shouldSuspendMicForWebFocusLoss({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: false,
+        isAudioPlaybackLoading: false,
+        status: 'assistant_busy',
+        hasActiveSession: false,
+        hasRecoveryTimer: false
+      })
+    ).toBe(true);
   });
 
   it('resumes mic after focus gain only when it was active before and conditions still allow it', () => {
