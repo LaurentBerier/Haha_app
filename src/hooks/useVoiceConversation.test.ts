@@ -29,7 +29,9 @@ import {
   shouldSuspendMicForWebFocusLoss,
   shouldArmWebLivenessWatchdog,
   shouldAttemptAutoListen,
-  shouldConsumeVoiceRecoveryBudget
+  shouldConsumeVoiceRecoveryBudget,
+  shouldUsePostPlaybackStartupRecovery,
+  getPostPlaybackStartupRecoveryDelayMs
 } from './useVoiceConversation';
 
 describe('useVoiceConversation helpers', () => {
@@ -307,6 +309,117 @@ describe('useVoiceConversation helpers', () => {
     expect(getVoiceRecoveryDelayMs(4)).toBeNull();
   });
 
+  it('applies post-playback startup recovery only for native startup failures after assistant playback', () => {
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'transient',
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(true);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'aborted',
+        origin: 'resume',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(true);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'android',
+        reason: 'ended_unexpectedly',
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(true);
+  });
+
+  it('skips post-playback startup recovery when startup criteria are not met', () => {
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'web',
+        reason: 'transient',
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(false);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'transient',
+        origin: 'auto',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(false);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'transient',
+        origin: 'recovery',
+        statusBeforeStart: 'off',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(false);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'transient',
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: true,
+        hadResult: false
+      })
+    ).toBe(false);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'transient',
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: true
+      })
+    ).toBe(false);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'no_speech',
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(false);
+  });
+
+  it('returns bounded post-playback startup recovery delays', () => {
+    expect(getPostPlaybackStartupRecoveryDelayMs(1)).toBe(250);
+    expect(getPostPlaybackStartupRecoveryDelayMs(2)).toBe(800);
+    expect(getPostPlaybackStartupRecoveryDelayMs(3)).toBe(2000);
+    expect(getPostPlaybackStartupRecoveryDelayMs(9)).toBe(2000);
+    expect(getPostPlaybackStartupRecoveryDelayMs(0)).toBe(250);
+  });
+
   it('only consumes the bounded recovery budget for genuine error conditions', () => {
     expect(shouldConsumeVoiceRecoveryBudget('transient')).toBe(true);
     expect(shouldConsumeVoiceRecoveryBudget('aborted')).toBe(true);
@@ -434,6 +547,7 @@ describe('useVoiceConversation helpers', () => {
         disabled: false,
         hasTypedDraft: false,
         isPlaying: false,
+        isAudioPlaybackLoading: false,
         status: 'listening',
         hasActiveSession: true,
         hasRecoveryTimer: false
@@ -446,11 +560,44 @@ describe('useVoiceConversation helpers', () => {
         disabled: false,
         hasTypedDraft: false,
         isPlaying: false,
+        isAudioPlaybackLoading: false,
         status: 'off',
         hasActiveSession: false,
         hasRecoveryTimer: false
       })
     ).toBe(false);
+  });
+
+  it('does not suspend mic when audio is loading (guards against stale isPlaying ref on iOS)', () => {
+    // iOS Safari fires blur before the playing event, so isPlayingRef can still
+    // be false while audio is loading.  isAudioPlaybackLoading must block suspension
+    // so the assistant_busy → listening recovery path is not corrupted.
+    expect(
+      shouldSuspendMicForWebFocusLoss({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: false,
+        isAudioPlaybackLoading: true,
+        status: 'assistant_busy',
+        hasActiveSession: false,
+        hasRecoveryTimer: false
+      })
+    ).toBe(false);
+
+    // Confirm that the same scenario without loading DOES suspend (baseline).
+    expect(
+      shouldSuspendMicForWebFocusLoss({
+        enabled: true,
+        disabled: false,
+        hasTypedDraft: false,
+        isPlaying: false,
+        isAudioPlaybackLoading: false,
+        status: 'assistant_busy',
+        hasActiveSession: false,
+        hasRecoveryTimer: false
+      })
+    ).toBe(true);
   });
 
   it('resumes mic after focus gain only when it was active before and conditions still allow it', () => {

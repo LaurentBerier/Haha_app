@@ -853,6 +853,8 @@ Current behavior to expect:
 
 - Voice controller uses bounded recovery retries for transient STT endings: `250ms`, `800ms`, `2000ms`.
 - After recovery budget is exhausted, mic enters `paused_recovery` and waits for explicit user tap.
+- On iOS/native right after assistant playback, startup/transient failures use a dedicated bounded startup-retry lane and should auto-recover without prematurely hard-locking in `paused_recovery`.
+- Startup-retry lane resets as soon as the first real transcript result is received.
 
 Checks:
 
@@ -904,6 +906,10 @@ Checks:
 4. On web, verify autoplay restriction path:
    - greeting audio may require first user gesture before playback
    - replay button should still appear once voice metadata reaches `ready`
+5. For partial/chunked replies, validate completion reconciliation:
+   - if an intermediate chunk fails, final metadata should still include a tail-rescue segment in `voiceQueue`
+   - `voiceChunkBoundaries` should cover the full final text length
+   - only terminal provider/auth/quota errors should leave the reply text-only
 
 ## 34) Voice quota/rate notices feel out of sync with the conversation
 

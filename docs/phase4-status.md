@@ -1,6 +1,6 @@
 # Phase 4 Status (Conversation Naturelle)
 
-Last updated: **2026-04-13**
+Last updated: **2026-04-14**
 
 ## Scope
 
@@ -28,6 +28,8 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
     - `off`, `starting`, `listening`, `assistant_busy`, `paused_manual`, `recovering`, `paused_recovery`, `unsupported`, `error`
   - silence auto-send (`1800ms`, override via `EXPO_PUBLIC_SILENCE_TIMEOUT_MS`)
   - bounded recovery policy: `250ms`, `800ms`, `2000ms`, then `paused_recovery` until user tap
+  - native post-playback startup failures (`assistant_busy` restart path) now use a dedicated bounded startup-retry lane
+  - startup-retry lane resets on first real STT transcript result (prevents false hard-lock after greeting/assistant playback)
   - manual pause precedence: no forced auto-resume over `paused_manual`
   - dedicated controls:
     - `pauseListening()`
@@ -117,6 +119,7 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
   - terminal statuses (`401/403/429`) stop endpoint failover and return structured error codes
   - chunk pipeline keeps successful chunks on partial failures
   - final full-text fallback synthesis when no usable chunk set remains
+  - chunk completion reconciliation now synthesizes missing tail audio from the last valid boundary and appends it to replay/autoplay queue
   - stable metadata transitions (`voiceStatus: generating -> ready|unavailable`)
   - per-reply terminal TTS notices are deduplicated and queued after current voice settles (non-intrusive insertion)
   - unavailable voice now remains explicit in message metadata (`voiceStatus='unavailable'` + `voiceErrorCode`) with retry path
@@ -136,6 +139,11 @@ Phase 4 objective is a frictionless Cathy conversation loop across app contexts:
     - `idle`: play icon
 
 ## QA Status
+
+Targeted conversation voice stabilization validation on **2026-04-14** (STT post-playback startup recovery + chunk tail-rescue completion):
+
+- `npm run test:unit -- src/hooks/useVoiceConversation.test.ts src/services/voiceEngine.native.test.ts src/hooks/useChat.sendMessage.integration.test.ts src/hooks/useAudioPlayer.test.ts` -> PASS
+- `npm run smoke:voice` -> PASS
 
 Full regression validation on **2026-04-13** (auth flow + API error-surface review baseline):
 
@@ -208,6 +216,7 @@ Prior targeted mode-select layout baseline remains available from **2026-03-23**
 
 Detailed run logs:
 
+- [`docs/qa-run-2026-04-14.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-14.md)
 - [`docs/qa-run-2026-04-13.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-13.md)
 - [`docs/qa-run-2026-04-05.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-05.md)
 - [`docs/qa-run-2026-04-04.md`](/Users/laurentbernier/Documents/HAHA_app/docs/qa-run-2026-04-04.md)

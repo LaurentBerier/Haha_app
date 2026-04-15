@@ -1,4 +1,4 @@
-import { Audio, type AVPlaybackStatus } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync, type AudioPlayer, type AudioStatus } from 'expo-audio';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { markWebAutoplaySessionUnlocked } from '../services/webAutoplayUnlockService';
@@ -43,10 +43,6 @@ export interface AudioPlaybackContext {
 interface AudioPlaybackQueueItem {
   uri: string;
   messageId: string | null;
-}
-
-function isLoadedStatus(status: AVPlaybackStatus): status is AVPlaybackStatus & { isLoaded: true } {
-  return status.isLoaded;
 }
 
 const PLAYBACK_STARTED_RESULT: AudioPlaybackResult = {
@@ -109,7 +105,8 @@ export function useAudioPlayer(): AudioPlayerController {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [totalChunks, setTotalChunks] = useState(0);
 
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
+  const nativeSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const webAudioRef = useRef<WebAudioLike | null>(null);
   const detachWebListenersRef = useRef<null | (() => void)>(null);
   const queueRef = useRef<AudioPlaybackQueueItem[]>([]);
@@ -141,16 +138,12 @@ export function useAudioPlayer(): AudioPlayerController {
       return;
     }
 
-    const sound = soundRef.current;
+    const player = soundRef.current;
     soundRef.current = null;
-    sound.setOnPlaybackStatusUpdate(null);
+    nativeSubscriptionRef.current?.remove();
+    nativeSubscriptionRef.current = null;
     try {
-      await sound.stopAsync();
-    } catch {
-      // noop
-    }
-    try {
-      await sound.unloadAsync();
+      player.remove();
     } catch {
       // noop
     }
@@ -306,64 +299,57 @@ export function useAudioPlayer(): AudioPlayerController {
         }
 
         try {
-          await Audio.setAudioModeAsync({
-            allowsRecordingIOS: false,
-            interruptionModeIOS: 1,
-            playsInSilentModeIOS: true,
-            staysActiveInBackground: false,
-            shouldDuckAndroid: false,
-            interruptionModeAndroid: 1,
-            playThroughEarpieceAndroid: false
+          await setAudioModeAsync({
+            allowsRecording: false,
+            interruptionMode: 'doNotMix',
+            playsInSilentMode: true,
+            shouldPlayInBackground: false,
+            interruptionModeAndroid: 'doNotMix',
+            shouldRouteThroughEarpiece: false
           });
         } catch {
           // First attempt may fail if a recording session is still releasing.
           // Yield briefly and retry once so iOS routes audio to the loudspeaker.
           await new Promise<void>((r) => setTimeout(r, 80));
           try {
-            await Audio.setAudioModeAsync({
-              allowsRecordingIOS: false,
-              interruptionModeIOS: 1,
-              playsInSilentModeIOS: true,
-              staysActiveInBackground: false,
-              shouldDuckAndroid: false,
-              interruptionModeAndroid: 1,
-              playThroughEarpieceAndroid: false
+            await setAudioModeAsync({
+              allowsRecording: false,
+              interruptionMode: 'doNotMix',
+              playsInSilentMode: true,
+              shouldPlayInBackground: false,
+              interruptionModeAndroid: 'doNotMix',
+              shouldRouteThroughEarpiece: false
             });
           } catch {
             // give up
           }
         }
 
-        const sound = new Audio.Sound();
-        soundRef.current = sound;
+        try {
+          const player = createAudioPlayer({ uri });
+          soundRef.current = player;
+          player.volume = 1;
 
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (!isMountedRef.current || playbackTokenRef.current !== token) {
-            return;
-          }
+          const subscription = player.addListener('playbackStatusUpdate', (status: AudioStatus) => {
+            if (!isMountedRef.current || playbackTokenRef.current !== token) {
+              return;
+            }
 
-          if (!isLoadedStatus(status)) {
-            if (status.error) {
+            if (!status.isLoaded) {
+              return;
+            }
+
+            setIsLoading(false);
+            setIsPlaying(status.playing);
+
+            if (status.didJustFinish) {
               onChunkEnd();
             }
-            return;
-          }
+          });
+          nativeSubscriptionRef.current = subscription;
 
-          setIsLoading(false);
-          setIsPlaying(status.isPlaying);
+          player.play();
 
-          if (status.didJustFinish) {
-            onChunkEnd();
-          }
-        });
-
-        try {
-          await sound.loadAsync({ uri }, { shouldPlay: true, volume: 1 }, true);
-          try {
-            await sound.setVolumeAsync(1);
-          } catch {
-            // Best effort.
-          }
           if (!isMountedRef.current || playbackTokenRef.current !== token) {
             return toPlaybackFailureResult('interrupted');
           }
@@ -375,7 +361,6 @@ export function useAudioPlayer(): AudioPlayerController {
           return PLAYBACK_STARTED_RESULT;
         } catch (error: unknown) {
           const reason = resolveAudioPlaybackFailureReason(error);
-          onChunkEnd();
           return toPlaybackFailureResult(reason);
         }
       };
@@ -427,15 +412,14 @@ export function useAudioPlayer(): AudioPlayerController {
       return;
     }
 
-    const sound = soundRef.current;
-    if (!sound) {
+    const player = soundRef.current;
+    if (!player) {
       return;
     }
 
     try {
-      const status = await sound.getStatusAsync();
-      if (isLoadedStatus(status) && status.isPlaying) {
-        await sound.pauseAsync();
+      if (player.playing) {
+        player.pause();
       }
     } catch {
       // noop

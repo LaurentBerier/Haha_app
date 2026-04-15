@@ -1054,7 +1054,7 @@ export default function ModeSelectHomeScreen() {
     resumeListening,
     armListeningActivation
   } = useVoiceConversation({
-    enabled: isValidConversation && isSendContextReady && conversationModeEnabled && !isQuotaBlocked,
+    enabled: isValidConversation && isSendContextReady && conversationModeEnabled && !isQuotaBlocked && isModeSelectScreenFocused,
     disabled: isModeSelectComposerDisabled,
     hasTypedDraft,
     isPlaying:

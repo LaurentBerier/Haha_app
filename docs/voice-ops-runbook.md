@@ -198,6 +198,22 @@ npm run smoke:voice
 4. Expected recovery policy:
    - transient retries at `250ms`, `800ms`, `2000ms`
    - then explicit `paused_recovery` (no infinite hidden retries)
+5. Native iOS/mobile post-playback startup caveat:
+   - startup/transient ends that happen right after assistant playback are handled by a dedicated bounded startup-retry lane
+   - this path should keep auto-recovering and must not jump immediately to `paused_recovery`
+   - startup retry lane resets after first real STT result
+
+### Symptom: Cathy reply audio stops before the full text is spoken
+
+1. Inspect artist message metadata:
+   - `voiceQueue` should contain all playable chunks for that reply
+   - `voiceChunkBoundaries` last value should match final visible text length
+2. If early chunks exist but a later chunk failed, expected behavior is:
+   - keep successful chunk URIs
+   - synthesize a tail-rescue segment from last valid boundary to end of text
+   - append tail-rescue URI into replay/autoplay queue
+3. If no chunk is usable at all, expected fallback is a full-text synthesis attempt.
+4. Terminal provider/auth/quota statuses (`401/403/429`, explicit terminal codes) can still produce text-only fallback with `voiceStatus='unavailable'`.
 
 ## 7) Logs and Correlation
 

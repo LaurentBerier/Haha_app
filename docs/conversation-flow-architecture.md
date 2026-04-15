@@ -19,6 +19,16 @@ All user sends that can start a mode/game from natural language go through one h
 
 - State machine: [`src/hooks/useVoiceConversation.ts`](../src/hooks/useVoiceConversation.ts) (timeouts/recovery delays sourced from `conversationContracts`).
 - Engines: [`src/services/voiceEngine.ts`](../src/services/voiceEngine.ts).
+- Shared reply voice pipeline: [`src/hooks/useChat.ts`](../src/hooks/useChat.ts) (chunked TTS generation + metadata + autoplay/replay queueing).
+
+Reliability contracts:
+
+- STT post-playback startup failures on native (`assistant_busy` restart path) use a dedicated bounded retry lane and should not hard-stop into `paused_recovery` unless genuine generic-recovery budget is exhausted.
+- STT startup retry lane resets immediately after the first real transcript result.
+- Chunked TTS may start playback from early chunks, but `onComplete` must reconcile boundaries and synthesize any missing tail so replay/autoplay covers full final text unless a terminal provider/auth/quota error occurs.
+- Behavior must stay parity-aligned between both conversation surfaces:
+  - [`src/app/mode-select/[artistId]/index.tsx`](../src/app/mode-select/[artistId]/index.tsx)
+  - [`src/app/chat/[conversationId].tsx`](../src/app/chat/[conversationId].tsx)
 
 ## Auth vs conversation
 
