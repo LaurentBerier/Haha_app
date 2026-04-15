@@ -223,6 +223,25 @@ export interface WebLivenessWatchdogState {
   statusBeforeStart: VoiceConversationStatus;
 }
 
+type VoiceStartOrigin = 'auto' | 'recovery' | 'resume' | 'interrupt';
+
+interface ActiveVoiceSessionContext {
+  id: number;
+  origin: VoiceStartOrigin;
+  statusBeforeStart: VoiceConversationStatus;
+  hadAudioStart: boolean;
+  hadResult: boolean;
+}
+
+export interface PostPlaybackStartupRecoveryState {
+  platformOs: string;
+  reason: VoiceSessionEndReason;
+  origin: VoiceStartOrigin;
+  statusBeforeStart: VoiceConversationStatus;
+  hadAudioStart: boolean;
+  hadResult: boolean;
+}
+
 type VoiceConversationAction =
   | { type: 'set_off' }
   | { type: 'starting' }
@@ -356,6 +375,45 @@ export function shouldArmWebLivenessWatchdog(state: WebLivenessWatchdogState): b
   }
 
   return state.origin === 'recovery' || state.statusBeforeStart === 'assistant_busy';
+}
+
+export function shouldUsePostPlaybackStartupRecovery(state: PostPlaybackStartupRecoveryState): boolean {
+  if (state.platformOs === 'web') {
+    return false;
+  }
+
+  if (state.hadAudioStart) {
+    return false;
+  }
+
+  if (state.hadResult) {
+    return false;
+  }
+
+  if (state.statusBeforeStart !== 'assistant_busy') {
+    return false;
+  }
+
+  if (state.origin !== 'recovery' && state.origin !== 'resume') {
+    return false;
+  }
+
+  if (state.reason === 'transient' || state.reason === 'aborted') {
+    return true;
+  }
+
+  if (state.reason === 'ended_unexpectedly') {
+    return true;
+  }
+
+  return false;
+}
+
+export function getPostPlaybackStartupRecoveryDelayMs(attempt: number): number {
+  const safeAttempt = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 1;
+  const boundedIndex = Math.min(safeAttempt - 1, RECOVERY_DELAYS_MS.length - 1);
+  const candidate = RECOVERY_DELAYS_MS[boundedIndex] ?? RECOVERY_DELAYS_MS[0];
+  return Math.max(candidate, 250);
 }
 
 function voiceConversationReducer(
@@ -583,7 +641,9 @@ export function useVoiceConversation({
   const hasUserActivatedListeningRef = useRef(Platform.OS !== 'web');
   const webTabActiveRef = useRef(isWebTabActive());
   const shouldResumeAfterWebFocusLossRef = useRef(false);
-  const startListeningFlowRef = useRef<((origin: 'auto' | 'recovery' | 'resume' | 'interrupt') => Promise<void>) | null>(null);
+  const startListeningFlowRef = useRef<((origin: VoiceStartOrigin) => Promise<void>) | null>(null);
+  const activeSessionContextRef = useRef<ActiveVoiceSessionContext | null>(null);
+  const postPlaybackStartupRecoveryAttemptRef = useRef(0);
   const enabledRef = useRef(enabled);
   const disabledRef = useRef(disabled);
   const isPlayingRef = useRef(isPlaying);
@@ -686,6 +746,7 @@ export function useVoiceConversation({
     clearLivenessTimer();
     const activeSession = activeSessionRef.current;
     activeSessionRef.current = null;
+    activeSessionContextRef.current = null;
     activeSession?.stop();
   }, [clearLivenessTimer]);
 
@@ -823,16 +884,21 @@ export function useVoiceConversation({
         return;
       }
 
+      const activeSessionContext =
+        activeSessionContextRef.current?.id === event.sessionId ? activeSessionContextRef.current : null;
       activeSessionRef.current = null;
+      activeSessionContextRef.current = null;
       clearSilenceTimer();
 
       if (event.reason === 'permission') {
         hasPermissionRef.current = false;
+        postPlaybackStartupRecoveryAttemptRef.current = 0;
         dispatch({ type: 'error', message: t('voicePermissionDenied') });
         return;
       }
 
       if (event.reason === 'unsupported') {
+        postPlaybackStartupRecoveryAttemptRef.current = 0;
         dispatch({ type: 'unsupported' });
         return;
       }
@@ -843,6 +909,49 @@ export function useVoiceConversation({
         isLockedMicStatus(stateRef.current.status) ||
         isPlayingRef.current
       ) {
+        return;
+      }
+
+      if (
+        activeSessionContext &&
+        shouldUsePostPlaybackStartupRecovery({
+          platformOs: Platform.OS,
+          reason: event.reason,
+          origin: activeSessionContext.origin,
+          statusBeforeStart: activeSessionContext.statusBeforeStart,
+          hadAudioStart: activeSessionContext.hadAudioStart,
+          hadResult: activeSessionContext.hadResult
+        })
+      ) {
+        const nextAttempt = postPlaybackStartupRecoveryAttemptRef.current + 1;
+        postPlaybackStartupRecoveryAttemptRef.current = nextAttempt;
+
+        dispatch({
+          type: 'recovery_scheduled',
+          attempt: Math.min(nextAttempt, RECOVERY_DELAYS_MS.length)
+        });
+        clearRecoveryTimer();
+        recoveryTimerRef.current = setTimeout(() => {
+          recoveryTimerRef.current = null;
+          if (
+            !isMountedRef.current ||
+            !shouldAttemptAutoListen({
+              shouldAutoListen,
+              webTabActive: webTabActiveRef.current,
+              hasUserActivation: hasUserActivatedListeningRef.current,
+              enabled: enabledRef.current,
+              disabled: disabledRef.current,
+              isPlaying: isPlayingRef.current,
+              hasTypedDraft: hasTypedDraftRef.current,
+              status: stateRef.current.status
+            })
+          ) {
+            return;
+          }
+
+          dispatch({ type: 'starting' });
+          void startListeningFlowRef.current?.('recovery');
+        }, getPostPlaybackStartupRecoveryDelayMs(nextAttempt));
         return;
       }
 
@@ -880,6 +989,7 @@ export function useVoiceConversation({
         return;
       }
 
+      postPlaybackStartupRecoveryAttemptRef.current = 0;
       dispatch({ type: 'error', message: event.message ?? t('voiceError') });
     },
     [clearRecoveryTimer, clearSilenceTimer, shouldAutoListen]
@@ -891,6 +1001,10 @@ export function useVoiceConversation({
         return;
       }
 
+      if (activeSessionContextRef.current?.id === sessionId) {
+        activeSessionContextRef.current.hadResult = true;
+      }
+      postPlaybackStartupRecoveryAttemptRef.current = 0;
       if (isPlayingRef.current) {
         return;
       }
@@ -902,7 +1016,7 @@ export function useVoiceConversation({
   );
 
   const startListeningFlow = useCallback(
-    async (origin: 'auto' | 'recovery' | 'resume' | 'interrupt') => {
+    async (origin: VoiceStartOrigin) => {
       if (!isMountedRef.current) {
         return;
       }
@@ -912,6 +1026,9 @@ export function useVoiceConversation({
       }
 
       const latestStatus = stateRef.current.status;
+      if (latestStatus !== 'assistant_busy') {
+        postPlaybackStartupRecoveryAttemptRef.current = 0;
+      }
       const canStart =
         origin === 'auto' || origin === 'recovery'
           ? shouldAttemptAutoListen({
@@ -1000,6 +1117,9 @@ export function useVoiceConversation({
           fallbackLocale: fallbackLanguageRef.current,
           onResult: (event) => {
             resultReceived = true;
+            if (activeSessionContextRef.current?.id === event.sessionId) {
+              activeSessionContextRef.current.hadResult = true;
+            }
             clearLivenessTimer();
             handleSessionResult(event.sessionId, event.transcript);
           },
@@ -1010,6 +1130,9 @@ export function useVoiceConversation({
           },
           onAudioStart: () => {
             audioStartFired = true;
+            if (activeSessionContextRef.current?.id === session.id) {
+              activeSessionContextRef.current.hadAudioStart = true;
+            }
             clearTimeout(audioStartTimeoutId);
             if (shouldArmLivenessWatchdog) {
               clearLivenessTimer();
@@ -1055,6 +1178,13 @@ export function useVoiceConversation({
         }
 
         activeSessionRef.current = session;
+        activeSessionContextRef.current = {
+          id: session.id,
+          origin,
+          statusBeforeStart: latestStatus,
+          hadAudioStart: false,
+          hadResult: false
+        };
       } finally {
         startInFlightRef.current = false;
       }
@@ -1120,6 +1250,7 @@ export function useVoiceConversation({
     if (!enabled || disabled) {
       shouldResumeAfterWebFocusLossRef.current = false;
       resumeAfterTypedDraftRef.current = false;
+      postPlaybackStartupRecoveryAttemptRef.current = 0;
       if (disabled) {
         pendingManualResumeRef.current = false;
       }
@@ -1134,6 +1265,7 @@ export function useVoiceConversation({
 
     if (hasTypedDraft) {
       shouldResumeAfterWebFocusLossRef.current = false;
+      postPlaybackStartupRecoveryAttemptRef.current = 0;
       resumeAfterTypedDraftRef.current = shouldResumeMicAfterTypedDraft({
         hasTypedDraft: true,
         status: stateRef.current.status,
@@ -1347,6 +1479,7 @@ export function useVoiceConversation({
     shouldResumeAfterWebFocusLossRef.current = false;
     pendingManualResumeRef.current = false;
     resumeAfterTypedDraftRef.current = false;
+    postPlaybackStartupRecoveryAttemptRef.current = 0;
     clearAssistantBusyRecoveryTimer();
     clearBusyLoadingTimer();
     clearRecoveryTimer();
@@ -1357,6 +1490,7 @@ export function useVoiceConversation({
 
   const resumeListening = useCallback(() => {
     shouldResumeAfterWebFocusLossRef.current = false;
+    postPlaybackStartupRecoveryAttemptRef.current = 0;
     clearAssistantBusyRecoveryTimer();
     clearBusyLoadingTimer();
     if (disabledRef.current) {
@@ -1405,6 +1539,7 @@ export function useVoiceConversation({
     shouldResumeAfterWebFocusLossRef.current = false;
     pendingManualResumeRef.current = false;
     resumeAfterTypedDraftRef.current = false;
+    postPlaybackStartupRecoveryAttemptRef.current = 0;
     clearAssistantBusyRecoveryTimer();
     clearBusyLoadingTimer();
     clearRecoveryTimer();
@@ -1456,6 +1591,7 @@ export function useVoiceConversation({
     return () => {
       isMountedRef.current = false;
       shouldResumeAfterWebFocusLossRef.current = false;
+      postPlaybackStartupRecoveryAttemptRef.current = 0;
       clearAssistantBusyRecoveryTimer();
       clearBusyLoadingTimer();
       clearRecoveryTimer();

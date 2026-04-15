@@ -1279,6 +1279,7 @@ export function useChat(conversationId: string) {
           finalContent.trim().length > 0 || fallbackContentFromStream.trim().length === 0
             ? finalContent
             : fallbackContentFromStream;
+        const finalSpeechTextForVoice = normalizeSpeechText(rawTtsResponseRef.current, { trim: true });
         if (resolvedFinalContent !== rawFinalContent) {
           updateMessage(jobConversationId, artistMessageId, {
             content: resolvedFinalContent
@@ -1409,15 +1410,14 @@ export function useChat(conversationId: string) {
         const ttsAvailableForQuota = isTtsAvailable(latestQuota);
         const { postReplyNotices, shouldBlockInput } = evaluatePostReplyQuota(latestQuota, normalizedAccountType);
         if (canGenerateVoice && !ignoreTtsUpdates) {
-          const fallbackPreviewText = normalizeSpeechText(rawTtsResponseRef.current, { trim: true });
-          if (!hasStartedVoiceGeneration && fallbackPreviewText) {
+          if (!hasStartedVoiceGeneration && finalSpeechTextForVoice) {
             hasStartedVoiceGeneration = true;
             markArtistVoiceGenerating();
           }
 
           if (!shouldUseChunkedTts) {
             void (async () => {
-              if (!fallbackPreviewText) {
+              if (!finalSpeechTextForVoice) {
                 markArtistVoiceUnavailable('TTS_PROVIDER_ERROR');
                 return;
               }
@@ -1429,7 +1429,7 @@ export function useChat(conversationId: string) {
               }
 
               try {
-                const uri = await fetchAndCacheVoice(fallbackPreviewText, artistId, language, fallbackAccessToken, {
+                const uri = await fetchAndCacheVoice(finalSpeechTextForVoice, artistId, language, fallbackAccessToken, {
                   throwOnError: true
                 });
                 if (!isCurrentStream()) {
@@ -1440,7 +1440,7 @@ export function useChat(conversationId: string) {
                   return;
                 }
 
-                const normalizedTextLength = stripAudioTags(fallbackPreviewText, { trim: true }).length;
+                const normalizedTextLength = stripAudioTags(finalSpeechTextForVoice, { trim: true }).length;
                 markArtistVoiceReady(uri, [uri], [normalizedTextLength]);
 
                 const shouldAutoPlay = shouldAutoPlayForJob();
@@ -1456,27 +1456,55 @@ export function useChat(conversationId: string) {
             })();
           } else {
             void Promise.allSettled(ttsPendingPromises).then(async () => {
-              if (!isCurrentStream() || ignoreTtsUpdates) {
+              if (!isMountedRef.current || ignoreTtsUpdates) {
                 return;
               }
 
               let { orderedVoiceUris, orderedBoundaries } = buildVoicePlaybackData();
-              const fallbackText = normalizeSpeechText(rawTtsResponseRef.current, { trim: true });
+              const fallbackText = finalSpeechTextForVoice;
+              const fallbackDisplayText = stripAudioTags(fallbackText, { trim: true });
               const fallbackAccessToken = useStore.getState().session?.accessToken ?? accessToken;
+              const fallbackHasAccessToken = fallbackAccessToken.trim().length > 0;
+              const fallbackDisplayLength = fallbackDisplayText.length;
+              let rescueTailUri: string | null = null;
 
               // Recover gracefully from short replies and per-chunk failures.
-              if (orderedVoiceUris.length === 0 && fallbackText && fallbackAccessToken.trim()) {
+              if (orderedVoiceUris.length === 0 && fallbackDisplayLength > 0 && fallbackHasAccessToken) {
                 try {
-                  const fallbackUri = await fetchAndCacheVoice(fallbackText, artistId, language, fallbackAccessToken, {
+                  const fallbackUri = await fetchAndCacheVoice(fallbackDisplayText, artistId, language, fallbackAccessToken, {
                     throwOnError: true
                   });
                   if (fallbackUri) {
                     orderedVoiceUris = [fallbackUri];
-                    orderedBoundaries = [stripAudioTags(fallbackText, { trim: true }).length];
+                    orderedBoundaries = [fallbackDisplayLength];
                   }
                 } catch (error: unknown) {
                   registerTerminalTtsError(error);
                   // Silent failure: keep existing voice chunks when available.
+                }
+              } else if (orderedVoiceUris.length > 0 && fallbackDisplayLength > 0 && fallbackHasAccessToken) {
+                const lastBoundaryCandidate =
+                  orderedBoundaries.length > 0 ? orderedBoundaries[orderedBoundaries.length - 1] ?? 0 : 0;
+                const lastBoundary = Number.isFinite(lastBoundaryCandidate)
+                  ? Math.max(0, Math.min(Math.floor(lastBoundaryCandidate), fallbackDisplayLength))
+                  : 0;
+
+                if (lastBoundary < fallbackDisplayLength) {
+                  const rescueTailText = fallbackDisplayText.slice(lastBoundary).trim();
+                  if (rescueTailText.length > 0) {
+                    try {
+                      const tailUri = await fetchAndCacheVoice(rescueTailText, artistId, language, fallbackAccessToken, {
+                        throwOnError: true
+                      });
+                      if (tailUri) {
+                        orderedVoiceUris = [...orderedVoiceUris, tailUri];
+                        orderedBoundaries = [...orderedBoundaries, fallbackDisplayLength];
+                        rescueTailUri = tailUri;
+                      }
+                    } catch (error: unknown) {
+                      registerTerminalTtsError(error);
+                    }
+                  }
                 }
               }
 
@@ -1501,6 +1529,10 @@ export function useChat(conversationId: string) {
                 !shouldBlockInput &&
                 ttsAvailableForQuota &&
                 (!hasQueuedAutoplayChunk || !didStartReplyAutoplay);
+
+              if (rescueTailUri && hasQueuedAutoplayChunk && didStartReplyAutoplay) {
+                audioPlayer.appendToQueue(rescueTailUri, { messageId: artistMessageId });
+              }
 
               if (willAutoplay) {
                 const gen = ++autoplayChunkGeneration;

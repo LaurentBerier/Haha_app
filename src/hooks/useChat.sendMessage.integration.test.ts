@@ -360,6 +360,11 @@ describe('useChat sendMessage integration', () => {
     mockShareMemeImage.mockResolvedValue({ ok: true });
   });
 
+  afterEach(async () => {
+    await flushAsyncWork();
+    await flushAsyncWork();
+  });
+
   it('adds messages when render-time context is stale but live store context is valid', () => {
     const conversationId = 'conv-live';
     const chat = renderUseChatHook(conversationId);
@@ -1100,6 +1105,125 @@ describe('useChat sendMessage integration', () => {
     expect(injectedVoiceNotice).toBeUndefined();
   });
 
+  it('recovers missing tail audio when a later chunk fails with a non-terminal provider error', async () => {
+    const conversationId = 'conv-voice-tail-rescue';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    state.session.accessToken = 'token-voice';
+    state.conversationModeEnabled = true;
+    state.voiceAutoPlay = false;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    mockFetchAndCacheVoice
+      .mockResolvedValueOnce('blob:https://ha-ha.ai/chunk-tail-1.mp3')
+      .mockRejectedValueOnce({
+        status: 500,
+        code: 'TTS_PROVIDER_ERROR'
+      })
+      .mockResolvedValueOnce('blob:https://ha-ha.ai/chunk-tail-rescue.mp3');
+
+    const sendResult = chat.sendMessage({ text: 'Je veux la version audio complete meme en cas de trou.' });
+    expect(sendResult).toBeNull();
+    expect(streamMockParams).toHaveLength(1);
+
+    const stream = streamMockParams[0] as MockStreamParams;
+    stream.onToken(
+      'Cathy raconte une premiere phrase tres longue pour garantir un premier chunk stable et utile a la lecture continue dans ce scenario de reprise.'
+    );
+    await flushAsyncWork();
+    stream.onToken(
+      'Puis elle poursuit avec une deuxieme phrase tres longue elle aussi pour reproduire une erreur sur un chunk intermediaire et valider la reprise tail.'
+    );
+    stream.onComplete({ tokensUsed: 26 });
+    await flushAsyncWork();
+    await flushAsyncWork();
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    const baseArtistMessage =
+      state.messagesByConversation[conversation.id]?.messages.find(
+        (message) => message.role === 'artist' && message.metadata?.injected !== true
+      ) ?? null;
+    expect(baseArtistMessage).not.toBeNull();
+    expect(baseArtistMessage?.metadata?.voiceStatus).toBe('ready');
+    expect(baseArtistMessage?.metadata?.voiceErrorCode).toBeUndefined();
+    expect(baseArtistMessage?.metadata?.voiceQueue).toEqual(
+      expect.arrayContaining(['blob:https://ha-ha.ai/chunk-tail-1.mp3', 'blob:https://ha-ha.ai/chunk-tail-rescue.mp3'])
+    );
+    expect(baseArtistMessage?.metadata?.voiceQueue?.length).toBe(2);
+    expect(baseArtistMessage?.metadata?.voiceUrl).toBe('blob:https://ha-ha.ai/chunk-tail-1.mp3');
+    expect(baseArtistMessage?.metadata?.voiceChunkBoundaries?.length).toBe(2);
+    expect(baseArtistMessage?.metadata?.voiceChunkBoundaries?.[1]).toBe((baseArtistMessage?.content ?? '').length);
+  });
+
+  it('appends rescued tail audio to the active autoplay queue when first chunk already started', async () => {
+    const conversationId = 'conv-voice-tail-rescue-autoplay';
+    const chat = renderUseChatHook(conversationId);
+    const conversation = createConversation(conversationId);
+    const state = mockStoreRef.current as MockStoreState;
+    const playQueueMock = mockAudioPlayer.playQueue as jest.Mock;
+    const appendToQueueMock = mockAudioPlayer.appendToQueue as jest.Mock;
+    state.session.accessToken = 'token-voice';
+    state.conversationModeEnabled = true;
+    state.voiceAutoPlay = true;
+    state.conversations = {
+      [conversation.artistId]: [conversation]
+    };
+    state.messagesByConversation[conversation.id] = createEmptyMessagePage();
+
+    playQueueMock.mockResolvedValue({ started: true, reason: null } as unknown);
+    mockFetchAndCacheVoice
+      .mockResolvedValueOnce('blob:https://ha-ha.ai/chunk-tail-auto-1.mp3')
+      .mockRejectedValueOnce({
+        status: 500,
+        code: 'TTS_PROVIDER_ERROR'
+      })
+      .mockResolvedValueOnce('blob:https://ha-ha.ai/chunk-tail-auto-rescue.mp3');
+
+    const sendResult = chat.sendMessage({ text: 'Lis tout le message sans perdre la fin.' });
+    expect(sendResult).toBeNull();
+    expect(streamMockParams).toHaveLength(1);
+
+    const stream = streamMockParams[0] as MockStreamParams;
+    stream.onToken(
+      'Premiere phrase tres longue pour declencher le premier chunk audio en autoplay sans ambiguite pour le test et lancer la lecture tout de suite.'
+    );
+    await flushAsyncWork();
+    stream.onToken(
+      'Deuxieme phrase tres longue pour simuler un trou de chunk intermediaire ensuite complete par la reprise tail sans perdre la fin du message.'
+    );
+    stream.onComplete({ tokensUsed: 20 });
+    await flushAsyncWork();
+    await flushAsyncWork();
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    expect(playQueueMock).toHaveBeenCalled();
+    expect(appendToQueueMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        [
+          'blob:https://ha-ha.ai/chunk-tail-auto-rescue.mp3',
+          expect.objectContaining({
+            messageId: expect.any(String)
+          })
+        ]
+      ])
+    );
+
+    const baseArtistMessage =
+      state.messagesByConversation[conversation.id]?.messages.find(
+        (message) => message.role === 'artist' && message.metadata?.injected !== true
+      ) ?? null;
+    expect(baseArtistMessage?.metadata?.voiceQueue).toEqual([
+      'blob:https://ha-ha.ai/chunk-tail-auto-1.mp3',
+      'blob:https://ha-ha.ai/chunk-tail-auto-rescue.mp3'
+    ]);
+  });
+
   it('stops queued chunk fetches after the first terminal TTS error', async () => {
     const conversationId = 'conv-voice-terminal-stop';
     const chat = renderUseChatHook(conversationId);
@@ -1133,7 +1257,11 @@ describe('useChat sendMessage integration', () => {
     await flushAsyncWork();
     await flushAsyncWork();
 
-    expect(mockFetchAndCacheVoice).toHaveBeenCalledTimes(1);
+    const chunkGenerationCalls = mockFetchAndCacheVoice.mock.calls.filter((call) => {
+      const options = (call[4] ?? null) as { purpose?: string } | null;
+      return options?.purpose !== 'reply';
+    });
+    expect(chunkGenerationCalls).toHaveLength(1);
 
     const baseArtistMessage =
       state.messagesByConversation[conversation.id]?.messages.find(

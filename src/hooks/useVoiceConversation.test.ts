@@ -29,7 +29,9 @@ import {
   shouldSuspendMicForWebFocusLoss,
   shouldArmWebLivenessWatchdog,
   shouldAttemptAutoListen,
-  shouldConsumeVoiceRecoveryBudget
+  shouldConsumeVoiceRecoveryBudget,
+  shouldUsePostPlaybackStartupRecovery,
+  getPostPlaybackStartupRecoveryDelayMs
 } from './useVoiceConversation';
 
 describe('useVoiceConversation helpers', () => {
@@ -305,6 +307,117 @@ describe('useVoiceConversation helpers', () => {
     expect(getVoiceRecoveryDelayMs(2)).toBe(800);
     expect(getVoiceRecoveryDelayMs(3)).toBe(2000);
     expect(getVoiceRecoveryDelayMs(4)).toBeNull();
+  });
+
+  it('applies post-playback startup recovery only for native startup failures after assistant playback', () => {
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'transient',
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(true);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'aborted',
+        origin: 'resume',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(true);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'android',
+        reason: 'ended_unexpectedly',
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(true);
+  });
+
+  it('skips post-playback startup recovery when startup criteria are not met', () => {
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'web',
+        reason: 'transient',
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(false);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'transient',
+        origin: 'auto',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(false);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'transient',
+        origin: 'recovery',
+        statusBeforeStart: 'off',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(false);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'transient',
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: true,
+        hadResult: false
+      })
+    ).toBe(false);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'transient',
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: true
+      })
+    ).toBe(false);
+
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'ios',
+        reason: 'no_speech',
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(false);
+  });
+
+  it('returns bounded post-playback startup recovery delays', () => {
+    expect(getPostPlaybackStartupRecoveryDelayMs(1)).toBe(250);
+    expect(getPostPlaybackStartupRecoveryDelayMs(2)).toBe(800);
+    expect(getPostPlaybackStartupRecoveryDelayMs(3)).toBe(2000);
+    expect(getPostPlaybackStartupRecoveryDelayMs(9)).toBe(2000);
+    expect(getPostPlaybackStartupRecoveryDelayMs(0)).toBe(250);
   });
 
   it('only consumes the bounded recovery budget for genuine error conditions', () => {
