@@ -239,12 +239,34 @@ function getWebSpeechRecognitionCtor(): WebSpeechRecognitionCtor | null {
     return null;
   }
 
+  // Check both globalThis and window — some bundlers may not alias globalThis to window.
   const scope = globalThis as {
     SpeechRecognition?: WebSpeechRecognitionCtor;
     webkitSpeechRecognition?: WebSpeechRecognitionCtor;
   };
+  const windowScope = typeof window !== 'undefined'
+    ? (window as unknown as {
+        SpeechRecognition?: WebSpeechRecognitionCtor;
+        webkitSpeechRecognition?: WebSpeechRecognitionCtor;
+      })
+    : null;
 
-  return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null;
+  const ctor =
+    scope.SpeechRecognition ??
+    scope.webkitSpeechRecognition ??
+    windowScope?.SpeechRecognition ??
+    windowScope?.webkitSpeechRecognition ??
+    null;
+
+  const protocol = typeof window !== 'undefined' && window.location ? window.location.protocol : 'unknown';
+  sttDebug(
+    `[STT_DEBUG] getWebSpeechRecognitionCtor: ctor=${ctor ? 'FOUND' : 'NULL'}, ` +
+    `globalThis.SR=${!!scope.SpeechRecognition}, globalThis.webkit=${!!scope.webkitSpeechRecognition}, ` +
+    `window.SR=${!!windowScope?.SpeechRecognition}, window.webkit=${!!windowScope?.webkitSpeechRecognition}, ` +
+    `protocol=${protocol}, isIOS=${IS_IOS_MOBILE_WEB}`
+  );
+
+  return ctor;
 }
 
 function normalizeVoiceErrorMessage(rawMessage: string | null | undefined): string | null {
@@ -604,6 +626,9 @@ export function startVoiceListeningSession({
   if (Platform.OS === 'web') {
     const WebRecognitionCtor = getWebSpeechRecognitionCtor();
     if (!WebRecognitionCtor) {
+      const proto = typeof window !== 'undefined' && window.location ? window.location.protocol : 'N/A';
+      const host = typeof window !== 'undefined' && window.location ? window.location.host : 'N/A';
+      sttDebug(`[STT_DEBUG] web STT UNAVAILABLE: protocol=${proto}, host=${host}, userAgent=${typeof navigator !== 'undefined' ? navigator.userAgent?.slice(0, 120) : 'N/A'}`);
       scheduleVoiceMicrotask(() => {
         emitEnd('unsupported', 'Speech recognition is unavailable on this build.');
       });
