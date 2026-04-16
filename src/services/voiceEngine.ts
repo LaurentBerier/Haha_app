@@ -3,6 +3,7 @@ import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo';
 import { fetchAndCacheVoice, type FetchVoiceOptions } from './ttsService';
 import { isIosMobileWebRuntime } from '../platform/platformCapabilities';
+import { sttDebug } from './sttDebugLogger';
 
 type Listener = { remove: () => void };
 type NativeSpeechRecognitionEvent = {
@@ -86,8 +87,12 @@ async function configureAudioSessionForRecording(): Promise<void> {
     return;
   }
   try {
+    sttDebug('[STT_DEBUG] configureAudioSessionForRecording: calling setAudioModeAsync(allowsRecording=true)');
     const audioModule = await loadExpoAudioForSession();
-    if (!audioModule) return;
+    if (!audioModule) {
+      sttDebug('[STT_DEBUG] configureAudioSessionForRecording: audioModule is null, skipping');
+      return;
+    }
     await audioModule.setAudioModeAsync({
       allowsRecording: true,
       interruptionMode: 'doNotMix',
@@ -96,8 +101,9 @@ async function configureAudioSessionForRecording(): Promise<void> {
       interruptionModeAndroid: 'doNotMix',
       shouldRouteThroughEarpiece: false
     });
-  } catch {
-    // Best effort — if this fails, the OS default may still work for the first session
+    sttDebug('[STT_DEBUG] configureAudioSessionForRecording: SUCCESS');
+  } catch (err) {
+    sttDebug('[STT_DEBUG] configureAudioSessionForRecording: FAILED -', err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -397,10 +403,11 @@ function getNativeStartOptions(locale: string): {
   addsPunctuation: boolean;
 } {
   const androidApiLevel = getAndroidApiLevel();
-  // iOS native recognition is significantly more stable in single-utterance mode.
-  // continuous=true can produce rapid end events without delivering results.
+  // Enable continuous mode on iOS native — single-utterance mode (continuous=false)
+  // causes the recognizer to end immediately (~10ms after audiostart) without delivering
+  // any results, especially after TTS playback changes the audio session state.
   const supportsContinuous =
-    Platform.OS !== 'ios' && (Platform.OS !== 'android' || androidApiLevel === null || androidApiLevel >= 33);
+    Platform.OS !== 'android' || androidApiLevel === null || androidApiLevel >= 33;
   const supportsPunctuation = Platform.OS !== 'android' || androidApiLevel === null || androidApiLevel >= 33;
   return {
     lang: locale,
@@ -441,6 +448,7 @@ function cleanupNativeRecognition(): void {
 
   const module = getSpeechRecognitionModule();
   try {
+    sttDebug('[STT_DEBUG] cleanupNativeRecognition: calling module.stop()');
     module?.stop();
   } catch {
     // No-op
@@ -500,7 +508,10 @@ export function startVoiceListeningSession({
   let pendingWebEndMessage: string | null = null;
   let webRestartAttemptCount = 0;
 
+  sttDebug(`[STT_DEBUG] startVoiceListeningSession: sessionId=${sessionId}, locale=${locale}`);
+
   const stop = () => {
+    sttDebug(`[STT_DEBUG] [session=${sessionId}] stop() called, stopped=${stopped}, activeId=${activeVoiceSessionId}`);
     if (stopped) {
       return;
     }
@@ -536,7 +547,9 @@ export function startVoiceListeningSession({
   };
 
   const emitEnd = (reason: VoiceSessionEndReason, rawMessage?: string | null) => {
+    sttDebug(`[STT_DEBUG] [session=${sessionId}] emitEnd(reason="${reason}", message="${rawMessage ?? ''}", stopped=${stopped}, activeId=${activeVoiceSessionId})`);
     if (stopped || activeVoiceSessionId !== sessionId) {
+      sttDebug(`[STT_DEBUG] [session=${sessionId}] emitEnd SKIPPED (stale/stopped)`);
       return;
     }
 
@@ -675,37 +688,70 @@ export function startVoiceListeningSession({
       return session;
     }
 
-    activeNativeListeners = [
-      module.addListener('result', (event) => {
-        const transcript = event?.results?.[0]?.transcript?.trim();
-        if (transcript) {
-          emitResult(transcript);
-        }
-      }),
-      module.addListener('error', (event) => {
-        const message = event?.message || event?.error || 'Speech recognition failed';
-        emitEnd(classifyNativeErrorReason(event?.error, message), message);
-      }),
-      module.addListener('end', () => {
-        emitEnd('ended_unexpectedly', 'Speech recognition ended unexpectedly');
-      }),
-      module.addListener('audiostart', () => {
-        emitAudioStart();
-      })
-    ];
+    sttDebug(`[STT_DEBUG] [session=${sessionId}] native module obtained: true, isRecognitionAvailable=${typeof module.isRecognitionAvailable === 'function' ? module.isRecognitionAvailable() : 'N/A'}`);
+
+    // IMPORTANT: Do NOT register listeners here — register them inside the async
+    // IIFE right before module.start(). Registering listeners synchronously before
+    // module.start() causes a race condition: cleanupNativeRecognition() calls
+    // module.stop() on the OLD session, which fires a native 'end' event that gets
+    // caught by the NEW listeners, killing the new session before it even starts.
 
     void (async () => {
-      await configureAudioSessionForRecording();
+      // Give the native SFSpeechRecognizer time to fully release the audio engine
+      // from any previous session or TTS playback before reconfiguring and starting.
+      sttDebug(`[STT_DEBUG] [session=${sessionId}] waiting 500ms for native recognizer to release`);
+      await new Promise<void>((r) => setTimeout(r, 500));
       if (stopped || activeVoiceSessionId !== sessionId) {
+        sttDebug(`[STT_DEBUG] [session=${sessionId}] bailing after delay (stale/stopped)`);
         return;
       }
 
+      sttDebug(`[STT_DEBUG] [session=${sessionId}] about to configureAudioSessionForRecording`);
+      await configureAudioSessionForRecording();
+      sttDebug(`[STT_DEBUG] [session=${sessionId}] configureAudioSessionForRecording completed`);
+      if (stopped || activeVoiceSessionId !== sessionId) {
+        sttDebug(`[STT_DEBUG] [session=${sessionId}] bailing after configureAudioSession (stale/stopped)`);
+        return;
+      }
+
+      // Register listeners right before module.start() — after the delay and cleanup
+      // have fully settled — so we never catch stale events from the previous session.
+      clearNativeListeners();
+      activeNativeListeners = [
+        module.addListener('result', (event) => {
+          const transcript = event?.results?.[0]?.transcript?.trim();
+          sttDebug(`[STT_DEBUG] [session=${sessionId}] native 'result' event, transcript="${transcript ?? ''}"`);
+          if (transcript) {
+            emitResult(transcript);
+          }
+        }),
+        module.addListener('error', (event) => {
+          const message = event?.message || event?.error || 'Speech recognition failed';
+          const classified = classifyNativeErrorReason(event?.error, message);
+          sttDebug(`[STT_DEBUG] [session=${sessionId}] native 'error' event, error="${event?.error}", message="${message}", classified="${classified}"`);
+          emitEnd(classified, message);
+        }),
+        module.addListener('end', () => {
+          sttDebug(`[STT_DEBUG] [session=${sessionId}] native 'end' event -> emitting ended_unexpectedly`);
+          emitEnd('ended_unexpectedly', 'Speech recognition ended unexpectedly');
+        }),
+        module.addListener('audiostart', () => {
+          sttDebug(`[STT_DEBUG] [session=${sessionId}] native 'audiostart' event`);
+          emitAudioStart();
+        })
+      ];
+
       try {
-        module.start(getNativeStartOptions(resolvedLocales.primary));
+        const startOptions = getNativeStartOptions(resolvedLocales.primary);
+        sttDebug(`[STT_DEBUG] [session=${sessionId}] calling module.start() with options: ${JSON.stringify(startOptions)}`);
+        module.start(startOptions);
+        sttDebug(`[STT_DEBUG] [session=${sessionId}] module.start() returned (no throw)`);
       } catch (error) {
         const reason = classifyStartErrorReason(error);
+        sttDebug(`[STT_DEBUG] [session=${sessionId}] module.start() THREW: ${error instanceof Error ? error.message : String(error)}, reason=${reason}`);
         if (reason !== 'permission' && resolvedLocales.fallback) {
           try {
+            sttDebug(`[STT_DEBUG] [session=${sessionId}] trying fallback locale: ${resolvedLocales.fallback}`);
             module.start(getNativeStartOptions(resolvedLocales.fallback));
           } catch (fallbackError) {
             const fallbackMessage =

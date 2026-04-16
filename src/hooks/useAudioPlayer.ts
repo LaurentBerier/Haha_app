@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { markWebAutoplaySessionUnlocked } from '../services/webAutoplayUnlockService';
+import { sttDebug } from '../services/sttDebugLogger';
 
 interface WebAudioLike {
   addEventListener: (event: string, handler: () => void) => void;
@@ -194,6 +195,7 @@ export function useAudioPlayer(): AudioPlayerController {
     // Restore audio session to allow recording so STT can reclaim the mic
     if (Platform.OS === 'ios') {
       try {
+        sttDebug('[STT_DEBUG] releaseNativeAudio: restoring allowsRecording=true');
         const audioModule = await loadExpoAudioModule();
         if (audioModule) {
           await audioModule.setAudioModeAsync({
@@ -204,9 +206,10 @@ export function useAudioPlayer(): AudioPlayerController {
             interruptionModeAndroid: 'doNotMix',
             shouldRouteThroughEarpiece: false
           });
+          sttDebug('[STT_DEBUG] releaseNativeAudio: allowsRecording=true RESTORED');
         }
-      } catch {
-        // Best effort — voiceEngine also configures this before STT starts
+      } catch (err) {
+        sttDebug('[STT_DEBUG] releaseNativeAudio: allowsRecording restore FAILED -', err instanceof Error ? err.message : String(err));
       }
     }
   }, []);
@@ -367,6 +370,7 @@ export function useAudioPlayer(): AudioPlayerController {
         }
 
         try {
+          sttDebug('[STT_DEBUG] playQueue: setting allowsRecording=false for playback');
           await expoAudioModule.setAudioModeAsync({
             allowsRecording: false,
             interruptionMode: 'doNotMix',
@@ -375,9 +379,11 @@ export function useAudioPlayer(): AudioPlayerController {
             interruptionModeAndroid: 'doNotMix',
             shouldRouteThroughEarpiece: false
           });
+          sttDebug('[STT_DEBUG] playQueue: allowsRecording=false set successfully');
         } catch {
           // First attempt may fail if a recording session is still releasing.
           // Yield briefly and retry once so iOS routes audio to the loudspeaker.
+          sttDebug('[STT_DEBUG] playQueue: first setAudioModeAsync failed, retrying after 200ms');
           await new Promise<void>((r) => setTimeout(r, 200));
           try {
             await expoAudioModule.setAudioModeAsync({
@@ -388,8 +394,9 @@ export function useAudioPlayer(): AudioPlayerController {
               interruptionModeAndroid: 'doNotMix',
               shouldRouteThroughEarpiece: false
             });
+            sttDebug('[STT_DEBUG] playQueue: allowsRecording=false set on retry');
           } catch {
-            console.warn('[useAudioPlayer] Failed to set audio mode for playback after retry');
+            sttDebug('[STT_DEBUG] playQueue: allowsRecording=false FAILED even after retry');
           }
         }
 

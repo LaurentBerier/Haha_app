@@ -18,6 +18,7 @@ import {
   type VoiceListeningSession,
   type VoiceSessionEndReason
 } from '../services/voiceEngine';
+import { sttDebug } from '../services/sttDebugLogger';
 
 const parsedSilenceTimeout = Number.parseInt(process.env[ENV_SILENCE_TIMEOUT_MS] ?? '', 10);
 const SILENCE_TIMEOUT_MS =
@@ -421,6 +422,8 @@ function voiceConversationReducer(
   state: VoiceConversationState,
   action: VoiceConversationAction
 ): VoiceConversationState {
+  const extra = action.type === 'recovery_scheduled' ? ` attempt=${action.attempt}` : action.type === 'error' ? ` message="${action.message}"` : '';
+  sttDebug(`[STT_DEBUG] dispatch: ${action.type}${extra}, currentStatus=${state.status}, recoveryAttempt=${state.recoveryAttempt}`);
   switch (action.type) {
     case 'set_off':
       return {
@@ -824,8 +827,10 @@ export function useVoiceConversation({
 
   const scheduleSilenceTimeout = useCallback(() => {
     clearSilenceTimer();
+    sttDebug(`[STT_DEBUG] scheduleSilenceTimeout: ${SILENCE_TIMEOUT_MS}ms`);
     silenceTimerRef.current = setTimeout(() => {
       silenceTimerRef.current = null;
+      sttDebug(`[STT_DEBUG] silenceTimeout fired, transcript="${stateRef.current.transcript}", status=${stateRef.current.status}`);
       const latestState = stateRef.current;
       const textToSend = latestState.transcript.trim();
 
@@ -883,7 +888,9 @@ export function useVoiceConversation({
 
   const handleSessionEnd = useCallback(
     (event: VoiceListeningEndEvent) => {
+      sttDebug(`[STT_DEBUG] handleSessionEnd: sessionId=${event.sessionId}, reason="${event.reason}", message="${event.message ?? ''}", activeSessionId=${activeSessionRef.current?.id}`);
       if (activeSessionRef.current?.id !== event.sessionId) {
+        sttDebug(`[STT_DEBUG] handleSessionEnd: SKIPPED (stale session)`);
         return;
       }
 
@@ -892,6 +899,8 @@ export function useVoiceConversation({
       activeSessionRef.current = null;
       activeSessionContextRef.current = null;
       clearSilenceTimer();
+
+      sttDebug(`[STT_DEBUG] handleSessionEnd: guards: enabled=${enabledRef.current}, disabled=${disabledRef.current}, isPlaying=${isPlayingRef.current}, status=${stateRef.current.status}, context=${JSON.stringify(activeSessionContext)}`);
 
       if (event.reason === 'permission') {
         hasPermissionRef.current = false;
@@ -912,22 +921,25 @@ export function useVoiceConversation({
         isLockedMicStatus(stateRef.current.status) ||
         isPlayingRef.current
       ) {
+        sttDebug(`[STT_DEBUG] handleSessionEnd: early exit (disabled/locked/playing)`);
         return;
       }
 
-      if (
-        activeSessionContext &&
-        shouldUsePostPlaybackStartupRecovery({
+      const usePostPlaybackRecovery = activeSessionContext && shouldUsePostPlaybackStartupRecovery({
           platformOs: Platform.OS,
           reason: event.reason,
           origin: activeSessionContext.origin,
           statusBeforeStart: activeSessionContext.statusBeforeStart,
           hadAudioStart: activeSessionContext.hadAudioStart,
           hadResult: activeSessionContext.hadResult
-        })
-      ) {
+        });
+      sttDebug(`[STT_DEBUG] handleSessionEnd: postPlaybackRecovery=${usePostPlaybackRecovery}, isRecoverable=${isRecoverableEndReason(event.reason)}`);
+
+      if (usePostPlaybackRecovery) {
         const nextAttempt = postPlaybackStartupRecoveryAttemptRef.current + 1;
         postPlaybackStartupRecoveryAttemptRef.current = nextAttempt;
+        const delayMs = getPostPlaybackStartupRecoveryDelayMs(nextAttempt);
+        sttDebug(`[STT_DEBUG] handleSessionEnd: postPlayback recovery scheduled, attempt=${nextAttempt}, delay=${delayMs}ms`);
 
         dispatch({
           type: 'recovery_scheduled',
@@ -936,63 +948,68 @@ export function useVoiceConversation({
         clearRecoveryTimer();
         recoveryTimerRef.current = setTimeout(() => {
           recoveryTimerRef.current = null;
-          if (
-            !isMountedRef.current ||
-            !shouldAttemptAutoListen({
-              shouldAutoListen,
-              webTabActive: webTabActiveRef.current,
-              hasUserActivation: hasUserActivatedListeningRef.current,
-              enabled: enabledRef.current,
-              disabled: disabledRef.current,
-              isPlaying: isPlayingRef.current,
-              hasTypedDraft: hasTypedDraftRef.current,
-              status: stateRef.current.status
-            })
-          ) {
+          const autoListenInputs = {
+            shouldAutoListen,
+            webTabActive: webTabActiveRef.current,
+            hasUserActivation: hasUserActivatedListeningRef.current,
+            enabled: enabledRef.current,
+            disabled: disabledRef.current,
+            isPlaying: isPlayingRef.current,
+            hasTypedDraft: hasTypedDraftRef.current,
+            status: stateRef.current.status
+          };
+          const canAutoListen = shouldAttemptAutoListen(autoListenInputs);
+          sttDebug(`[STT_DEBUG] postPlayback recovery timer fired: canAutoListen=${canAutoListen}, inputs=${JSON.stringify(autoListenInputs)}`);
+          if (!isMountedRef.current || !canAutoListen) {
             return;
           }
 
           dispatch({ type: 'starting' });
           void startListeningFlowRef.current?.('recovery');
-        }, getPostPlaybackStartupRecoveryDelayMs(nextAttempt));
+        }, delayMs);
         return;
       }
 
       if (isRecoverableEndReason(event.reason)) {
         const recoveryPlan = getVoiceRecoveryPlan(event.reason, stateRef.current.recoveryAttempt);
+        sttDebug(`[STT_DEBUG] handleSessionEnd: recoveryPlan=${JSON.stringify(recoveryPlan)}`);
 
         if (recoveryPlan.consumesBudget && recoveryPlan.delayMs === null) {
+          sttDebug(`[STT_DEBUG] handleSessionEnd: recovery budget EXHAUSTED`);
           dispatch({ type: 'pause_recovery' });
           return;
         }
 
         dispatch({ type: 'recovery_scheduled', attempt: recoveryPlan.attempt });
         clearRecoveryTimer();
+        const delayMs = recoveryPlan.delayMs ?? RECOVERY_DELAYS_MS[0];
+        sttDebug(`[STT_DEBUG] handleSessionEnd: recovery scheduled, attempt=${recoveryPlan.attempt}, delay=${delayMs}ms`);
         recoveryTimerRef.current = setTimeout(() => {
           recoveryTimerRef.current = null;
-          if (
-            !isMountedRef.current ||
-            !shouldAttemptAutoListen({
-              shouldAutoListen,
-              webTabActive: webTabActiveRef.current,
-              hasUserActivation: hasUserActivatedListeningRef.current,
-              enabled: enabledRef.current,
-              disabled: disabledRef.current,
-              isPlaying: isPlayingRef.current,
-              hasTypedDraft: hasTypedDraftRef.current,
-              status: stateRef.current.status
-            })
-          ) {
+          const autoListenInputs = {
+            shouldAutoListen,
+            webTabActive: webTabActiveRef.current,
+            hasUserActivation: hasUserActivatedListeningRef.current,
+            enabled: enabledRef.current,
+            disabled: disabledRef.current,
+            isPlaying: isPlayingRef.current,
+            hasTypedDraft: hasTypedDraftRef.current,
+            status: stateRef.current.status
+          };
+          const canAutoListen = shouldAttemptAutoListen(autoListenInputs);
+          sttDebug(`[STT_DEBUG] recovery timer fired: canAutoListen=${canAutoListen}, inputs=${JSON.stringify(autoListenInputs)}`);
+          if (!isMountedRef.current || !canAutoListen) {
             return;
           }
 
           dispatch({ type: 'starting' });
           void startListeningFlowRef.current?.('recovery');
-        }, recoveryPlan.delayMs ?? RECOVERY_DELAYS_MS[0]);
+        }, delayMs);
         return;
       }
 
       postPlaybackStartupRecoveryAttemptRef.current = 0;
+      sttDebug(`[STT_DEBUG] handleSessionEnd: non-recoverable, dispatching error`);
       dispatch({ type: 'error', message: event.message ?? t('voiceError') });
     },
     [clearRecoveryTimer, clearSilenceTimer, shouldAutoListen]
@@ -1020,11 +1037,13 @@ export function useVoiceConversation({
 
   const startListeningFlow = useCallback(
     async (origin: VoiceStartOrigin) => {
+      sttDebug(`[STT_DEBUG] startListeningFlow(origin="${origin}"), startInFlight=${startInFlightRef.current}, status=${stateRef.current.status}`);
       if (!isMountedRef.current) {
         return;
       }
 
       if (startInFlightRef.current) {
+        sttDebug(`[STT_DEBUG] startListeningFlow: BLOCKED by startInFlight`);
         return;
       }
 
@@ -1032,24 +1051,26 @@ export function useVoiceConversation({
       if (latestStatus !== 'assistant_busy') {
         postPlaybackStartupRecoveryAttemptRef.current = 0;
       }
+      const autoListenInputs = {
+        shouldAutoListen,
+        webTabActive: webTabActiveRef.current,
+        hasUserActivation: hasUserActivatedListeningRef.current,
+        enabled: enabledRef.current,
+        disabled: disabledRef.current,
+        isPlaying: isPlayingRef.current,
+        hasTypedDraft: hasTypedDraftRef.current,
+        status: latestStatus
+      };
       const canStart =
         origin === 'auto' || origin === 'recovery'
-          ? shouldAttemptAutoListen({
-              shouldAutoListen,
-              webTabActive: webTabActiveRef.current,
-              hasUserActivation: hasUserActivatedListeningRef.current,
-              enabled: enabledRef.current,
-              disabled: disabledRef.current,
-              isPlaying: isPlayingRef.current,
-              hasTypedDraft: hasTypedDraftRef.current,
-              status: latestStatus
-            })
+          ? shouldAttemptAutoListen(autoListenInputs)
           : enabledRef.current &&
             !disabledRef.current &&
             !hasTypedDraftRef.current &&
             !isPlayingRef.current &&
             webTabActiveRef.current;
 
+      sttDebug(`[STT_DEBUG] startListeningFlow: canStart=${canStart}, inputs=${JSON.stringify(autoListenInputs)}`);
       if (!canStart) {
         return;
       }
@@ -1188,8 +1209,10 @@ export function useVoiceConversation({
           hadAudioStart: false,
           hadResult: false
         };
+        sttDebug(`[STT_DEBUG] startListeningFlow: session created, id=${session.id}, origin=${origin}, statusBeforeStart=${latestStatus}`);
       } finally {
         startInFlightRef.current = false;
+        sttDebug(`[STT_DEBUG] startListeningFlow: finally, cleared startInFlight`);
       }
     },
     [
@@ -1353,6 +1376,7 @@ export function useVoiceConversation({
     // to the earpiece; releasing it before playback lets the OS switch to the loudspeaker
     // before the first audio frame is delivered.
     if (isPlaying || isAudioPlaybackLoading) {
+      sttDebug(`[STT_DEBUG] playback-effect: isPlaying=${isPlaying}, isAudioPlaybackLoading=${isAudioPlaybackLoading}, status=${stateRef.current.status}, hasSession=${Boolean(activeSessionRef.current)}`);
       clearRecoveryTimer();
       clearSilenceTimer();
       stopActiveSession();
@@ -1447,11 +1471,10 @@ export function useVoiceConversation({
       return;
     }
 
+    sttDebug(`[STT_DEBUG] assistantBusyRecovery: scheduling recovery in ${ASSISTANT_BUSY_RECOVERY_DELAY_MS}ms`);
     assistantBusyRecoveryTimerRef.current = setTimeout(() => {
       assistantBusyRecoveryTimerRef.current = null;
-      if (
-        !isMountedRef.current ||
-        !shouldRecoverFromAssistantBusyStall({
+      const stallCheck = shouldRecoverFromAssistantBusyStall({
           enabled: enabledRef.current,
           disabled: disabledRef.current,
           hasTypedDraft: hasTypedDraftRef.current,
@@ -1461,8 +1484,9 @@ export function useVoiceConversation({
           startInFlight: startInFlightRef.current,
           hasActiveSession: Boolean(activeSessionRef.current),
           hasRecoveryTimer: Boolean(recoveryTimerRef.current)
-        })
-      ) {
+        });
+      sttDebug(`[STT_DEBUG] assistantBusyRecovery: timer fired, stallCheck=${stallCheck}, status=${stateRef.current.status}, isPlaying=${isPlayingRef.current}`);
+      if (!isMountedRef.current || !stallCheck) {
         return;
       }
 
@@ -1496,9 +1520,11 @@ export function useVoiceConversation({
     }
 
     if (activeSessionRef.current || recoveryTimerRef.current || startInFlightRef.current) {
+      sttDebug(`[STT_DEBUG] auto-listen effect: blocked (session=${Boolean(activeSessionRef.current)}, recoveryTimer=${Boolean(recoveryTimerRef.current)}, startInFlight=${startInFlightRef.current})`);
       return;
     }
 
+    sttDebug(`[STT_DEBUG] auto-listen effect: triggering, status=${state.status}`);
     void startListeningFlow('auto');
   }, [disabled, enabled, hasTypedDraft, isPlaying, shouldAutoListen, startListeningFlow, state.status]);
 
