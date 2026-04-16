@@ -4,11 +4,13 @@ import { useStore } from '../../store/useStore';
 
 interface AmbientGlowProps {
   variant?: 'home' | 'mode';
+  /** When false, animations are paused to save GPU cycles while offscreen. */
+  isActive?: boolean;
 }
 
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
-function AmbientGlowBase({ variant = 'home' }: AmbientGlowProps) {
+function AmbientGlowBase({ variant = 'home', isActive = true }: AmbientGlowProps) {
   const reduceMotionPreference = useStore((state) => state.reduceMotion);
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const farOrbit = useRef(new Animated.Value(0)).current;
@@ -39,7 +41,8 @@ function AmbientGlowBase({ variant = 'home' }: AmbientGlowProps) {
   }, []);
 
   const shouldReduceMotion =
-    reduceMotionPreference === 'on' ? true : reduceMotionPreference === 'off' ? false : reduceMotionEnabled;
+    !isActive ||
+    (reduceMotionPreference === 'on' ? true : reduceMotionPreference === 'off' ? false : reduceMotionEnabled);
 
   useEffect(() => {
     if (shouldReduceMotion) {

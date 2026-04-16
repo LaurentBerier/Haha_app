@@ -62,7 +62,8 @@ function createAudioPlayerState(state?: {
     appendToQueue: () => undefined,
     pause: async () => undefined,
     stop: async () => undefined,
-    gracefulStop: () => undefined
+    gracefulStop: () => undefined,
+    onQueueCompleteRef: { current: null }
   };
 }
 

@@ -121,7 +121,8 @@ export default function ChatScreen() {
       audioPlayer.gracefulStop();
     },
     language: conversationLanguage,
-    fallbackLanguage: language
+    fallbackLanguage: language,
+    audioPlayerOnQueueCompleteRef: audioPlayer.onQueueCompleteRef
     });
 
   const userDisplayName = formatUserDisplayName(sessionUser?.displayName ?? null, sessionUser?.email ?? '');

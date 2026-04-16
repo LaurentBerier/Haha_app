@@ -130,7 +130,6 @@ function MessageListBase({
       data={messages}
       keyExtractor={(item) => item.id}
       renderItem={renderItem}
-      extraData={audioPlayer}
       windowSize={windowSize}
       initialNumToRender={initialNumToRender}
       maxToRenderPerBatch={maxToRenderPerBatch}

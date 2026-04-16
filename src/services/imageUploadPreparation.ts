@@ -127,27 +127,51 @@ async function optimizeToUploadLimit(
     const resizeActions =
       longEdgeCandidate > 0 ? resolveResizeAction(longEdgeCandidate, width, height) : [];
 
-    for (const quality of QUALITY_STEPS) {
+    // Binary search for the highest quality that fits under the upload limit,
+    // rather than iterating all qualities sequentially (reduces manipulateAsync
+    // calls from up to 6 per size to ~3).
+    let lo = 0;
+    let hi = QUALITY_STEPS.length - 1;
+    let bestForSize: PreparedImageUpload | null = null;
+
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      const quality = QUALITY_STEPS[mid]!;
       const optimized = await deps.manipulateImageAsync(input.uri, resizeActions, {
         base64: true,
         compress: quality,
         format: SaveFormat.JPEG
       });
+      if (!optimized) {
+        lo = mid + 1;
+        continue;
+      }
       const base64 = typeof optimized.base64 === 'string' ? optimized.base64.trim() : '';
       if (!base64) {
+        // Can't evaluate this quality — try lower quality.
+        lo = mid + 1;
         continue;
       }
 
       const byteSize = estimateBase64Bytes(base64);
       if (byteSize <= MAX_IMAGE_UPLOAD_BYTES) {
-        return {
+        bestForSize = {
           uri: optimized.uri,
           base64,
           mediaType: JPEG_MEDIA_TYPE,
           byteSize,
           optimized: true
         };
+        // Try higher quality (lower index = higher quality).
+        hi = mid - 1;
+      } else {
+        // Too large — try lower quality (higher index).
+        lo = mid + 1;
       }
+    }
+
+    if (bestForSize) {
+      return bestForSize;
     }
   }
 

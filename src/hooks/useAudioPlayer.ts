@@ -79,6 +79,10 @@ export interface AudioPlayerController {
   /** Let the current audio chunk finish before stopping. Use instead of stop() when
    *  interrupting Cathy mid-reply so she doesn't cut off mid-word. */
   gracefulStop: () => void;
+  /** Register a callback that fires synchronously when the audio queue finishes
+   *  naturally (last chunk ends). Fires *before* the React state update from stop(),
+   *  so consumers can begin work (e.g. STT restart) without waiting for a re-render. */
+  onQueueCompleteRef: React.RefObject<(() => void) | null>;
 }
 
 export interface AudioPlaybackContext {
@@ -159,6 +163,7 @@ export function useAudioPlayer(): AudioPlayerController {
   const playbackTokenRef = useRef(0);
   const isMountedRef = useRef(true);
   const isGracefullyStoppingRef = useRef(false);
+  const onQueueCompleteRef = useRef<(() => void) | null>(null);
 
   const clearWebListeners = useCallback(() => {
     detachWebListenersRef.current?.();
@@ -368,6 +373,10 @@ export function useAudioPlayer(): AudioPlayerController {
 
           const nextIndex = queueIndexRef.current + 1;
           if (nextIndex >= queueRef.current.length) {
+            // Fire the completion callback *before* stop() so consumers can
+            // begin latency-sensitive work (e.g. STT restart) without waiting
+            // for the React render cycle triggered by stop()'s state updates.
+            onQueueCompleteRef.current?.();
             void stop();
             return;
           }
@@ -562,6 +571,7 @@ export function useAudioPlayer(): AudioPlayerController {
     appendToQueue,
     pause,
     stop,
-    gracefulStop
+    gracefulStop,
+    onQueueCompleteRef
   };
 }

@@ -86,7 +86,12 @@ function ChatBubbleBase({
   const updateMessage = useStore((state) => state.updateMessage);
   const accessToken = useStore((state) => state.session?.accessToken ?? '');
   const accountType = useStore((state) => state.session?.user.accountType ?? null);
-  const conversation = useStore((state) => findConversationById(state.conversations, message.conversationId));
+  const conversationArtistId = useStore(
+    (state) => findConversationById(state.conversations, message.conversationId)?.artistId ?? ''
+  );
+  const conversationLanguage = useStore(
+    (state) => findConversationById(state.conversations, message.conversationId)?.language ?? 'fr-CA'
+  );
   const enterOpacity = useRef(new Animated.Value(0)).current;
   const enterTranslateY = useRef(new Animated.Value(6)).current;
   const memeSelectScale = useRef(new Animated.Value(1)).current;
@@ -140,7 +145,7 @@ function ChatBubbleBase({
     message.status === 'complete' &&
     hasText &&
     !hasMemeMetadata &&
-    conversation?.artistId === ARTIST_IDS.CATHY_GAUTHIER &&
+    conversationArtistId === ARTIST_IDS.CATHY_GAUTHIER &&
     hasVoiceAccessForAccountType(accountType);
   const voiceControlState = resolveChatBubbleVoiceControlState({
     isEligible: isVoiceEligible,
@@ -222,7 +227,7 @@ function ChatBubbleBase({
   );
 
   const retryVoiceLocally = useCallback(async () => {
-    if (!conversation || !safeMessageContent.trim() || !accessToken.trim()) {
+    if (!conversationArtistId || !safeMessageContent.trim() || !accessToken.trim()) {
       mergeMetadata({
         voiceStatus: 'unavailable',
         voiceErrorCode: 'UNAUTHORIZED',
@@ -244,8 +249,8 @@ function ChatBubbleBase({
     try {
       const uri = await fetchAndCacheVoice(
         safeMessageContent,
-        conversation.artistId,
-        conversation.language || 'fr-CA',
+        conversationArtistId,
+        conversationLanguage,
         accessToken,
         { throwOnError: true }
       );
@@ -287,7 +292,7 @@ function ChatBubbleBase({
         voiceChunkBoundaries: undefined
       });
     }
-  }, [accessToken, conversation, mergeMetadata, safeMessageContent]);
+  }, [accessToken, conversationArtistId, conversationLanguage, mergeMetadata, safeMessageContent]);
 
   const handleRetryVoice = useCallback(() => {
     if (isVoiceRetryInFlight) {

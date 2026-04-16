@@ -110,6 +110,10 @@ export interface UseVoiceConversationProps {
   language: string;
   fallbackLanguage?: string;
   autoStartOnWeb?: boolean;
+  /** Ref from useAudioPlayer. When set, the voice conversation will register a
+   *  callback to begin STT restart immediately when the TTS queue finishes,
+   *  bypassing the ~400ms React render cycle delay. */
+  audioPlayerOnQueueCompleteRef?: React.RefObject<(() => void) | null>;
 }
 
 export interface UseVoiceConversationReturn {
@@ -237,6 +241,7 @@ interface ActiveVoiceSessionContext {
 
 export interface PostPlaybackStartupRecoveryState {
   platformOs: string;
+  isIosWebRuntime: boolean;
   reason: VoiceSessionEndReason;
   origin: VoiceStartOrigin;
   statusBeforeStart: VoiceConversationStatus;
@@ -380,7 +385,7 @@ export function shouldArmWebLivenessWatchdog(state: WebLivenessWatchdogState): b
 }
 
 export function shouldUsePostPlaybackStartupRecovery(state: PostPlaybackStartupRecoveryState): boolean {
-  if (state.platformOs === 'web') {
+  if (state.platformOs === 'web' && !state.isIosWebRuntime) {
     return false;
   }
 
@@ -627,7 +632,8 @@ export function useVoiceConversation({
   onStopAudio,
   language,
   fallbackLanguage = 'fr-CA',
-  autoStartOnWeb = true
+  autoStartOnWeb = true,
+  audioPlayerOnQueueCompleteRef
 }: UseVoiceConversationProps): UseVoiceConversationReturn {
   const [state, dispatch] = useReducer(voiceConversationReducer, INITIAL_STATE);
   const stateRef = useRef(state);
@@ -927,6 +933,7 @@ export function useVoiceConversation({
 
       const usePostPlaybackRecovery = activeSessionContext && shouldUsePostPlaybackStartupRecovery({
           platformOs: Platform.OS,
+          isIosWebRuntime: IOS_WEB_RUNTIME,
           reason: event.reason,
           origin: activeSessionContext.origin,
           statusBeforeStart: activeSessionContext.statusBeforeStart,
@@ -1230,6 +1237,48 @@ export function useVoiceConversation({
   useEffect(() => {
     startListeningFlowRef.current = startListeningFlow;
   }, [startListeningFlow]);
+
+  // Register an onQueueComplete callback that bypasses the React render cycle.
+  // When the TTS queue finishes naturally, this fires *before* stop() sets
+  // isPlaying=false, saving ~400ms of state → render → effect latency.
+  useEffect(() => {
+    if (!audioPlayerOnQueueCompleteRef) {
+      return;
+    }
+    audioPlayerOnQueueCompleteRef.current = () => {
+      sttDebug('[STT_DEBUG] onQueueComplete: fired (bypassing render cycle)');
+      const canStart = shouldAttemptAutoListen({
+        shouldAutoListen,
+        webTabActive: webTabActiveRef.current,
+        hasUserActivation: hasUserActivatedListeningRef.current,
+        enabled: enabledRef.current,
+        disabled: disabledRef.current,
+        isPlaying: false, // queue just ended — isPlaying will be false momentarily
+        hasTypedDraft: hasTypedDraftRef.current,
+        status: stateRef.current.status
+      });
+      if (!canStart || !isMountedRef.current) {
+        return;
+      }
+
+      // On iOS Safari, yield briefly after audio.load() releases the audio
+      // session so the browser can reclaim audio hardware before STT starts.
+      const beginListen = () => {
+        if (!isMountedRef.current) return;
+        dispatch({ type: 'starting' });
+        void startListeningFlowRef.current?.('auto');
+      };
+
+      if (IOS_WEB_RUNTIME) {
+        setTimeout(beginListen, 50);
+      } else {
+        beginListen();
+      }
+    };
+    return () => {
+      audioPlayerOnQueueCompleteRef.current = null;
+    };
+  }, [audioPlayerOnQueueCompleteRef, shouldAutoListen]);
 
   useEffect(() => {
     if (Platform.OS !== 'web' || typeof window === 'undefined' || typeof document === 'undefined') {

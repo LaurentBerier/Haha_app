@@ -390,13 +390,19 @@ async function fetchTtsBinary(
   if (options?.purpose) {
     payload.purpose = options.purpose;
   }
-  let lastStatus = 0;
-  let lastCode: string | undefined;
-  let lastRequestId: string | undefined;
-  let lastRetryAfterSeconds: number | undefined;
+  // Race all TTS endpoint candidates in parallel. The first successful audio
+  // response wins; remaining in-flight requests are aborted.
+  const controllers: AbortController[] = [];
+  const timeoutHandles: ReturnType<typeof setTimeout>[] = [];
 
-  for (const endpoint of candidates) {
+  const attemptEndpoint = async (endpoint: string): Promise<FetchTtsResponse> => {
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    if (controller) controllers.push(controller);
+    const timeoutHandle = setTimeout(() => {
+      controller?.abort();
+    }, TTS_ENDPOINT_TIMEOUT_MS);
+    timeoutHandles.push(timeoutHandle);
+
     const requestEndpoint = async () =>
       fetch(endpoint, {
         method: 'POST',
@@ -407,74 +413,78 @@ async function fetchTtsBinary(
         body: JSON.stringify(payload),
         signal: controller?.signal
       });
-    const timeoutHandle = setTimeout(() => {
-      controller?.abort();
-    }, TTS_ENDPOINT_TIMEOUT_MS);
 
-    try {
-      let response = await requestEndpoint();
-      let transientAttempt = 0;
-      const maxTransientRetries = 2;
-      while (
-        !response.ok &&
-        isTransientTtsStatus(response.status) &&
-        !isTerminalTtsStatus(response.status) &&
-        transientAttempt < maxTransientRetries
-      ) {
-        transientAttempt += 1;
-        const backoffMs = transientAttempt * 800;
-        await new Promise((resolve) => setTimeout(resolve, backoffMs));
-        response = await requestEndpoint();
-      }
-
-      if (!response.ok) {
-        const responseMetadata = await extractApiErrorMetadata(response);
-        const normalizedCode = normalizeTtsErrorCode(response.status, responseMetadata.code);
-        const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('retry-after'));
-        lastStatus = response.status;
-        lastCode = normalizedCode;
-        lastRequestId = responseMetadata.requestId ?? undefined;
-        lastRetryAfterSeconds = retryAfterSeconds;
-        if (isTerminalTtsStatus(response.status)) {
-          return {
-            ok: false,
-            status: response.status,
-            code: normalizedCode,
-            requestId: responseMetadata.requestId ?? undefined,
-            retryAfterSeconds
-          };
-        }
-        continue;
-      }
-
-      const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
-      if (!contentType.includes('audio/')) {
-        lastStatus = response.status;
-        lastCode = normalizeTtsErrorCode(response.status);
-        continue;
-      }
-
-      const arrayBuffer = await response.arrayBuffer();
-      return {
-        ok: true,
-        status: response.status,
-        arrayBuffer,
-        contentType
-      };
-    } catch {
-      // Try next candidate.
-    } finally {
-      clearTimeout(timeoutHandle);
+    let response = await requestEndpoint();
+    let transientAttempt = 0;
+    const maxTransientRetries = 2;
+    while (
+      !response.ok &&
+      isTransientTtsStatus(response.status) &&
+      !isTerminalTtsStatus(response.status) &&
+      transientAttempt < maxTransientRetries
+    ) {
+      transientAttempt += 1;
+      const backoffMs = transientAttempt * 800;
+      await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      response = await requestEndpoint();
     }
-  }
 
-  return {
-    ok: false,
-    status: lastStatus,
-    code: lastCode,
-    requestId: lastRequestId,
-    retryAfterSeconds: lastRetryAfterSeconds
+    if (!response.ok) {
+      const responseMetadata = await extractApiErrorMetadata(response);
+      const normalizedCode = normalizeTtsErrorCode(response.status, responseMetadata.code);
+      const retryAfterSeconds = parseRetryAfterSeconds(response.headers.get('retry-after'));
+      const failureResult: FetchTtsResponse = {
+        ok: false,
+        status: response.status,
+        code: normalizedCode,
+        requestId: responseMetadata.requestId ?? undefined,
+        retryAfterSeconds
+      };
+      // Terminal statuses (401/403) reject with a tagged error so we can
+      // short-circuit via the catch handler below.
+      if (isTerminalTtsStatus(response.status)) {
+        throw { __terminal: true, result: failureResult };
+      }
+      throw failureResult;
+    }
+
+    const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+    if (!contentType.includes('audio/')) {
+      throw { ok: false, status: response.status, code: normalizeTtsErrorCode(response.status) } as FetchTtsResponse;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return {
+      ok: true,
+      status: response.status,
+      arrayBuffer,
+      contentType
+    };
   };
+
+  try {
+    const result = await Promise.any(candidates.map((ep) => attemptEndpoint(ep)));
+    // Abort all remaining in-flight requests.
+    for (const c of controllers) c.abort();
+    return result;
+  } catch (aggregateError: unknown) {
+    // Check if any endpoint returned a terminal status — surface it immediately.
+    if (aggregateError instanceof AggregateError) {
+      for (const err of aggregateError.errors) {
+        if (err && typeof err === 'object' && '__terminal' in err) {
+          return (err as { __terminal: true; result: FetchTtsResponse }).result;
+        }
+      }
+      // Return the last non-terminal failure for diagnostics.
+      const lastErr = aggregateError.errors[aggregateError.errors.length - 1];
+      if (lastErr && typeof lastErr === 'object' && 'ok' in lastErr) {
+        return lastErr as FetchTtsResponse;
+      }
+    }
+    return { ok: false, status: 0 };
+  } finally {
+    for (const h of timeoutHandles) clearTimeout(h);
+  }
 }
 
 function buildCacheKey(text: string, artistId: string, language: string, purpose: VoiceSynthesisPurpose): string {

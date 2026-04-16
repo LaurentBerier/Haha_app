@@ -1,3 +1,4 @@
+import { useIsFocused } from '@react-navigation/core';
 import { useLocalSearchParams } from 'expo-router';
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -14,6 +15,7 @@ import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
 
 export default function GamesScreen() {
+  const isFocused = useIsFocused();
   const params = useLocalSearchParams<{ artistId: string }>();
   const artistId = params.artistId ?? '';
   const headerHorizontalInset = useHeaderHorizontalInset();
@@ -32,7 +34,7 @@ export default function GamesScreen() {
 
   return (
     <View style={styles.screen}>
-      <AmbientGlow variant="mode" />
+      <AmbientGlow variant="mode" isActive={isFocused} />
       <ModeTopChipHeader
         title={t('gameSelectTitle')}
         subtitle={t('gamesSectionSubtitle')}

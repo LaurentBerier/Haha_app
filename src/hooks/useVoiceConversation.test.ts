@@ -309,10 +309,11 @@ describe('useVoiceConversation helpers', () => {
     expect(getVoiceRecoveryDelayMs(4)).toBeNull();
   });
 
-  it('applies post-playback startup recovery only for native startup failures after assistant playback', () => {
+  it('applies post-playback startup recovery for native and iOS web startup failures after assistant playback', () => {
     expect(
       shouldUsePostPlaybackStartupRecovery({
         platformOs: 'ios',
+        isIosWebRuntime: false,
         reason: 'transient',
         origin: 'recovery',
         statusBeforeStart: 'assistant_busy',
@@ -324,6 +325,7 @@ describe('useVoiceConversation helpers', () => {
     expect(
       shouldUsePostPlaybackStartupRecovery({
         platformOs: 'ios',
+        isIosWebRuntime: false,
         reason: 'aborted',
         origin: 'resume',
         statusBeforeStart: 'assistant_busy',
@@ -335,7 +337,21 @@ describe('useVoiceConversation helpers', () => {
     expect(
       shouldUsePostPlaybackStartupRecovery({
         platformOs: 'android',
+        isIosWebRuntime: false,
         reason: 'ended_unexpectedly',
+        origin: 'recovery',
+        statusBeforeStart: 'assistant_busy',
+        hadAudioStart: false,
+        hadResult: false
+      })
+    ).toBe(true);
+
+    // iOS Safari (mobile web) should also get post-playback recovery
+    expect(
+      shouldUsePostPlaybackStartupRecovery({
+        platformOs: 'web',
+        isIosWebRuntime: true,
+        reason: 'transient',
         origin: 'recovery',
         statusBeforeStart: 'assistant_busy',
         hadAudioStart: false,
@@ -345,9 +361,11 @@ describe('useVoiceConversation helpers', () => {
   });
 
   it('skips post-playback startup recovery when startup criteria are not met', () => {
+    // Non-iOS web should not get post-playback recovery
     expect(
       shouldUsePostPlaybackStartupRecovery({
         platformOs: 'web',
+        isIosWebRuntime: false,
         reason: 'transient',
         origin: 'recovery',
         statusBeforeStart: 'assistant_busy',
@@ -359,6 +377,7 @@ describe('useVoiceConversation helpers', () => {
     expect(
       shouldUsePostPlaybackStartupRecovery({
         platformOs: 'ios',
+        isIosWebRuntime: false,
         reason: 'transient',
         origin: 'auto',
         statusBeforeStart: 'assistant_busy',
@@ -370,6 +389,7 @@ describe('useVoiceConversation helpers', () => {
     expect(
       shouldUsePostPlaybackStartupRecovery({
         platformOs: 'ios',
+        isIosWebRuntime: false,
         reason: 'transient',
         origin: 'recovery',
         statusBeforeStart: 'off',
@@ -381,6 +401,7 @@ describe('useVoiceConversation helpers', () => {
     expect(
       shouldUsePostPlaybackStartupRecovery({
         platformOs: 'ios',
+        isIosWebRuntime: false,
         reason: 'transient',
         origin: 'recovery',
         statusBeforeStart: 'assistant_busy',
@@ -392,6 +413,7 @@ describe('useVoiceConversation helpers', () => {
     expect(
       shouldUsePostPlaybackStartupRecovery({
         platformOs: 'ios',
+        isIosWebRuntime: false,
         reason: 'transient',
         origin: 'recovery',
         statusBeforeStart: 'assistant_busy',
@@ -403,6 +425,7 @@ describe('useVoiceConversation helpers', () => {
     expect(
       shouldUsePostPlaybackStartupRecovery({
         platformOs: 'ios',
+        isIosWebRuntime: false,
         reason: 'no_speech',
         origin: 'recovery',
         statusBeforeStart: 'assistant_busy',

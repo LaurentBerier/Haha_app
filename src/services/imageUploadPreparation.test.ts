@@ -20,17 +20,17 @@ describe('imageUploadPreparation', () => {
     const readImageAsBase64 = jest.fn().mockResolvedValue(createBase64ForBytes(8_900_000));
     const manipulateImageAsync = jest
       .fn()
-      .mockResolvedValueOnce({
-        uri: 'file:///tmp/optimized-step-1.jpg',
-        width: 3000,
-        height: 2000,
-        base64: createBase64ForBytes(3_400_000)
-      })
-      .mockResolvedValueOnce({
-        uri: 'file:///tmp/optimized-final.jpg',
-        width: 2400,
-        height: 1600,
-        base64: createBase64ForBytes(2_700_000)
+      .mockImplementation((_uri: string, _actions: unknown[], opts: { compress: number }) => {
+        // Simulate: higher quality = larger file, lower quality = smaller file.
+        // Quality <= 0.62 fits under the upload limit.
+        const fits = opts.compress <= 0.62;
+        const bytes = fits ? 2_700_000 : 3_400_000;
+        return Promise.resolve({
+          uri: fits ? 'file:///tmp/optimized-final.jpg' : 'file:///tmp/optimized-step-1.jpg',
+          width: fits ? 2400 : 3000,
+          height: fits ? 1600 : 2000,
+          base64: createBase64ForBytes(bytes)
+        });
       });
 
     const result = await prepareImageForUpload(
@@ -50,7 +50,7 @@ describe('imageUploadPreparation', () => {
     expect(result.mediaType).toBe('image/jpeg');
     expect(result.optimized).toBe(true);
     expect(result.byteSize).toBeLessThanOrEqual(MAX_IMAGE_UPLOAD_BYTES);
-    expect(manipulateImageAsync).toHaveBeenCalledTimes(2);
+    expect(manipulateImageAsync.mock.calls.length).toBeGreaterThanOrEqual(1);
   });
 
   it('rejects source images larger than 10 MB', async () => {

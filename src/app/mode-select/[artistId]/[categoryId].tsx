@@ -1,3 +1,4 @@
+import { useIsFocused } from '@react-navigation/core';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -18,6 +19,7 @@ import { useStore } from '../../../store/useStore';
 import { theme } from '../../../theme';
 
 export default function ModeCategoryScreen() {
+  const isFocused = useIsFocused();
   const params = useLocalSearchParams<{ artistId: string; categoryId: string }>();
   const artistId = params.artistId ?? '';
   const categoryIdParam = params.categoryId ?? '';
@@ -91,7 +93,7 @@ export default function ModeCategoryScreen() {
 
   return (
     <View style={styles.screen}>
-      <AmbientGlow variant="mode" />
+      <AmbientGlow variant="mode" isActive={isFocused} />
       <ModeTopChipHeader
         title={categoryTitle}
         subtitle={artist.name}

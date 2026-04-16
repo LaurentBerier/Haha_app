@@ -1,4 +1,6 @@
+import { useIsFocused } from '@react-navigation/core';
 import { router } from 'expo-router';
+import { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ArtistCard } from '../components/artist/ArtistCard';
 import { AmbientGlow } from '../components/common/AmbientGlow';
@@ -7,9 +9,13 @@ import { t } from '../i18n';
 import { theme } from '../theme';
 
 export default function HomeScreen() {
+  const isFocused = useIsFocused();
   const { artists, selectArtist, isArtistUnlocked } = useArtist();
   const isLoadingArtists = artists.length === 0;
-  const unlockedArtistsCount = artists.filter((artist) => isArtistUnlocked(artist.id)).length;
+  const unlockedArtistsCount = useMemo(
+    () => artists.filter((artist) => isArtistUnlocked(artist.id)).length,
+    [artists, isArtistUnlocked]
+  );
   const showAllLockedState = !isLoadingArtists && unlockedArtistsCount === 0;
 
   const handleStart = (artistId: string) => {
@@ -22,7 +28,7 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.screen}>
-      <AmbientGlow variant="home" />
+      <AmbientGlow variant="home" isActive={isFocused} />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.content} testID="home-screen">
         <View style={styles.list}>
           {showAllLockedState ? (

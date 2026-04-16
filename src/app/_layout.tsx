@@ -28,6 +28,7 @@ import { signOut } from '../services/authService';
 import { planGlobalComposerSend } from '../services/conversationSendOrchestrator';
 import { initSentry } from '../services/sentry';
 import { useStore } from '../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { theme } from '../theme';
 import { E2E_AUTH_BYPASS } from '../config/env';
 import { isIosMobileWebRuntime } from '../platform/platformCapabilities';
@@ -65,15 +66,26 @@ function resolveArtistIdFromPath(pathname: string): string | null {
 
 export default function RootLayout() {
   useStorePersistence();
-  const hasHydrated = useStore((state) => state.hasHydrated);
-  const language = useStore((state) => state.language);
-  const selectedArtistId = useStore((state) => state.selectedArtistId);
-  const conversations = useStore((state) => state.conversations);
-  const activeConversationId = useStore((state) => state.activeConversationId);
+  const {
+    hasHydrated,
+    language,
+    selectedArtistId,
+    conversations,
+    activeConversationId,
+    conversationModeEnabled
+  } = useStore(
+    useShallow((state) => ({
+      hasHydrated: state.hasHydrated,
+      language: state.language,
+      selectedArtistId: state.selectedArtistId,
+      conversations: state.conversations,
+      activeConversationId: state.activeConversationId,
+      conversationModeEnabled: state.conversationModeEnabled
+    }))
+  );
   const createConversation = useStore((state) => state.createConversation);
   const setActiveConversation = useStore((state) => state.setActiveConversation);
   const queueChatSendPayload = useStore((state) => state.queueChatSendPayload);
-  const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
   const clearSession = useStore((state) => state.clearSession);
   const { authStatus, isAuthenticated, isAdmin, userProfile } = useAuth({ bootstrap: true });

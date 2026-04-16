@@ -342,8 +342,18 @@ function classifyWebErrorReason(event: WebSpeechRecognitionErrorEvent): VoiceSes
   if (code === 'aborted') {
     return 'aborted';
   }
-  if (code === 'not-allowed' || code === 'audio-capture') {
+  if (code === 'not-allowed') {
     return 'permission';
+  }
+  // audio-capture after an audio route change (e.g. speaker reconfiguring after TTS)
+  // is transient and recoverable — only treat it as a permission error when the
+  // message explicitly mentions permission denial (mirrors classifyNativeErrorReason).
+  if (code === 'audio-capture') {
+    const msg = (event.message ?? '').toLowerCase();
+    if (msg.includes('not allowed') || msg.includes('denied') || msg.includes('permission')) {
+      return 'permission';
+    }
+    return 'transient';
   }
   if (code === 'service-not-allowed') {
     return 'unsupported';
@@ -653,13 +663,28 @@ export function startVoiceListeningSession({
       }
 
       webRestartAttemptCount += 1;
-      try {
-        recognition.start();
-      } catch (error) {
-        emitEnd(
-          endReason,
-          error instanceof Error ? error.message : typeof error === 'string' ? error : endMessage
-        );
+
+      const doRestart = () => {
+        if (stopped || activeVoiceSessionId !== sessionId) {
+          return;
+        }
+        try {
+          recognition.start();
+        } catch (error) {
+          emitEnd(
+            endReason,
+            error instanceof Error ? error.message : typeof error === 'string' ? error : endMessage
+          );
+        }
+      };
+
+      // On iOS Safari, yield briefly before restarting to let the browser
+      // finalize the previous SpeechRecognition session — mirrors the 50ms
+      // native delay before module.start() (line ~719).
+      if (IS_IOS_MOBILE_WEB) {
+        setTimeout(doRestart, 50);
+      } else {
+        doRestart();
       }
     };
 

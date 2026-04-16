@@ -45,6 +45,7 @@ import { isNativeMobileApp } from '../../../platform/platformCapabilities';
 import { attemptExperienceLaunchBeforeSend } from '../../../services/conversationSendOrchestrator';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voiceFillerService';
 import { useStore } from '../../../store/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { theme } from '../../../theme';
 import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../../../utils/accountTypeUtils';
 import { deriveGreetingActivityContext } from '../../../utils/greetingActivity';
@@ -655,15 +656,28 @@ export default function ModeSelectHomeScreen() {
     Math.floor(Math.random() * GREETING_BOOTING_FR_LINES.length)
   );
 
-  const artists = useStore((state) => state.artists);
-  const language = useStore((state) => state.language);
-  const accessToken = useStore((state) => state.session?.accessToken ?? '');
-  const sessionUser = useStore((state) => state.session?.user ?? null);
-  const userProfile = useStore((state) => state.userProfile);
-  const activeConversationId = useStore((state) => state.activeConversationId);
-  const conversationModeEnabled = useStore((state) => state.conversationModeEnabled);
+  const {
+    artists,
+    language,
+    accessToken,
+    sessionUser,
+    userProfile,
+    activeConversationId,
+    conversationModeEnabled,
+    voiceAutoPlay
+  } = useStore(
+    useShallow((state) => ({
+      artists: state.artists,
+      language: state.language,
+      accessToken: state.session?.accessToken ?? '',
+      sessionUser: state.session?.user ?? null,
+      userProfile: state.userProfile,
+      activeConversationId: state.activeConversationId,
+      conversationModeEnabled: state.conversationModeEnabled,
+      voiceAutoPlay: state.voiceAutoPlay
+    }))
+  );
   const setConversationModeEnabled = useStore((state) => state.setConversationModeEnabled);
-  const voiceAutoPlay = useStore((state) => state.voiceAutoPlay);
   const createConversation = useStore((state) => state.createConversation);
   const setActiveConversation = useStore((state) => state.setActiveConversation);
   const addMessage = useStore((state) => state.addMessage);
@@ -1071,7 +1085,8 @@ export default function ModeSelectHomeScreen() {
       audioPlayer.gracefulStop();
     },
     language: modeSelectConversationLanguage,
-    fallbackLanguage: language
+    fallbackLanguage: language,
+    audioPlayerOnQueueCompleteRef: audioPlayer.onQueueCompleteRef
   });
   const resolvedArtistDisplayName = formatArtistDisplayName(currentArtistName ?? artistDisplayName);
   const isGreetingVoicePendingGesture = Boolean(pendingGreetingAudio);
@@ -2146,7 +2161,7 @@ export default function ModeSelectHomeScreen() {
       keyboardVerticalOffset={88}
     >
       <View style={styles.screen} ref={rootLayoutRef} onLayout={measureCategoryGridBottom}>
-        <AmbientGlow variant="mode" />
+        <AmbientGlow variant="mode" isActive={isModeSelectScreenFocused} />
         <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
           <BackButton testID="mode-select-back" />
           <View pointerEvents="none" style={styles.topRowArtistNameWrap}>
