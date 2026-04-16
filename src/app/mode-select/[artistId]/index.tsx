@@ -38,6 +38,7 @@ import type { ChatError } from '../../../models/ChatError';
 import { normalizeConversationThreadType } from '../../../models/Conversation';
 import type { Message } from '../../../models/Message';
 import { synthesizeVoice } from '../../../services/voiceEngine';
+import { toggleSttDebugOverlay } from '../../../services/sttDebugLogger';
 import { clearTerminalCooldownForPurpose } from '../../../services/ttsService';
 import { attemptVoiceAutoplayUri, attemptVoiceAutoplayUriDetailed } from '../../../services/voiceAutoplayService';
 import { markWebAutoplaySessionUnlocked, queueLatestWebAutoplayUnlockRetry, clearPendingWebAutoplayUnlockRetry } from '../../../services/webAutoplayUnlockService';
@@ -2164,11 +2165,13 @@ export default function ModeSelectHomeScreen() {
         <AmbientGlow variant="mode" isActive={isModeSelectScreenFocused} />
         <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
           <BackButton testID="mode-select-back" />
-          <View pointerEvents="none" style={styles.topRowArtistNameWrap}>
+          <Pressable onPress={() => {
+            if (Platform.OS === 'web') toggleSttDebugOverlay();
+          }} style={styles.topRowArtistNameWrap}>
             <Text style={styles.topRowArtistName} numberOfLines={1}>
               {artist.name}
             </Text>
-          </View>
+          </Pressable>
         </View>
         <ScrollView
           testID="mode-select-screen"
