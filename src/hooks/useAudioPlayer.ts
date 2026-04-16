@@ -1,4 +1,3 @@
-import { createAudioPlayer, setAudioModeAsync, type AudioPlayer, type AudioStatus } from 'expo-audio';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { markWebAutoplaySessionUnlocked } from '../services/webAutoplayUnlockService';
@@ -10,6 +9,50 @@ interface WebAudioLike {
   play: () => Promise<void>;
   src: string;
   volume: number;
+}
+
+interface NativeAudioStatus {
+  isLoaded: boolean;
+  playing: boolean;
+  didJustFinish?: boolean;
+}
+
+interface NativeAudioPlayer {
+  volume: number;
+  playing: boolean;
+  play: () => void;
+  pause: () => void;
+  remove: () => void;
+  addListener: (
+    eventName: 'playbackStatusUpdate',
+    listener: (status: NativeAudioStatus) => void
+  ) => { remove: () => void };
+}
+
+interface ExpoAudioModuleLike {
+  createAudioPlayer: (source: { uri: string }) => NativeAudioPlayer;
+  setAudioModeAsync: (mode: {
+    allowsRecording: boolean;
+    interruptionMode: 'doNotMix';
+    playsInSilentMode: boolean;
+    shouldPlayInBackground: boolean;
+    interruptionModeAndroid: 'doNotMix';
+    shouldRouteThroughEarpiece: boolean;
+  }) => Promise<void>;
+}
+
+let expoAudioModulePromise: Promise<ExpoAudioModuleLike | null> | null = null;
+
+async function loadExpoAudioModule(): Promise<ExpoAudioModuleLike | null> {
+  if (Platform.OS === 'web') {
+    return null;
+  }
+  if (!expoAudioModulePromise) {
+    expoAudioModulePromise = import('expo-audio')
+      .then((module) => module as ExpoAudioModuleLike)
+      .catch(() => null);
+  }
+  return expoAudioModulePromise;
 }
 
 export type AudioPlaybackFailureReason = 'invalid_queue' | 'web_autoplay_blocked' | 'playback_error' | 'interrupted';
@@ -105,7 +148,7 @@ export function useAudioPlayer(): AudioPlayerController {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [totalChunks, setTotalChunks] = useState(0);
 
-  const soundRef = useRef<AudioPlayer | null>(null);
+  const soundRef = useRef<NativeAudioPlayer | null>(null);
   const nativeSubscriptionRef = useRef<{ remove: () => void } | null>(null);
   const webAudioRef = useRef<WebAudioLike | null>(null);
   const detachWebListenersRef = useRef<null | (() => void)>(null);
@@ -146,6 +189,25 @@ export function useAudioPlayer(): AudioPlayerController {
       player.remove();
     } catch {
       // noop
+    }
+
+    // Restore audio session to allow recording so STT can reclaim the mic
+    if (Platform.OS === 'ios') {
+      try {
+        const audioModule = await loadExpoAudioModule();
+        if (audioModule) {
+          await audioModule.setAudioModeAsync({
+            allowsRecording: true,
+            interruptionMode: 'doNotMix',
+            playsInSilentMode: true,
+            shouldPlayInBackground: false,
+            interruptionModeAndroid: 'doNotMix',
+            shouldRouteThroughEarpiece: false
+          });
+        }
+      } catch {
+        // Best effort — voiceEngine also configures this before STT starts
+      }
     }
   }, []);
 
@@ -298,8 +360,14 @@ export function useAudioPlayer(): AudioPlayerController {
           }
         }
 
+        const expoAudioModule = await loadExpoAudioModule();
+        if (!expoAudioModule) {
+          await stop();
+          return toPlaybackFailureResult('playback_error');
+        }
+
         try {
-          await setAudioModeAsync({
+          await expoAudioModule.setAudioModeAsync({
             allowsRecording: false,
             interruptionMode: 'doNotMix',
             playsInSilentMode: true,
@@ -310,9 +378,9 @@ export function useAudioPlayer(): AudioPlayerController {
         } catch {
           // First attempt may fail if a recording session is still releasing.
           // Yield briefly and retry once so iOS routes audio to the loudspeaker.
-          await new Promise<void>((r) => setTimeout(r, 80));
+          await new Promise<void>((r) => setTimeout(r, 200));
           try {
-            await setAudioModeAsync({
+            await expoAudioModule.setAudioModeAsync({
               allowsRecording: false,
               interruptionMode: 'doNotMix',
               playsInSilentMode: true,
@@ -321,16 +389,16 @@ export function useAudioPlayer(): AudioPlayerController {
               shouldRouteThroughEarpiece: false
             });
           } catch {
-            // give up
+            console.warn('[useAudioPlayer] Failed to set audio mode for playback after retry');
           }
         }
 
         try {
-          const player = createAudioPlayer({ uri });
+          const player = expoAudioModule.createAudioPlayer({ uri });
           soundRef.current = player;
           player.volume = 1;
 
-          const subscription = player.addListener('playbackStatusUpdate', (status: AudioStatus) => {
+          const subscription = player.addListener('playbackStatusUpdate', (status: NativeAudioStatus) => {
             if (!isMountedRef.current || playbackTokenRef.current !== token) {
               return;
             }

@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { requireOptionalNativeModule } from 'expo';
 import { fetchAndCacheVoice, type FetchVoiceOptions } from './ttsService';
+import { isIosMobileWebRuntime } from '../platform/platformCapabilities';
 
 type Listener = { remove: () => void };
 type NativeSpeechRecognitionEvent = {
@@ -64,6 +65,41 @@ interface WebSpeechRecognition {
 
 type WebSpeechRecognitionCtor = new () => WebSpeechRecognition;
 const WEB_SESSION_MAX_RESTARTS = 3;
+const IS_IOS_MOBILE_WEB = isIosMobileWebRuntime();
+
+let expoAudioSessionPromise: Promise<{ setAudioModeAsync: (mode: Record<string, unknown>) => Promise<void> } | null> | null = null;
+
+function loadExpoAudioForSession(): Promise<{ setAudioModeAsync: (mode: Record<string, unknown>) => Promise<void> } | null> {
+  if (Platform.OS === 'web') {
+    return Promise.resolve(null);
+  }
+  if (!expoAudioSessionPromise) {
+    expoAudioSessionPromise = import('expo-audio')
+      .then((m) => m as unknown as { setAudioModeAsync: (mode: Record<string, unknown>) => Promise<void> })
+      .catch(() => null);
+  }
+  return expoAudioSessionPromise;
+}
+
+async function configureAudioSessionForRecording(): Promise<void> {
+  if (Platform.OS !== 'ios') {
+    return;
+  }
+  try {
+    const audioModule = await loadExpoAudioForSession();
+    if (!audioModule) return;
+    await audioModule.setAudioModeAsync({
+      allowsRecording: true,
+      interruptionMode: 'doNotMix',
+      playsInSilentMode: true,
+      shouldPlayInBackground: false,
+      interruptionModeAndroid: 'doNotMix',
+      shouldRouteThroughEarpiece: false
+    });
+  } catch {
+    // Best effort — if this fails, the OS default may still work for the first session
+  }
+}
 
 let cachedModule: SpeechRecognitionModule | null | undefined;
 let hasLoggedMissingNativeSpeechModule = false;
@@ -361,7 +397,10 @@ function getNativeStartOptions(locale: string): {
   addsPunctuation: boolean;
 } {
   const androidApiLevel = getAndroidApiLevel();
-  const supportsContinuous = Platform.OS !== 'android' || androidApiLevel === null || androidApiLevel >= 33;
+  // iOS native recognition is significantly more stable in single-utterance mode.
+  // continuous=true can produce rapid end events without delivering results.
+  const supportsContinuous =
+    Platform.OS !== 'ios' && (Platform.OS !== 'android' || androidApiLevel === null || androidApiLevel >= 33);
   const supportsPunctuation = Platform.OS !== 'android' || androidApiLevel === null || androidApiLevel >= 33;
   return {
     lang: locale,
@@ -534,7 +573,9 @@ export function startVoiceListeningSession({
     const recognition = new WebRecognitionCtor();
     activeWebRecognition = recognition;
 
-    recognition.continuous = true;
+    // iOS Safari is significantly more stable in single-utterance mode, matching
+    // native iOS behaviour. The onend handler auto-restarts for continued listening.
+    recognition.continuous = !IS_IOS_MOBILE_WEB;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     recognition.lang = resolvedLocales.primary;
@@ -653,34 +694,35 @@ export function startVoiceListeningSession({
       })
     ];
 
-    try {
-      module.start(getNativeStartOptions(resolvedLocales.primary));
-    } catch (error) {
-      const reason = classifyStartErrorReason(error);
-      if (reason !== 'permission' && resolvedLocales.fallback) {
-        try {
-          module.start(getNativeStartOptions(resolvedLocales.fallback));
-        } catch (fallbackError) {
-          const fallbackMessage =
-            fallbackError instanceof Error
-              ? fallbackError.message
-              : typeof fallbackError === 'string'
-                ? fallbackError
-                : 'Speech recognition failed';
-          scheduleVoiceMicrotask(() => {
-            emitEnd(classifyStartErrorReason(fallbackError), fallbackMessage);
-          });
-          return session;
-        }
-      } else {
-        const message =
-          error instanceof Error ? error.message : typeof error === 'string' ? error : 'Speech recognition failed';
-        scheduleVoiceMicrotask(() => {
-          emitEnd(reason, message);
-        });
-        return session;
+    void (async () => {
+      await configureAudioSessionForRecording();
+      if (stopped || activeVoiceSessionId !== sessionId) {
+        return;
       }
-    }
+
+      try {
+        module.start(getNativeStartOptions(resolvedLocales.primary));
+      } catch (error) {
+        const reason = classifyStartErrorReason(error);
+        if (reason !== 'permission' && resolvedLocales.fallback) {
+          try {
+            module.start(getNativeStartOptions(resolvedLocales.fallback));
+          } catch (fallbackError) {
+            const fallbackMessage =
+              fallbackError instanceof Error
+                ? fallbackError.message
+                : typeof fallbackError === 'string'
+                  ? fallbackError
+                  : 'Speech recognition failed';
+            emitEnd(classifyStartErrorReason(fallbackError), fallbackMessage);
+          }
+        } else {
+          const message =
+            error instanceof Error ? error.message : typeof error === 'string' ? error : 'Speech recognition failed';
+          emitEnd(reason, message);
+        }
+      }
+    })();
 
     return session;
   }

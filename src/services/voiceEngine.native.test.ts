@@ -68,6 +68,14 @@ function loadNativeVoiceEngine({
     })
   }));
 
+  jest.doMock('expo-audio', () => ({
+    setAudioModeAsync: jest.fn(async () => undefined)
+  }));
+
+  jest.doMock('../platform/platformCapabilities', () => ({
+    isIosMobileWebRuntime: () => false
+  }));
+
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const voiceEngine = require('./voiceEngine') as typeof import('./voiceEngine');
   return { voiceEngine, nativeModule, listeners };
@@ -120,7 +128,7 @@ describe('voiceEngine native behavior', () => {
     );
   });
 
-  it('disables continuous mode and punctuation on Android API 31 and below', () => {
+  it('disables continuous mode and punctuation on Android API 31 and below', async () => {
     const { voiceEngine, nativeModule } = loadNativeVoiceEngine({
       os: 'android',
       version: 31
@@ -131,6 +139,9 @@ describe('voiceEngine native behavior', () => {
       onResult: jest.fn(),
       onEnd: jest.fn()
     });
+
+    // module.start() is called inside an async IIFE (after configureAudioSessionForRecording)
+    await Promise.resolve();
 
     expect(nativeModule.start).toHaveBeenCalledWith(
       expect.objectContaining({

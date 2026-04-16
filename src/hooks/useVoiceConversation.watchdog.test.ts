@@ -19,10 +19,8 @@ jest.mock('../services/voiceEngine', () => ({
   startVoiceListeningSession: (...args: unknown[]) => mockStartVoiceListeningSession(...args)
 }));
 
-const mockIsIosMobileWebRuntime = jest.fn(() => true);
-
 jest.mock('../platform/platformCapabilities', () => ({
-  isIosMobileWebRuntime: () => mockIsIosMobileWebRuntime()
+  isIosMobileWebRuntime: () => true
 }));
 
 import {
@@ -125,7 +123,6 @@ describe('useVoiceConversation iOS web liveness watchdog', () => {
     jest.useFakeTimers();
     jest.clearAllMocks();
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-    mockIsIosMobileWebRuntime.mockReturnValue(true);
     latestHook = null;
     mountedProps = null;
     nextSessionId = 1;
@@ -176,7 +173,7 @@ describe('useVoiceConversation iOS web liveness watchdog', () => {
 
     expect(getHook().status).toBe('listening');
 
-    await advanceTimersByTime(8_000);
+    await advanceTimersByTime(14_000);
     expect(sessions[0]?.stop).toHaveBeenCalledTimes(1);
     expect(getHook().status).toBe('recovering');
 
@@ -193,7 +190,7 @@ describe('useVoiceConversation iOS web liveness watchdog', () => {
       sessions[0]?.onResult({ sessionId: sessions[0]?.id ?? -1, transcript: 'Bonjour Cathy' });
     });
 
-    await advanceTimersByTime(12_000);
+    await advanceTimersByTime(16_000);
 
     expect(mockStartVoiceListeningSession).toHaveBeenCalledTimes(1);
     expect(sessions[0]?.stop).not.toHaveBeenCalled();
@@ -211,7 +208,7 @@ describe('useVoiceConversation iOS web liveness watchdog', () => {
       sessions[0]?.onAudioStart();
     });
 
-    await advanceTimersByTime(8_000);
+    await advanceTimersByTime(14_000);
 
     expect(mockStartVoiceListeningSession).toHaveBeenCalledTimes(1);
     expect(sessions[0]?.stop).not.toHaveBeenCalled();
@@ -224,7 +221,7 @@ describe('useVoiceConversation iOS web liveness watchdog', () => {
     await act(async () => {
       sessions[0]?.onAudioStart();
     });
-    await advanceTimersByTime(8_000);
+    await advanceTimersByTime(14_000);
     expect(getHook().status).toBe('recovering');
     await advanceTimersByTime(1_500);
     expect(mockStartVoiceListeningSession).toHaveBeenCalledTimes(2);
@@ -232,7 +229,7 @@ describe('useVoiceConversation iOS web liveness watchdog', () => {
     await act(async () => {
       sessions[1]?.onAudioStart();
     });
-    await advanceTimersByTime(8_000);
+    await advanceTimersByTime(14_000);
     expect(getHook().status).toBe('recovering');
     await advanceTimersByTime(2_000);
     expect(mockStartVoiceListeningSession).toHaveBeenCalledTimes(3);
@@ -240,7 +237,7 @@ describe('useVoiceConversation iOS web liveness watchdog', () => {
     await act(async () => {
       sessions[2]?.onAudioStart();
     });
-    await advanceTimersByTime(8_000);
+    await advanceTimersByTime(14_000);
 
     expect(getHook().status).toBe('paused_recovery');
     expect(mockStartVoiceListeningSession).toHaveBeenCalledTimes(3);
