@@ -4,6 +4,7 @@ import { requireOptionalNativeModule } from 'expo';
 import { fetchAndCacheVoice, type FetchVoiceOptions } from './ttsService';
 import { isIosMobileWebRuntime } from '../platform/platformCapabilities';
 import { sttDebug } from './sttDebugLogger';
+import { isAudioSessionRecordingReady, markAudioSessionRecordingReady } from './audioSessionState';
 
 type Listener = { remove: () => void };
 type NativeSpeechRecognitionEvent = {
@@ -86,6 +87,11 @@ async function configureAudioSessionForRecording(): Promise<void> {
   if (Platform.OS !== 'ios') {
     return;
   }
+  // Skip if releaseNativeAudio already restored allowsRecording=true
+  if (isAudioSessionRecordingReady()) {
+    sttDebug('[STT_DEBUG] configureAudioSessionForRecording: SKIPPED (already in recording mode)');
+    return;
+  }
   try {
     sttDebug('[STT_DEBUG] configureAudioSessionForRecording: calling setAudioModeAsync(allowsRecording=true)');
     const audioModule = await loadExpoAudioForSession();
@@ -101,6 +107,7 @@ async function configureAudioSessionForRecording(): Promise<void> {
       interruptionModeAndroid: 'doNotMix',
       shouldRouteThroughEarpiece: false
     });
+    markAudioSessionRecordingReady();
     sttDebug('[STT_DEBUG] configureAudioSessionForRecording: SUCCESS');
   } catch (err) {
     sttDebug('[STT_DEBUG] configureAudioSessionForRecording: FAILED -', err instanceof Error ? err.message : String(err));
@@ -364,8 +371,18 @@ function classifyNativeErrorReason(rawErrorCode: string | null | undefined, rawM
   if (code === 'service-not-allowed' || code === 'language-not-supported') {
     return 'unsupported';
   }
-  if (code === 'not-allowed' || code === 'audio-capture') {
+  if (code === 'not-allowed') {
     return 'permission';
+  }
+  // audio-capture after a route change (e.g. speaker reconfiguring after TTS) is
+  // transient and recoverable — only treat it as a permission error when the
+  // message explicitly mentions permission denial.
+  if (code === 'audio-capture') {
+    const msg = rawMessage.toLowerCase();
+    if (msg.includes('not allowed') || msg.includes('denied') || msg.includes('permission')) {
+      return 'permission';
+    }
+    return 'transient';
   }
   if (isUnsupportedLikeMessage(rawMessage)) {
     return 'unsupported';
@@ -697,10 +714,9 @@ export function startVoiceListeningSession({
     // caught by the NEW listeners, killing the new session before it even starts.
 
     void (async () => {
-      // Give the native SFSpeechRecognizer time to fully release the audio engine
-      // from any previous session or TTS playback before reconfiguring and starting.
-      sttDebug(`[STT_DEBUG] [session=${sessionId}] waiting 500ms for native recognizer to release`);
-      await new Promise<void>((r) => setTimeout(r, 500));
+      // Brief yield for the native audio engine to settle after cleanup.
+      sttDebug(`[STT_DEBUG] [session=${sessionId}] waiting 50ms for native recognizer to release`);
+      await new Promise<void>((r) => setTimeout(r, 50));
       if (stopped || activeVoiceSessionId !== sessionId) {
         sttDebug(`[STT_DEBUG] [session=${sessionId}] bailing after delay (stale/stopped)`);
         return;

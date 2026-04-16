@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { markWebAutoplaySessionUnlocked } from '../services/webAutoplayUnlockService';
 import { sttDebug } from '../services/sttDebugLogger';
+import { markAudioSessionRecordingReady, markAudioSessionPlaybackMode } from '../services/audioSessionState';
 
 interface WebAudioLike {
   addEventListener: (event: string, handler: () => void) => void;
@@ -177,6 +178,21 @@ export function useAudioPlayer(): AudioPlayerController {
     webAudioRef.current = null;
   }, [clearWebListeners]);
 
+  const releaseNativePlayer = useCallback(() => {
+    if (!soundRef.current) {
+      return;
+    }
+    const player = soundRef.current;
+    soundRef.current = null;
+    nativeSubscriptionRef.current?.remove();
+    nativeSubscriptionRef.current = null;
+    try {
+      player.remove();
+    } catch {
+      // noop
+    }
+  }, []);
+
   const releaseNativeAudio = useCallback(async () => {
     if (!soundRef.current) {
       return;
@@ -206,6 +222,7 @@ export function useAudioPlayer(): AudioPlayerController {
             interruptionModeAndroid: 'doNotMix',
             shouldRouteThroughEarpiece: false
           });
+          markAudioSessionRecordingReady();
           sttDebug('[STT_DEBUG] releaseNativeAudio: allowsRecording=true RESTORED');
         }
       } catch (err) {
@@ -218,6 +235,11 @@ export function useAudioPlayer(): AudioPlayerController {
     releaseWebAudio();
     await releaseNativeAudio();
   }, [releaseNativeAudio, releaseWebAudio]);
+
+  const releaseCurrentPlayers = useCallback(() => {
+    releaseWebAudio();
+    releaseNativePlayer();
+  }, [releaseWebAudio, releaseNativePlayer]);
 
   const resetState = useCallback(() => {
     if (!isMountedRef.current) {
@@ -260,12 +282,57 @@ export function useAudioPlayer(): AudioPlayerController {
 
       await releaseAllAudio();
 
+      // Set audio session to playback mode ONCE for the entire queue.
+      // This avoids per-chunk flip-flopping between allowsRecording true/false
+      // which causes iOS audio dropout between TTS chunks.
+      if (Platform.OS !== 'web') {
+        const expoAudioModule = await loadExpoAudioModule();
+        if (expoAudioModule) {
+          try {
+            sttDebug('[STT_DEBUG] playQueue: setting allowsRecording=false for playback');
+            await expoAudioModule.setAudioModeAsync({
+              allowsRecording: false,
+              interruptionMode: 'doNotMix',
+              playsInSilentMode: true,
+              shouldPlayInBackground: false,
+              interruptionModeAndroid: 'doNotMix',
+              shouldRouteThroughEarpiece: false
+            });
+            markAudioSessionPlaybackMode();
+            sttDebug('[STT_DEBUG] playQueue: allowsRecording=false set successfully');
+          } catch {
+            // First attempt may fail if a recording session is still releasing.
+            // Yield briefly and retry once so iOS routes audio to the loudspeaker.
+            sttDebug('[STT_DEBUG] playQueue: first setAudioModeAsync failed, retrying after 200ms');
+            await new Promise<void>((r) => setTimeout(r, 200));
+            try {
+              await expoAudioModule.setAudioModeAsync({
+                allowsRecording: false,
+                interruptionMode: 'doNotMix',
+                playsInSilentMode: true,
+                shouldPlayInBackground: false,
+                interruptionModeAndroid: 'doNotMix',
+                shouldRouteThroughEarpiece: false
+              });
+              markAudioSessionPlaybackMode();
+              sttDebug('[STT_DEBUG] playQueue: allowsRecording=false set on retry');
+            } catch {
+              sttDebug('[STT_DEBUG] playQueue: allowsRecording=false FAILED even after retry');
+            }
+          }
+        }
+      }
+
+      if (!isMountedRef.current || playbackTokenRef.current !== token) {
+        return toPlaybackFailureResult('interrupted');
+      }
+
       const playIndex = async (index: number): Promise<AudioPlaybackResult> => {
         if (!isMountedRef.current || playbackTokenRef.current !== token) {
           return toPlaybackFailureResult('interrupted');
         }
 
-        await releaseAllAudio();
+        releaseCurrentPlayers();
 
         if (!isMountedRef.current || playbackTokenRef.current !== token) {
           return toPlaybackFailureResult('interrupted');
@@ -370,37 +437,6 @@ export function useAudioPlayer(): AudioPlayerController {
         }
 
         try {
-          sttDebug('[STT_DEBUG] playQueue: setting allowsRecording=false for playback');
-          await expoAudioModule.setAudioModeAsync({
-            allowsRecording: false,
-            interruptionMode: 'doNotMix',
-            playsInSilentMode: true,
-            shouldPlayInBackground: false,
-            interruptionModeAndroid: 'doNotMix',
-            shouldRouteThroughEarpiece: false
-          });
-          sttDebug('[STT_DEBUG] playQueue: allowsRecording=false set successfully');
-        } catch {
-          // First attempt may fail if a recording session is still releasing.
-          // Yield briefly and retry once so iOS routes audio to the loudspeaker.
-          sttDebug('[STT_DEBUG] playQueue: first setAudioModeAsync failed, retrying after 200ms');
-          await new Promise<void>((r) => setTimeout(r, 200));
-          try {
-            await expoAudioModule.setAudioModeAsync({
-              allowsRecording: false,
-              interruptionMode: 'doNotMix',
-              playsInSilentMode: true,
-              shouldPlayInBackground: false,
-              interruptionModeAndroid: 'doNotMix',
-              shouldRouteThroughEarpiece: false
-            });
-            sttDebug('[STT_DEBUG] playQueue: allowsRecording=false set on retry');
-          } catch {
-            sttDebug('[STT_DEBUG] playQueue: allowsRecording=false FAILED even after retry');
-          }
-        }
-
-        try {
           const player = expoAudioModule.createAudioPlayer({ uri });
           soundRef.current = player;
           player.volume = 1;
@@ -442,7 +478,7 @@ export function useAudioPlayer(): AudioPlayerController {
 
       return playIndex(0);
     },
-    [clearWebListeners, releaseAllAudio, stop]
+    [clearWebListeners, releaseAllAudio, releaseCurrentPlayers, stop]
   );
 
   const gracefulStop = useCallback(() => {
