@@ -14,17 +14,19 @@ import {
   View
 } from 'react-native';
 import { t } from '../../i18n';
-import { signInWithEmail } from '../../services/authService';
+import { signUpWithEmail } from '../../services/authService';
 import { theme } from '../../theme';
 
-export default function LoginPasswordScreen() {
+export default function SignUpScreen() {
   const emailKeyboardType: 'email-address' | 'ascii-capable' =
     Platform.OS === 'ios' ? 'ascii-capable' : 'email-address';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [confirmationRequired, setConfirmationRequired] = useState(false);
   const dismissKeyboardOnBackgroundPress = Platform.OS === 'web' ? undefined : Keyboard.dismiss;
 
   const formatAuthError = (error: unknown, fallback: string): string => {
@@ -43,19 +45,47 @@ export default function LoginPasswordScreen() {
 
   const onSubmit = async () => {
     setError(null);
+
+    if (password !== confirmPassword) {
+      setError(t('signupPasswordsMismatch'));
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      await signInWithEmail(email.trim(), password);
-      router.replace('/');
+      const result = await signUpWithEmail(email.trim(), password);
+
+      if (result.confirmationRequired) {
+        setConfirmationRequired(true);
+      } else {
+        router.replace('/');
+      }
     } catch (err) {
-      console.error('[LoginPassword] signInWithEmail failed', err);
-      const message = formatAuthError(err, t('loginError'));
+      console.error('[SignUp] signUpWithEmail failed', err);
+      const message = formatAuthError(err, t('signupError'));
       setError(message);
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  if (confirmationRequired) {
+    return (
+      <View style={styles.screen}>
+        <View style={styles.confirmationContainer}>
+          <Text style={styles.title}>{t('signupVerifyEmailTitle')}</Text>
+          <Text style={styles.confirmationBody}>{t('signupVerifyEmailBody')}</Text>
+
+          <Link href="/(auth)/login" asChild>
+            <Pressable style={styles.button}>
+              <Text style={styles.buttonLabel}>{t('signupBackToLogin')}</Text>
+            </Pressable>
+          </Link>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <KeyboardAvoidingView
@@ -70,14 +100,13 @@ export default function LoginPasswordScreen() {
           keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.form} testID="login-password-screen">
-            <Text style={styles.title}>{t('loginPasswordTitle')}</Text>
-            <Text style={styles.subtitle}>{t('loginPasswordSubtitle')}</Text>
+          <View style={styles.form} testID="signup-screen">
+            <Text style={styles.title}>{t('signupTitle')}</Text>
 
             <TextInput
               value={email}
               onChangeText={setEmail}
-              placeholder={t('loginEmailPlaceholder')}
+              placeholder={t('signupEmailPlaceholder')}
               placeholderTextColor={theme.colors.textDisabled}
               keyboardType={emailKeyboardType}
               inputMode="email"
@@ -92,9 +121,22 @@ export default function LoginPasswordScreen() {
             <TextInput
               value={password}
               onChangeText={setPassword}
-              placeholder={t('loginPasswordPlaceholder')}
+              placeholder={t('signupPasswordPlaceholder')}
               placeholderTextColor={theme.colors.textDisabled}
               secureTextEntry
+              textContentType="newPassword"
+              autoComplete="new-password"
+              style={styles.input}
+            />
+
+            <TextInput
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder={t('signupConfirmPasswordPlaceholder')}
+              placeholderTextColor={theme.colors.textDisabled}
+              secureTextEntry
+              textContentType="newPassword"
+              autoComplete="new-password"
               style={styles.input}
             />
 
@@ -103,30 +145,18 @@ export default function LoginPasswordScreen() {
             <Pressable
               style={[styles.button, isSubmitting && styles.buttonDisabled]}
               onPress={onSubmit}
-              disabled={isSubmitting || !email.trim() || !password}
+              disabled={isSubmitting || !email.trim() || !password || !confirmPassword}
             >
               {isSubmitting ? (
                 <ActivityIndicator color={theme.colors.textPrimary} />
               ) : (
-                <Text style={styles.buttonLabel}>{t('loginSubmit')}</Text>
+                <Text style={styles.buttonLabel}>{t('signupSubmit')}</Text>
               )}
             </Pressable>
 
-            <Link href="/(auth)/forgot-password" asChild>
-              <Pressable>
-                <Text style={styles.link}>{t('loginForgotPassword')}</Text>
-              </Pressable>
-            </Link>
-
             <Link href="/(auth)/login" asChild>
               <Pressable>
-                <Text style={styles.link}>{t('loginUseMagicLink')}</Text>
-              </Pressable>
-            </Link>
-
-            <Link href="/(auth)/signup" asChild>
-              <Pressable>
-                <Text style={styles.link}>{t('loginCreateAccount')}</Text>
+                <Text style={styles.link}>{t('signupAlreadyHaveAccount')}</Text>
               </Pressable>
             </Link>
           </View>
@@ -153,15 +183,24 @@ const styles = StyleSheet.create({
   form: {
     gap: theme.spacing.md
   },
+  confirmationContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: theme.spacing.xl,
+    gap: theme.spacing.md
+  },
+  confirmationBody: {
+    color: theme.colors.textSecondary,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'center',
+    maxWidth: 420
+  },
   title: {
     color: theme.colors.textPrimary,
     fontSize: 30,
     fontWeight: '700'
-  },
-  subtitle: {
-    color: theme.colors.textSecondary,
-    fontSize: 14,
-    marginBottom: theme.spacing.sm
   },
   input: {
     backgroundColor: theme.colors.surface,

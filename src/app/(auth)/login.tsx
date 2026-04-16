@@ -250,6 +250,12 @@ export default function LoginScreen() {
               </Pressable>
             </Link>
 
+            <Link href="/(auth)/signup" asChild>
+              <Pressable>
+                <Text style={styles.link}>{t('loginCreateAccount')}</Text>
+              </Pressable>
+            </Link>
+
           </View>
         </ScrollView>
       </TouchableWithoutFeedback>
