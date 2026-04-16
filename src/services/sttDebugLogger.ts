@@ -3,7 +3,22 @@
 // and stores logs in memory for an on-screen overlay on Vercel previews.
 // REMOVE THIS FILE after debugging is complete.
 
-const LOG_SERVER_URL = 'http://192.168.0.88:9999/log';
+// Use same-origin /api/debug-log on Vercel preview (HTTPS-safe), fall back to
+// LAN log server for local dev.
+const LOG_SERVER_URL = (() => {
+  if (typeof window === 'undefined') return null;
+  const proto = window.location?.protocol ?? '';
+  if (proto === 'https:') {
+    // Vercel preview — same-origin endpoint, no mixed-content issue
+    return '/api/debug-log';
+  }
+  // Local dev — use LAN log server (HTTP)
+  const hostname = window.location?.hostname ?? '';
+  if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(hostname)) {
+    return `http://${hostname}:9999/log`;
+  }
+  return null;
+})();
 const MAX_LOG_ENTRIES = 150;
 
 const logBuffer: string[] = [];
@@ -26,17 +41,19 @@ export function sttDebug(message: string): void {
   }
   updateOverlayContent();
 
-  // Fire-and-forget POST to the log server (works in LAN dev, silently fails on Vercel)
-  try {
-    fetch(LOG_SERVER_URL, {
-      method: 'POST',
-      body: message,
-      headers: { 'Content-Type': 'text/plain' },
-    }).catch(() => {
-      // silently ignore network errors
-    });
-  } catch {
-    // silently ignore
+  // Fire-and-forget POST to the log relay (same-origin on Vercel, LAN on local dev)
+  if (LOG_SERVER_URL) {
+    try {
+      fetch(LOG_SERVER_URL, {
+        method: 'POST',
+        body: message,
+        headers: { 'Content-Type': 'text/plain' },
+      }).catch(() => {
+        // silently ignore network errors
+      });
+    } catch {
+      // silently ignore
+    }
   }
 }
 
