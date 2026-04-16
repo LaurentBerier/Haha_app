@@ -170,15 +170,19 @@ export function useAudioPlayer(): AudioPlayerController {
     detachWebListenersRef.current = null;
   }, []);
 
-  const releaseWebAudio = useCallback(() => {
+  const releaseWebAudio = useCallback((forMicReclaim = false) => {
     clearWebListeners();
     const audio = webAudioRef.current;
     if (audio) {
       audio.pause();
       audio.src = '';
-      // Force iOS Safari to release the audio session so the mic can reclaim it
+      // Only call load() when we need to release the audio session for STT mic reclaim.
+      // Calling load() between chunks kills the autoplay-unlock state on iOS Safari,
+      // causing subsequent play() calls to fail with NotAllowedError.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if (typeof (audio as any).load === 'function') (audio as any).load();
+      if (forMicReclaim && typeof (audio as any).load === 'function') {
+        (audio as any).load();
+      }
     }
     webAudioRef.current = null;
   }, [clearWebListeners]);
@@ -236,8 +240,8 @@ export function useAudioPlayer(): AudioPlayerController {
     }
   }, []);
 
-  const releaseAllAudio = useCallback(async () => {
-    releaseWebAudio();
+  const releaseAllAudio = useCallback(async (forMicReclaim = false) => {
+    releaseWebAudio(forMicReclaim);
     await releaseNativeAudio();
   }, [releaseNativeAudio, releaseWebAudio]);
 
@@ -263,7 +267,7 @@ export function useAudioPlayer(): AudioPlayerController {
     playbackTokenRef.current += 1;
     queueRef.current = [];
     queueIndexRef.current = 0;
-    await releaseAllAudio();
+    await releaseAllAudio(true);  // Queue done — let STT reclaim mic via load()
     resetState();
   }, [releaseAllAudio, resetState]);
 
@@ -285,7 +289,7 @@ export function useAudioPlayer(): AudioPlayerController {
       queueRef.current = nextQueue;
       queueIndexRef.current = 0;
 
-      await releaseAllAudio();
+      await releaseAllAudio(false);  // New queue starting — preserve autoplay unlock
 
       // Set audio session to playback mode ONCE for the entire queue.
       // This avoids per-chunk flip-flopping between allowsRecording true/false

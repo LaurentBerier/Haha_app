@@ -917,6 +917,8 @@ export function useVoiceConversation({
 
       if (event.reason === 'unsupported') {
         postPlaybackStartupRecoveryAttemptRef.current = 0;
+        clearAssistantBusyRecoveryTimer();
+        clearRecoveryTimer();
         dispatch({ type: 'unsupported' });
         return;
       }

@@ -207,7 +207,7 @@ function isLikelyLocalDevOrigin(origin: string): boolean {
   try {
     const url = new URL(origin);
     const hostname = url.hostname.toLowerCase();
-    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0';
+    return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '0.0.0.0' || /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(hostname);
   } catch {
     return false;
   }
@@ -321,6 +321,16 @@ export function buildTtsProxyCandidates(): string[] {
   if (normalizedClaudeProxy) {
     addCandidate(normalizedClaudeProxy.replace(/\/claude$/, '/tts'));
   }
+
+  // In local dev on LAN, add the debug log server as a TTS proxy (port 9999).
+  // The proxy forwards to production with proper CORS headers.
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.location?.hostname === 'string') {
+    const hostname = window.location.hostname;
+    if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(hostname)) {
+      addCandidate(`http://${hostname}:9999/api/tts`);
+    }
+  }
+
   return candidates;
 }
 
