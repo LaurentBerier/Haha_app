@@ -620,8 +620,11 @@ export function startVoiceListeningSession({
     recognition.maxAlternatives = 1;
     recognition.lang = resolvedLocales.primary;
 
+    sttDebug(`[STT_DEBUG] web recognition config: lang=${recognition.lang}, continuous=${recognition.continuous}, interimResults=${recognition.interimResults}, isIOS=${IS_IOS_MOBILE_WEB}`);
+
     recognition.onresult = (event) => {
       const transcript = extractWebTranscript(event);
+      sttDebug(`[STT_DEBUG] web onresult: transcript="${transcript}", resultIndex=${event.resultIndex}, resultsLength=${event.results?.length}`);
       if (transcript) {
         webRestartAttemptCount = 0;
         pendingWebEndReason = null;
@@ -633,6 +636,7 @@ export function startVoiceListeningSession({
     recognition.onerror = (event) => {
       const reason = classifyWebErrorReason(event);
       const message = event.message || event.error || 'Speech recognition failed';
+      sttDebug(`[STT_DEBUG] web onerror: error="${event.error}", message="${event.message}", classified=${reason}`);
 
       if (reason === 'permission') {
         emitEnd(reason, message);
@@ -644,10 +648,12 @@ export function startVoiceListeningSession({
     };
 
     recognition.onaudiostart = () => {
+      sttDebug(`[STT_DEBUG] web onaudiostart fired`);
       emitAudioStart();
     };
 
     recognition.onend = () => {
+      sttDebug(`[STT_DEBUG] web onend fired: stopped=${stopped}, sessionMatch=${activeVoiceSessionId === sessionId}, restartCount=${webRestartAttemptCount}, pendingReason=${pendingWebEndReason}`);
       if (stopped || activeVoiceSessionId !== sessionId) {
         return;
       }
@@ -689,7 +695,9 @@ export function startVoiceListeningSession({
     };
 
     try {
+      sttDebug(`[STT_DEBUG] web recognition.start() calling...`);
       recognition.start();
+      sttDebug(`[STT_DEBUG] web recognition.start() succeeded`);
     } catch (error) {
       const reason = classifyStartErrorReason(error);
       if (reason !== 'permission' && resolvedLocales.fallback) {
