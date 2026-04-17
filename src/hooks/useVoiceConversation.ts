@@ -655,6 +655,9 @@ export function useVoiceConversation({
   const startListeningFlowRef = useRef<((origin: VoiceStartOrigin) => Promise<void>) | null>(null);
   const activeSessionContextRef = useRef<ActiveVoiceSessionContext | null>(null);
   const postPlaybackStartupRecoveryAttemptRef = useRef(0);
+  // When the liveness watchdog fires (14s with no results on iOS Safari),
+  // the next recovery attempt should try the bare locale prefix (e.g. "fr" instead of "fr-CA").
+  const preferBareLocaleRef = useRef(false);
   const enabledRef = useRef(enabled);
   const disabledRef = useRef(disabled);
   const isPlayingRef = useRef(isPlaying);
@@ -1145,9 +1148,13 @@ export function useVoiceConversation({
           }
         }, 1000);
 
+        const useBareLocale = preferBareLocaleRef.current;
+        preferBareLocaleRef.current = false;
+
         const session = startVoiceListeningSession({
           locale: languageRef.current,
           fallbackLocale: fallbackLanguageRef.current,
+          preferBareLocale: useBareLocale,
           onResult: (event) => {
             resultReceived = true;
             if (activeSessionContextRef.current?.id === event.sessionId) {
@@ -1176,6 +1183,10 @@ export function useVoiceConversation({
                 }
 
                 stopActiveSession();
+                // Signal the next recovery to try bare locale (e.g. "fr" instead of "fr-CA")
+                // since the full locale produced no results for 14s.
+                preferBareLocaleRef.current = true;
+                sttDebug(`[STT_DEBUG] liveness watchdog: no results in ${WEB_VOICE_LIVENESS_MS}ms, will try bare locale on next recovery`);
                 const nextAttempt = stateRef.current.recoveryAttempt + 1;
                 const baseDelayMs = RECOVERY_DELAYS_MS[nextAttempt] ?? null;
                 if (baseDelayMs === null) {
