@@ -186,6 +186,10 @@ function destroyPersistentWebAudio(): void {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let iosAudioCtx: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let iosKeepAliveOscillator: any = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let iosKeepAliveGain: any = null;
 
 function getOrCreateIosAudioCtx(): AudioContext | null {
   if (!IS_IOS_MOBILE_WEB) return null;
@@ -202,6 +206,40 @@ function getOrCreateIosAudioCtx(): AudioContext | null {
   } catch {
     return null;
   }
+}
+
+/** Start a near-silent oscillator to keep the iOS AudioContext in 'running'
+ *  state between the priming gesture and the first TTS playback.
+ *  iOS Safari auto-suspends AudioContexts that produce no audio output,
+ *  which re-locks them even after a gesture-based resume(). The oscillator
+ *  (~-60 dB, inaudible) prevents this for the ~15-20s greeting synthesis gap. */
+function startIosKeepAlive(): void {
+  if (!iosAudioCtx || iosKeepAliveOscillator) return;
+  try {
+    const osc = iosAudioCtx.createOscillator();
+    const gain = iosAudioCtx.createGain();
+    gain.gain.value = 0.001; // ~-60 dB — inaudible but non-zero
+    osc.connect(gain);
+    gain.connect(iosAudioCtx.destination);
+    osc.start();
+    iosKeepAliveOscillator = osc;
+    iosKeepAliveGain = gain;
+    sttDebug('[STT_DEBUG] iOS AudioContext keep-alive started');
+  } catch {
+    sttDebug('[STT_DEBUG] iOS AudioContext keep-alive failed to start');
+  }
+}
+
+function stopIosKeepAlive(): void {
+  if (!iosKeepAliveOscillator) return;
+  try {
+    iosKeepAliveOscillator.stop();
+    iosKeepAliveOscillator.disconnect();
+    iosKeepAliveGain?.disconnect();
+  } catch { /* already stopped */ }
+  iosKeepAliveOscillator = null;
+  iosKeepAliveGain = null;
+  sttDebug('[STT_DEBUG] iOS AudioContext keep-alive stopped');
 }
 
 // Prime the AudioContext on the first user gesture. iOS Safari requires
@@ -228,6 +266,10 @@ if (IS_IOS_MOBILE_WEB && typeof document !== 'undefined') {
         } catch {
           sttDebug(`[STT_DEBUG] iOS AudioContext primed without silent buffer (state=${ctx.state})`);
         }
+        // Keep the AudioContext alive until the first TTS plays. Without this,
+        // iOS auto-suspends it after ~10s of silence, which blocks resume()
+        // when greeting TTS synthesis finishes (~15-20s later).
+        startIosKeepAlive();
       }).catch(() => {
         sttDebug('[STT_DEBUG] iOS AudioContext resume failed during gesture');
       });
@@ -252,6 +294,7 @@ export function ensureIosAudioContextSuspended(): void {
     return;
   }
   if (iosAudioCtx.state === 'running') {
+    stopIosKeepAlive();
     iosAudioCtx.suspend().catch(() => {});
     sttDebug('[STT_DEBUG] ensureIosAudioContextSuspended: suspended running AudioContext');
   } else {
@@ -310,6 +353,7 @@ export function useAudioPlayer(): AudioPlayerController {
         try { iosSource.stop(); } catch { /* already ended */ }
       }
       if (forMicReclaim && iosAudioCtx && iosAudioCtx.state === 'running') {
+        stopIosKeepAlive();
         iosAudioCtx.suspend().catch(() => {});
         sttDebug('[STT_DEBUG] releaseWebAudio: suspended iOS AudioContext for mic reclaim');
       }
@@ -582,6 +626,8 @@ export function useAudioPlayer(): AudioPlayerController {
                 onChunkEnd();
               };
 
+              // Stop the keep-alive oscillator — real audio is starting now.
+              stopIosKeepAlive();
               source.start();
 
               if (isMountedRef.current && playbackTokenRef.current === token) {
