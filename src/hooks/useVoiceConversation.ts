@@ -1820,6 +1820,34 @@ export function useVoiceConversation({
     stopActiveSession
   ]);
 
+  // Pre-request mic permission on iOS Safari web as soon as voice conversation
+  // is enabled. This ensures the iOS permission dialog appears BEFORE any TTS
+  // plays, avoiding the dialog from interrupting audio playback mid-conversation.
+  useEffect(() => {
+    if (
+      !IOS_WEB_RUNTIME ||
+      Platform.OS !== 'web' ||
+      !enabled ||
+      hasPermissionRef.current ||
+      typeof navigator === 'undefined' ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+      stream.getTracks().forEach(t => t.stop());
+      if (!cancelled) {
+        hasPermissionRef.current = true;
+        sttDebug('[STT_DEBUG] iOS mic permission pre-requested (before TTS)');
+      }
+    }).catch(() => {
+      // Permission denied or unavailable — startListeningFlow will handle the error
+    });
+    return () => { cancelled = true; };
+  }, [enabled]);
+
   const hint = useMemo(() => getVoiceConversationHint(state.status), [state.status]);
 
   return {
