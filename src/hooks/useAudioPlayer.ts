@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { markWebAutoplaySessionUnlocked } from '../services/webAutoplayUnlockService';
 import { sttDebug } from '../services/sttDebugLogger';
 import { markAudioSessionRecordingReady, markAudioSessionPlaybackMode } from '../services/audioSessionState';
+import { isIosMobileWebRuntime } from '../platform/platformCapabilities';
 
 interface WebAudioLike {
   addEventListener: (event: string, handler: () => void) => void;
@@ -132,6 +133,7 @@ export function resolveAudioPlaybackFailureReason(error: unknown): AudioPlayback
   return 'playback_error';
 }
 
+const IS_IOS_MOBILE_WEB = isIosMobileWebRuntime();
 let persistentWebAudio: WebAudioLike | null = null;
 
 function getOrCreatePersistentWebAudio(): WebAudioLike | null {
@@ -144,6 +146,28 @@ function getOrCreatePersistentWebAudio(): WebAudioLike | null {
   }
   persistentWebAudio = new WebAudioCtor();
   return persistentWebAudio;
+}
+
+/** Destroy the persistent <audio> element so iOS Safari fully releases the
+ *  audio route. The next TTS call will create a fresh element via
+ *  getOrCreatePersistentWebAudio(). iOS Safari's tab-level autoplay unlock
+ *  survives element destruction, so subsequent play() calls still work. */
+function destroyPersistentWebAudio(): void {
+  if (!persistentWebAudio) {
+    return;
+  }
+  try {
+    persistentWebAudio.pause();
+    persistentWebAudio.src = '';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const el = persistentWebAudio as any;
+    if (typeof el.load === 'function') el.load();
+    if (typeof el.remove === 'function') el.remove();
+  } catch {
+    // noop
+  }
+  persistentWebAudio = null;
+  sttDebug('[STT_DEBUG] destroyPersistentWebAudio: element destroyed');
 }
 
 export function useAudioPlayer(): AudioPlayerController {
@@ -185,6 +209,13 @@ export function useAudioPlayer(): AudioPlayerController {
       }
     }
     webAudioRef.current = null;
+    // On iOS Safari, destroy the persistent <audio> element entirely when
+    // reclaiming the mic for STT. Just pause()+load() leaves the audio route
+    // held by the element, preventing the speech recognizer from receiving audio
+    // (onaudiostart fires but onspeechstart never does).
+    if (forMicReclaim && IS_IOS_MOBILE_WEB) {
+      destroyPersistentWebAudio();
+    }
   }, [clearWebListeners]);
 
   const releaseNativePlayer = useCallback(() => {

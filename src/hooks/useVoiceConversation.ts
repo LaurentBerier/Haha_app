@@ -382,7 +382,9 @@ export function shouldArmWebLivenessWatchdog(state: WebLivenessWatchdogState): b
     return false;
   }
 
-  return state.origin === 'recovery' || state.statusBeforeStart === 'assistant_busy';
+  // Arm on ALL iOS Safari sessions — STT can be silently dead after TTS
+  // in any scenario (auto, recovery, resume), not just recovery/post-busy.
+  return true;
 }
 
 export function shouldUsePostPlaybackStartupRecovery(state: PostPlaybackStartupRecoveryState): boolean {
@@ -1144,7 +1146,10 @@ export function useVoiceConversation({
           statusBeforeStart: latestStatus
         });
         const audioStartTimeoutId = setTimeout(() => {
-          if (!audioStartFired && isMountedRef.current) {
+          // Guard: only dispatch 'listening' if this session is still active.
+          // Without this check, a killed session's timer corrupts the status
+          // (e.g. assistant_busy → listening), preventing the watchdog from arming.
+          if (!audioStartFired && isMountedRef.current && activeSessionRef.current) {
             dispatch({ type: 'listening' });
           }
         }, 1000);
@@ -1290,8 +1295,10 @@ export function useVoiceConversation({
         return;
       }
 
-      // On iOS Safari, yield briefly after audio.load() releases the audio
-      // session so the browser can reclaim audio hardware before STT starts.
+      // On iOS Safari, yield after destroying the <audio> element so the
+      // browser can fully release the audio route before STT starts.
+      // 300ms gives iOS enough time to reset audio routing after element
+      // destruction (50ms was insufficient — onspeechstart never fired).
       const beginListen = () => {
         if (!isMountedRef.current) return;
         dispatch({ type: 'starting' });
@@ -1299,7 +1306,7 @@ export function useVoiceConversation({
       };
 
       if (IOS_WEB_RUNTIME) {
-        setTimeout(beginListen, 50);
+        setTimeout(beginListen, 300);
       } else {
         beginListen();
       }
