@@ -209,12 +209,22 @@ export function useAudioPlayer(): AudioPlayerController {
       }
     }
     webAudioRef.current = null;
-    // On iOS Safari, destroy the persistent <audio> element entirely when
-    // reclaiming the mic for STT. Just pause()+load() leaves the audio route
-    // held by the element, preventing the speech recognizer from receiving audio
-    // (onaudiostart fires but onspeechstart never does).
+    // On iOS Safari, nudge the browser into re-evaluating audio routes by
+    // creating and closing an AudioContext. This releases the playback audio
+    // session without destroying the <audio> element (which would lose the
+    // autoplay unlock needed for TTS).
     if (forMicReclaim && IS_IOS_MOBILE_WEB) {
-      destroyPersistentWebAudio();
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ACtor = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (ACtor) {
+          const ctx = new ACtor();
+          ctx.close().catch(() => {});
+          sttDebug('[STT_DEBUG] releaseWebAudio: AudioContext created+closed to reset iOS audio routing');
+        }
+      } catch {
+        // noop
+      }
     }
   }, [clearWebListeners]);
 

@@ -1154,6 +1154,28 @@ export function useVoiceConversation({
           }
         }, 1000);
 
+        // On iOS Safari, briefly acquire the mic via getUserMedia before
+        // SpeechRecognition.start(). This forces iOS to switch the audio
+        // session from playback to recording mode, which pause()+load() on
+        // the <audio> element alone doesn't achieve. The stream is stopped
+        // immediately — SpeechRecognition will re-acquire the mic on start().
+        if (IOS_WEB_RUNTIME && Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+          try {
+            sttDebug('[STT_DEBUG] iOS mic prime: requesting getUserMedia to force recording mode');
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            stream.getTracks().forEach(t => t.stop());
+            sttDebug('[STT_DEBUG] iOS mic prime: stream acquired and released');
+          } catch (micErr) {
+            sttDebug(`[STT_DEBUG] iOS mic prime: failed (${micErr instanceof Error ? micErr.message : String(micErr)}), proceeding anyway`);
+          }
+          if (!isMountedRef.current || (origin === 'auto' || origin === 'recovery'
+            ? !shouldAttemptAutoListen({ shouldAutoListen, webTabActive: webTabActiveRef.current, hasUserActivation: hasUserActivatedListeningRef.current, enabled: enabledRef.current, disabled: disabledRef.current, isPlaying: isPlayingRef.current, hasTypedDraft: hasTypedDraftRef.current, status: stateRef.current.status })
+            : !enabledRef.current || disabledRef.current || hasTypedDraftRef.current || isPlayingRef.current)) {
+            dispatch({ type: 'set_off' });
+            return;
+          }
+        }
+
         const useBareLocale = preferBareLocaleRef.current;
         preferBareLocaleRef.current = false;
 
