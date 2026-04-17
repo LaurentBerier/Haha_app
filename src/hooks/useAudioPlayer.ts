@@ -206,18 +206,13 @@ function getOrCreateIosAudioCtx(): AudioContext | null {
 
 // Prime the AudioContext on the first user gesture. iOS Safari requires
 // AudioContext.resume() during a user interaction to unlock audio output.
-// After unlocking, immediately suspend — a running AudioContext holds the
-// iOS audio route and prevents webkitSpeechRecognition from detecting speech.
+// The context is left in 'running' state so greeting TTS can autoplay
+// immediately. STT startup suspends it via ensureIosAudioContextSuspended().
 if (IS_IOS_MOBILE_WEB && typeof document !== 'undefined') {
   const primeCtx = () => {
     const ctx = getOrCreateIosAudioCtx();
     if (ctx && ctx.state === 'suspended') {
-      ctx.resume().then(() => {
-        // Suspend immediately after unlocking. The context is now gesture-
-        // unlocked and can be resumed programmatically when TTS needs to play.
-        ctx.suspend().catch(() => {});
-        sttDebug('[STT_DEBUG] iOS AudioContext primed and re-suspended');
-      }).catch(() => {});
+      ctx.resume().catch(() => {});
       sttDebug('[STT_DEBUG] iOS AudioContext resumed during user gesture');
     }
     ['touchstart', 'pointerdown', 'mousedown', 'keydown'].forEach(e => {
