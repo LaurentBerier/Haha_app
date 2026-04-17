@@ -170,6 +170,58 @@ function destroyPersistentWebAudio(): void {
   sttDebug('[STT_DEBUG] destroyPersistentWebAudio: element destroyed');
 }
 
+// ---------------------------------------------------------------------------
+// iOS Safari: AudioContext-based TTS playback
+//
+// On iOS Safari, an <audio> element holds the audio route even after
+// pause()+src=''+load(). This prevents STT (webkitSpeechRecognition) from
+// detecting speech — onaudiostart fires but onspeechstart never does.
+// Destroying the element fixes STT but kills autoplay (iOS binds unlock to
+// the specific element instance).
+//
+// AudioContext avoids both problems: once gesture-unlocked it can play audio
+// indefinitely without per-element gestures, and suspending it fully releases
+// the audio route for STT.
+// ---------------------------------------------------------------------------
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let iosAudioCtx: any = null;
+
+function getOrCreateIosAudioCtx(): AudioContext | null {
+  if (!IS_IOS_MOBILE_WEB) return null;
+  try {
+    if (iosAudioCtx && iosAudioCtx.state !== 'closed') {
+      return iosAudioCtx;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ACtor = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!ACtor) return null;
+    iosAudioCtx = new ACtor();
+    sttDebug(`[STT_DEBUG] iOS AudioContext created (state=${iosAudioCtx.state})`);
+    return iosAudioCtx;
+  } catch {
+    return null;
+  }
+}
+
+// Prime the AudioContext on the first user gesture. iOS Safari requires
+// AudioContext.resume() during a user interaction to unlock audio output.
+if (IS_IOS_MOBILE_WEB && typeof document !== 'undefined') {
+  const primeCtx = () => {
+    const ctx = getOrCreateIosAudioCtx();
+    if (ctx && ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+      sttDebug('[STT_DEBUG] iOS AudioContext resumed during user gesture');
+    }
+    ['touchstart', 'pointerdown', 'mousedown', 'keydown'].forEach(e => {
+      document.removeEventListener(e, primeCtx, true);
+    });
+  };
+  ['touchstart', 'pointerdown', 'mousedown', 'keydown'].forEach(e => {
+    document.addEventListener(e, primeCtx, { capture: true });
+  });
+}
+
 export function useAudioPlayer(): AudioPlayerController {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -188,6 +240,8 @@ export function useAudioPlayer(): AudioPlayerController {
   const isMountedRef = useRef(true);
   const isGracefullyStoppingRef = useRef(false);
   const onQueueCompleteRef = useRef<(() => void) | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const iosSourceRef = useRef<any>(null);
 
   const clearWebListeners = useCallback(() => {
     detachWebListenersRef.current?.();
@@ -209,21 +263,18 @@ export function useAudioPlayer(): AudioPlayerController {
       }
     }
     webAudioRef.current = null;
-    // On iOS Safari, nudge the browser into re-evaluating audio routes by
-    // creating and closing an AudioContext. This releases the playback audio
-    // session without destroying the <audio> element (which would lose the
-    // autoplay unlock needed for TTS).
-    if (forMicReclaim && IS_IOS_MOBILE_WEB) {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ACtor = (window as any).AudioContext || (window as any).webkitAudioContext;
-        if (ACtor) {
-          const ctx = new ACtor();
-          ctx.close().catch(() => {});
-          sttDebug('[STT_DEBUG] releaseWebAudio: AudioContext created+closed to reset iOS audio routing');
-        }
-      } catch {
-        // noop
+    // iOS Safari: clean up active AudioContext source and suspend the context
+    // to release the audio route so STT can claim the mic.
+    if (IS_IOS_MOBILE_WEB) {
+      const iosSource = iosSourceRef.current;
+      if (iosSource) {
+        iosSourceRef.current = null;
+        iosSource.onended = null;
+        try { iosSource.stop(); } catch { /* already ended */ }
+      }
+      if (forMicReclaim && iosAudioCtx && iosAudioCtx.state === 'running') {
+        iosAudioCtx.suspend().catch(() => {});
+        sttDebug('[STT_DEBUG] releaseWebAudio: suspended iOS AudioContext for mic reclaim');
       }
     }
   }, [clearWebListeners]);
@@ -289,6 +340,15 @@ export function useAudioPlayer(): AudioPlayerController {
   const releaseCurrentPlayers = useCallback(() => {
     releaseWebAudio();
     releaseNativePlayer();
+    // Clean up iOS AudioContext source between queue chunks
+    if (IS_IOS_MOBILE_WEB) {
+      const iosSource = iosSourceRef.current;
+      if (iosSource) {
+        iosSourceRef.current = null;
+        iosSource.onended = null;
+        try { iosSource.stop(); } catch { /* already ended */ }
+      }
+    }
   }, [releaseWebAudio, releaseNativePlayer]);
 
   const resetState = useCallback(() => {
@@ -430,6 +490,71 @@ export function useAudioPlayer(): AudioPlayerController {
         };
 
         if (Platform.OS === 'web') {
+          // iOS Safari: use AudioContext to avoid <audio> element holding audio route
+          if (IS_IOS_MOBILE_WEB && iosAudioCtx && iosAudioCtx.state !== 'closed') {
+            try {
+              const audioCtx = iosAudioCtx;
+
+              // Resume if suspended (from previous STT mic reclaim)
+              if (audioCtx.state === 'suspended') {
+                await audioCtx.resume();
+                sttDebug('[STT_DEBUG] iOS AudioContext: resumed for playback');
+              }
+
+              if (!isMountedRef.current || playbackTokenRef.current !== token) {
+                return toPlaybackFailureResult('interrupted');
+              }
+
+              // Fetch and decode audio data
+              const response = await fetch(uri);
+              if (!isMountedRef.current || playbackTokenRef.current !== token) {
+                return toPlaybackFailureResult('interrupted');
+              }
+              const arrayBuffer = await response.arrayBuffer();
+              if (!isMountedRef.current || playbackTokenRef.current !== token) {
+                return toPlaybackFailureResult('interrupted');
+              }
+              const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+              if (!isMountedRef.current || playbackTokenRef.current !== token) {
+                return toPlaybackFailureResult('interrupted');
+              }
+
+              // Create and start source
+              const source = audioCtx.createBufferSource();
+              source.buffer = audioBuffer;
+              source.connect(audioCtx.destination);
+
+              // Clean up previous source (safety — should already be ended)
+              const prevSource = iosSourceRef.current;
+              if (prevSource) {
+                prevSource.onended = null;
+                try { prevSource.stop(); } catch { /* already ended */ }
+              }
+              iosSourceRef.current = source;
+
+              source.onended = () => {
+                if (iosSourceRef.current === source) {
+                  iosSourceRef.current = null;
+                }
+                onChunkEnd();
+              };
+
+              source.start();
+
+              if (isMountedRef.current && playbackTokenRef.current === token) {
+                setIsLoading(false);
+                setIsPlaying(true);
+              }
+              markWebAutoplaySessionUnlocked();
+              sttDebug('[STT_DEBUG] iOS AudioContext: chunk playback started');
+              return PLAYBACK_STARTED_RESULT;
+            } catch (iosErr: unknown) {
+              sttDebug(`[STT_DEBUG] iOS AudioContext playback failed: ${iosErr instanceof Error ? iosErr.message : String(iosErr)}, falling back to <audio>`);
+              // Fall through to <audio> element path
+            }
+          }
+
+          // Standard web / iOS AudioContext fallback: use persistent <audio> element
           const webAudio = getOrCreatePersistentWebAudio();
           if (!webAudio) {
             await stop();
@@ -570,6 +695,10 @@ export function useAudioPlayer(): AudioPlayerController {
 
   const pause = useCallback(async () => {
     if (Platform.OS === 'web') {
+      // iOS AudioContext: suspend to pause all audio output
+      if (IS_IOS_MOBILE_WEB && iosAudioCtx && iosAudioCtx.state === 'running') {
+        iosAudioCtx.suspend().catch(() => {});
+      }
       webAudioRef.current?.pause();
       if (isMountedRef.current) {
         setIsPlaying(false);
