@@ -60,6 +60,8 @@ interface WebSpeechRecognition {
   onerror: ((event: WebSpeechRecognitionErrorEvent) => void) | null;
   onend: (() => void) | null;
   onaudiostart: (() => void) | null;
+  onspeechstart: (() => void) | null;
+  onspeechend: (() => void) | null;
   start: () => void;
   stop: () => void;
   abort?: () => void;
@@ -150,6 +152,10 @@ export interface VoiceListeningSession {
 export interface StartVoiceListeningSessionOptions {
   locale: string;
   fallbackLocale?: string;
+  /** When true, use the bare language prefix (e.g. "fr" instead of "fr-CA")
+   *  as the primary locale. Used by the liveness watchdog on iOS Safari when
+   *  the full locale produces no results. */
+  preferBareLocale?: boolean;
   onResult: (event: VoiceListeningResultEvent) => void;
   onEnd: (event: VoiceListeningEndEvent) => void;
   onAudioStart?: () => void;
@@ -239,12 +245,34 @@ function getWebSpeechRecognitionCtor(): WebSpeechRecognitionCtor | null {
     return null;
   }
 
+  // Check both globalThis and window — some bundlers may not alias globalThis to window.
   const scope = globalThis as {
     SpeechRecognition?: WebSpeechRecognitionCtor;
     webkitSpeechRecognition?: WebSpeechRecognitionCtor;
   };
+  const windowScope = typeof window !== 'undefined'
+    ? (window as unknown as {
+        SpeechRecognition?: WebSpeechRecognitionCtor;
+        webkitSpeechRecognition?: WebSpeechRecognitionCtor;
+      })
+    : null;
 
-  return scope.SpeechRecognition ?? scope.webkitSpeechRecognition ?? null;
+  const ctor =
+    scope.SpeechRecognition ??
+    scope.webkitSpeechRecognition ??
+    windowScope?.SpeechRecognition ??
+    windowScope?.webkitSpeechRecognition ??
+    null;
+
+  const protocol = typeof window !== 'undefined' && window.location ? window.location.protocol : 'unknown';
+  sttDebug(
+    `[STT_DEBUG] getWebSpeechRecognitionCtor: ctor=${ctor ? 'FOUND' : 'NULL'}, ` +
+    `globalThis.SR=${!!scope.SpeechRecognition}, globalThis.webkit=${!!scope.webkitSpeechRecognition}, ` +
+    `window.SR=${!!windowScope?.SpeechRecognition}, window.webkit=${!!windowScope?.webkitSpeechRecognition}, ` +
+    `protocol=${protocol}, isIOS=${IS_IOS_MOBILE_WEB}`
+  );
+
+  return ctor;
 }
 
 function normalizeVoiceErrorMessage(rawMessage: string | null | undefined): string | null {
@@ -294,16 +322,26 @@ function normalizeLocaleCandidate(locale: string | null | undefined): string | n
 function resolveSttLocales(locale: string, fallbackLocale?: string): { primary: string; fallback: string | null } {
   const normalizedPrimary = normalizeLocaleCandidate(locale) ?? DEFAULT_STT_LOCALE;
   const normalizedFallback = normalizeLocaleCandidate(fallbackLocale ?? '') ?? DEFAULT_STT_LOCALE;
-  if (normalizedFallback === normalizedPrimary) {
+  if (normalizedFallback !== normalizedPrimary) {
     return {
       primary: normalizedPrimary,
-      fallback: null
+      fallback: normalizedFallback
+    };
+  }
+
+  // When no distinct fallback exists, derive a bare language-prefix fallback
+  // (e.g. "fr-CA" → "fr"). iOS Safari may only support the bare code.
+  const prefix = normalizedPrimary.split('-')[0];
+  if (prefix && prefix !== normalizedPrimary) {
+    return {
+      primary: normalizedPrimary,
+      fallback: prefix
     };
   }
 
   return {
     primary: normalizedPrimary,
-    fallback: normalizedFallback
+    fallback: null
   };
 }
 
@@ -355,7 +393,7 @@ function classifyWebErrorReason(event: WebSpeechRecognitionErrorEvent): VoiceSes
     }
     return 'transient';
   }
-  if (code === 'service-not-allowed') {
+  if (code === 'service-not-allowed' || code === 'language-not-supported') {
     return 'unsupported';
   }
   return 'transient';
@@ -524,6 +562,7 @@ export async function requestVoicePermission(): Promise<boolean> {
 export function startVoiceListeningSession({
   locale,
   fallbackLocale,
+  preferBareLocale,
   onResult,
   onEnd,
   onAudioStart
@@ -599,11 +638,22 @@ export function startVoiceListeningSession({
 
   cleanupActiveRecognition();
   activeVoiceSessionId = sessionId;
-  const resolvedLocales = resolveSttLocales(locale, fallbackLocale);
+  let resolvedLocales = resolveSttLocales(locale, fallbackLocale);
+
+  // When the liveness watchdog detected no results with the full locale (e.g. "fr-CA"),
+  // swap to the bare prefix (e.g. "fr") as primary for this attempt.
+  if (preferBareLocale && resolvedLocales.primary.includes('-')) {
+    const bare = resolvedLocales.primary.split('-')[0] ?? resolvedLocales.primary;
+    sttDebug(`[STT_DEBUG] preferBareLocale: swapping primary "${resolvedLocales.primary}" → "${bare}"`);
+    resolvedLocales = { primary: bare, fallback: resolvedLocales.primary };
+  }
 
   if (Platform.OS === 'web') {
     const WebRecognitionCtor = getWebSpeechRecognitionCtor();
     if (!WebRecognitionCtor) {
+      const proto = typeof window !== 'undefined' && window.location ? window.location.protocol : 'N/A';
+      const host = typeof window !== 'undefined' && window.location ? window.location.host : 'N/A';
+      sttDebug(`[STT_DEBUG] web STT UNAVAILABLE: protocol=${proto}, host=${host}, userAgent=${typeof navigator !== 'undefined' ? navigator.userAgent?.slice(0, 120) : 'N/A'}`);
       scheduleVoiceMicrotask(() => {
         emitEnd('unsupported', 'Speech recognition is unavailable on this build.');
       });
@@ -620,8 +670,11 @@ export function startVoiceListeningSession({
     recognition.maxAlternatives = 1;
     recognition.lang = resolvedLocales.primary;
 
+    sttDebug(`[STT_DEBUG] web recognition config: lang=${recognition.lang}, continuous=${recognition.continuous}, interimResults=${recognition.interimResults}, isIOS=${IS_IOS_MOBILE_WEB}`);
+
     recognition.onresult = (event) => {
       const transcript = extractWebTranscript(event);
+      sttDebug(`[STT_DEBUG] web onresult: transcript="${transcript}", resultIndex=${event.resultIndex}, resultsLength=${event.results?.length}`);
       if (transcript) {
         webRestartAttemptCount = 0;
         pendingWebEndReason = null;
@@ -633,6 +686,7 @@ export function startVoiceListeningSession({
     recognition.onerror = (event) => {
       const reason = classifyWebErrorReason(event);
       const message = event.message || event.error || 'Speech recognition failed';
+      sttDebug(`[STT_DEBUG] web onerror: error="${event.error}", message="${event.message}", classified=${reason}`);
 
       if (reason === 'permission') {
         emitEnd(reason, message);
@@ -644,10 +698,20 @@ export function startVoiceListeningSession({
     };
 
     recognition.onaudiostart = () => {
+      sttDebug(`[STT_DEBUG] web onaudiostart fired`);
       emitAudioStart();
     };
 
+    recognition.onspeechstart = () => {
+      sttDebug(`[STT_DEBUG] web onspeechstart fired (speech detected in audio)`);
+    };
+
+    recognition.onspeechend = () => {
+      sttDebug(`[STT_DEBUG] web onspeechend fired (speech ended)`);
+    };
+
     recognition.onend = () => {
+      sttDebug(`[STT_DEBUG] web onend fired: stopped=${stopped}, sessionMatch=${activeVoiceSessionId === sessionId}, restartCount=${webRestartAttemptCount}, pendingReason=${pendingWebEndReason}`);
       if (stopped || activeVoiceSessionId !== sessionId) {
         return;
       }
@@ -656,6 +720,36 @@ export function startVoiceListeningSession({
       const endMessage = pendingWebEndMessage ?? 'Speech recognition ended unexpectedly';
       pendingWebEndReason = null;
       pendingWebEndMessage = null;
+
+      // Non-recoverable errors — don't waste restart attempts.
+      if (endReason === 'unsupported' || endReason === 'permission') {
+        // If the failure looks locale-related and we have a fallback, try it
+        // once before giving up (e.g. "fr-CA" rejected → try "fr").
+        if (endReason === 'unsupported' && resolvedLocales.fallback && recognition.lang !== resolvedLocales.fallback) {
+          sttDebug(`[STT_DEBUG] web locale fallback: "${recognition.lang}" → "${resolvedLocales.fallback}"`);
+          recognition.lang = resolvedLocales.fallback;
+          const doFallbackStart = () => {
+            if (stopped || activeVoiceSessionId !== sessionId) return;
+            try {
+              recognition.start();
+              sttDebug(`[STT_DEBUG] web fallback recognition.start() succeeded`);
+            } catch (error) {
+              emitEnd(
+                classifyStartErrorReason(error),
+                error instanceof Error ? error.message : typeof error === 'string' ? error : endMessage
+              );
+            }
+          };
+          if (IS_IOS_MOBILE_WEB) {
+            setTimeout(doFallbackStart, 50);
+          } else {
+            doFallbackStart();
+          }
+          return;
+        }
+        emitEnd(endReason, endMessage);
+        return;
+      }
 
       if (webRestartAttemptCount >= WEB_SESSION_MAX_RESTARTS) {
         emitEnd(endReason, endMessage);
@@ -669,6 +763,7 @@ export function startVoiceListeningSession({
           return;
         }
         try {
+          sttDebug(`[STT_DEBUG] web restart attempt ${webRestartAttemptCount}/${WEB_SESSION_MAX_RESTARTS}, lang=${recognition.lang}`);
           recognition.start();
         } catch (error) {
           emitEnd(
@@ -689,7 +784,9 @@ export function startVoiceListeningSession({
     };
 
     try {
+      sttDebug(`[STT_DEBUG] web recognition.start() calling...`);
       recognition.start();
+      sttDebug(`[STT_DEBUG] web recognition.start() succeeded`);
     } catch (error) {
       const reason = classifyStartErrorReason(error);
       if (reason !== 'permission' && resolvedLocales.fallback) {

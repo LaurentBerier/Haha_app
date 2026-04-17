@@ -304,9 +304,17 @@ export function streamClaudeResponse(params: ClaudeStreamParams): () => void {
       if (!response.ok) {
         let payload: unknown;
         try {
-          payload = await response.json();
+          // Read as text first to avoid "Body is disturbed or locked" on iOS Safari.
+          // response.json() partially consumes the body on failure, leaving it in a
+          // disturbed state where response.text() also throws.
+          const rawText = await response.text();
+          try {
+            payload = JSON.parse(rawText);
+          } catch {
+            payload = rawText;
+          }
         } catch {
-          payload = await response.text();
+          payload = null;
         }
         emitError(toApiError(payload, response.status));
         return;

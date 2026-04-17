@@ -38,6 +38,7 @@ import type { ChatError } from '../../../models/ChatError';
 import { normalizeConversationThreadType } from '../../../models/Conversation';
 import type { Message } from '../../../models/Message';
 import { synthesizeVoice } from '../../../services/voiceEngine';
+import { sttDebug, toggleSttDebugOverlay } from '../../../services/sttDebugLogger';
 import { clearTerminalCooldownForPurpose } from '../../../services/ttsService';
 import { attemptVoiceAutoplayUri, attemptVoiceAutoplayUriDetailed } from '../../../services/voiceAutoplayService';
 import { markWebAutoplaySessionUnlocked, queueLatestWebAutoplayUnlockRetry, clearPendingWebAutoplayUnlockRetry } from '../../../services/webAutoplayUnlockService';
@@ -1844,28 +1845,40 @@ export default function ModeSelectHomeScreen() {
             }
           });
 
-          if (!isRunActive()) {
+          // After the message is updated with voice metadata, autoplay should proceed
+          // even if the effect was re-triggered by an unrelated dependency change
+          // (e.g., store hydration changing conversationModeEnabled / voiceAutoPlay).
+          // Only bail if the run was superseded by a NEW greeting run or the screen lost focus.
+          if (activeGreetingRunIdRef.current !== runId) {
+            sttDebug(`[STT_DEBUG] greeting autoplay: run superseded (active=${activeGreetingRunIdRef.current}, this=${runId}), skipping`);
             return;
           }
           if (!modeSelectScreenFocusedRef.current) {
+            sttDebug('[STT_DEBUG] greeting autoplay: screen not focused, skipping');
             return;
           }
 
+          // Read autoplay policy from live store state so the decision isn't stale
+          // if the effect closure captured pre-hydration defaults.
+          const liveAutoplayState = useStore.getState();
           const shouldAutoPlayGreeting = shouldAutoPlayGreetingVoice({
-            conversationModeEnabled,
-            voiceAutoPlayEnabled: voiceAutoPlay,
+            conversationModeEnabled: liveAutoplayState.conversationModeEnabled,
+            voiceAutoPlayEnabled: liveAutoplayState.voiceAutoPlay,
             forceAutoplay: forceGreetingAutoplay,
-            quotaBlocked: isQuotaBlocked
+            quotaBlocked: Boolean(liveAutoplayState.quota?.isBlocked)
           });
+          sttDebug(`[STT_DEBUG] greeting autoplay: shouldAutoPlay=${shouldAutoPlayGreeting}, convMode=${liveAutoplayState.conversationModeEnabled}, voiceAutoPlay=${liveAutoplayState.voiceAutoPlay}, force=${forceGreetingAutoplay}, quotaBlocked=${Boolean(liveAutoplayState.quota?.isBlocked)}`);
           if (!shouldAutoPlayGreeting) {
             return;
           }
 
+          sttDebug(`[STT_DEBUG] greeting autoplay: attempting playback, uri=${greetingAudioUri?.substring(0, 50)}`);
           const playbackOutcome = await attemptGreetingAutoplayWithRetries({
             audioPlayer: audioPlayerRef.current,
             uri: greetingAudioUri,
             messageId: greetingMessageId
           });
+          sttDebug(`[STT_DEBUG] greeting autoplay: outcome=${playbackOutcome.state}, reason=${playbackOutcome.failureReason}`);
           if (playbackOutcome.state === 'pending_web_unlock') {
             setPendingGreetingAudio({
               conversationId: introConversation.id,
@@ -2097,22 +2110,27 @@ export default function ModeSelectHomeScreen() {
     if (!isModeSelectScreenFocused || !pendingGreetingAudio) {
       return;
     }
+    // Read live store values so the decision isn't stale from pre-hydration defaults.
+    const liveRetryState = useStore.getState();
     if (
       !shouldAutoPlayPendingGreetingVoice({
-        hasPendingGreetingAudio: Boolean(pendingGreetingAudio),
-        conversationModeEnabled,
-        voiceAutoPlayEnabled: voiceAutoPlay,
+        hasPendingGreetingAudio: true,
+        conversationModeEnabled: liveRetryState.conversationModeEnabled,
+        voiceAutoPlayEnabled: liveRetryState.voiceAutoPlay,
         forceAutoplay: pendingGreetingAudio.forceAutoplay,
-        quotaBlocked: isQuotaBlocked
+        quotaBlocked: Boolean(liveRetryState.quota?.isBlocked)
       })
     ) {
       setPendingGreetingAudio(null);
       return;
     }
     const pendingAudio = pendingGreetingAudio;
+    sttDebug(`[STT_DEBUG] greeting web retry: queueing unlock retry for pending audio`);
     queueLatestWebAutoplayUnlockRetry(() => {
+      sttDebug(`[STT_DEBUG] greeting web retry: unlock callback fired, attempting playback`);
       void (async () => {
         if (!modeSelectScreenFocusedRef.current) {
+          sttDebug(`[STT_DEBUG] greeting web retry: screen not focused, skipping`);
           return;
         }
         const playbackOutcome = await attemptGreetingAutoplayWithRetries({
@@ -2120,12 +2138,12 @@ export default function ModeSelectHomeScreen() {
           uri: pendingAudio.uri,
           messageId: pendingAudio.messageId
         });
+        sttDebug(`[STT_DEBUG] greeting web retry: outcome=${playbackOutcome.state}`);
         if (!modeSelectScreenFocusedRef.current) {
           return;
         }
-        if (playbackOutcome.state === 'started' || playbackOutcome.state === 'failed') {
-          setPendingGreetingAudio(null);
-        }
+        // Clear pending state on success, failure, or pending_web_unlock (retry exhausted).
+        setPendingGreetingAudio(null);
       })();
     });
   }, [
@@ -2164,11 +2182,13 @@ export default function ModeSelectHomeScreen() {
         <AmbientGlow variant="mode" isActive={isModeSelectScreenFocused} />
         <View style={[styles.topRow, { paddingHorizontal: headerHorizontalInset }]}>
           <BackButton testID="mode-select-back" />
-          <View pointerEvents="none" style={styles.topRowArtistNameWrap}>
+          <Pressable onPress={() => {
+            if (Platform.OS === 'web') toggleSttDebugOverlay();
+          }} style={styles.topRowArtistNameWrap}>
             <Text style={styles.topRowArtistName} numberOfLines={1}>
               {artist.name}
             </Text>
-          </View>
+          </Pressable>
         </View>
         <ScrollView
           testID="mode-select-screen"

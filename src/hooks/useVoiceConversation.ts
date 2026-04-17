@@ -19,6 +19,7 @@ import {
   type VoiceSessionEndReason
 } from '../services/voiceEngine';
 import { sttDebug } from '../services/sttDebugLogger';
+import { ensureIosAudioContextSuspended } from './useAudioPlayer';
 
 const parsedSilenceTimeout = Number.parseInt(process.env[ENV_SILENCE_TIMEOUT_MS] ?? '', 10);
 const SILENCE_TIMEOUT_MS =
@@ -237,6 +238,7 @@ interface ActiveVoiceSessionContext {
   statusBeforeStart: VoiceConversationStatus;
   hadAudioStart: boolean;
   hadResult: boolean;
+  usedBareLocale: boolean;
 }
 
 export interface PostPlaybackStartupRecoveryState {
@@ -381,7 +383,9 @@ export function shouldArmWebLivenessWatchdog(state: WebLivenessWatchdogState): b
     return false;
   }
 
-  return state.origin === 'recovery' || state.statusBeforeStart === 'assistant_busy';
+  // Arm on ALL iOS Safari sessions — STT can be silently dead after TTS
+  // in any scenario (auto, recovery, resume), not just recovery/post-busy.
+  return true;
 }
 
 export function shouldUsePostPlaybackStartupRecovery(state: PostPlaybackStartupRecoveryState): boolean {
@@ -655,6 +659,9 @@ export function useVoiceConversation({
   const startListeningFlowRef = useRef<((origin: VoiceStartOrigin) => Promise<void>) | null>(null);
   const activeSessionContextRef = useRef<ActiveVoiceSessionContext | null>(null);
   const postPlaybackStartupRecoveryAttemptRef = useRef(0);
+  // When the liveness watchdog fires (14s with no results on iOS Safari),
+  // the next recovery attempt should try the bare locale prefix (e.g. "fr" instead of "fr-CA").
+  const preferBareLocaleRef = useRef(false);
   const enabledRef = useRef(enabled);
   const disabledRef = useRef(disabled);
   const isPlayingRef = useRef(isPlaying);
@@ -917,6 +924,8 @@ export function useVoiceConversation({
 
       if (event.reason === 'unsupported') {
         postPlaybackStartupRecoveryAttemptRef.current = 0;
+        clearAssistantBusyRecoveryTimer();
+        clearRecoveryTimer();
         dispatch({ type: 'unsupported' });
         return;
       }
@@ -1049,6 +1058,12 @@ export function useVoiceConversation({
         return;
       }
 
+      // iOS Safari blur events during TTS can leave webTabActiveRef stale at
+      // false even though the page is visible. Refresh before gate checks.
+      if (IOS_WEB_RUNTIME && Platform.OS === 'web' && typeof document !== 'undefined' && document.visibilityState !== 'hidden') {
+        webTabActiveRef.current = true;
+      }
+
       if (startInFlightRef.current) {
         sttDebug(`[STT_DEBUG] startListeningFlow: BLOCKED by startInFlight`);
         return;
@@ -1138,14 +1153,58 @@ export function useVoiceConversation({
           statusBeforeStart: latestStatus
         });
         const audioStartTimeoutId = setTimeout(() => {
-          if (!audioStartFired && isMountedRef.current) {
+          // Guard: only dispatch 'listening' if this session is still active.
+          // Without this check, a killed session's timer corrupts the status
+          // (e.g. assistant_busy → listening), preventing the watchdog from arming.
+          if (!audioStartFired && isMountedRef.current && activeSessionRef.current) {
             dispatch({ type: 'listening' });
           }
         }, 1000);
 
+        // Ensure the iOS AudioContext is suspended before starting STT.
+        // A running AudioContext holds the iOS audio route and prevents
+        // webkitSpeechRecognition from detecting speech (onspeechstart never fires).
+        if (IOS_WEB_RUNTIME && Platform.OS === 'web') {
+          ensureIosAudioContextSuspended();
+        }
+
+        // On iOS Safari, briefly acquire the mic via getUserMedia before
+        // SpeechRecognition.start(). This forces iOS to switch the audio
+        // session from playback to recording mode, which pause()+load() on
+        // the <audio> element alone doesn't achieve. The stream is stopped
+        // immediately — SpeechRecognition will re-acquire the mic on start().
+        if (IOS_WEB_RUNTIME && Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+          try {
+            sttDebug('[STT_DEBUG] iOS mic prime: requesting getUserMedia to force recording mode');
+            const micPromise = navigator.mediaDevices.getUserMedia({ audio: true });
+            const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000));
+            const stream = await Promise.race([micPromise, timeoutPromise]);
+            if (stream) {
+              stream.getTracks().forEach(t => t.stop());
+              sttDebug('[STT_DEBUG] iOS mic prime: stream acquired and released');
+            } else {
+              sttDebug('[STT_DEBUG] iOS mic prime: timed out after 2s, proceeding without mic prime');
+              // Clean up if getUserMedia resolves after the timeout
+              micPromise.then(s => s.getTracks().forEach(t => t.stop())).catch(() => {});
+            }
+          } catch (micErr) {
+            sttDebug(`[STT_DEBUG] iOS mic prime: failed (${micErr instanceof Error ? micErr.message : String(micErr)}), proceeding anyway`);
+          }
+          if (!isMountedRef.current || (origin === 'auto' || origin === 'recovery'
+            ? !shouldAttemptAutoListen({ shouldAutoListen, webTabActive: webTabActiveRef.current, hasUserActivation: hasUserActivatedListeningRef.current, enabled: enabledRef.current, disabled: disabledRef.current, isPlaying: isPlayingRef.current, hasTypedDraft: hasTypedDraftRef.current, status: stateRef.current.status })
+            : !enabledRef.current || disabledRef.current || hasTypedDraftRef.current || isPlayingRef.current)) {
+            dispatch({ type: 'set_off' });
+            return;
+          }
+        }
+
+        const useBareLocale = preferBareLocaleRef.current;
+        preferBareLocaleRef.current = false;
+
         const session = startVoiceListeningSession({
           locale: languageRef.current,
           fallbackLocale: fallbackLanguageRef.current,
+          preferBareLocale: useBareLocale,
           onResult: (event) => {
             resultReceived = true;
             if (activeSessionContextRef.current?.id === event.sessionId) {
@@ -1174,15 +1233,33 @@ export function useVoiceConversation({
                 }
 
                 stopActiveSession();
-                const nextAttempt = stateRef.current.recoveryAttempt + 1;
-                const baseDelayMs = RECOVERY_DELAYS_MS[nextAttempt] ?? null;
-                if (baseDelayMs === null) {
+
+                // If this session already used the bare locale and still got
+                // no results, there's nothing more to try — give up.
+                const sessionCtx = activeSessionContextRef.current;
+                if (sessionCtx?.usedBareLocale) {
+                  sttDebug(`[STT_DEBUG] liveness watchdog: bare locale already tried, giving up`);
                   dispatch({ type: 'pause_recovery' });
                   return;
                 }
 
-                const delayMs = Math.max(baseDelayMs, ASSISTANT_BUSY_RECOVERY_DELAY_MS);
-                dispatch({ type: 'recovery_scheduled', attempt: nextAttempt });
+                // Signal the next recovery to try bare locale (e.g. "fr" instead of "fr-CA")
+                // since the full locale produced no results for 14s.
+                preferBareLocaleRef.current = true;
+                const nextAttempt = stateRef.current.recoveryAttempt + 1;
+                const baseDelayMs = RECOVERY_DELAYS_MS[nextAttempt] ?? null;
+
+                // Always allow at least one attempt with the bare locale even if the
+                // normal recovery budget is exhausted — this is a locale diagnostic,
+                // not a generic retry.
+                const delayMs = Math.max(
+                  baseDelayMs ?? RECOVERY_DELAYS_MS[RECOVERY_DELAYS_MS.length - 1] ?? ASSISTANT_BUSY_RECOVERY_DELAY_MS,
+                  ASSISTANT_BUSY_RECOVERY_DELAY_MS
+                );
+                const cappedAttempt = Math.min(nextAttempt, RECOVERY_DELAYS_MS.length);
+                sttDebug(`[STT_DEBUG] liveness watchdog: no results in ${WEB_VOICE_LIVENESS_MS}ms, scheduling bare-locale recovery (attempt=${cappedAttempt}, delay=${delayMs}ms, budgetBypass=${baseDelayMs === null})`);
+
+                dispatch({ type: 'recovery_scheduled', attempt: cappedAttempt });
                 clearRecoveryTimer();
                 recoveryTimerRef.current = setTimeout(() => {
                   recoveryTimerRef.current = null;
@@ -1214,7 +1291,8 @@ export function useVoiceConversation({
           origin,
           statusBeforeStart: latestStatus,
           hadAudioStart: false,
-          hadResult: false
+          hadResult: false,
+          usedBareLocale: useBareLocale
         };
         sttDebug(`[STT_DEBUG] startListeningFlow: session created, id=${session.id}, origin=${origin}, statusBeforeStart=${latestStatus}`);
       } finally {
@@ -1247,6 +1325,11 @@ export function useVoiceConversation({
     }
     audioPlayerOnQueueCompleteRef.current = () => {
       sttDebug('[STT_DEBUG] onQueueComplete: fired (bypassing render cycle)');
+      // iOS Safari blur events during TTS can leave webTabActiveRef stale.
+      // Refresh from the live visibility state before checking.
+      if (IOS_WEB_RUNTIME && typeof document !== 'undefined' && document.visibilityState !== 'hidden') {
+        webTabActiveRef.current = true;
+      }
       const canStart = shouldAttemptAutoListen({
         shouldAutoListen,
         webTabActive: webTabActiveRef.current,
@@ -1261,8 +1344,10 @@ export function useVoiceConversation({
         return;
       }
 
-      // On iOS Safari, yield briefly after audio.load() releases the audio
-      // session so the browser can reclaim audio hardware before STT starts.
+      // On iOS Safari, yield after destroying the <audio> element so the
+      // browser can fully release the audio route before STT starts.
+      // 300ms gives iOS enough time to reset audio routing after element
+      // destruction (50ms was insufficient — onspeechstart never fired).
       const beginListen = () => {
         if (!isMountedRef.current) return;
         dispatch({ type: 'starting' });
@@ -1270,7 +1355,7 @@ export function useVoiceConversation({
       };
 
       if (IOS_WEB_RUNTIME) {
-        setTimeout(beginListen, 50);
+        setTimeout(beginListen, 300);
       } else {
         beginListen();
       }
@@ -1304,10 +1389,17 @@ export function useVoiceConversation({
     };
 
     const handleWindowBlur = () => {
-      // Debounce by 300 ms: iOS Safari fires a spurious blur/focus pair when
-      // HTMLAudioElement.play() acquires the media session.  Real tab-switch
-      // blurs are not cancelled by an immediate focus event, so they still go
-      // through after the debounce window.
+      // iOS Safari fires spurious blur events when the audio session changes
+      // (TTS play/pause/stop). These are NOT real tab-away events. Real tab
+      // switches are caught reliably by visibilitychange and pagehide, so
+      // skip blur entirely on iOS Safari to avoid setting webTabActive=false
+      // and permanently blocking STT auto-restart after TTS.
+      if (IOS_WEB_RUNTIME) {
+        return;
+      }
+      // Debounce by 300 ms: desktop browsers may fire a spurious blur/focus
+      // pair. Real tab-switch blurs are not cancelled by an immediate focus
+      // event, so they still go through after the debounce window.
       cancelBlurDebounce();
       blurDebounceTimerRef.current = setTimeout(() => {
         blurDebounceTimerRef.current = null;
@@ -1316,6 +1408,13 @@ export function useVoiceConversation({
     };
 
     const handleWindowFocus = () => {
+      // On iOS Safari, blur events are skipped (see handleWindowBlur), so
+      // focus just refreshes the ref. Suspend/resume is driven by
+      // visibilitychange and pagehide instead.
+      if (IOS_WEB_RUNTIME) {
+        webTabActiveRef.current = true;
+        return;
+      }
       // If a blur debounce is pending it was spurious — cancel it instead of
       // treating this as a real resume (which would also be a no-op, but
       // cancelling makes the intent explicit).
