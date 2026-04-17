@@ -1,15 +1,18 @@
 import type { VoiceConversationStatus } from '../../hooks/useVoiceConversation';
 
-const ACTIVE_MIC_STATES = new Set<VoiceConversationStatus>(['starting', 'listening', 'recovering']);
+const ACTIVE_MIC_STATES = new Set<VoiceConversationStatus>([
+  'starting',
+  'listening',
+  'recovering',
+  'assistant_busy'
+]);
 const PAUSED_MIC_STATES = new Set<VoiceConversationStatus>([
-  'assistant_busy',
   'paused_manual',
   'paused_recovery',
   'unsupported',
   'error'
 ]);
 const OFF_MIC_STATES = new Set<VoiceConversationStatus>([
-  'assistant_busy',
   'off',
   'paused_manual',
   'paused_recovery',

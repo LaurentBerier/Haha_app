@@ -6,22 +6,22 @@ import {
 } from './chatInputMicState';
 
 describe('chatInputMicState', () => {
-  it('treats starting and recovering as active mic states', () => {
+  it('treats starting, recovering, and assistant_busy as active mic states', () => {
     expect(isChatInputMicActive('starting')).toBe(true);
     expect(isChatInputMicActive('recovering')).toBe(true);
-    expect(isChatInputMicActive('assistant_busy')).toBe(false);
+    expect(isChatInputMicActive('assistant_busy')).toBe(true);
   });
 
   it('uses the off mic asset when conversation mode is off or paused', () => {
     expect(shouldUseOffMicAsset(false, 'listening')).toBe(true);
     expect(shouldUseOffMicAsset(true, 'paused_manual')).toBe(true);
     expect(shouldUseOffMicAsset(true, 'unsupported')).toBe(true);
-    expect(shouldUseOffMicAsset(true, 'assistant_busy')).toBe(true);
+    expect(shouldUseOffMicAsset(true, 'assistant_busy')).toBe(false);
     expect(shouldUseOffMicAsset(true, 'listening')).toBe(false);
   });
 
   it('marks recovery and manual pause as paused ui states', () => {
-    expect(isChatInputMicPaused(true, 'assistant_busy')).toBe(true);
+    expect(isChatInputMicPaused(true, 'assistant_busy')).toBe(false);
     expect(isChatInputMicPaused(true, 'paused_manual')).toBe(true);
     expect(isChatInputMicPaused(true, 'paused_recovery')).toBe(true);
     expect(isChatInputMicPaused(true, 'listening')).toBe(false);

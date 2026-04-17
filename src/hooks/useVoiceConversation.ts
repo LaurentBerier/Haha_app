@@ -1344,10 +1344,18 @@ export function useVoiceConversation({
         return;
       }
 
-      // On iOS Safari, yield after destroying the <audio> element so the
-      // browser can fully release the audio route before STT starts.
-      // 300ms gives iOS enough time to reset audio routing after element
-      // destruction (50ms was insufficient — onspeechstart never fired).
+      // iOS Safari: if the STT session survived TTS (was muted, not killed),
+      // just unmute it — no recognition.start() call, so no system beep.
+      const session = activeSessionRef.current;
+      if (IOS_WEB_RUNTIME && session && session.isAlive && session.isMuted) {
+        session.unmute();
+        dispatch({ type: 'listening' });
+        sttDebug('[STT_DEBUG] onQueueComplete: unmuted existing session (no beep)');
+        return;
+      }
+
+      // Session died during TTS or non-iOS — fall back to full restart.
+      // On iOS this produces one beep (unavoidable), still better than two.
       const beginListen = () => {
         if (!isMountedRef.current) return;
         dispatch({ type: 'starting' });
@@ -1519,15 +1527,20 @@ export function useVoiceConversation({
       return;
     }
 
-    // Stop the active recording as soon as audio starts loading (not just when it starts
-    // playing). On iOS, the recording session holds PlayAndRecord mode which routes audio
-    // to the earpiece; releasing it before playback lets the OS switch to the loudspeaker
-    // before the first audio frame is delivered.
+    // When TTS starts, suppress STT to avoid audio route conflicts.
+    // On iOS Safari web, mute the session instead of stopping it to avoid
+    // the system beep that fires on every recognition.stop()/start() call.
+    // On other platforms, stop the session as before.
     if (isPlaying || isAudioPlaybackLoading) {
       sttDebug(`[STT_DEBUG] playback-effect: isPlaying=${isPlaying}, isAudioPlaybackLoading=${isAudioPlaybackLoading}, status=${stateRef.current.status}, hasSession=${Boolean(activeSessionRef.current)}`);
       clearRecoveryTimer();
       clearSilenceTimer();
-      stopActiveSession();
+      if (IOS_WEB_RUNTIME && activeSessionRef.current) {
+        activeSessionRef.current.mute();
+        sttDebug('[STT_DEBUG] playback-effect: muted STT session (avoiding beep)');
+      } else {
+        stopActiveSession();
+      }
       if (!isLockedMicStatus(stateRef.current.status)) {
         dispatch({ type: 'assistant_busy' });
       } else {

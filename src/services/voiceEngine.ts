@@ -147,6 +147,11 @@ export interface VoiceListeningEndEvent {
 export interface VoiceListeningSession {
   id: number;
   stop: () => void;
+  mute: () => void;
+  unmute: () => void;
+  readonly isMuted: boolean;
+  /** false if iOS killed the recognition session while muted (e.g. audio route change during TTS) */
+  readonly isAlive: boolean;
 }
 
 export interface StartVoiceListeningSessionOptions {
@@ -570,6 +575,8 @@ export function startVoiceListeningSession({
   const sessionId = nextVoiceSessionId;
   nextVoiceSessionId += 1;
   let stopped = false;
+  let muted = false;
+  let alive = true;
   let pendingWebEndReason: VoiceSessionEndReason | null = null;
   let pendingWebEndMessage: string | null = null;
   let webRestartAttemptCount = 0;
@@ -593,11 +600,15 @@ export function startVoiceListeningSession({
 
   const session: VoiceListeningSession = {
     id: sessionId,
-    stop
+    stop,
+    mute: () => { muted = true; },
+    unmute: () => { muted = false; },
+    get isMuted() { return muted; },
+    get isAlive() { return alive && !stopped; }
   };
 
   const emitResult = (transcript: string) => {
-    if (stopped || activeVoiceSessionId !== sessionId) {
+    if (stopped || muted || activeVoiceSessionId !== sessionId) {
       return;
     }
 
@@ -663,9 +674,9 @@ export function startVoiceListeningSession({
     const recognition = new WebRecognitionCtor();
     activeWebRecognition = recognition;
 
-    // iOS Safari is significantly more stable in single-utterance mode, matching
-    // native iOS behaviour. The onend handler auto-restarts for continued listening.
-    recognition.continuous = !IS_IOS_MOBILE_WEB;
+    // Use continuous mode on all platforms to avoid iOS Safari system beeps
+    // that fire on every recognition.start()/stop() call.
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.maxAlternatives = 1;
     recognition.lang = resolvedLocales.primary;
@@ -711,8 +722,18 @@ export function startVoiceListeningSession({
     };
 
     recognition.onend = () => {
-      sttDebug(`[STT_DEBUG] web onend fired: stopped=${stopped}, sessionMatch=${activeVoiceSessionId === sessionId}, restartCount=${webRestartAttemptCount}, pendingReason=${pendingWebEndReason}`);
+      sttDebug(`[STT_DEBUG] web onend fired: stopped=${stopped}, muted=${muted}, sessionMatch=${activeVoiceSessionId === sessionId}, restartCount=${webRestartAttemptCount}, pendingReason=${pendingWebEndReason}`);
       if (stopped || activeVoiceSessionId !== sessionId) {
+        return;
+      }
+
+      // If muted (during TTS playback), iOS killed the session due to audio
+      // route change. Mark dead but don't restart — restarting would cause a
+      // system beep during playback. The unmute path in useVoiceConversation
+      // will detect isAlive=false and fall back to startListeningFlow.
+      if (muted) {
+        alive = false;
+        sttDebug('[STT_DEBUG] web onend while muted — session died, will restart after TTS');
         return;
       }
 
