@@ -206,11 +206,18 @@ function getOrCreateIosAudioCtx(): AudioContext | null {
 
 // Prime the AudioContext on the first user gesture. iOS Safari requires
 // AudioContext.resume() during a user interaction to unlock audio output.
+// After unlocking, immediately suspend — a running AudioContext holds the
+// iOS audio route and prevents webkitSpeechRecognition from detecting speech.
 if (IS_IOS_MOBILE_WEB && typeof document !== 'undefined') {
   const primeCtx = () => {
     const ctx = getOrCreateIosAudioCtx();
     if (ctx && ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
+      ctx.resume().then(() => {
+        // Suspend immediately after unlocking. The context is now gesture-
+        // unlocked and can be resumed programmatically when TTS needs to play.
+        ctx.suspend().catch(() => {});
+        sttDebug('[STT_DEBUG] iOS AudioContext primed and re-suspended');
+      }).catch(() => {});
       sttDebug('[STT_DEBUG] iOS AudioContext resumed during user gesture');
     }
     ['touchstart', 'pointerdown', 'mousedown', 'keydown'].forEach(e => {
@@ -220,6 +227,15 @@ if (IS_IOS_MOBILE_WEB && typeof document !== 'undefined') {
   ['touchstart', 'pointerdown', 'mousedown', 'keydown'].forEach(e => {
     document.addEventListener(e, primeCtx, { capture: true });
   });
+}
+
+/** Ensure the iOS AudioContext is suspended so STT can claim the audio route.
+ *  No-op on non-iOS or if the context doesn't exist / is already suspended. */
+export function ensureIosAudioContextSuspended(): void {
+  if (iosAudioCtx && iosAudioCtx.state === 'running') {
+    iosAudioCtx.suspend().catch(() => {});
+    sttDebug('[STT_DEBUG] ensureIosAudioContextSuspended: suspended running AudioContext');
+  }
 }
 
 export function useAudioPlayer(): AudioPlayerController {

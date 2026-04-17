@@ -19,6 +19,7 @@ import {
   type VoiceSessionEndReason
 } from '../services/voiceEngine';
 import { sttDebug } from '../services/sttDebugLogger';
+import { ensureIosAudioContextSuspended } from './useAudioPlayer';
 
 const parsedSilenceTimeout = Number.parseInt(process.env[ENV_SILENCE_TIMEOUT_MS] ?? '', 10);
 const SILENCE_TIMEOUT_MS =
@@ -1159,6 +1160,13 @@ export function useVoiceConversation({
             dispatch({ type: 'listening' });
           }
         }, 1000);
+
+        // Ensure the iOS AudioContext is suspended before starting STT.
+        // A running AudioContext holds the iOS audio route and prevents
+        // webkitSpeechRecognition from detecting speech (onspeechstart never fires).
+        if (IOS_WEB_RUNTIME && Platform.OS === 'web') {
+          ensureIosAudioContextSuspended();
+        }
 
         // On iOS Safari, briefly acquire the mic via getUserMedia before
         // SpeechRecognition.start(). This forces iOS to switch the audio
