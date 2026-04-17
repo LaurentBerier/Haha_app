@@ -208,12 +208,32 @@ function getOrCreateIosAudioCtx(): AudioContext | null {
 // AudioContext.resume() during a user interaction to unlock audio output.
 // The context is left in 'running' state so greeting TTS can autoplay
 // immediately. STT startup suspends it via ensureIosAudioContextSuspended().
+// A silent buffer is played during the gesture to fully establish the
+// "unlocked" state — some iOS Safari versions require actual audio output
+// during a gesture before suspend()/resume() cycles work without gestures.
 if (IS_IOS_MOBILE_WEB && typeof document !== 'undefined') {
   const primeCtx = () => {
     const ctx = getOrCreateIosAudioCtx();
     if (ctx && ctx.state === 'suspended') {
-      ctx.resume().catch(() => {});
+      ctx.resume().then(() => {
+        // Play a single-sample silent buffer to fully unlock the AudioContext.
+        // This ensures subsequent suspend()/resume() cycles work without gestures.
+        try {
+          const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
+          const src = ctx.createBufferSource();
+          src.buffer = buf;
+          src.connect(ctx.destination);
+          src.start();
+          sttDebug(`[STT_DEBUG] iOS AudioContext primed with silent buffer (state=${ctx.state})`);
+        } catch {
+          sttDebug(`[STT_DEBUG] iOS AudioContext primed without silent buffer (state=${ctx.state})`);
+        }
+      }).catch(() => {
+        sttDebug('[STT_DEBUG] iOS AudioContext resume failed during gesture');
+      });
       sttDebug('[STT_DEBUG] iOS AudioContext resumed during user gesture');
+    } else {
+      sttDebug(`[STT_DEBUG] iOS AudioContext primeCtx: ctx=${ctx ? ctx.state : 'null'}`);
     }
     ['touchstart', 'pointerdown', 'mousedown', 'keydown'].forEach(e => {
       document.removeEventListener(e, primeCtx, true);
@@ -516,7 +536,12 @@ export function useAudioPlayer(): AudioPlayerController {
               // Resume if suspended (from previous STT mic reclaim)
               if (audioCtx.state === 'suspended') {
                 await audioCtx.resume();
-                sttDebug('[STT_DEBUG] iOS AudioContext: resumed for playback');
+                sttDebug(`[STT_DEBUG] iOS AudioContext: resumed for playback (post-resume state=${audioCtx.state})`);
+              }
+              // Verify the context is actually running after resume
+              if (audioCtx.state !== 'running') {
+                sttDebug(`[STT_DEBUG] iOS AudioContext: not running after resume (state=${audioCtx.state}), falling back to <audio>`);
+                throw new Error(`AudioContext not running: ${audioCtx.state}`);
               }
 
               if (!isMountedRef.current || playbackTokenRef.current !== token) {
