@@ -38,7 +38,7 @@ import type { ChatError } from '../../../models/ChatError';
 import { normalizeConversationThreadType } from '../../../models/Conversation';
 import type { Message } from '../../../models/Message';
 import { synthesizeVoice } from '../../../services/voiceEngine';
-import { toggleSttDebugOverlay } from '../../../services/sttDebugLogger';
+import { sttDebug, toggleSttDebugOverlay } from '../../../services/sttDebugLogger';
 import { clearTerminalCooldownForPurpose } from '../../../services/ttsService';
 import { attemptVoiceAutoplayUri, attemptVoiceAutoplayUriDetailed } from '../../../services/voiceAutoplayService';
 import { markWebAutoplaySessionUnlocked, queueLatestWebAutoplayUnlockRetry, clearPendingWebAutoplayUnlockRetry } from '../../../services/webAutoplayUnlockService';
@@ -1858,15 +1858,18 @@ export default function ModeSelectHomeScreen() {
             forceAutoplay: forceGreetingAutoplay,
             quotaBlocked: isQuotaBlocked
           });
+          sttDebug(`[STT_DEBUG] greeting autoplay: shouldAutoPlay=${shouldAutoPlayGreeting}, convMode=${conversationModeEnabled}, voiceAutoPlay=${voiceAutoPlay}, force=${forceGreetingAutoplay}, quotaBlocked=${isQuotaBlocked}`);
           if (!shouldAutoPlayGreeting) {
             return;
           }
 
+          sttDebug(`[STT_DEBUG] greeting autoplay: attempting playback, uri=${greetingAudioUri?.substring(0, 50)}`);
           const playbackOutcome = await attemptGreetingAutoplayWithRetries({
             audioPlayer: audioPlayerRef.current,
             uri: greetingAudioUri,
             messageId: greetingMessageId
           });
+          sttDebug(`[STT_DEBUG] greeting autoplay: outcome=${playbackOutcome.state}, reason=${playbackOutcome.failureReason}`);
           if (playbackOutcome.state === 'pending_web_unlock') {
             setPendingGreetingAudio({
               conversationId: introConversation.id,
@@ -2111,9 +2114,12 @@ export default function ModeSelectHomeScreen() {
       return;
     }
     const pendingAudio = pendingGreetingAudio;
+    sttDebug(`[STT_DEBUG] greeting web retry: queueing unlock retry for pending audio`);
     queueLatestWebAutoplayUnlockRetry(() => {
+      sttDebug(`[STT_DEBUG] greeting web retry: unlock callback fired, attempting playback`);
       void (async () => {
         if (!modeSelectScreenFocusedRef.current) {
+          sttDebug(`[STT_DEBUG] greeting web retry: screen not focused, skipping`);
           return;
         }
         const playbackOutcome = await attemptGreetingAutoplayWithRetries({
@@ -2121,6 +2127,7 @@ export default function ModeSelectHomeScreen() {
           uri: pendingAudio.uri,
           messageId: pendingAudio.messageId
         });
+        sttDebug(`[STT_DEBUG] greeting web retry: outcome=${playbackOutcome.state}`);
         if (!modeSelectScreenFocusedRef.current) {
           return;
         }

@@ -227,9 +227,15 @@ if (IS_IOS_MOBILE_WEB && typeof document !== 'undefined') {
 /** Ensure the iOS AudioContext is suspended so STT can claim the audio route.
  *  No-op on non-iOS or if the context doesn't exist / is already suspended. */
 export function ensureIosAudioContextSuspended(): void {
-  if (iosAudioCtx && iosAudioCtx.state === 'running') {
+  if (!iosAudioCtx) {
+    sttDebug('[STT_DEBUG] ensureIosAudioContextSuspended: no AudioContext (null)');
+    return;
+  }
+  if (iosAudioCtx.state === 'running') {
     iosAudioCtx.suspend().catch(() => {});
     sttDebug('[STT_DEBUG] ensureIosAudioContextSuspended: suspended running AudioContext');
+  } else {
+    sttDebug(`[STT_DEBUG] ensureIosAudioContextSuspended: already ${iosAudioCtx.state}`);
   }
 }
 
@@ -502,6 +508,7 @@ export function useAudioPlayer(): AudioPlayerController {
 
         if (Platform.OS === 'web') {
           // iOS Safari: use AudioContext to avoid <audio> element holding audio route
+          sttDebug(`[STT_DEBUG] playIndex: isIOS=${IS_IOS_MOBILE_WEB}, iosAudioCtx=${iosAudioCtx ? iosAudioCtx.state : 'null'}, uri=${uri.substring(0, 50)}`);
           if (IS_IOS_MOBILE_WEB && iosAudioCtx && iosAudioCtx.state !== 'closed') {
             try {
               const audioCtx = iosAudioCtx;
@@ -566,6 +573,7 @@ export function useAudioPlayer(): AudioPlayerController {
           }
 
           // Standard web / iOS AudioContext fallback: use persistent <audio> element
+          sttDebug(`[STT_DEBUG] playIndex: using <audio> element fallback (isIOS=${IS_IOS_MOBILE_WEB})`);
           const webAudio = getOrCreatePersistentWebAudio();
           if (!webAudio) {
             await stop();
@@ -605,9 +613,11 @@ export function useAudioPlayer(): AudioPlayerController {
               setIsPlaying(true);
             }
             markWebAutoplaySessionUnlocked();
+            sttDebug('[STT_DEBUG] <audio> element: playback started');
             return PLAYBACK_STARTED_RESULT;
           } catch (error: unknown) {
             const reason = resolveAudioPlaybackFailureReason(error);
+            sttDebug(`[STT_DEBUG] <audio> element: play() failed, reason=${reason}, error=${error instanceof Error ? error.message : String(error)}`);
             if (reason === 'web_autoplay_blocked') {
               await stop();
               return toPlaybackFailureResult(reason);
