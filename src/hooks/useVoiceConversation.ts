@@ -1057,6 +1057,12 @@ export function useVoiceConversation({
         return;
       }
 
+      // iOS Safari blur events during TTS can leave webTabActiveRef stale at
+      // false even though the page is visible. Refresh before gate checks.
+      if (IOS_WEB_RUNTIME && Platform.OS === 'web' && typeof document !== 'undefined' && document.visibilityState !== 'hidden') {
+        webTabActiveRef.current = true;
+      }
+
       if (startInFlightRef.current) {
         sttDebug(`[STT_DEBUG] startListeningFlow: BLOCKED by startInFlight`);
         return;
@@ -1162,9 +1168,17 @@ export function useVoiceConversation({
         if (IOS_WEB_RUNTIME && Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
           try {
             sttDebug('[STT_DEBUG] iOS mic prime: requesting getUserMedia to force recording mode');
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            stream.getTracks().forEach(t => t.stop());
-            sttDebug('[STT_DEBUG] iOS mic prime: stream acquired and released');
+            const micPromise = navigator.mediaDevices.getUserMedia({ audio: true });
+            const timeoutPromise = new Promise<null>((resolve) => setTimeout(() => resolve(null), 2000));
+            const stream = await Promise.race([micPromise, timeoutPromise]);
+            if (stream) {
+              stream.getTracks().forEach(t => t.stop());
+              sttDebug('[STT_DEBUG] iOS mic prime: stream acquired and released');
+            } else {
+              sttDebug('[STT_DEBUG] iOS mic prime: timed out after 2s, proceeding without mic prime');
+              // Clean up if getUserMedia resolves after the timeout
+              micPromise.then(s => s.getTracks().forEach(t => t.stop())).catch(() => {});
+            }
           } catch (micErr) {
             sttDebug(`[STT_DEBUG] iOS mic prime: failed (${micErr instanceof Error ? micErr.message : String(micErr)}), proceeding anyway`);
           }
@@ -1303,6 +1317,11 @@ export function useVoiceConversation({
     }
     audioPlayerOnQueueCompleteRef.current = () => {
       sttDebug('[STT_DEBUG] onQueueComplete: fired (bypassing render cycle)');
+      // iOS Safari blur events during TTS can leave webTabActiveRef stale.
+      // Refresh from the live visibility state before checking.
+      if (IOS_WEB_RUNTIME && typeof document !== 'undefined' && document.visibilityState !== 'hidden') {
+        webTabActiveRef.current = true;
+      }
       const canStart = shouldAttemptAutoListen({
         shouldAutoListen,
         webTabActive: webTabActiveRef.current,
@@ -1362,10 +1381,17 @@ export function useVoiceConversation({
     };
 
     const handleWindowBlur = () => {
-      // Debounce by 300 ms: iOS Safari fires a spurious blur/focus pair when
-      // HTMLAudioElement.play() acquires the media session.  Real tab-switch
-      // blurs are not cancelled by an immediate focus event, so they still go
-      // through after the debounce window.
+      // iOS Safari fires spurious blur events when the audio session changes
+      // (TTS play/pause/stop). These are NOT real tab-away events. Real tab
+      // switches are caught reliably by visibilitychange and pagehide, so
+      // skip blur entirely on iOS Safari to avoid setting webTabActive=false
+      // and permanently blocking STT auto-restart after TTS.
+      if (IOS_WEB_RUNTIME) {
+        return;
+      }
+      // Debounce by 300 ms: desktop browsers may fire a spurious blur/focus
+      // pair. Real tab-switch blurs are not cancelled by an immediate focus
+      // event, so they still go through after the debounce window.
       cancelBlurDebounce();
       blurDebounceTimerRef.current = setTimeout(() => {
         blurDebounceTimerRef.current = null;
@@ -1374,6 +1400,13 @@ export function useVoiceConversation({
     };
 
     const handleWindowFocus = () => {
+      // On iOS Safari, blur events are skipped (see handleWindowBlur), so
+      // focus just refreshes the ref. Suspend/resume is driven by
+      // visibilitychange and pagehide instead.
+      if (IOS_WEB_RUNTIME) {
+        webTabActiveRef.current = true;
+        return;
+      }
       // If a blur debounce is pending it was spurious — cancel it instead of
       // treating this as a real resume (which would also be a no-op, but
       // cancelling makes the intent explicit).
