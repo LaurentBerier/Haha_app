@@ -237,6 +237,7 @@ interface ActiveVoiceSessionContext {
   statusBeforeStart: VoiceConversationStatus;
   hadAudioStart: boolean;
   hadResult: boolean;
+  usedBareLocale: boolean;
 }
 
 export interface PostPlaybackStartupRecoveryState {
@@ -1183,19 +1184,33 @@ export function useVoiceConversation({
                 }
 
                 stopActiveSession();
-                // Signal the next recovery to try bare locale (e.g. "fr" instead of "fr-CA")
-                // since the full locale produced no results for 14s.
-                preferBareLocaleRef.current = true;
-                sttDebug(`[STT_DEBUG] liveness watchdog: no results in ${WEB_VOICE_LIVENESS_MS}ms, will try bare locale on next recovery`);
-                const nextAttempt = stateRef.current.recoveryAttempt + 1;
-                const baseDelayMs = RECOVERY_DELAYS_MS[nextAttempt] ?? null;
-                if (baseDelayMs === null) {
+
+                // If this session already used the bare locale and still got
+                // no results, there's nothing more to try — give up.
+                const sessionCtx = activeSessionContextRef.current;
+                if (sessionCtx?.usedBareLocale) {
+                  sttDebug(`[STT_DEBUG] liveness watchdog: bare locale already tried, giving up`);
                   dispatch({ type: 'pause_recovery' });
                   return;
                 }
 
-                const delayMs = Math.max(baseDelayMs, ASSISTANT_BUSY_RECOVERY_DELAY_MS);
-                dispatch({ type: 'recovery_scheduled', attempt: nextAttempt });
+                // Signal the next recovery to try bare locale (e.g. "fr" instead of "fr-CA")
+                // since the full locale produced no results for 14s.
+                preferBareLocaleRef.current = true;
+                const nextAttempt = stateRef.current.recoveryAttempt + 1;
+                const baseDelayMs = RECOVERY_DELAYS_MS[nextAttempt] ?? null;
+
+                // Always allow at least one attempt with the bare locale even if the
+                // normal recovery budget is exhausted — this is a locale diagnostic,
+                // not a generic retry.
+                const delayMs = Math.max(
+                  baseDelayMs ?? RECOVERY_DELAYS_MS[RECOVERY_DELAYS_MS.length - 1] ?? ASSISTANT_BUSY_RECOVERY_DELAY_MS,
+                  ASSISTANT_BUSY_RECOVERY_DELAY_MS
+                );
+                const cappedAttempt = Math.min(nextAttempt, RECOVERY_DELAYS_MS.length);
+                sttDebug(`[STT_DEBUG] liveness watchdog: no results in ${WEB_VOICE_LIVENESS_MS}ms, scheduling bare-locale recovery (attempt=${cappedAttempt}, delay=${delayMs}ms, budgetBypass=${baseDelayMs === null})`);
+
+                dispatch({ type: 'recovery_scheduled', attempt: cappedAttempt });
                 clearRecoveryTimer();
                 recoveryTimerRef.current = setTimeout(() => {
                   recoveryTimerRef.current = null;
@@ -1227,7 +1242,8 @@ export function useVoiceConversation({
           origin,
           statusBeforeStart: latestStatus,
           hadAudioStart: false,
-          hadResult: false
+          hadResult: false,
+          usedBareLocale: useBareLocale
         };
         sttDebug(`[STT_DEBUG] startListeningFlow: session created, id=${session.id}, origin=${origin}, statusBeforeStart=${latestStatus}`);
       } finally {
