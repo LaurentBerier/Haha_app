@@ -148,28 +148,6 @@ function getOrCreatePersistentWebAudio(): WebAudioLike | null {
   return persistentWebAudio;
 }
 
-/** Destroy the persistent <audio> element so iOS Safari fully releases the
- *  audio route. The next TTS call will create a fresh element via
- *  getOrCreatePersistentWebAudio(). iOS Safari's tab-level autoplay unlock
- *  survives element destruction, so subsequent play() calls still work. */
-function destroyPersistentWebAudio(): void {
-  if (!persistentWebAudio) {
-    return;
-  }
-  try {
-    persistentWebAudio.pause();
-    persistentWebAudio.src = '';
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const el = persistentWebAudio as any;
-    if (typeof el.load === 'function') el.load();
-    if (typeof el.remove === 'function') el.remove();
-  } catch {
-    // noop
-  }
-  persistentWebAudio = null;
-  sttDebug('[STT_DEBUG] destroyPersistentWebAudio: element destroyed');
-}
-
 // ---------------------------------------------------------------------------
 // iOS Safari: AudioContext-based TTS playback
 //
@@ -337,9 +315,9 @@ export function useAudioPlayer(): AudioPlayerController {
       // Only call load() when we need to release the audio session for STT mic reclaim.
       // Calling load() between chunks kills the autoplay-unlock state on iOS Safari,
       // causing subsequent play() calls to fail with NotAllowedError.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      if (forMicReclaim && typeof (audio as any).load === 'function') {
-        (audio as any).load();
+      const loadableAudio = audio as WebAudioLike & { load?: () => void };
+      if (forMicReclaim && typeof loadableAudio.load === 'function') {
+        loadableAudio.load();
       }
     }
     webAudioRef.current = null;
@@ -408,7 +386,7 @@ export function useAudioPlayer(): AudioPlayerController {
           sttDebug('[STT_DEBUG] releaseNativeAudio: allowsRecording=true RESTORED');
         }
       } catch (err) {
-        sttDebug('[STT_DEBUG] releaseNativeAudio: allowsRecording restore FAILED -', err instanceof Error ? err.message : String(err));
+        sttDebug(`[STT_DEBUG] releaseNativeAudio: allowsRecording restore FAILED - ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }, []);

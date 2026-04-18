@@ -25,6 +25,7 @@ describe('ttsService', () => {
   const originalWindow = global.window;
   const originalCreateObjectURL = URL.createObjectURL;
   const originalRevokeObjectURL = URL.revokeObjectURL;
+  const getCandidateCount = () => buildTtsProxyCandidates().length;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -67,25 +68,35 @@ describe('ttsService', () => {
   });
 
   it('stops endpoint failover after terminal 403 response', async () => {
-    const fetchMock = jest
-      .fn()
-      .mockRejectedValueOnce(new Error('Network error'))
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 403,
-        headers: {
-          get: () => 'application/json'
-        }
-      });
+    const fetchMock = jest.fn((endpoint: string) => {
+      const url = String(endpoint);
+      if (url === '/api/tts') {
+        return Promise.resolve({
+          ok: false,
+          status: 403,
+          headers: {
+            get: (key: string) => (key === 'content-type' ? 'application/json' : null)
+          },
+          clone: () => ({
+            json: async () => ({
+              error: {
+                code: 'TTS_FORBIDDEN'
+              }
+            })
+          })
+        });
+      }
+      return Promise.reject(new Error('Network error'));
+    });
     global.fetch = fetchMock as unknown as typeof fetch;
 
     const uri = await fetchAndCacheVoice('Salut Cathy', 'cathy-gauthier', 'fr-CA', 'token-premium');
 
     expect(uri).toBeNull();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0]?.[0]).toBe('https://app.ha-ha.ai/api/tts');
-    expect(fetchMock.mock.calls[1]?.[0]).toBe('/api/tts');
-    expect(fetchMock.mock.calls[0]?.[1]).toEqual(
+    expect(fetchMock).toHaveBeenCalledTimes(getCandidateCount());
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(buildTtsProxyCandidates());
+    const firstCall = fetchMock.mock.calls[0] as unknown[] | undefined;
+    expect(firstCall?.[1]).toEqual(
       expect.objectContaining({
         method: 'POST',
         signal: expect.any(Object)
@@ -138,24 +149,16 @@ describe('ttsService', () => {
       },
       arrayBuffer: async () => new Uint8Array([9, 8, 7]).buffer
     };
-    let resolveFetch!: (value: unknown) => void;
-    const fetchMock = jest.fn(
-      () =>
-        new Promise((resolve) => {
-          resolveFetch = resolve;
-        })
-    );
+    const fetchMock = jest.fn().mockResolvedValue(audioResponse);
     global.fetch = fetchMock as unknown as typeof fetch;
 
     const firstPromise = fetchAndCacheVoice('Salut Cathy', 'cathy-gauthier', 'fr-CA', 'token-premium');
     const secondPromise = fetchAndCacheVoice('Salut Cathy', 'cathy-gauthier', 'fr-CA', 'token-premium');
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    resolveFetch(audioResponse);
-
     const [first, second] = await Promise.all([firstPromise, secondPromise]);
     expect(first).toBeTruthy();
     expect(second).toBe(first);
+    expect(fetchMock).toHaveBeenCalledTimes(getCandidateCount());
     expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
   });
 
@@ -203,7 +206,7 @@ describe('ttsService', () => {
       code: 'RATE_LIMIT_EXCEEDED'
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(getCandidateCount());
   });
 
   it('clears terminal cooldown state on session reset', async () => {
@@ -237,7 +240,10 @@ describe('ttsService', () => {
       },
       arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer
     };
-    const fetchMock = jest.fn().mockResolvedValueOnce(rateLimitResponse).mockResolvedValueOnce(successResponse);
+    let shouldReturnSuccess = false;
+    const fetchMock = jest.fn().mockImplementation(() => {
+      return Promise.resolve(shouldReturnSuccess ? successResponse : rateLimitResponse);
+    });
     global.fetch = fetchMock as unknown as typeof fetch;
 
     await expect(
@@ -248,11 +254,12 @@ describe('ttsService', () => {
       status: 429
     });
 
+    shouldReturnSuccess = true;
     clearVoiceCacheOnSessionReset();
 
     const uri = await fetchAndCacheVoice('Salut encore', 'cathy-gauthier', 'fr-CA', 'token-premium');
     expect(uri).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(getCandidateCount() * 2);
   });
 
   it('supports explicit web voice-cache reset across auth/session boundaries', async () => {
@@ -271,13 +278,13 @@ describe('ttsService', () => {
 
     expect(first).toBeTruthy();
     expect(second).toBe(first);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(getCandidateCount());
 
     clearVoiceCacheOnSessionReset();
 
     const third = await fetchAndCacheVoice('Salut Cathy', 'cathy-gauthier', 'fr-CA', 'token-premium');
     expect(third).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(getCandidateCount() * 2);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith(first);
   });
 

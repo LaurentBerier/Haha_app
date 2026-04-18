@@ -112,7 +112,7 @@ async function configureAudioSessionForRecording(): Promise<void> {
     markAudioSessionRecordingReady();
     sttDebug('[STT_DEBUG] configureAudioSessionForRecording: SUCCESS');
   } catch (err) {
-    sttDebug('[STT_DEBUG] configureAudioSessionForRecording: FAILED -', err instanceof Error ? err.message : String(err));
+    sttDebug(`[STT_DEBUG] configureAudioSessionForRecording: FAILED - ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 

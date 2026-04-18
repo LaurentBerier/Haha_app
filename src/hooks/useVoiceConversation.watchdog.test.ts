@@ -197,7 +197,7 @@ describe('useVoiceConversation iOS web liveness watchdog', () => {
     expect(getHook().status).toBe('listening');
   });
 
-  it('does not arm watchdog for manual resume when start is not post-playback', async () => {
+  it('arms watchdog for manual resume on iOS web and recovers zombie sessions', async () => {
     await mountHook();
 
     act(() => {
@@ -211,11 +211,11 @@ describe('useVoiceConversation iOS web liveness watchdog', () => {
     await advanceTimersByTime(14_000);
 
     expect(mockStartVoiceListeningSession).toHaveBeenCalledTimes(1);
-    expect(sessions[0]?.stop).not.toHaveBeenCalled();
-    expect(getHook().status).toBe('listening');
+    expect(sessions[0]?.stop).toHaveBeenCalledTimes(1);
+    expect(getHook().status).toBe('recovering');
   });
 
-  it('pauses recovery after three consecutive zombie detections', async () => {
+  it('uses a final bare-locale recovery attempt before pausing', async () => {
     await mountAndStartPostPlaybackSession();
 
     await act(async () => {
@@ -239,7 +239,18 @@ describe('useVoiceConversation iOS web liveness watchdog', () => {
     });
     await advanceTimersByTime(14_000);
 
-    expect(getHook().status).toBe('paused_recovery');
+    expect(getHook().status).toBe('recovering');
     expect(mockStartVoiceListeningSession).toHaveBeenCalledTimes(3);
+
+    await advanceTimersByTime(2_000);
+    expect(mockStartVoiceListeningSession).toHaveBeenCalledTimes(4);
+
+    await act(async () => {
+      sessions[3]?.onAudioStart();
+    });
+    await advanceTimersByTime(14_000);
+
+    expect(getHook().status).toBe('recovering');
+    expect(mockStartVoiceListeningSession).toHaveBeenCalledTimes(4);
   });
 });

@@ -81,21 +81,33 @@ function loadNativeVoiceEngine({
   return { voiceEngine, nativeModule, listeners };
 }
 
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function waitForNativeSessionStartup(): Promise<void> {
+  await wait(80);
+  await Promise.resolve();
+}
+
 describe('voiceEngine native behavior', () => {
   afterEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
   });
 
-  it('emits ended_unexpectedly when native recognition ends without an explicit error event', () => {
+  it('emits ended_unexpectedly when native recognition ends without an explicit error event', async () => {
     const { voiceEngine, listeners } = loadNativeVoiceEngine();
     const onEnd = jest.fn();
 
-    voiceEngine.startVoiceListeningSession({
+    const session = voiceEngine.startVoiceListeningSession({
       locale: 'fr-CA',
       onResult: jest.fn(),
       onEnd
     });
+    await waitForNativeSessionStartup();
 
     listeners.end?.[0]?.();
 
@@ -104,17 +116,20 @@ describe('voiceEngine native behavior', () => {
         reason: 'ended_unexpectedly'
       })
     );
+    session.stop();
+    await wait(0);
   });
 
-  it('classifies native no-speech errors as no_speech (non-terminal recovery class)', () => {
+  it('classifies native no-speech errors as no_speech (non-terminal recovery class)', async () => {
     const { voiceEngine, listeners } = loadNativeVoiceEngine();
     const onEnd = jest.fn();
 
-    voiceEngine.startVoiceListeningSession({
+    const session = voiceEngine.startVoiceListeningSession({
       locale: 'fr-CA',
       onResult: jest.fn(),
       onEnd
     });
+    await waitForNativeSessionStartup();
 
     listeners.error?.[0]?.({
       error: 'no-speech',
@@ -126,6 +141,8 @@ describe('voiceEngine native behavior', () => {
         reason: 'no_speech'
       })
     );
+    session.stop();
+    await wait(0);
   });
 
   it('disables continuous mode and punctuation on Android API 31 and below', async () => {
@@ -134,14 +151,14 @@ describe('voiceEngine native behavior', () => {
       version: 31
     });
 
-    voiceEngine.startVoiceListeningSession({
+    const session = voiceEngine.startVoiceListeningSession({
       locale: 'fr-CA',
       onResult: jest.fn(),
       onEnd: jest.fn()
     });
 
-    // module.start() is called inside an async IIFE (after configureAudioSessionForRecording)
-    await Promise.resolve();
+    // module.start() is called inside an async IIFE (after the native settle delay + audio setup)
+    await waitForNativeSessionStartup();
 
     expect(nativeModule.start).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -149,6 +166,8 @@ describe('voiceEngine native behavior', () => {
         addsPunctuation: false
       })
     );
+    session.stop();
+    await wait(0);
   });
 
   it('returns false instead of throwing when the native speech module cannot be loaded', async () => {

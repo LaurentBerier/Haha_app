@@ -38,8 +38,11 @@ describe('claudeApiService', () => {
 
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
-      json: jest.fn().mockResolvedValue({ error: { message: 'Rate limit exceeded.' } }),
-      text: jest.fn().mockResolvedValue('')
+      text: jest.fn().mockResolvedValue(
+        JSON.stringify({
+          error: { message: 'Rate limit exceeded.' }
+        })
+      )
     }) as unknown as typeof fetch;
 
     streamClaudeResponse({

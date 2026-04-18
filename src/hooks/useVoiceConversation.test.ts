@@ -152,7 +152,7 @@ describe('useVoiceConversation helpers', () => {
     ).toBe(false);
   });
 
-  it('arms iOS web liveness watchdog only for post-playback starts', () => {
+  it('arms iOS web liveness watchdog for all iOS web starts', () => {
     expect(
       shouldArmWebLivenessWatchdog({
         isIosWebRuntime: true,
@@ -175,7 +175,7 @@ describe('useVoiceConversation helpers', () => {
         origin: 'resume',
         statusBeforeStart: 'off'
       })
-    ).toBe(false);
+    ).toBe(true);
 
     expect(
       shouldArmWebLivenessWatchdog({
