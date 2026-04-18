@@ -179,4 +179,45 @@ describe('voiceEngine', () => {
       transcript: 'fresh'
     });
   });
+
+  it('merges all newly reported web results from resultIndex onward', () => {
+    const onResult = jest.fn();
+
+    startVoiceListeningSession({
+      locale: 'fr-CA',
+      onResult,
+      onEnd: jest.fn()
+    });
+
+    MockSpeechRecognition.instances[0]?.onresult?.({
+      resultIndex: 1,
+      results: {
+        length: 3,
+        0: {
+          length: 1,
+          0: {
+            transcript: 'previous phrase'
+          }
+        },
+        1: {
+          length: 1,
+          0: {
+            transcript: 'bonjour'
+          }
+        },
+        2: {
+          length: 1,
+          0: {
+            transcript: 'Cathy'
+          }
+        }
+      }
+    });
+
+    expect(onResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transcript: 'bonjour Cathy'
+      })
+    );
+  });
 });

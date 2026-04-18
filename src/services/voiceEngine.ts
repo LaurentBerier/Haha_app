@@ -533,11 +533,25 @@ function cleanupActiveRecognition(): void {
 }
 
 function extractWebTranscript(event: WebSpeechRecognitionEvent): string {
-  const fallbackIndex =
-    typeof event.resultIndex === 'number' ? event.resultIndex : Math.max(0, (event.results?.length ?? 1) - 1);
-  const resultList = event.results?.[fallbackIndex] ?? event.results?.[0];
-  const transcript = resultList?.[0]?.transcript?.trim();
-  return transcript ?? '';
+  const resultCount = event.results?.length ?? 0;
+  if (resultCount <= 0) {
+    return '';
+  }
+
+  const startIndex =
+    typeof event.resultIndex === 'number' && event.resultIndex >= 0
+      ? event.resultIndex
+      : Math.max(0, resultCount - 1);
+  const transcripts: string[] = [];
+
+  for (let index = startIndex; index < resultCount; index += 1) {
+    const transcript = event.results?.[index]?.[0]?.transcript?.trim();
+    if (transcript) {
+      transcripts.push(transcript);
+    }
+  }
+
+  return transcripts.join(' ').trim();
 }
 
 export async function requestVoicePermission(): Promise<boolean> {
