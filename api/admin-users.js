@@ -15,7 +15,14 @@ const ADMIN_USER_LIST_SELECT_WITH_ID_TEXT =
   'id,id_text,email,auth_created_at,tier,messages_this_month,monthly_cap_override,monthly_reset_at,last_active_at,total_events';
 const ADMIN_USER_LIST_SELECT_LEGACY =
   'id,email,auth_created_at,tier,messages_this_month,monthly_cap_override,monthly_reset_at,last_active_at,total_events';
-let adminUserListSupportsIdText = true;
+const ADMIN_USER_LIST_SELECT_MINIMAL =
+  'id,tier,messages_this_month,monthly_cap_override,monthly_reset_at,last_active_at,total_events';
+const ADMIN_USER_LIST_SELECT_MODES = {
+  FULL: 'full',
+  LEGACY: 'legacy',
+  MINIMAL: 'minimal'
+};
+let adminUserListSelectMode = ADMIN_USER_LIST_SELECT_MODES.FULL;
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
@@ -54,6 +61,33 @@ function isMissingIdTextError(error) {
   return code === '42703' && message.includes('id_text');
 }
 
+function isMissingColumnError(error, columnName) {
+  if (!isRecord(error)) {
+    return false;
+  }
+
+  const code = typeof error.code === 'string' ? error.code : '';
+  const message = typeof error.message === 'string' ? error.message.toLowerCase() : '';
+  return code === '42703' && message.includes(columnName.toLowerCase());
+}
+
+function getFallbackSelectMode(usersError, currentMode) {
+  if (currentMode === ADMIN_USER_LIST_SELECT_MODES.FULL && isMissingIdTextError(usersError)) {
+    return ADMIN_USER_LIST_SELECT_MODES.LEGACY;
+  }
+
+  const missingEmail =
+    isMissingColumnError(usersError, 'email') || isMissingColumnError(usersError, 'auth_created_at');
+  if (
+    missingEmail &&
+    (currentMode === ADMIN_USER_LIST_SELECT_MODES.FULL || currentMode === ADMIN_USER_LIST_SELECT_MODES.LEGACY)
+  ) {
+    return ADMIN_USER_LIST_SELECT_MODES.MINIMAL;
+  }
+
+  return null;
+}
+
 function isUuidLike(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
@@ -64,33 +98,40 @@ function buildUsersQuery(supabaseAdmin, options) {
     safeSearch,
     from,
     to,
-    includeIdText
+    selectMode
   } = options;
+
+  const selectedColumns =
+    selectMode === ADMIN_USER_LIST_SELECT_MODES.FULL
+      ? ADMIN_USER_LIST_SELECT_WITH_ID_TEXT
+      : selectMode === ADMIN_USER_LIST_SELECT_MODES.LEGACY
+        ? ADMIN_USER_LIST_SELECT_LEGACY
+        : ADMIN_USER_LIST_SELECT_MINIMAL;
 
   let usersQuery = supabaseAdmin
     .from('admin_user_list')
-    .select(
-      includeIdText ? ADMIN_USER_LIST_SELECT_WITH_ID_TEXT : ADMIN_USER_LIST_SELECT_LEGACY,
-      { count: 'exact' }
-    );
+    .select(selectedColumns, { count: 'exact' });
 
   if (tier) {
     usersQuery = usersQuery.eq('tier', tier);
   }
 
   if (safeSearch) {
-    if (includeIdText) {
+    if (selectMode === ADMIN_USER_LIST_SELECT_MODES.FULL) {
       usersQuery = usersQuery.or(`email.ilike.%${safeSearch}%,id_text.ilike.%${safeSearch}%`);
-    } else {
+    } else if (selectMode === ADMIN_USER_LIST_SELECT_MODES.LEGACY) {
       const clauses = [`email.ilike.%${safeSearch}%`];
       if (isUuidLike(safeSearch)) {
         clauses.push(`id.eq.${safeSearch}`);
       }
       usersQuery = usersQuery.or(clauses.join(','));
+    } else if (isUuidLike(safeSearch)) {
+      usersQuery = usersQuery.eq('id', safeSearch);
     }
   }
 
-  return usersQuery.order('auth_created_at', { ascending: false, nullsFirst: false }).range(from, to);
+  const orderBy = selectMode === ADMIN_USER_LIST_SELECT_MODES.MINIMAL ? 'last_active_at' : 'auth_created_at';
+  return usersQuery.order(orderBy, { ascending: false, nullsFirst: false }).range(from, to);
 }
 
 module.exports = async function handler(req, res) {
@@ -148,32 +189,40 @@ module.exports = async function handler(req, res) {
     const to = from + limit - 1;
     const safeSearch = sanitizeSearchTerm(search);
 
-    let includeIdText = adminUserListSupportsIdText;
-    let { data: rows, error: usersError, count } = await buildUsersQuery(supabaseAdmin, {
-      tier,
-      safeSearch,
-      from,
-      to,
-      includeIdText
-    });
+    let selectMode = adminUserListSelectMode;
+    let rows = null;
+    let usersError = null;
+    let count = null;
 
-    if (usersError && includeIdText && isMissingIdTextError(usersError)) {
-      adminUserListSupportsIdText = false;
-      includeIdText = false;
+    while (true) {
       ({ data: rows, error: usersError, count } = await buildUsersQuery(supabaseAdmin, {
         tier,
         safeSearch,
         from,
         to,
-        includeIdText
+        selectMode
       }));
+
+      if (!usersError) {
+        break;
+      }
+
+      const fallbackSelectMode = getFallbackSelectMode(usersError, selectMode);
+      if (!fallbackSelectMode) {
+        break;
+      }
+
+      selectMode = fallbackSelectMode;
     }
+
+    adminUserListSelectMode = selectMode;
 
     if (usersError) {
       log('error', 'Failed to query admin_user_list', {
         scope: 'api/admin-users',
         requestId,
-        error: usersError
+        error: usersError,
+        selectMode
       });
       sendError(res, 500, 'Failed to load users.', { code: 'SERVER_ERROR', requestId });
       return;
