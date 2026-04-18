@@ -29,6 +29,36 @@ async function clearTerminalTtsCooldownsSafely(): Promise<void> {
   }
 }
 
+function syncSessionAccountTypeFromUsageSummary(
+  userId: string,
+  role: string | null,
+  usageAccountType: string | undefined
+): void {
+  if (typeof usageAccountType !== 'string' || !usageAccountType.trim()) {
+    return;
+  }
+
+  const latestSession = useStore.getState().session;
+  if (!latestSession || latestSession.user.id !== userId) {
+    return;
+  }
+
+  const resolvedAccountType = resolveEffectiveAccountType(usageAccountType, role);
+  if (latestSession.user.accountType === resolvedAccountType) {
+    return;
+  }
+
+  useStore.setState({
+    session: {
+      ...latestSession,
+      user: {
+        ...latestSession.user,
+        accountType: resolvedAccountType
+      }
+    }
+  });
+}
+
 export function useAuth(options: UseAuthOptions = {}) {
   const { bootstrap = false } = options;
   const session = useStore((state) => state.session);
@@ -116,6 +146,11 @@ export function useAuth(options: UseAuthOptions = {}) {
             return;
           }
           hydrateQuotaWithCap(usageSummary.messagesUsed, usageSummary.messagesCap);
+          syncSessionAccountTypeFromUsageSummary(
+            storedSession.user.id,
+            storedSession.user.role,
+            usageSummary.accountType
+          );
         } catch {
           if (isRunCurrent(runId)) {
             hydrateQuota(0, accountType);
@@ -221,6 +256,7 @@ export function useAuth(options: UseAuthOptions = {}) {
             return;
           }
           hydrateQuotaWithCap(usageSummary.messagesUsed, usageSummary.messagesCap);
+          syncSessionAccountTypeFromUsageSummary(nextSession.user.id, nextSession.user.role, usageSummary.accountType);
         } catch {
           if (isRunCurrent(runId)) {
             hydrateQuota(0, accountType);

@@ -16,6 +16,7 @@ export interface UsageSummary {
   messagesUsed: number;
   messagesCap: number | null;
   resetDate: string;
+  accountType?: AccountTypeId;
   softCapReached?: boolean;
   economyMode?: boolean;
 }
@@ -496,6 +497,7 @@ export async function getUsageSummary(accessToken: string): Promise<UsageSummary
     messagesUsed?: unknown;
     messagesCap?: unknown;
     resetDate?: unknown;
+    accountType?: unknown;
     softCapReached?: unknown;
     economyMode?: unknown;
   };
@@ -504,6 +506,10 @@ export async function getUsageSummary(accessToken: string): Promise<UsageSummary
     messagesCap: typeof asRecord.messagesCap === 'number' && Number.isFinite(asRecord.messagesCap) ? asRecord.messagesCap : null,
     resetDate: typeof asRecord.resetDate === 'string' ? asRecord.resetDate : ''
   };
+
+  if (typeof asRecord.accountType === 'string' && asRecord.accountType.trim()) {
+    summary.accountType = asRecord.accountType.trim() as AccountTypeId;
+  }
 
   if (typeof asRecord.softCapReached === 'boolean') {
     summary.softCapReached = asRecord.softCapReached;

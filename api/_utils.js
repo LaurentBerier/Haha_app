@@ -191,6 +191,77 @@ function extractBearerToken(header) {
   return typeof header === 'string' ? header.replace(/^Bearer\s+/i, '').trim() : '';
 }
 
+function isAdminMarker(value) {
+  return typeof value === 'string' && value.trim().toLowerCase() === 'admin';
+}
+
+async function readProfileAccountTypeForUser(supabaseAdmin, userId) {
+  if (!supabaseAdmin || typeof userId !== 'string' || !userId.trim()) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('profiles')
+      .select('account_type_id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (error) {
+      return null;
+    }
+
+    if (data && typeof data.account_type_id === 'string' && data.account_type_id.trim()) {
+      return data.account_type_id;
+    }
+  } catch {
+    // Best effort: if profile lookup fails we keep strict deny behavior.
+  }
+
+  return null;
+}
+
+async function validateAdminRequest(supabaseAdmin, req, options = {}) {
+  const token = extractBearerToken(req?.headers?.authorization);
+  if (!token) {
+    return { ok: false, error: 'Missing bearer token', status: 401 };
+  }
+
+  if (!supabaseAdmin) {
+    return { ok: false, error: 'Supabase admin client unavailable', status: 500 };
+  }
+
+  let user = null;
+  try {
+    const authResult = await supabaseAdmin.auth.getUser(token);
+    user = authResult?.data?.user ?? null;
+    const authError = authResult?.error ?? null;
+    if (authError || !user) {
+      return { ok: false, error: 'Unauthorized', status: 401 };
+    }
+  } catch (error) {
+    log('error', 'Token validation failed', {
+      scope: typeof options.scope === 'string' && options.scope ? options.scope : 'api/admin-auth',
+      requestId: typeof options.requestId === 'string' ? options.requestId : undefined,
+      error: serializeError(error)
+    });
+    return { ok: false, error: 'Token validation failed', status: 401 };
+  }
+
+  const role = typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : null;
+  const accountType = typeof user.app_metadata?.account_type === 'string' ? user.app_metadata.account_type : null;
+  if (isAdminMarker(role) || isAdminMarker(accountType)) {
+    return { ok: true, userId: user.id };
+  }
+
+  const profileAccountType = await readProfileAccountTypeForUser(supabaseAdmin, user.id);
+  if (isAdminMarker(profileAccountType)) {
+    return { ok: true, userId: user.id };
+  }
+
+  return { ok: false, error: 'Forbidden', status: 403 };
+}
+
 function getMissingEnv(names) {
   return names.filter((name) => {
     const value = process.env[name];
@@ -510,6 +581,7 @@ async function logAuditEvent(supabaseAdmin, req, entry, requestId) {
 module.exports = {
   setCorsHeaders,
   extractBearerToken,
+  validateAdminRequest,
   getMissingEnv,
   attachRequestId,
   sendError,

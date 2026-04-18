@@ -115,7 +115,8 @@ describe('authService', () => {
       json: jest.fn().mockResolvedValue({
         messagesUsed: 7,
         messagesCap: 45,
-        resetDate: '2026-04-01T00:00:00.000Z'
+        resetDate: '2026-04-01T00:00:00.000Z',
+        accountType: 'admin'
       })
     }) as unknown as typeof fetch;
 
@@ -124,7 +125,8 @@ describe('authService', () => {
     expect(summary).toEqual({
       messagesUsed: 7,
       messagesCap: 45,
-      resetDate: '2026-04-01T00:00:00.000Z'
+      resetDate: '2026-04-01T00:00:00.000Z',
+      accountType: 'admin'
     });
   });
 

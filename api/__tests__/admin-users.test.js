@@ -1,6 +1,6 @@
 const { createReqRes } = require('./testHelpers');
 
-function buildSupabaseMock({ rows, user, missingIdText = false } = {}) {
+function buildSupabaseMock({ rows, user, missingIdText = false, profileAccountType = null } = {}) {
   const adminUser = user ?? { id: 'admin-1', app_metadata: { role: 'admin', account_type: 'admin' } };
   const dataset = rows ?? [
     {
@@ -36,8 +36,22 @@ function buildSupabaseMock({ rows, user, missingIdText = false } = {}) {
     data: { user: adminUser },
     error: adminUser ? null : { message: 'invalid jwt' }
   });
+  const profileMaybeSingle = jest.fn().mockResolvedValue({
+    data: typeof profileAccountType === 'string' ? { account_type_id: profileAccountType } : null,
+    error: null
+  });
 
   const from = jest.fn((table) => {
+    if (table === 'profiles') {
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: profileMaybeSingle
+          })
+        })
+      };
+    }
+
     if (table !== 'admin_user_list') {
       throw new Error(`Unexpected table: ${table}`);
     }
@@ -117,7 +131,7 @@ function buildSupabaseMock({ rows, user, missingIdText = false } = {}) {
       },
       from
     },
-    spies: { getUser, from }
+    spies: { getUser, from, profileMaybeSingle }
   };
 }
 
@@ -204,6 +218,29 @@ describe('api/admin-users', () => {
 
     expect(res.statusCode).toBe(403);
     expect(res.payload.error.code).toBe('FORBIDDEN');
+  });
+
+  it('allows access when JWT metadata is stale but profile tier is admin', async () => {
+    const supabase = buildSupabaseMock({
+      user: { id: 'admin-2', app_metadata: { role: 'user', account_type: 'regular' } },
+      profileAccountType: 'admin'
+    });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+
+    const handler = require('../admin-users');
+    const { req, res } = createReqRes({
+      method: 'GET',
+      headers: { authorization: 'Bearer stale-admin-token' }
+    });
+    req.query = { page: '0', limit: '25' };
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.users).toHaveLength(3);
+    expect(supabase.spies.profileMaybeSingle).toHaveBeenCalled();
   });
 
   it('filters by search server-side and returns matching users', async () => {

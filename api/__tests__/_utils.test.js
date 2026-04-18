@@ -1,4 +1,4 @@
-const { attachRequestId, extractBearerToken, getSupabaseAdmin, setCorsHeaders } = require('../_utils');
+const { attachRequestId, extractBearerToken, getSupabaseAdmin, setCorsHeaders, validateAdminRequest } = require('../_utils');
 
 function createResponseMock() {
   const headers = {};
@@ -186,5 +186,84 @@ describe('api/_utils', () => {
     delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 
     expect(getSupabaseAdmin()).toBeNull();
+  });
+
+  it('validates admin requests from JWT admin claims without profile fallback', async () => {
+    const getUser = jest.fn().mockResolvedValue({
+      data: { user: { id: 'admin-jwt', app_metadata: { role: 'admin', account_type: 'regular' } } },
+      error: null
+    });
+    const from = jest.fn();
+    const supabaseAdmin = { auth: { getUser }, from };
+    const req = { headers: { authorization: 'Bearer admin-token' } };
+
+    const result = await validateAdminRequest(supabaseAdmin, req, {
+      scope: 'api/test',
+      requestId: 'req-1'
+    });
+
+    expect(result).toEqual({ ok: true, userId: 'admin-jwt' });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it('validates admin requests via profile tier fallback when JWT metadata is stale', async () => {
+    const getUser = jest.fn().mockResolvedValue({
+      data: { user: { id: 'admin-profile', app_metadata: { role: 'user', account_type: 'regular' } } },
+      error: null
+    });
+    const profileMaybeSingle = jest.fn().mockResolvedValue({
+      data: { account_type_id: 'admin' },
+      error: null
+    });
+    const from = jest.fn((table) => {
+      if (table !== 'profiles') {
+        throw new Error(`Unexpected table ${table}`);
+      }
+      return {
+        select: () => ({
+          eq: () => ({
+            maybeSingle: profileMaybeSingle
+          })
+        })
+      };
+    });
+    const supabaseAdmin = { auth: { getUser }, from };
+    const req = { headers: { authorization: 'Bearer admin-token' } };
+
+    const result = await validateAdminRequest(supabaseAdmin, req, {
+      scope: 'api/test',
+      requestId: 'req-2'
+    });
+
+    expect(result).toEqual({ ok: true, userId: 'admin-profile' });
+    expect(from).toHaveBeenCalledWith('profiles');
+    expect(profileMaybeSingle).toHaveBeenCalled();
+  });
+
+  it('rejects request when neither JWT nor profile marks user as admin', async () => {
+    const getUser = jest.fn().mockResolvedValue({
+      data: { user: { id: 'user-1', app_metadata: { role: 'user', account_type: 'regular' } } },
+      error: null
+    });
+    const profileMaybeSingle = jest.fn().mockResolvedValue({
+      data: { account_type_id: 'regular' },
+      error: null
+    });
+    const from = jest.fn(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: profileMaybeSingle
+        })
+      })
+    }));
+    const supabaseAdmin = { auth: { getUser }, from };
+    const req = { headers: { authorization: 'Bearer user-token' } };
+
+    const result = await validateAdminRequest(supabaseAdmin, req, {
+      scope: 'api/test',
+      requestId: 'req-3'
+    });
+
+    expect(result).toEqual({ ok: false, error: 'Forbidden', status: 403 });
   });
 });

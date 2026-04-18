@@ -1,43 +1,15 @@
-const { attachRequestId, extractBearerToken, getMissingEnv, getSupabaseAdmin, logAuditEvent, sendError, setCorsHeaders } = require('./_utils');
+const {
+  attachRequestId,
+  getMissingEnv,
+  getSupabaseAdmin,
+  logAuditEvent,
+  sendError,
+  setCorsHeaders,
+  validateAdminRequest
+} = require('./_utils');
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
-}
-
-async function validateAdmin(supabaseAdmin, req, requestId) {
-  const token = extractBearerToken(req.headers.authorization);
-
-  if (!token) {
-    return { ok: false, error: 'Missing bearer token', status: 401 };
-  }
-
-  if (!supabaseAdmin) {
-    return { ok: false, error: 'Supabase admin client unavailable', status: 500 };
-  }
-
-  try {
-    const {
-      data: { user },
-      error
-    } = await supabaseAdmin.auth.getUser(token);
-
-    if (error || !user) {
-      return { ok: false, error: 'Unauthorized', status: 401 };
-    }
-
-    const role = typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : null;
-    const accountType = typeof user.app_metadata?.account_type === 'string' ? user.app_metadata.account_type : null;
-    const isAdmin = role === 'admin' || accountType === 'admin';
-
-    if (!isAdmin) {
-      return { ok: false, error: 'Forbidden', status: 403 };
-    }
-
-    return { ok: true, userId: user.id };
-  } catch (error) {
-    console.error(`[api/admin-account-type][${requestId}] Token validation failed`, error);
-    return { ok: false, error: 'Token validation failed', status: 401 };
-  }
 }
 
 async function accountTypeExists(supabaseAdmin, accountTypeId) {
@@ -134,7 +106,10 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const auth = await validateAdmin(supabaseAdmin, req, requestId);
+  const auth = await validateAdminRequest(supabaseAdmin, req, {
+    scope: 'api/admin-account-type',
+    requestId
+  });
   if (!auth.ok) {
     sendError(res, auth.status, auth.error, {
       code: auth.status === 403 ? 'FORBIDDEN' : 'UNAUTHORIZED',

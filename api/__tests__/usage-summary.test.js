@@ -134,6 +134,7 @@ describe('api/usage-summary', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(200);
+    expect(res.payload.accountType).toBe('regular');
     expect(res.payload.messagesUsed).toBe(380);
     expect(res.payload.messagesCap).toBe(3000);
     expect(res.payload.softCapReached).toBe(false);
@@ -186,6 +187,7 @@ describe('api/usage-summary', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(200);
+    expect(res.payload.accountType).toBe('admin');
     expect(res.payload.messagesCap).toBeNull();
     expect(res.payload.softCapReached).toBe(false);
     expect(res.payload.economyMode).toBe(false);
@@ -211,6 +213,7 @@ describe('api/usage-summary', () => {
     await handler(req, res);
 
     expect(res.statusCode).toBe(200);
+    expect(res.payload.accountType).toBe('premium');
     expect(res.payload.messagesCap).toBe(25000);
   });
 

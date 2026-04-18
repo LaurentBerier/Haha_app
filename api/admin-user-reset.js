@@ -1,12 +1,12 @@
 const { kv } = require('@vercel/kv');
 const {
   attachRequestId,
-  extractBearerToken,
   getMissingEnv,
   getSupabaseAdmin,
   logAuditEvent,
   sendError,
-  setCorsHeaders
+  setCorsHeaders,
+  validateAdminRequest
 } = require('./_utils');
 
 function isRecord(value) {
@@ -45,35 +45,6 @@ async function clearMonthlyQuotaCache(userId, monthStartIso, requestId) {
   }
 }
 
-async function validateAdmin(supabaseAdmin, req, requestId) {
-  const token = extractBearerToken(req.headers.authorization);
-  if (!token) {
-    return { ok: false, error: 'Missing bearer token', status: 401 };
-  }
-
-  if (!supabaseAdmin) {
-    return { ok: false, error: 'Supabase admin client unavailable', status: 500 };
-  }
-
-  try {
-    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-    if (error || !user) {
-      return { ok: false, error: 'Unauthorized', status: 401 };
-    }
-
-    const role = typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : null;
-    const accountType = typeof user.app_metadata?.account_type === 'string' ? user.app_metadata.account_type : null;
-    if (role !== 'admin' && accountType !== 'admin') {
-      return { ok: false, error: 'Forbidden', status: 403 };
-    }
-
-    return { ok: true, userId: user.id };
-  } catch (err) {
-    console.error(`[api/admin-user-reset][${requestId}] Token validation failed`, err);
-    return { ok: false, error: 'Token validation failed', status: 401 };
-  }
-}
-
 module.exports = async function handler(req, res) {
   const requestId = attachRequestId(req, res);
   const corsResult = setCorsHeaders(req, res);
@@ -106,7 +77,10 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const auth = await validateAdmin(supabaseAdmin, req, requestId);
+  const auth = await validateAdminRequest(supabaseAdmin, req, {
+    scope: 'api/admin-user-reset',
+    requestId
+  });
   if (!auth.ok) {
     sendError(res, auth.status, auth.error, {
       code: auth.status === 403 ? 'FORBIDDEN' : 'UNAUTHORIZED',

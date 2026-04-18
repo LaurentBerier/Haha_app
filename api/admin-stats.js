@@ -1,5 +1,4 @@
-const { attachRequestId, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders } = require('./_utils');
-const { extractBearerToken } = require('./_utils');
+const { attachRequestId, getMissingEnv, getSupabaseAdmin, sendError, setCorsHeaders, validateAdminRequest } = require('./_utils');
 
 // Pricing constants (USD)
 const CLAUDE_INPUT_COST_PER_TOKEN = 3 / 1_000_000; // $3 / 1M input tokens
@@ -219,35 +218,6 @@ async function fetchUserTierBreakdown(supabaseAdmin) {
   return { ok: true, breakdown };
 }
 
-async function validateAdmin(supabaseAdmin, req, requestId) {
-  const token = extractBearerToken(req.headers.authorization);
-  if (!token) {
-    return { ok: false, error: 'Missing bearer token', status: 401 };
-  }
-
-  if (!supabaseAdmin) {
-    return { ok: false, error: 'Supabase admin client unavailable', status: 500 };
-  }
-
-  try {
-    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-    if (error || !user) {
-      return { ok: false, error: 'Unauthorized', status: 401 };
-    }
-
-    const role = typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : null;
-    const accountType = typeof user.app_metadata?.account_type === 'string' ? user.app_metadata.account_type : null;
-    if (role !== 'admin' && accountType !== 'admin') {
-      return { ok: false, error: 'Forbidden', status: 403 };
-    }
-
-    return { ok: true, userId: user.id };
-  } catch (err) {
-    console.error(`[api/admin-stats][${requestId}] Token validation failed`, err);
-    return { ok: false, error: 'Token validation failed', status: 401 };
-  }
-}
-
 function getPeriodStart(period) {
   const now = new Date();
   if (period === '7d') {
@@ -361,7 +331,10 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const auth = await validateAdmin(supabaseAdmin, req, requestId);
+  const auth = await validateAdminRequest(supabaseAdmin, req, {
+    scope: 'api/admin-stats',
+    requestId
+  });
   if (!auth.ok) {
     sendError(res, auth.status, auth.error, {
       code: auth.status === 403 ? 'FORBIDDEN' : 'UNAUTHORIZED',

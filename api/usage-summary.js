@@ -164,6 +164,7 @@ module.exports = async function handler(req, res) {
     messagesUsed: used,
     messagesCap: cap,
     resetDate: getNextMonthStartIso(),
+    accountType,
     softCapReached,
     economyMode
   });

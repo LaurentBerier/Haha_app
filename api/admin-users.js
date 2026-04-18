@@ -1,11 +1,11 @@
 const {
   attachRequestId,
-  extractBearerToken,
   getMissingEnv,
   getSupabaseAdmin,
   log,
   sendError,
-  setCorsHeaders
+  setCorsHeaders,
+  validateAdminRequest
 } = require('./_utils');
 const { getEffectiveMonthlyCap, getRemainingMonthlyCredits } = require('./_monthly-cap');
 
@@ -19,39 +19,6 @@ let adminUserListSupportsIdText = true;
 
 function isRecord(value) {
   return typeof value === 'object' && value !== null;
-}
-
-async function validateAdmin(supabaseAdmin, req, requestId) {
-  const token = extractBearerToken(req.headers.authorization);
-  if (!token) {
-    return { ok: false, error: 'Missing bearer token', status: 401 };
-  }
-
-  if (!supabaseAdmin) {
-    return { ok: false, error: 'Supabase admin client unavailable', status: 500 };
-  }
-
-  try {
-    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
-    if (error || !user) {
-      return { ok: false, error: 'Unauthorized', status: 401 };
-    }
-
-    const role = typeof user.app_metadata?.role === 'string' ? user.app_metadata.role : null;
-    const accountType = typeof user.app_metadata?.account_type === 'string' ? user.app_metadata.account_type : null;
-    if (role !== 'admin' && accountType !== 'admin') {
-      return { ok: false, error: 'Forbidden', status: 403 };
-    }
-
-    return { ok: true, userId: user.id };
-  } catch (err) {
-    log('error', 'Token validation failed', {
-      scope: 'api/admin-users',
-      requestId,
-      error: err
-    });
-    return { ok: false, error: 'Token validation failed', status: 401 };
-  }
 }
 
 function parsePageParams(query) {
@@ -162,7 +129,10 @@ module.exports = async function handler(req, res) {
     return;
   }
 
-  const auth = await validateAdmin(supabaseAdmin, req, requestId);
+  const auth = await validateAdminRequest(supabaseAdmin, req, {
+    scope: 'api/admin-users',
+    requestId
+  });
   if (!auth.ok) {
     sendError(res, auth.status, auth.error, {
       code: auth.status === 403 ? 'FORBIDDEN' : 'UNAUTHORIZED',
