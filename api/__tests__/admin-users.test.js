@@ -1,6 +1,13 @@
 const { createReqRes } = require('./testHelpers');
 
-function buildSupabaseMock({ rows, user, missingIdText = false, profileAccountType = null } = {}) {
+function buildSupabaseMock({
+  rows,
+  user,
+  missingIdText = false,
+  missingEmail = false,
+  missingAuthCreatedAt = false,
+  profileAccountType = null
+} = {}) {
   const adminUser = user ?? { id: 'admin-1', app_metadata: { role: 'admin', account_type: 'admin' } };
   const dataset = rows ?? [
     {
@@ -40,6 +47,7 @@ function buildSupabaseMock({ rows, user, missingIdText = false, profileAccountTy
     data: typeof profileAccountType === 'string' ? { account_type_id: profileAccountType } : null,
     error: null
   });
+  const selectCalls = [];
 
   const from = jest.fn((table) => {
     if (table === 'profiles') {
@@ -64,9 +72,30 @@ function buildSupabaseMock({ rows, user, missingIdText = false, profileAccountTy
 
     const query = {
       eq: (column, value) => {
-        expect(column).toBe('tier');
-        state.tier = value;
-        return query;
+        if (column === 'tier') {
+          state.tier = value;
+          return query;
+        }
+        if (column === 'id') {
+          state.search = `id.eq.${value}`;
+          return query;
+        }
+        throw new Error(`Unexpected eq column: ${column}`);
+      },
+      ilike: (column, value) => {
+        if (column === 'email') {
+          state.search = `email.ilike.${value}`;
+          return query;
+        }
+        throw new Error(`Unexpected ilike column: ${column}`);
+      },
+      in: (column, values) => {
+        if (column === 'id') {
+          const valueList = Array.isArray(values) ? values.join(',') : '';
+          state.search = `id.in.${valueList}`;
+          return query;
+        }
+        throw new Error(`Unexpected in column: ${column}`);
       },
       or: (value) => {
         state.search = value;
@@ -80,6 +109,36 @@ function buildSupabaseMock({ rows, user, missingIdText = false, profileAccountTy
             error: {
               code: '42703',
               message: 'column admin_user_list.id_text does not exist'
+            },
+            count: null
+          });
+        }
+
+        if (
+          missingEmail &&
+          typeof state.selectedColumns === 'string' &&
+          state.selectedColumns.includes('email')
+        ) {
+          return Promise.resolve({
+            data: null,
+            error: {
+              code: '42703',
+              message: 'column admin_user_list.email does not exist'
+            },
+            count: null
+          });
+        }
+
+        if (
+          missingAuthCreatedAt &&
+          typeof state.selectedColumns === 'string' &&
+          state.selectedColumns.includes('auth_created_at')
+        ) {
+          return Promise.resolve({
+            data: null,
+            error: {
+              code: '42703',
+              message: 'column admin_user_list.auth_created_at does not exist'
             },
             count: null
           });
@@ -99,7 +158,7 @@ function buildSupabaseMock({ rows, user, missingIdText = false, profileAccountTy
             filtered = filtered.filter(
               (row) =>
                 (typeof row.email === 'string' && row.email.toLowerCase().includes(searchTerm)) ||
-                row.id_text.toLowerCase().includes(searchTerm) ||
+                (typeof row.id_text === 'string' && row.id_text.toLowerCase().includes(searchTerm)) ||
                 (idEqTerm && row.id.toLowerCase() === idEqTerm)
             );
           } else if (idEqTerm) {
@@ -118,6 +177,7 @@ function buildSupabaseMock({ rows, user, missingIdText = false, profileAccountTy
 
     return {
       select: (columns) => {
+        selectCalls.push(columns);
         state.selectedColumns = columns;
         return query;
       }
@@ -131,7 +191,7 @@ function buildSupabaseMock({ rows, user, missingIdText = false, profileAccountTy
       },
       from
     },
-    spies: { getUser, from, profileMaybeSingle }
+    spies: { getUser, from, profileMaybeSingle, selectCalls }
   };
 }
 
@@ -313,6 +373,28 @@ describe('api/admin-users', () => {
       id: 'user-3',
       email: 'target@example.com'
     });
+  });
+
+  it('falls back to minimal columns when email/auth columns are missing', async () => {
+    const supabase = buildSupabaseMock({ missingIdText: true, missingEmail: true });
+    jest.doMock('@supabase/supabase-js', () => ({
+      createClient: jest.fn(() => supabase.client)
+    }));
+
+    const handler = require('../admin-users');
+    const { req, res } = createReqRes({
+      method: 'GET',
+      headers: { authorization: 'Bearer admin-token' }
+    });
+    req.query = { page: '0', limit: '25' };
+
+    await handler(req, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.payload.users).toHaveLength(3);
+    expect(supabase.spies.selectCalls).toContain(
+      'id,tier,messages_this_month,monthly_cap_override,monthly_reset_at,last_active_at,total_events'
+    );
   });
 
   it('returns effectiveCap and remainingCredits for non-admin users', async () => {
