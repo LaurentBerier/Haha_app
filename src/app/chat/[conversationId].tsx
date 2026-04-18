@@ -110,6 +110,7 @@ export default function ChatScreen() {
     hasTypedDraft,
     isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
     isAudioPlaybackLoading: audioPlayer.isLoading,
+    isResponsePending: hasStreaming,
     onSend: (text) => {
       const normalized = text.trim();
       if (!normalized) {

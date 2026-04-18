@@ -106,6 +106,10 @@ export interface UseVoiceConversationProps {
   isPlaying: boolean;
   isAudioPlaybackLoading?: boolean;
   hasTypedDraft?: boolean;
+  /** True while the assistant is still streaming / generating TTS for a response.
+   *  Prevents STT from unmuting between TTS chunks — without this, the mic can
+   *  capture the assistant's own TTS audio from the speaker during inter-chunk gaps. */
+  isResponsePending?: boolean;
   onSend: (text: string) => void;
   onStopAudio: () => void;
   language: string;
@@ -632,6 +636,7 @@ export function useVoiceConversation({
   isPlaying,
   isAudioPlaybackLoading = false,
   hasTypedDraft = false,
+  isResponsePending = false,
   onSend,
   onStopAudio,
   language,
@@ -669,6 +674,7 @@ export function useVoiceConversation({
   const disabledRef = useRef(disabled);
   const isPlayingRef = useRef(isPlaying);
   const isAudioPlaybackLoadingRef = useRef(isAudioPlaybackLoading);
+  const isResponsePendingRef = useRef(isResponsePending);
   const hasTypedDraftRef = useRef(hasTypedDraft);
   const onSendRef = useRef(onSend);
   const onStopAudioRef = useRef(onStopAudio);
@@ -697,6 +703,10 @@ export function useVoiceConversation({
   useEffect(() => {
     isAudioPlaybackLoadingRef.current = isAudioPlaybackLoading;
   }, [isAudioPlaybackLoading]);
+
+  useEffect(() => {
+    isResponsePendingRef.current = isResponsePending;
+  }, [isResponsePending]);
 
   useEffect(() => {
     hasTypedDraftRef.current = hasTypedDraft;
@@ -1344,6 +1354,16 @@ export function useVoiceConversation({
         status: stateRef.current.status
       });
       if (!canStart || !isMountedRef.current) {
+        return;
+      }
+
+      // If the assistant is still streaming / generating TTS, don't unmute STT
+      // now — more TTS chunks will arrive shortly. Unmuting in the gap between
+      // chunks lets the mic capture the assistant's own TTS audio from the
+      // speaker. The normal React path (auto-listen effect) will start STT once
+      // both playback AND streaming are done (isPlaying goes fully false).
+      if (isResponsePendingRef.current) {
+        sttDebug('[STT_DEBUG] onQueueComplete: response still pending, deferring STT restart');
         return;
       }
 

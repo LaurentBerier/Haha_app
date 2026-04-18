@@ -1075,6 +1075,7 @@ export default function ModeSelectHomeScreen() {
     isPlaying:
       audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming || isLatestArtistVoiceGenerating,
     isAudioPlaybackLoading: audioPlayer.isLoading,
+    isResponsePending: hasStreaming || isLatestArtistVoiceGenerating,
     onSend: (text) => {
       const normalized = text.trim();
       if (!normalized) {
