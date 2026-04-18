@@ -175,6 +175,11 @@ let iosAudioCtx: any = null;
 let iosKeepAliveOscillator: any = null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let iosKeepAliveGain: any = null;
+// Dedicated <audio> element pre-unlocked during the first user gesture.
+// Reused by primeIosSpeakerRoute() to force the speaker route without
+// needing a fresh gesture context — iOS Safari tracks autoplay unlock
+// per element instance.
+let iosRouteAudio: HTMLAudioElement | null = null;
 
 function getOrCreateIosAudioCtx(): AudioContext | null {
   if (!IS_IOS_MOBILE_WEB) return null;
@@ -240,18 +245,21 @@ async function primeIosSpeakerRoute(): Promise<void> {
     sttDebug(`[STT_DEBUG] primeIosSpeakerRoute: skipped (ctx=${iosAudioCtx?.state ?? 'null'})`);
     return;
   }
+  // Reuse the element that was gesture-unlocked in primeCtx. A brand-new
+  // Audio() element would be blocked by iOS autoplay policy outside a gesture.
+  if (!iosRouteAudio) {
+    sttDebug('[STT_DEBUG] primeIosSpeakerRoute: skipped (no pre-unlocked audio element)');
+    return;
+  }
   try {
     sttDebug('[STT_DEBUG] primeIosSpeakerRoute: playing silent WAV to force loudspeaker');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const AudioCtor = (globalThis as any).Audio as (new (src?: string) => HTMLAudioElement) | undefined;
-    if (!AudioCtor) return;
-    const audio = new AudioCtor(SILENT_WAV_DATA_URI);
+    iosRouteAudio.src = SILENT_WAV_DATA_URI;
     await Promise.race([
-      audio.play(),
+      iosRouteAudio.play(),
       new Promise<void>((_resolve, reject) => setTimeout(() => reject(new Error('timeout')), 300))
     ]);
-    audio.pause();
-    audio.src = '';
+    iosRouteAudio.pause();
+    iosRouteAudio.src = '';
     sttDebug('[STT_DEBUG] primeIosSpeakerRoute: done');
   } catch (err: unknown) {
     sttDebug(`[STT_DEBUG] primeIosSpeakerRoute: failed (${err instanceof Error ? err.message : String(err)})`);
@@ -309,6 +317,29 @@ if (IS_IOS_MOBILE_WEB && typeof document !== 'undefined') {
       sttDebug('[STT_DEBUG] iOS AudioContext resumed during user gesture');
     } else {
       sttDebug(`[STT_DEBUG] iOS AudioContext primeCtx: ctx=${ctx ? ctx.state : 'null'}`);
+    }
+    // Gesture-unlock a dedicated <audio> element for speaker route priming.
+    // iOS Safari tracks autoplay unlock per element — a new Audio() created
+    // outside a gesture will be blocked. Pre-unlocking here lets
+    // primeIosSpeakerRoute() reuse this element later without a gesture.
+    if (!iosRouteAudio) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const AudioCtor = (globalThis as any).Audio as (new (src?: string) => HTMLAudioElement) | undefined;
+      if (AudioCtor) {
+        try {
+          const el = new AudioCtor(SILENT_WAV_DATA_URI);
+          el.play().then(() => {
+            el.pause();
+            el.src = '';
+            iosRouteAudio = el;
+            sttDebug('[STT_DEBUG] primeCtx: route audio element unlocked');
+          }).catch(() => {
+            sttDebug('[STT_DEBUG] primeCtx: route audio element unlock failed');
+          });
+        } catch {
+          // Audio constructor unavailable
+        }
+      }
     }
     ['touchstart', 'pointerdown', 'mousedown', 'keydown'].forEach(e => {
       document.removeEventListener(e, primeCtx, true);
