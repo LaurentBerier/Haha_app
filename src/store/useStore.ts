@@ -196,7 +196,11 @@ export const useStore = create<StoreState>()((...a) => ({
       voiceAutoPlay: snapshot.preferences ? nextVoiceAutoPlay : current.voiceAutoPlay,
       emojiStyle: snapshot.preferences ? nextEmojiStyle : current.emojiStyle,
       conversationModeEnabled: snapshot.preferences ? nextConversationModeEnabled : current.conversationModeEnabled,
-      completedTutorials: snapshot.preferences?.completedTutorials ?? {}
+      completedTutorials: snapshot.preferences?.completedTutorials ?? {},
+      modeSelectSessionHubConversationByArtist: snapshot.modeSelectSessionHubConversationByArtist ?? current.modeSelectSessionHubConversationByArtist,
+      greetedArtistIds: Array.isArray(snapshot.greetedArtistIds)
+        ? new Set(snapshot.greetedArtistIds)
+        : current.greetedArtistIds
     });
   },
   clearAccountScopedState: () =>
@@ -260,6 +264,8 @@ export function selectPersistedSnapshot(state: StoreState): PersistedStoreSnapsh
       emojiStyle: state.emojiStyle,
       conversationModeEnabled: state.conversationModeEnabled,
       completedTutorials: state.completedTutorials
-    }
+    },
+    modeSelectSessionHubConversationByArtist: state.modeSelectSessionHubConversationByArtist,
+    greetedArtistIds: Array.from(state.greetedArtistIds)
   };
 }

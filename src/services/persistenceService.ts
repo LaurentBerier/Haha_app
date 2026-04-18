@@ -267,6 +267,17 @@ function isValidSnapshot(data: unknown): data is PersistedStoreSnapshot {
     return false;
   }
 
+  const hubMapValid =
+    data.modeSelectSessionHubConversationByArtist === undefined ||
+    (isRecord(data.modeSelectSessionHubConversationByArtist) &&
+      Object.entries(data.modeSelectSessionHubConversationByArtist as Record<string, unknown>).every(
+        ([k, v]) => typeof k === 'string' && typeof v === 'string'
+      ));
+
+  const greetedIdsValid =
+    data.greetedArtistIds === undefined ||
+    (Array.isArray(data.greetedArtistIds) && data.greetedArtistIds.every((id: unknown) => typeof id === 'string'));
+
   return (
     (data.ownerUserId === undefined || isStringOrNull(data.ownerUserId)) &&
     isStringOrNull(data.selectedArtistId) &&
@@ -274,7 +285,9 @@ function isValidSnapshot(data: unknown): data is PersistedStoreSnapshot {
     isStringOrNull(data.activeConversationId) &&
     isValidMessagesMap(data.messagesByConversation) &&
     isValidGamification(data.gamification) &&
-    isValidPreferences(data.preferences)
+    isValidPreferences(data.preferences) &&
+    hubMapValid &&
+    greetedIdsValid
   );
 }
 

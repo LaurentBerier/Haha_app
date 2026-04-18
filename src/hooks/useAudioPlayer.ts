@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import { markWebAutoplaySessionUnlocked } from '../services/webAutoplayUnlockService';
+import { markWebAutoplaySessionUnlocked, consumePendingWebAutoplayRetry } from '../services/webAutoplayUnlockService';
 import { sttDebug } from '../services/sttDebugLogger';
 import { markAudioSessionRecordingReady, markAudioSessionPlaybackMode } from '../services/audioSessionState';
 import { isIosMobileWebRuntime } from '../platform/platformCapabilities';
@@ -269,6 +269,10 @@ if (IS_IOS_MOBILE_WEB && typeof document !== 'undefined') {
   const primeCtx = () => {
     const ctx = getOrCreateIosAudioCtx();
     if (ctx && ctx.state === 'suspended') {
+      // Consume any pending autoplay retry BEFORE handleUnlockGesture can
+      // flush it. The retry must wait until AudioContext is confirmed running,
+      // otherwise playQueue() sees iosAudioCtx=suspended and fails silently.
+      const deferredRetry = consumePendingWebAutoplayRetry();
       ctx.resume().then(() => {
         // Play a single-sample silent buffer to fully unlock the AudioContext.
         // This ensures subsequent suspend()/resume() cycles work without gestures.
@@ -286,8 +290,21 @@ if (IS_IOS_MOBILE_WEB && typeof document !== 'undefined') {
         // iOS auto-suspends it after ~10s of silence, which blocks resume()
         // when greeting TTS synthesis finishes (~15-20s later).
         startIosKeepAlive();
+        // Mark autoplay as unlocked and fire the deferred greeting retry now
+        // that the AudioContext is confirmed running.
+        markWebAutoplaySessionUnlocked();
+        if (deferredRetry) {
+          sttDebug('[STT_DEBUG] primeCtx: firing deferred autoplay retry (AudioContext running)');
+          deferredRetry();
+        }
       }).catch(() => {
         sttDebug('[STT_DEBUG] iOS AudioContext resume failed during gesture');
+        // Still mark unlocked so future attempts don't queue — the <audio>
+        // fallback path may work for subsequent user-initiated plays.
+        markWebAutoplaySessionUnlocked();
+        if (deferredRetry) {
+          deferredRetry();
+        }
       });
       sttDebug('[STT_DEBUG] iOS AudioContext resumed during user gesture');
     } else {

@@ -22,5 +22,7 @@ export interface PersistedStoreSnapshot {
   messagesByConversation: Record<string, MessagePage>;
   gamification?: Partial<GamificationStats>;
   preferences?: Partial<PersistedUiPreferences>;
+  modeSelectSessionHubConversationByArtist?: Record<string, string>;
+  greetedArtistIds?: string[];
   // Auth session is intentionally absent; Supabase SDK manages session persistence itself.
 }

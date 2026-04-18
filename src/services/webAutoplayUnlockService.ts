@@ -78,6 +78,16 @@ export function clearPendingWebAutoplayUnlockRetry(): void {
   latestPendingRetry = null;
 }
 
+/** Remove and return the pending retry callback without firing it.
+ *  Used by primeCtx to prevent handleUnlockGesture from flushing the
+ *  retry before the AudioContext is ready. The caller is responsible
+ *  for invoking the returned callback when appropriate. */
+export function consumePendingWebAutoplayRetry(): UnlockRetryCallback | null {
+  const retry = latestPendingRetry;
+  latestPendingRetry = null;
+  return retry;
+}
+
 export function __resetWebAutoplayUnlockServiceForTests(): void {
   clearPendingWebAutoplayUnlockRetry();
   clearUnlockListeners();
