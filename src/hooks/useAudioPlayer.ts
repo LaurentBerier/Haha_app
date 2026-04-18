@@ -280,6 +280,35 @@ export function ensureIosAudioContextSuspended(): void {
   }
 }
 
+/** Suspend the iOS AudioContext and wait for it to reach a non-running state.
+ *  Returns a Promise that resolves when suspension is confirmed or after a
+ *  200ms timeout fallback. No-op on non-iOS or if already suspended/null. */
+export async function waitForIosAudioContextSuspension(): Promise<void> {
+  if (!iosAudioCtx || iosAudioCtx.state !== 'running') {
+    return;
+  }
+  stopIosKeepAlive();
+  const ctx = iosAudioCtx;
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      ctx.removeEventListener('statechange', onStateChange);
+      resolve();
+    };
+    const onStateChange = () => {
+      if (ctx.state !== 'running') {
+        done();
+      }
+    };
+    ctx.addEventListener('statechange', onStateChange);
+    ctx.suspend().catch(() => {});
+    setTimeout(done, 200);
+  });
+  sttDebug(`[STT_DEBUG] waitForIosAudioContextSuspension: done (state=${iosAudioCtx?.state ?? 'null'})`);
+}
+
 export function useAudioPlayer(): AudioPlayerController {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);

@@ -19,7 +19,7 @@ import {
   type VoiceSessionEndReason
 } from '../services/voiceEngine';
 import { sttDebug } from '../services/sttDebugLogger';
-import { ensureIosAudioContextSuspended } from './useAudioPlayer';
+import { ensureIosAudioContextSuspended, waitForIosAudioContextSuspension } from './useAudioPlayer';
 
 const parsedSilenceTimeout = Number.parseInt(process.env[ENV_SILENCE_TIMEOUT_MS] ?? '', 10);
 const SILENCE_TIMEOUT_MS =
@@ -659,6 +659,9 @@ export function useVoiceConversation({
   const startListeningFlowRef = useRef<((origin: VoiceStartOrigin) => Promise<void>) | null>(null);
   const activeSessionContextRef = useRef<ActiveVoiceSessionContext | null>(null);
   const postPlaybackStartupRecoveryAttemptRef = useRef(0);
+  // True while onQueueComplete is awaiting AudioContext suspension before
+  // restarting STT. Prevents the auto-listen effect from racing.
+  const postTtsRestartPendingRef = useRef(false);
   // When the liveness watchdog fires (14s with no results on iOS Safari),
   // the next recovery attempt should try the bare locale prefix (e.g. "fr" instead of "fr-CA").
   const preferBareLocaleRef = useRef(false);
@@ -1344,26 +1347,61 @@ export function useVoiceConversation({
         return;
       }
 
+      // This callback handles STT restart — prevent the auto-listen effect and
+      // assistantBusyRecovery timer from racing with a duplicate restart.
+      postTtsRestartPendingRef.current = true;
+      clearAssistantBusyRecoveryTimer();
+
       // iOS Safari: if the STT session survived TTS (was muted, not killed),
       // just unmute it — no recognition.start() call, so no system beep.
       const session = activeSessionRef.current;
       if (IOS_WEB_RUNTIME && session && session.isAlive && session.isMuted) {
         session.unmute();
+        postTtsRestartPendingRef.current = false;
         dispatch({ type: 'listening' });
         sttDebug('[STT_DEBUG] onQueueComplete: unmuted existing session (no beep)');
+
+        // Health check: if the unmuted session dies shortly after (iOS killed
+        // it between our isAlive check and the unmute), the onEnd handler will
+        // fire. Verify the session is still alive after a short window. If not,
+        // fall back to a full restart.
+        const unmutedSessionId = session.id;
+        setTimeout(() => {
+          if (!isMountedRef.current) return;
+          const current = activeSessionRef.current;
+          if (current && current.id === unmutedSessionId && !current.isAlive) {
+            sttDebug('[STT_DEBUG] onQueueComplete: unmuted session died, restarting');
+            stopActiveSession();
+            dispatch({ type: 'starting' });
+            void startListeningFlowRef.current?.('auto');
+          }
+        }, 500);
         return;
       }
 
       // Session died during TTS or non-iOS — fall back to full restart.
       // On iOS this produces one beep (unavoidable), still better than two.
       const beginListen = () => {
+        postTtsRestartPendingRef.current = false;
         if (!isMountedRef.current) return;
         dispatch({ type: 'starting' });
         void startListeningFlowRef.current?.('auto');
       };
 
       if (IOS_WEB_RUNTIME) {
-        setTimeout(beginListen, 300);
+        // Wait for the iOS AudioContext to fully suspend before starting STT.
+        // The audio route must be released for webkitSpeechRecognition to
+        // receive audio — without this, onaudiostart fires but onspeechstart
+        // never does (zombie session).
+        void (async () => {
+          try {
+            await waitForIosAudioContextSuspension();
+            sttDebug('[STT_DEBUG] onQueueComplete: AudioContext suspended, starting STT');
+          } catch {
+            sttDebug('[STT_DEBUG] onQueueComplete: AudioContext suspension failed, proceeding anyway');
+          }
+          beginListen();
+        })();
       } else {
         beginListen();
       }
@@ -1457,6 +1495,7 @@ export function useVoiceConversation({
       shouldResumeAfterWebFocusLossRef.current = false;
       resumeAfterTypedDraftRef.current = false;
       postPlaybackStartupRecoveryAttemptRef.current = 0;
+      postTtsRestartPendingRef.current = false;
       if (disabled) {
         pendingManualResumeRef.current = false;
       }
@@ -1628,7 +1667,7 @@ export function useVoiceConversation({
       return;
     }
 
-    if (assistantBusyRecoveryTimerRef.current) {
+    if (assistantBusyRecoveryTimerRef.current || postTtsRestartPendingRef.current) {
       return;
     }
 
@@ -1680,8 +1719,8 @@ export function useVoiceConversation({
       return;
     }
 
-    if (activeSessionRef.current || recoveryTimerRef.current || startInFlightRef.current) {
-      sttDebug(`[STT_DEBUG] auto-listen effect: blocked (session=${Boolean(activeSessionRef.current)}, recoveryTimer=${Boolean(recoveryTimerRef.current)}, startInFlight=${startInFlightRef.current})`);
+    if (activeSessionRef.current || recoveryTimerRef.current || startInFlightRef.current || postTtsRestartPendingRef.current) {
+      sttDebug(`[STT_DEBUG] auto-listen effect: blocked (session=${Boolean(activeSessionRef.current)}, recoveryTimer=${Boolean(recoveryTimerRef.current)}, startInFlight=${startInFlightRef.current}, postTtsRestart=${postTtsRestartPendingRef.current})`);
       return;
     }
 
@@ -1694,6 +1733,7 @@ export function useVoiceConversation({
     pendingManualResumeRef.current = false;
     resumeAfterTypedDraftRef.current = false;
     postPlaybackStartupRecoveryAttemptRef.current = 0;
+    postTtsRestartPendingRef.current = false;
     clearAssistantBusyRecoveryTimer();
     clearBusyLoadingTimer();
     clearRecoveryTimer();
@@ -1705,6 +1745,7 @@ export function useVoiceConversation({
   const resumeListening = useCallback(() => {
     shouldResumeAfterWebFocusLossRef.current = false;
     postPlaybackStartupRecoveryAttemptRef.current = 0;
+    postTtsRestartPendingRef.current = false;
     clearAssistantBusyRecoveryTimer();
     clearBusyLoadingTimer();
     if (disabledRef.current) {
