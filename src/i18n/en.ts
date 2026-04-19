@@ -353,10 +353,5 @@ export const en = {
   discussionComingSoonBody: 'Discussion feature is still in development and will be available soon.',
   sendButtonA11y: 'Send message',
   loadingA11y: 'Loading',
-  streamingA11y: 'Response is being generated',
-  voiceGateTitle: 'Ready to chat?',
-  voiceGateSubtitle: 'Tap to enable the mic and start the conversation.',
-  voiceGateButton: 'Start',
-  voiceGateRequesting: 'Requesting mic access...',
-  voiceMicDeniedBanner: 'Mic disabled — enable it in your browser settings to talk with Cathy.'
+  streamingA11y: 'Response is being generated'
 } as const;

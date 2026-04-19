@@ -270,10 +270,9 @@ async function primeIosSpeakerRoute(): Promise<void> {
 /** Synchronously unlock the iOS Safari audio session during a user gesture.
  *  Must be called from within a click/touch handler so that
  *  AudioContext.resume() runs with an active user-activation. Safe to call on
- *  non-iOS or when already unlocked — becomes a no-op. Exported so explicit
- *  UI gates (e.g. "tap to start" overlay) can trigger the unlock without
- *  relying on the module-level document listeners. */
-export function unlockIosAudioSessionSync(): void {
+ *  non-iOS or when already unlocked — becomes a no-op. Called from the
+ *  module-level document listeners below on the first gesture. */
+function unlockIosAudioSessionSync(): void {
   if (!IS_IOS_MOBILE_WEB) return;
   const ctx = getOrCreateIosAudioCtx();
   if (ctx && ctx.state === 'suspended') {

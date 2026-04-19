@@ -353,10 +353,5 @@ export const fr = {
   discussionComingSoonBody: 'La fonctionnalité discussion est encore en développement et sera bientôt disponible.',
   sendButtonA11y: 'Envoyer le message',
   loadingA11y: 'Chargement',
-  streamingA11y: 'Réponse en cours de génération',
-  voiceGateTitle: 'Prêt à jaser?',
-  voiceGateSubtitle: 'Touche pour activer le micro et lancer la conversation.',
-  voiceGateButton: 'Commencer',
-  voiceGateRequesting: 'Autorisation du micro...',
-  voiceMicDeniedBanner: 'Micro désactivé — active-le dans les réglages du navigateur pour parler avec Cathy.'
+  streamingA11y: 'Réponse en cours de génération'
 } as const;
