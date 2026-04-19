@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import { markWebAutoplaySessionUnlocked, consumePendingWebAutoplayRetry } from '../services/webAutoplayUnlockService';
+import { markWebAutoplaySessionUnlocked, consumePendingWebAutoplayRetry, hasWebAutoplaySessionUnlock } from '../services/webAutoplayUnlockService';
 import { sttDebug } from '../services/sttDebugLogger';
 import { markAudioSessionRecordingReady, markAudioSessionPlaybackMode } from '../services/audioSessionState';
 import { isIosMobileWebRuntime } from '../platform/platformCapabilities';
@@ -267,81 +267,82 @@ async function primeIosSpeakerRoute(): Promise<void> {
   }
 }
 
-// Prime the AudioContext on the first user gesture. iOS Safari requires
-// AudioContext.resume() during a user interaction to unlock audio output.
-// The context is left in 'running' state so greeting TTS can autoplay
-// immediately. STT startup suspends it via ensureIosAudioContextSuspended().
-// A silent buffer is played during the gesture to fully establish the
-// "unlocked" state — some iOS Safari versions require actual audio output
-// during a gesture before suspend()/resume() cycles work without gestures.
-if (IS_IOS_MOBILE_WEB && typeof document !== 'undefined') {
-  const primeCtx = () => {
-    const ctx = getOrCreateIosAudioCtx();
-    if (ctx && ctx.state === 'suspended') {
-      // Consume any pending autoplay retry BEFORE handleUnlockGesture can
-      // flush it. The retry must wait until AudioContext is confirmed running,
-      // otherwise playQueue() sees iosAudioCtx=suspended and fails silently.
-      const deferredRetry = consumePendingWebAutoplayRetry();
-      ctx.resume().then(() => {
-        // Play a single-sample silent buffer to fully unlock the AudioContext.
-        // This ensures subsequent suspend()/resume() cycles work without gestures.
-        try {
-          const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
-          const src = ctx.createBufferSource();
-          src.buffer = buf;
-          src.connect(ctx.destination);
-          src.start();
-          sttDebug(`[STT_DEBUG] iOS AudioContext primed with silent buffer (state=${ctx.state})`);
-        } catch {
-          sttDebug(`[STT_DEBUG] iOS AudioContext primed without silent buffer (state=${ctx.state})`);
-        }
-        // Keep the AudioContext alive until the first TTS plays. Without this,
-        // iOS auto-suspends it after ~10s of silence, which blocks resume()
-        // when greeting TTS synthesis finishes (~15-20s later).
-        startIosKeepAlive();
-        // Mark autoplay as unlocked and fire the deferred greeting retry now
-        // that the AudioContext is confirmed running.
-        markWebAutoplaySessionUnlocked();
-        if (deferredRetry) {
-          sttDebug('[STT_DEBUG] primeCtx: firing deferred autoplay retry (AudioContext running)');
-          deferredRetry();
-        }
-      }).catch(() => {
-        sttDebug('[STT_DEBUG] iOS AudioContext resume failed during gesture');
-        // Still mark unlocked so future attempts don't queue — the <audio>
-        // fallback path may work for subsequent user-initiated plays.
-        markWebAutoplaySessionUnlocked();
-        if (deferredRetry) {
-          deferredRetry();
-        }
-      });
-      sttDebug('[STT_DEBUG] iOS AudioContext resumed during user gesture');
-    } else {
-      sttDebug(`[STT_DEBUG] iOS AudioContext primeCtx: ctx=${ctx ? ctx.state : 'null'}`);
-    }
-    // Gesture-unlock a dedicated <audio> element for speaker route priming.
-    // iOS Safari tracks autoplay unlock per element — a new Audio() created
-    // outside a gesture will be blocked. Pre-unlocking here lets
-    // primeIosSpeakerRoute() reuse this element later without a gesture.
-    if (!iosRouteAudio) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const AudioCtor = (globalThis as any).Audio as (new (src?: string) => HTMLAudioElement) | undefined;
-      if (AudioCtor) {
-        try {
-          const el = new AudioCtor(SILENT_WAV_DATA_URI);
-          el.play().then(() => {
-            el.pause();
-            el.src = '';
-            iosRouteAudio = el;
-            sttDebug('[STT_DEBUG] primeCtx: route audio element unlocked');
-          }).catch(() => {
-            sttDebug('[STT_DEBUG] primeCtx: route audio element unlock failed');
-          });
-        } catch {
-          // Audio constructor unavailable
-        }
+/** Synchronously unlock the iOS Safari audio session during a user gesture.
+ *  Must be called from within a click/touch handler so that
+ *  AudioContext.resume() runs with an active user-activation. Safe to call on
+ *  non-iOS or when already unlocked — becomes a no-op. Exported so explicit
+ *  UI gates (e.g. "tap to start" overlay) can trigger the unlock without
+ *  relying on the module-level document listeners. */
+export function unlockIosAudioSessionSync(): void {
+  if (!IS_IOS_MOBILE_WEB) return;
+  const ctx = getOrCreateIosAudioCtx();
+  if (ctx && ctx.state === 'suspended') {
+    const deferredRetry = consumePendingWebAutoplayRetry();
+    ctx.resume().then(() => {
+      try {
+        const buf = ctx.createBuffer(1, 1, ctx.sampleRate);
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(ctx.destination);
+        src.start();
+        sttDebug(`[STT_DEBUG] iOS AudioContext primed with silent buffer (state=${ctx.state})`);
+      } catch {
+        sttDebug(`[STT_DEBUG] iOS AudioContext primed without silent buffer (state=${ctx.state})`);
+      }
+      startIosKeepAlive();
+      markWebAutoplaySessionUnlocked();
+      if (deferredRetry) {
+        sttDebug('[STT_DEBUG] unlockIosAudioSessionSync: firing deferred autoplay retry');
+        deferredRetry();
+      }
+    }).catch(() => {
+      sttDebug('[STT_DEBUG] iOS AudioContext resume failed during gesture');
+      markWebAutoplaySessionUnlocked();
+      if (deferredRetry) {
+        deferredRetry();
+      }
+    });
+    sttDebug('[STT_DEBUG] iOS AudioContext resumed during user gesture');
+  } else {
+    sttDebug(`[STT_DEBUG] unlockIosAudioSessionSync: ctx=${ctx ? ctx.state : 'null'}`);
+    // Still mark unlocked so downstream retry logic proceeds without waiting.
+    markWebAutoplaySessionUnlocked();
+  }
+  if (!iosRouteAudio) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const AudioCtor = (globalThis as any).Audio as (new (src?: string) => HTMLAudioElement) | undefined;
+    if (AudioCtor) {
+      try {
+        const el = new AudioCtor(SILENT_WAV_DATA_URI);
+        el.play().then(() => {
+          el.pause();
+          el.src = '';
+          iosRouteAudio = el;
+          sttDebug('[STT_DEBUG] unlockIosAudioSessionSync: route audio element unlocked');
+        }).catch(() => {
+          sttDebug('[STT_DEBUG] unlockIosAudioSessionSync: route audio element unlock failed');
+        });
+      } catch {
+        // Audio constructor unavailable
       }
     }
+  }
+}
+
+// Prime the AudioContext on the first user gesture. iOS Safari requires
+// AudioContext.resume() during a user interaction to unlock audio output.
+// Screens that render a dedicated gesture gate (e.g. VoiceSessionGateOverlay)
+// should invoke unlockIosAudioSessionSync() directly; these fallback
+// listeners cover other entry points (settings screens, legal pages, etc.).
+if (IS_IOS_MOBILE_WEB && typeof document !== 'undefined') {
+  const primeCtx = () => {
+    if (hasWebAutoplaySessionUnlock()) {
+      ['touchstart', 'pointerdown', 'mousedown', 'keydown'].forEach(e => {
+        document.removeEventListener(e, primeCtx, true);
+      });
+      return;
+    }
+    unlockIosAudioSessionSync();
     ['touchstart', 'pointerdown', 'mousedown', 'keydown'].forEach(e => {
       document.removeEventListener(e, primeCtx, true);
     });

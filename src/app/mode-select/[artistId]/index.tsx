@@ -17,6 +17,7 @@ import { MessageList } from '../../../components/chat/MessageList';
 import { StreamingIndicator } from '../../../components/chat/StreamingIndicator';
 import { AmbientGlow } from '../../../components/common/AmbientGlow';
 import { BackButton } from '../../../components/common/BackButton';
+import { VoiceSessionGateOverlay, type VoiceSessionGateUnlockResult } from '../../../components/common/VoiceSessionGateOverlay';
 import { buildTutorialConversationGreeting } from '../../../constants/tutorialConversationCopy';
 import { MODE_IDS } from '../../../config/constants';
 import { getVisibleModeNamesForGreeting } from '../../../config/experienceCatalog';
@@ -650,6 +651,14 @@ export default function ModeSelectHomeScreen() {
   const [isModeSelectScreenFocused, setIsModeSelectScreenFocused] = useState(true);
   const [pendingAutoMicGreetingMessageId, setPendingAutoMicGreetingMessageId] = useState<string | null>(null);
   const [categoryGridBottomY, setCategoryGridBottomY] = useState<number | null>(null);
+  // Web-only gesture gate. Greeting/TTS/STT priming is blocked until the user
+  // taps the VoiceSessionGateOverlay button, which runs the audio unlock +
+  // mic permission prompt sequentially from within a user-activation.
+  // On native, there's no autoplay restriction, so the gate starts unlocked.
+  const [webGestureUnlocked, setWebGestureUnlocked] = useState(Platform.OS !== 'web');
+  const [micPermissionState, setMicPermissionState] = useState<
+    'unknown' | 'granted' | 'denied' | 'timed_out' | 'unsupported'
+  >('unknown');
   const [isGreetingBooting, setIsGreetingBooting] = useState(false);
   const [greetingOpenCycle, setGreetingOpenCycle] = useState(0);
   const [replayBarrier, setReplayBarrier] = useState<ModeSelectReplayBarrier | null>(null);
@@ -1658,6 +1667,13 @@ export default function ModeSelectHomeScreen() {
     if (!artist || !isModeSelectScreenFocused || greetingOpenCycle <= 0) {
       return;
     }
+    // On web, block greeting fetch/synthesis/playback until the user has
+    // tapped the VoiceSessionGateOverlay. This serializes mic permission
+    // and audio unlock ahead of any TTS work, so the autoplay never races
+    // with the permission popup.
+    if (!webGestureUnlocked) {
+      return;
+    }
     // Read live from store instead of using the reactive selector: markArtistGreeted() is called
     // inside this run, which would change hasArtistBeenGreetedThisSession mid-flight and trigger
     // a cleanup/re-run cycle that cancels TTS before audio can play.
@@ -2050,7 +2066,8 @@ export default function ModeSelectHomeScreen() {
     setActiveConversation,
     updateMessage,
     updateConversation,
-    voiceAutoPlay
+    voiceAutoPlay,
+    webGestureUnlocked
   ]);
 
   // Native: retry greeting playback once the audio player is idle (no browser autoplay gate).
@@ -2314,8 +2331,26 @@ export default function ModeSelectHomeScreen() {
           {isValidConversation && isQuotaBlocked ? (
             <Text style={styles.blockedHint}>{t('chatInputBlocked')}</Text>
           ) : null}
+          {Platform.OS === 'web' && webGestureUnlocked && micPermissionState === 'denied' ? (
+            <Text style={styles.micDeniedBanner}>{t('voiceMicDeniedBanner')}</Text>
+          ) : null}
         </View>
       </View>
+      <VoiceSessionGateOverlay
+        visible={!webGestureUnlocked}
+        onUnlock={(result: VoiceSessionGateUnlockResult) => {
+          if (result.micGranted) {
+            setMicPermissionState('granted');
+          } else if (result.micUnsupported) {
+            setMicPermissionState('unsupported');
+          } else if (result.micTimedOut) {
+            setMicPermissionState('timed_out');
+          } else {
+            setMicPermissionState('denied');
+          }
+          setWebGestureUnlocked(true);
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -2466,6 +2501,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 12,
     marginTop: theme.spacing.xs
+  },
+  micDeniedBanner: {
+    color: theme.colors.neonRed,
+    textAlign: 'center',
+    fontSize: 12,
+    marginTop: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md
   },
   categoryGrid: {
     flexDirection: 'row',

@@ -578,6 +578,48 @@ export async function requestVoicePermission(): Promise<boolean> {
   }
 }
 
+export type WebMicPermissionOutcome = {
+  granted: boolean;
+  denied: boolean;
+  timedOut: boolean;
+  unsupported: boolean;
+};
+
+const WEB_MIC_PERMISSION_TIMEOUT_MS = 3000;
+
+export async function requestWebMicPermission(): Promise<WebMicPermissionOutcome> {
+  if (Platform.OS !== 'web' || typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    return { granted: false, denied: false, timedOut: false, unsupported: true };
+  }
+  try {
+    sttDebug('[STT_DEBUG] requestWebMicPermission: calling getUserMedia');
+    const micPromise = navigator.mediaDevices.getUserMedia({ audio: true });
+    let didTimeout = false;
+    const timeoutPromise = new Promise<null>((resolve) =>
+      setTimeout(() => {
+        didTimeout = true;
+        resolve(null);
+      }, WEB_MIC_PERMISSION_TIMEOUT_MS)
+    );
+    const stream = await Promise.race([micPromise, timeoutPromise]);
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
+      sttDebug('[STT_DEBUG] requestWebMicPermission: granted, stream released');
+      return { granted: true, denied: false, timedOut: false, unsupported: false };
+    }
+    // Clean up if the real promise resolves after the timeout.
+    micPromise
+      .then((lateStream) => lateStream.getTracks().forEach((track) => track.stop()))
+      .catch(() => {});
+    sttDebug('[STT_DEBUG] requestWebMicPermission: timed out before user responded');
+    return { granted: false, denied: false, timedOut: didTimeout, unsupported: false };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    sttDebug(`[STT_DEBUG] requestWebMicPermission: denied or failed (${message})`);
+    return { granted: false, denied: true, timedOut: false, unsupported: false };
+  }
+}
+
 export function startVoiceListeningSession({
   locale,
   fallbackLocale,
