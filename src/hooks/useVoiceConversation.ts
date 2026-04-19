@@ -1354,7 +1354,7 @@ export function useVoiceConversation({
         status: stateRef.current.status
       });
       if (!canStart || !isMountedRef.current) {
-        return;
+        return false;
       }
 
       // If the assistant is still streaming / generating TTS, don't unmute STT
@@ -1362,9 +1362,12 @@ export function useVoiceConversation({
       // chunks lets the mic capture the assistant's own TTS audio from the
       // speaker. The normal React path (auto-listen effect) will start STT once
       // both playback AND streaming are done (isPlaying goes fully false).
+      // Return true to keep the AudioContext running — suspending it between
+      // queues causes the next resume to pick up .playAndRecord (earpiece)
+      // routing from the still-active webkitSpeechRecognition.
       if (isResponsePendingRef.current) {
-        sttDebug('[STT_DEBUG] onQueueComplete: response still pending, deferring STT restart');
-        return;
+        sttDebug('[STT_DEBUG] onQueueComplete: response still pending, keeping audio route');
+        return true;
       }
 
       // This callback handles STT restart — prevent the auto-listen effect and
@@ -1396,7 +1399,7 @@ export function useVoiceConversation({
             void startListeningFlowRef.current?.('auto');
           }
         }, 500);
-        return;
+        return false;
       }
 
       // Session died during TTS or non-iOS — fall back to full restart.
@@ -1425,6 +1428,7 @@ export function useVoiceConversation({
       } else {
         beginListen();
       }
+      return false;
     };
     return () => {
       audioPlayerOnQueueCompleteRef.current = null;

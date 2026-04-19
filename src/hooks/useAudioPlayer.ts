@@ -82,8 +82,9 @@ export interface AudioPlayerController {
   gracefulStop: () => void;
   /** Register a callback that fires synchronously when the audio queue finishes
    *  naturally (last chunk ends). Fires *before* the React state update from stop(),
-   *  so consumers can begin work (e.g. STT restart) without waiting for a re-render. */
-  onQueueCompleteRef: React.RefObject<(() => void) | null>;
+   *  so consumers can begin work (e.g. STT restart) without waiting for a re-render.
+   *  Return `true` to keep the audio route alive (e.g. more TTS chunks expected). */
+  onQueueCompleteRef: React.RefObject<(() => boolean) | null>;
 }
 
 export interface AudioPlaybackContext {
@@ -412,7 +413,7 @@ export function useAudioPlayer(): AudioPlayerController {
   const playbackTokenRef = useRef(0);
   const isMountedRef = useRef(true);
   const isGracefullyStoppingRef = useRef(false);
-  const onQueueCompleteRef = useRef<(() => void) | null>(null);
+  const onQueueCompleteRef = useRef<(() => boolean) | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const iosSourceRef = useRef<any>(null);
 
@@ -537,12 +538,13 @@ export function useAudioPlayer(): AudioPlayerController {
     setTotalChunks(0);
   }, []);
 
-  const stop = useCallback(async () => {
+  const stop = useCallback(async (options?: { forMicReclaim?: boolean }) => {
+    const forMicReclaim = options?.forMicReclaim ?? true;
     isGracefullyStoppingRef.current = false;
     playbackTokenRef.current += 1;
     queueRef.current = [];
     queueIndexRef.current = 0;
-    await releaseAllAudio(true);  // Queue done — let STT reclaim mic via load()
+    await releaseAllAudio(forMicReclaim);
     resetState();
   }, [releaseAllAudio, resetState]);
 
@@ -664,8 +666,11 @@ export function useAudioPlayer(): AudioPlayerController {
             // Fire the completion callback *before* stop() so consumers can
             // begin latency-sensitive work (e.g. STT restart) without waiting
             // for the React render cycle triggered by stop()'s state updates.
-            onQueueCompleteRef.current?.();
-            void stop();
+            // If the callback returns true, more TTS chunks are expected — keep
+            // the AudioContext running so the next queue doesn't resume into
+            // earpiece mode (iOS .playAndRecord from active webkitSpeechRecognition).
+            const keepAudioRoute = onQueueCompleteRef.current?.() ?? false;
+            void stop({ forMicReclaim: !keepAudioRoute });
             return;
           }
 
