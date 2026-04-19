@@ -1590,20 +1590,17 @@ export function useVoiceConversation({
       return;
     }
 
-    // When TTS starts, suppress STT to avoid audio route conflicts.
-    // On iOS Safari web, mute the session instead of stopping it to avoid
-    // the system beep that fires on every recognition.stop()/start() call.
-    // On other platforms, stop the session as before.
+    // When TTS starts, fully stop the STT session to release the iOS audio
+    // session from .playAndRecord (which routes output to the earpiece).
+    // We previously muted to avoid system beeps, but iOS keeps the session
+    // in recording mode while recognition is alive — even when muted — which
+    // forces TTS through the earpiece. Stopping costs ~2 beeps per turn but
+    // is the only way to get loudspeaker routing on iOS Safari.
     if (isPlaying || isAudioPlaybackLoading) {
       sttDebug(`[STT_DEBUG] playback-effect: isPlaying=${isPlaying}, isAudioPlaybackLoading=${isAudioPlaybackLoading}, status=${stateRef.current.status}, hasSession=${Boolean(activeSessionRef.current)}`);
       clearRecoveryTimer();
       clearSilenceTimer();
-      if (IOS_WEB_RUNTIME && activeSessionRef.current) {
-        activeSessionRef.current.mute();
-        sttDebug('[STT_DEBUG] playback-effect: muted STT session (avoiding beep)');
-      } else {
-        stopActiveSession();
-      }
+      stopActiveSession();
       if (!isLockedMicStatus(stateRef.current.status)) {
         dispatch({ type: 'assistant_busy' });
       } else {
