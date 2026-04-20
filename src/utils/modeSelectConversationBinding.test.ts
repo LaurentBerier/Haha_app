@@ -42,10 +42,11 @@ function createMessagePage(messageIds: string[]): MessagePage {
 }
 
 describe('modeSelectConversationBinding', () => {
-  it('keeps the bound conversation when it is still valid even if activeConversationId differs', () => {
+  it('keeps the bound conversation when active differs but is within the takeover threshold', () => {
+    // active-conv is only 2s newer than bound-conv, which is under the 5s threshold
     const conversations = [
       createConversation({ id: 'bound-conv', updatedAt: '2026-03-22T10:00:00.000Z' }),
-      createConversation({ id: 'active-conv', updatedAt: '2026-03-22T12:00:00.000Z' })
+      createConversation({ id: 'active-conv', updatedAt: '2026-03-22T10:00:02.000Z' })
     ];
 
     const result = resolveModeSelectBoundConversationId({
@@ -223,6 +224,91 @@ describe('modeSelectConversationBinding', () => {
         messageId: 'msg-secondary'
       })
     ).toBeNull();
+  });
+
+  it('takes over to active primary when it is significantly more recent than bound', () => {
+    const conversations = [
+      createConversation({ id: 'bound-conv', updatedAt: '2026-03-22T10:00:00.000Z' }),
+      createConversation({ id: 'active-conv', updatedAt: '2026-03-22T10:00:06.000Z' })
+    ];
+
+    const result = resolveModeSelectBoundConversationId({
+      artistId: 'cathy-gauthier',
+      isGreetingGateSatisfied: true,
+      boundConversationId: 'bound-conv',
+      activeConversationId: 'active-conv',
+      conversationsForArtist: conversations
+    });
+
+    expect(result).toEqual({
+      conversationId: 'active-conv',
+      reason: 'active_primary_takeover'
+    });
+  });
+
+  it('keeps bound when active is more recent but within takeover threshold', () => {
+    const conversations = [
+      createConversation({ id: 'bound-conv', updatedAt: '2026-03-22T10:00:00.000Z' }),
+      createConversation({ id: 'active-conv', updatedAt: '2026-03-22T10:00:03.000Z' })
+    ];
+
+    const result = resolveModeSelectBoundConversationId({
+      artistId: 'cathy-gauthier',
+      isGreetingGateSatisfied: true,
+      boundConversationId: 'bound-conv',
+      activeConversationId: 'active-conv',
+      conversationsForArtist: conversations
+    });
+
+    expect(result).toEqual({
+      conversationId: 'bound-conv',
+      reason: 'keep_bound'
+    });
+  });
+
+  it('keeps bound when active is older than bound', () => {
+    const conversations = [
+      createConversation({ id: 'bound-conv', updatedAt: '2026-03-22T10:00:10.000Z' }),
+      createConversation({ id: 'active-conv', updatedAt: '2026-03-22T10:00:00.000Z' })
+    ];
+
+    const result = resolveModeSelectBoundConversationId({
+      artistId: 'cathy-gauthier',
+      isGreetingGateSatisfied: true,
+      boundConversationId: 'bound-conv',
+      activeConversationId: 'active-conv',
+      conversationsForArtist: conversations
+    });
+
+    expect(result).toEqual({
+      conversationId: 'bound-conv',
+      reason: 'keep_bound'
+    });
+  });
+
+  it('does not take over when active is a non-primary thread even if more recent', () => {
+    const conversations = [
+      createConversation({ id: 'bound-conv', updatedAt: '2026-03-22T10:00:00.000Z' }),
+      createConversation({
+        id: 'active-mode',
+        modeId: MODE_IDS.GRILL,
+        threadType: 'mode',
+        updatedAt: '2026-03-22T10:00:10.000Z'
+      })
+    ];
+
+    const result = resolveModeSelectBoundConversationId({
+      artistId: 'cathy-gauthier',
+      isGreetingGateSatisfied: true,
+      boundConversationId: 'bound-conv',
+      activeConversationId: 'active-mode',
+      conversationsForArtist: conversations
+    });
+
+    expect(result).toEqual({
+      conversationId: 'bound-conv',
+      reason: 'keep_bound'
+    });
   });
 
   it('prefers active primary conversation over mode threads', () => {

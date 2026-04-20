@@ -47,6 +47,7 @@ import { isNativeMobileApp } from '../../../platform/platformCapabilities';
 import { attemptExperienceLaunchBeforeSend } from '../../../services/conversationSendOrchestrator';
 import { getRandomFillerUri, prewarmVoiceFillers } from '../../../services/voiceFillerService';
 import { useStore } from '../../../store/useStore';
+import { consumeRecentAddMessageWriteTargets } from '../../../store/slices/messageSlice';
 import { useShallow } from 'zustand/react/shallow';
 import { theme } from '../../../theme';
 import { hasVoiceAccessForAccountType, resolveEffectiveAccountType } from '../../../utils/accountTypeUtils';
@@ -959,8 +960,12 @@ export default function ModeSelectHomeScreen() {
     const messageCount = messages.length;
     const artistConversationCount = (liveState.conversations[artistId] ?? []).length;
     const messageStoreEntries = Object.keys(liveState.messagesByConversation).length;
+    const recentWrites = consumeRecentAddMessageWriteTargets();
+    const writeTargetSnippets = recentWrites.length > 0
+      ? recentWrites.map((id) => id.slice(-8)).join('|')
+      : 'none';
     sttDebug(
-      `[STT_DEBUG] hub-render: bound=${boundSnippet}, mapped=${mappedSnippet}, active=${activeSnippet}, valid=${isValidConversation}, msgs=${messageCount}, visible=${visibleHubMessages.length}, convs=${artistConversationCount}, msgStores=${messageStoreEntries}, greeted=${hasArtistBeenGreetedThisSession}, greetingOpen=${greetingOpenCycle}`
+      `[STT_DEBUG] hub-render: bound=${boundSnippet}, mapped=${mappedSnippet}, active=${activeSnippet}, valid=${isValidConversation}, msgs=${messageCount}, visible=${visibleHubMessages.length}, convs=${artistConversationCount}, msgStores=${messageStoreEntries}, greeted=${hasArtistBeenGreetedThisSession}, greetingOpen=${greetingOpenCycle}, writeTargets=${writeTargetSnippets}`
     );
   }, [
     artistId,
@@ -1410,6 +1415,13 @@ export default function ModeSelectHomeScreen() {
 
   useEffect(() => {
     if (resolvedBoundConversation.reason === 'keep_bound') {
+      return;
+    }
+
+    // Don't rebind mid-stream: if the bound conversation is actively streaming
+    // a reply, defer the takeover until streaming ends. The effect re-runs
+    // when hasStreaming becomes false, at which point the rebind is applied.
+    if (resolvedBoundConversation.reason === 'active_primary_takeover' && hasStreaming) {
       return;
     }
 

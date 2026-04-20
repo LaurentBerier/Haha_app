@@ -4,6 +4,7 @@ import { resolveModeSelectConversationRecoveryAction } from './modeSelectConvers
 
 export type ModeSelectBoundResolutionReason =
   | 'keep_bound'
+  | 'active_primary_takeover'
   | 'active_primary'
   | 'latest_primary'
   | 'missing_context'
@@ -13,6 +14,11 @@ export interface ModeSelectBoundResolution {
   conversationId: string;
   reason: ModeSelectBoundResolutionReason;
 }
+
+// Minimum time difference (ms) between active and bound conversation updatedAt
+// for the hub to auto-rebind to the active conversation. Prevents spurious
+// takeovers when two conversations are updated within the same second.
+const ACTIVE_TAKEOVER_THRESHOLD_MS = 5_000;
 
 interface ResolveModeSelectBoundConversationParams {
   artistId: string;
@@ -65,6 +71,31 @@ export function resolveModeSelectBoundConversationId(
 
   const normalizedBoundId = params.boundConversationId.trim();
   if (isValidBoundModeSelectConversation(normalizedBoundId, params.conversationsForArtist)) {
+    const normalizedActiveId = params.activeConversationId?.trim() ?? '';
+    if (normalizedActiveId && normalizedActiveId !== normalizedBoundId) {
+      const activeConversation = findConversationByIdInList(
+        params.conversationsForArtist,
+        normalizedActiveId
+      );
+      if (isPrimaryConversation(activeConversation)) {
+        const boundConversation = findConversationByIdInList(
+          params.conversationsForArtist,
+          normalizedBoundId
+        );
+        const boundTime = boundConversation ? Date.parse(boundConversation.updatedAt) : NaN;
+        const activeTime = Date.parse(activeConversation.updatedAt);
+        if (
+          Number.isFinite(boundTime) &&
+          Number.isFinite(activeTime) &&
+          activeTime - boundTime >= ACTIVE_TAKEOVER_THRESHOLD_MS
+        ) {
+          return {
+            conversationId: activeConversation.id,
+            reason: 'active_primary_takeover'
+          };
+        }
+      }
+    }
     return {
       conversationId: normalizedBoundId,
       reason: 'keep_bound'

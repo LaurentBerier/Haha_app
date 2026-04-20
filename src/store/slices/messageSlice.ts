@@ -68,10 +68,38 @@ function normalizeMessageTimestamp(value: string): string {
   return new Date(parsed).toISOString();
 }
 
+// Diagnostic ring buffer of recent addMessage targets. Lets the mode-select
+// hub log the conversation IDs that received writes between two renders, so we
+// can detect at distance whether bubbles are routed to a different conversation
+// than the one the hub is bound to.
+const ADD_MESSAGE_WRITE_HISTORY_LIMIT = 16;
+let recentAddMessageWriteOrder: string[] = [];
+
+function recordAddMessageWriteTarget(conversationId: string): void {
+  const trimmed = conversationId.trim();
+  if (!trimmed) {
+    return;
+  }
+  if (recentAddMessageWriteOrder[recentAddMessageWriteOrder.length - 1] === trimmed) {
+    return;
+  }
+  recentAddMessageWriteOrder.push(trimmed);
+  if (recentAddMessageWriteOrder.length > ADD_MESSAGE_WRITE_HISTORY_LIMIT) {
+    recentAddMessageWriteOrder.splice(0, recentAddMessageWriteOrder.length - ADD_MESSAGE_WRITE_HISTORY_LIMIT);
+  }
+}
+
+export function consumeRecentAddMessageWriteTargets(): string[] {
+  const snapshot = recentAddMessageWriteOrder.slice();
+  recentAddMessageWriteOrder = [];
+  return snapshot;
+}
+
 export const createMessageSlice: StateCreator<StoreState, [], [], MessageSlice> = (set, get) => ({
   messagesByConversation: {},
-  addMessage: (conversationId, message) =>
-    set((state) => {
+  addMessage: (conversationId, message) => {
+    recordAddMessageWriteTarget(conversationId);
+    return set((state) => {
       const page = getMessagePage(state, conversationId);
       const nextMessages = [...page.messages, message];
       const nextIndexById = {
@@ -89,7 +117,8 @@ export const createMessageSlice: StateCreator<StoreState, [], [], MessageSlice> 
           }
         }
       };
-    }),
+    });
+  },
   updateMessage: (conversationId, messageId, updates) =>
     set((state) => {
       const page = getMessagePage(state, conversationId);
