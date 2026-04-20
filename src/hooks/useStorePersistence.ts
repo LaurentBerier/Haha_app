@@ -5,6 +5,17 @@ import { selectPersistedSnapshot, useStore } from '../store/useStore';
 const SAVE_DEBOUNCE_MS = 500;
 const HYDRATION_TIMEOUT_MS = 4000;
 
+// Module-level reference to the active flush closure, assigned by the most
+// recent `useStorePersistence` mount. Exposed via `flushStorePersistence()` so
+// callers outside the hook (e.g. navigation blur handlers, assistant reply
+// completion) can force an immediate write without waiting for the 500 ms
+// debounce. No-op when the hook is not mounted.
+let activeFlushRef: (() => void) | null = null;
+
+export function flushStorePersistence(): void {
+  activeFlushRef?.();
+}
+
 export function useStorePersistence(): void {
   const hydrateStore = useStore((state) => state.hydrateStore);
   const markHydrated = useStore((state) => state.markHydrated);
@@ -63,6 +74,7 @@ export function useStorePersistence(): void {
       const snapshot = selectPersistedSnapshot(useStore.getState());
       void savePersistedSnapshot(snapshot);
     };
+    activeFlushRef = flushSnapshot;
 
     const unsubscribe = useStore.subscribe(() => {
       if (timeoutId) {
@@ -109,6 +121,9 @@ export function useStorePersistence(): void {
       }
       const snapshot = selectPersistedSnapshot(useStore.getState());
       void savePersistedSnapshot(snapshot);
+      if (activeFlushRef === flushSnapshot) {
+        activeFlushRef = null;
+      }
       if (canUseDocumentVisibilityEvents) {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       }

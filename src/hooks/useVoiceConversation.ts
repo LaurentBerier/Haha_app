@@ -1758,6 +1758,15 @@ export function useVoiceConversation({
       return;
     }
 
+    // Block between TTS chunks: isPlaying oscillates false in the gap but the
+    // assistant is still streaming more audio. Starting STT here leads to the
+    // same churn (STT session created → killed by next chunk's playback). The
+    // onQueueComplete callback uses the same guard ([L1368](src/hooks/useVoiceConversation.ts#L1368)).
+    if (isResponsePendingRef.current) {
+      sttDebug('[STT_DEBUG] auto-listen effect: blocked (response still pending)');
+      return;
+    }
+
     sttDebug(`[STT_DEBUG] auto-listen effect: triggering, status=${state.status}`);
     void startListeningFlow('auto');
   }, [disabled, enabled, hasTypedDraft, isAudioPlaybackLoading, isPlaying, shouldAutoListen, startListeningFlow, state.status]);

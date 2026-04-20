@@ -33,6 +33,7 @@ import {
   type TerminalTtsCode as SharedTerminalTtsCode
 } from '../../../hooks/useTtsPlayback';
 import { useVoiceConversation } from '../../../hooks/useVoiceConversation';
+import { flushStorePersistence } from '../../../hooks/useStorePersistence';
 import { t } from '../../../i18n';
 import type { ChatError } from '../../../models/ChatError';
 import { normalizeConversationThreadType } from '../../../models/Conversation';
@@ -707,8 +708,34 @@ export default function ModeSelectHomeScreen() {
     [sessionUser?.displayName, sessionUser?.email, userProfile?.preferredName]
   );
   const isGreetingGateSatisfied = E2E_AUTH_BYPASS || hasArtistBeenGreetedThisSession;
-  const [boundConversationId, setBoundConversationId] = useState('');
-  const boundConversationIdRef = useRef('');
+  // Seed the binding from persisted state on the very first render. Without
+  // this, `boundConversationId` starts empty and `<MessageList>` shows nothing
+  // for one render cycle after navigating back to the hub — which on slow
+  // Safari iPhone 13 reads as "greeting and messages are missing".
+  const initialBoundConversationId = useMemo(() => {
+    const normalizedArtistId = artistId.trim();
+    if (!normalizedArtistId) {
+      return '';
+    }
+    const live = useStore.getState();
+    const artistConversations = live.conversations[normalizedArtistId] ?? [];
+    const mapped = live.modeSelectSessionHubConversationByArtist[normalizedArtistId]?.trim() ?? '';
+    if (mapped && isValidBoundModeSelectConversation(mapped, artistConversations)) {
+      return mapped;
+    }
+    const active = live.activeConversationId?.trim() ?? '';
+    if (active && isValidBoundModeSelectConversation(active, artistConversations)) {
+      return active;
+    }
+    return '';
+    // artistId is the only reactive dependency on purpose — the dedicated
+    // `resolvedBoundConversation` effect handles subsequent rebinds once the
+    // store subscription is wired up. Reading live getState() here is a
+    // one-shot hydration that runs on every render but only affects the first
+    // `useState` call via `useMemo`.
+  }, [artistId]);
+  const [boundConversationId, setBoundConversationId] = useState(initialBoundConversationId);
+  const boundConversationIdRef = useRef(initialBoundConversationId);
   const modeSelectScreenFocusedRef = useRef(true);
   const modeSelectConversationIdRef = useRef('');
   const lastBoundArtistIdRef = useRef<string | null>(null);
@@ -1522,6 +1549,11 @@ export default function ModeSelectHomeScreen() {
       setModeSelectScreenFocus(false);
       captureReplayBarrierOnBlur();
       stopModeSelectVoiceAndMic();
+      // In-app navigation (Expo Router) does not fire visibilitychange or
+      // pagehide, so the persistence debounce (500 ms) can lose the newest
+      // messages if iOS Safari subsequently backgrounds the tab. Force an
+      // immediate snapshot write so the hub can re-hydrate cleanly on return.
+      flushStorePersistence();
     });
 
     return () => {
@@ -1542,12 +1574,12 @@ export default function ModeSelectHomeScreen() {
       return;
     }
 
-    if (!conversationModeEnabled) {
+    // Always clear the flag on focus — leaving it `true` while composer is
+    // disabled means a later state change (quota, auth, streaming end) can
+    // trigger resumeListening() with a stale intent. The user can still
+    // re-activate the mic via the chat input toggle once composer re-enables.
+    if (!conversationModeEnabled || isModeSelectComposerDisabled) {
       shouldRestoreMicAfterBlurRef.current = false;
-      return;
-    }
-
-    if (isModeSelectComposerDisabled) {
       return;
     }
 

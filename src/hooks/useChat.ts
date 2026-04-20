@@ -44,6 +44,7 @@ import type { ScoreAction } from '../models/Gamification';
 import { computeTutorialModeForRequest, isAffectionateUserMessage, shouldApplyReactionForUserMessage } from './chatBehavior';
 import { resolveChatSendContextFromState, type ChatSendContextBlockReason } from './chatSendContext';
 import { useAudioPlayer } from './useAudioPlayer';
+import { flushStorePersistence } from './useStorePersistence';
 import { useGamificationReactions } from './useGamificationReactions';
 import { useQuotaGuard } from './useQuotaGuard';
 import {
@@ -1335,6 +1336,11 @@ export function useChat(conversationId: string) {
           );
         }
         incrementUsage();
+        // Flush the full turn to storage now — if the user navigates or
+        // Safari backgrounds the tab within 500 ms, the debounced subscriber
+        // would otherwise miss the completed reply and the hub would render
+        // stale on return.
+        flushStorePersistence();
         const latestStateAfterReply = useStore.getState();
         const latestUserId = latestStateAfterReply.session?.user.id ?? '';
         const liveConversationAfterReply = findConversationById(
