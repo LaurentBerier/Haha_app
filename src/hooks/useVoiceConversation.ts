@@ -1753,17 +1753,15 @@ export function useVoiceConversation({
     // on iOS Safari: `dispatch: set_off, currentStatus=starting` right as
     // `iOS AudioContext: resumed for playback` fires). onQueueComplete
     // handles the post-TTS restart instead.
+    //
+    // NOTE: an earlier attempt also added `isResponsePendingRef` as a guard
+    // here, but isLatestArtistVoiceGenerating (one of the two inputs to
+    // isResponsePending) can remain `true` indefinitely if a TTS synthesis
+    // hiccup leaves voiceStatus stuck at 'generating' — which permanently
+    // blocks STT auto-restart. The `isAudioPlaybackLoading` guard covers the
+    // legitimate prep-window race without that tail risk.
     if (isAudioPlaybackLoadingRef.current) {
       sttDebug('[STT_DEBUG] auto-listen effect: blocked (audio playback loading)');
-      return;
-    }
-
-    // Block between TTS chunks: isPlaying oscillates false in the gap but the
-    // assistant is still streaming more audio. Starting STT here leads to the
-    // same churn (STT session created → killed by next chunk's playback). The
-    // onQueueComplete callback uses the same guard ([L1368](src/hooks/useVoiceConversation.ts#L1368)).
-    if (isResponsePendingRef.current) {
-      sttDebug('[STT_DEBUG] auto-listen effect: blocked (response still pending)');
       return;
     }
 
