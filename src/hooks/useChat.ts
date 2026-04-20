@@ -45,6 +45,7 @@ import { computeTutorialModeForRequest, isAffectionateUserMessage, shouldApplyRe
 import { resolveChatSendContextFromState, type ChatSendContextBlockReason } from './chatSendContext';
 import { useAudioPlayer } from './useAudioPlayer';
 import { flushStorePersistence } from './useStorePersistence';
+import { sttDebug } from '../services/sttDebugLogger';
 import { useGamificationReactions } from './useGamificationReactions';
 import { useQuotaGuard } from './useQuotaGuard';
 import {
@@ -2203,6 +2204,13 @@ export function useChat(conversationId: string) {
 
     const targetConversationId = sendContext.conversationId;
     const targetConversation = sendContext.conversation;
+    // Surface the target conversation in the debug stream so a mismatch
+    // between the screen's bound id and the actual send target (e.g. voice
+    // input silently launching a mode experience and rerouting messages to
+    // a fresh conversation) is visible in the Vercel logs.
+    sttDebug(
+      `[STT_DEBUG] sendMessage: target=${targetConversationId.slice(-8)}, hookBound=${conversationIdRef.current.trim().slice(-8) || 'empty'}, textLen=${trimmed.length}`
+    );
     const preferredLanguage = targetConversation.language || getLanguage();
     const now = new Date().toISOString();
     const rawMessagesBeforeSend = getMessages(targetConversationId);

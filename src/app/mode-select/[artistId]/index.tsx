@@ -928,6 +928,18 @@ export default function ModeSelectHomeScreen() {
       }),
     [messages, modeSelectConversationId, replayBarrier]
   );
+  // Cap the hub FlatList render to the most recent turns. On iPhone 13
+  // Safari, a long-history conversation (we observed 226 messages accumulated
+  // across sessions) makes `scrollToEnd` unreliable and pushes the latest
+  // bubbles below the viewport — the user sees old bubbles but not the new
+  // ones. Storage still holds the full history; only the render window is
+  // trimmed. 60 covers ~30 turns, enough context for the hub while keeping
+  // the FlatList snappy.
+  const HUB_MESSAGE_RENDER_CAP = 60;
+  const visibleHubMessages = useMemo(
+    () => (messages.length > HUB_MESSAGE_RENDER_CAP ? messages.slice(-HUB_MESSAGE_RENDER_CAP) : messages),
+    [messages]
+  );
 
   useEffect(() => {
     modeSelectConversationIdRef.current = modeSelectConversationId;
@@ -948,7 +960,7 @@ export default function ModeSelectHomeScreen() {
     const artistConversationCount = (liveState.conversations[artistId] ?? []).length;
     const messageStoreEntries = Object.keys(liveState.messagesByConversation).length;
     sttDebug(
-      `[STT_DEBUG] hub-render: bound=${boundSnippet}, mapped=${mappedSnippet}, active=${activeSnippet}, valid=${isValidConversation}, msgs=${messageCount}, convs=${artistConversationCount}, msgStores=${messageStoreEntries}, greeted=${hasArtistBeenGreetedThisSession}, greetingOpen=${greetingOpenCycle}`
+      `[STT_DEBUG] hub-render: bound=${boundSnippet}, mapped=${mappedSnippet}, active=${activeSnippet}, valid=${isValidConversation}, msgs=${messageCount}, visible=${visibleHubMessages.length}, convs=${artistConversationCount}, msgStores=${messageStoreEntries}, greeted=${hasArtistBeenGreetedThisSession}, greetingOpen=${greetingOpenCycle}`
     );
   }, [
     artistId,
@@ -956,7 +968,8 @@ export default function ModeSelectHomeScreen() {
     hasArtistBeenGreetedThisSession,
     isValidConversation,
     messages.length,
-    modeSelectConversationId
+    modeSelectConversationId,
+    visibleHubMessages.length
   ]);
 
   const sendFromModeSelectCurrentBinding = useCallback(
@@ -2312,7 +2325,7 @@ export default function ModeSelectHomeScreen() {
                 listKey={modeSelectConversationId}
                 listStyle={styles.conversationList}
                 contentContainerStyle={styles.conversationListContent}
-                messages={messages}
+                messages={visibleHubMessages}
                 userDisplayName={userDisplayName}
                 artistDisplayName={resolvedArtistDisplayName}
                 onRetryMessage={retryMessage}
