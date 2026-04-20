@@ -1203,9 +1203,26 @@ export function useVoiceConversation({
           } catch (micErr) {
             sttDebug(`[STT_DEBUG] iOS mic prime: failed (${micErr instanceof Error ? micErr.message : String(micErr)}), proceeding anyway`);
           }
-          if (!isMountedRef.current || (origin === 'auto' || origin === 'recovery'
-            ? !shouldAttemptAutoListen({ shouldAutoListen, webTabActive: webTabActiveRef.current, hasUserActivation: hasUserActivatedListeningRef.current, enabled: enabledRef.current, disabled: disabledRef.current, isPlaying: isPlayingRef.current, hasTypedDraft: hasTypedDraftRef.current, status: stateRef.current.status })
-            : !enabledRef.current || disabledRef.current || hasTypedDraftRef.current || isPlayingRef.current)) {
+          // Post-mic-prime bail check. Only verify state that could have
+          // legitimately changed during the getUserMedia await (~50ms–2s on
+          // iOS Safari depending on audio session contention). Do NOT re-run
+          // `shouldAttemptAutoListen` here — by this point we already
+          // dispatched `starting`, so status is no longer `assistant_busy`,
+          // which would drop `canBypassWebActivationGate` and bail any
+          // session started on a fresh refresh (hasUserActivation=false).
+          // That was the regression observed in the 13:03 Vercel logs.
+          const latestStatusAfterMicPrime = stateRef.current.status;
+          if (
+            !isMountedRef.current ||
+            !enabledRef.current ||
+            disabledRef.current ||
+            hasTypedDraftRef.current ||
+            isPlayingRef.current ||
+            isLockedMicStatus(latestStatusAfterMicPrime)
+          ) {
+            sttDebug(
+              `[STT_DEBUG] startListeningFlow: bail after mic prime (mounted=${isMountedRef.current}, enabled=${enabledRef.current}, disabled=${disabledRef.current}, typed=${hasTypedDraftRef.current}, playing=${isPlayingRef.current}, status=${latestStatusAfterMicPrime})`
+            );
             dispatch({ type: 'set_off' });
             return;
           }
