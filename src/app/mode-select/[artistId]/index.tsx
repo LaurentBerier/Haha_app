@@ -932,6 +932,33 @@ export default function ModeSelectHomeScreen() {
   useEffect(() => {
     modeSelectConversationIdRef.current = modeSelectConversationId;
   }, [modeSelectConversationId]);
+
+  // Diagnostic: emit a single-line snapshot of the hub render state whenever
+  // the bound conversation, its message count, or the greeting gate changes.
+  // Surfaces any mismatch between the conversation being displayed and the
+  // conversation messages are being written to.
+  useEffect(() => {
+    const liveState = useStore.getState();
+    const mappedHub = liveState.modeSelectSessionHubConversationByArtist[artistId]?.trim() ?? '';
+    const activeId = liveState.activeConversationId?.trim() ?? '';
+    const boundSnippet = modeSelectConversationId ? modeSelectConversationId.slice(-8) : 'empty';
+    const mappedSnippet = mappedHub ? mappedHub.slice(-8) : 'empty';
+    const activeSnippet = activeId ? activeId.slice(-8) : 'empty';
+    const messageCount = messages.length;
+    const artistConversationCount = (liveState.conversations[artistId] ?? []).length;
+    const messageStoreEntries = Object.keys(liveState.messagesByConversation).length;
+    sttDebug(
+      `[STT_DEBUG] hub-render: bound=${boundSnippet}, mapped=${mappedSnippet}, active=${activeSnippet}, valid=${isValidConversation}, msgs=${messageCount}, convs=${artistConversationCount}, msgStores=${messageStoreEntries}, greeted=${hasArtistBeenGreetedThisSession}, greetingOpen=${greetingOpenCycle}`
+    );
+  }, [
+    artistId,
+    greetingOpenCycle,
+    hasArtistBeenGreetedThisSession,
+    isValidConversation,
+    messages.length,
+    modeSelectConversationId
+  ]);
+
   const sendFromModeSelectCurrentBinding = useCallback(
     (payload: ChatSendPayload, targetConversationId: string): ChatError | null => {
       const liveState = useStore.getState();
