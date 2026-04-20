@@ -1745,9 +1745,22 @@ export function useVoiceConversation({
       return;
     }
 
+    // Block if TTS is being prepared but hasn't emitted isPlaying=true yet.
+    // `shouldAttemptAutoListen` only looks at isPlaying; during the synthesis →
+    // playback prep window, isPlaying can briefly flicker false while
+    // isAudioPlaybackLoading remains true. Starting STT in that gap makes it
+    // die ~300ms later when the actual audio chunk begins playing (observed
+    // on iOS Safari: `dispatch: set_off, currentStatus=starting` right as
+    // `iOS AudioContext: resumed for playback` fires). onQueueComplete
+    // handles the post-TTS restart instead.
+    if (isAudioPlaybackLoadingRef.current) {
+      sttDebug('[STT_DEBUG] auto-listen effect: blocked (audio playback loading)');
+      return;
+    }
+
     sttDebug(`[STT_DEBUG] auto-listen effect: triggering, status=${state.status}`);
     void startListeningFlow('auto');
-  }, [disabled, enabled, hasTypedDraft, isPlaying, shouldAutoListen, startListeningFlow, state.status]);
+  }, [disabled, enabled, hasTypedDraft, isAudioPlaybackLoading, isPlaying, shouldAutoListen, startListeningFlow, state.status]);
 
   const pauseListening = useCallback(() => {
     shouldResumeAfterWebFocusLossRef.current = false;

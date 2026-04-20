@@ -198,9 +198,10 @@ export const useStore = create<StoreState>()((...a) => ({
       conversationModeEnabled: snapshot.preferences ? nextConversationModeEnabled : current.conversationModeEnabled,
       completedTutorials: snapshot.preferences?.completedTutorials ?? {},
       modeSelectSessionHubConversationByArtist: snapshot.modeSelectSessionHubConversationByArtist ?? current.modeSelectSessionHubConversationByArtist,
-      greetedArtistIds: Array.isArray(snapshot.greetedArtistIds)
-        ? new Set(snapshot.greetedArtistIds)
-        : current.greetedArtistIds
+      // greetedArtistIds is intentionally NOT rehydrated: we want the greeting
+      // to re-fire on every page refresh (session), not be suppressed because
+      // the artist was greeted in a previous session.
+      greetedArtistIds: new Set<string>()
     });
   },
   clearAccountScopedState: () =>
@@ -265,7 +266,6 @@ export function selectPersistedSnapshot(state: StoreState): PersistedStoreSnapsh
       conversationModeEnabled: state.conversationModeEnabled,
       completedTutorials: state.completedTutorials
     },
-    modeSelectSessionHubConversationByArtist: state.modeSelectSessionHubConversationByArtist,
-    greetedArtistIds: Array.from(state.greetedArtistIds)
+    modeSelectSessionHubConversationByArtist: state.modeSelectSessionHubConversationByArtist
   };
 }
