@@ -242,7 +242,12 @@ function stopIosKeepAlive(): void {
  *  The route persists for subsequent AudioContext playback. */
 async function primeIosSpeakerRoute(): Promise<void> {
   if (!IS_IOS_MOBILE_WEB) return;
-  if (!iosAudioCtx || iosAudioCtx.state !== 'suspended') {
+  // Skip only when the context is truly dead (closed). A running-but-idle
+  // context (e.g. after keepAudioRoute=true clears the queue between chunks)
+  // still needs re-priming: iOS may have flipped the audio route to the
+  // earpiece during the silent gap. Previously we skipped when ctx !== 'suspended',
+  // which incorrectly bypassed the prime in that "running-idle" scenario.
+  if (!iosAudioCtx || iosAudioCtx.state === 'closed') {
     sttDebug(`[STT_DEBUG] primeIosSpeakerRoute: skipped (ctx=${iosAudioCtx?.state ?? 'null'})`);
     return;
   }
