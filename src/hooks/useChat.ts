@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ARTIST_IDS, MAX_MESSAGE_LENGTH, MODE_IDS } from '../config/constants';
 import { buildAvailableExperiencesForPrompt } from '../config/experienceCatalog';
 import { USE_MOCK_LLM } from '../config/env';
@@ -504,6 +504,11 @@ export function useChat(conversationId: string) {
     () => artists.find((artist) => artist.id === currentConversation?.artistId) ?? null,
     [artists, currentConversation?.artistId]
   );
+
+  // Tracks active ElevenLabs fetches so consumers can extend isResponsePending
+  // past the LLM stream completion — preventing onQueueComplete from stopping
+  // TTS playback before all chunks have been fetched and enqueued.
+  const [ttsFetchPendingCount, setTtsFetchPendingCount] = useState(0);
 
   const queueRef = useRef<StreamJob[]>([]);
   const isStreamingRef = useRef(false);
@@ -1187,6 +1192,7 @@ export function useChat(conversationId: string) {
           }
 
           ttsInFlight += 1;
+          setTtsFetchPendingCount((c) => c + 1);
           return fetchAndCacheVoice(normalizedChunk, artistId, language, latestAccessToken, {
             throwOnError: true
           })
@@ -1206,6 +1212,7 @@ export function useChat(conversationId: string) {
             })
             .finally(() => {
               ttsInFlight -= 1;
+              setTtsFetchPendingCount((c) => Math.max(0, c - 1));
               if (ignoreTtsUpdates) {
                 clearPendingTtsQueue();
                 return;
@@ -2677,6 +2684,7 @@ export function useChat(conversationId: string) {
   return {
     messages,
     hasStreaming,
+    isTtsFetchPending: ttsFetchPendingCount > 0,
     isQuotaBlocked,
     isSendContextReady,
     sendContextBlockReason,

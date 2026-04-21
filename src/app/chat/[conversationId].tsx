@@ -86,6 +86,7 @@ export default function ChatScreen() {
     retryMessage,
     retryVoiceForMessage,
     hasStreaming,
+    isTtsFetchPending,
     currentArtistName,
     isQuotaBlocked,
     isSendContextReady,
@@ -110,7 +111,7 @@ export default function ChatScreen() {
     hasTypedDraft,
     isPlaying: audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming,
     isAudioPlaybackLoading: audioPlayer.isLoading,
-    isResponsePending: hasStreaming,
+    isResponsePending: hasStreaming || isTtsFetchPending,
     onSend: (text) => {
       const normalized = text.trim();
       if (!normalized) {

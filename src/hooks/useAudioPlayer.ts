@@ -258,7 +258,7 @@ async function primeIosSpeakerRoute(): Promise<void> {
     return;
   }
   try {
-    sttDebug('[STT_DEBUG] primeIosSpeakerRoute: playing silent WAV to force loudspeaker');
+    sttDebug(`[STT_DEBUG] primeIosSpeakerRoute: priming loudspeaker (ctx=${iosAudioCtx.state})`);
     iosRouteAudio.src = SILENT_WAV_DATA_URI;
     await Promise.race([
       iosRouteAudio.play(),
@@ -268,7 +268,7 @@ async function primeIosSpeakerRoute(): Promise<void> {
     iosRouteAudio.src = '';
     sttDebug('[STT_DEBUG] primeIosSpeakerRoute: done');
   } catch (err: unknown) {
-    sttDebug(`[STT_DEBUG] primeIosSpeakerRoute: failed (${err instanceof Error ? err.message : String(err)})`);
+    sttDebug(`[STT_DEBUG] primeIosSpeakerRoute: failed (ctx=${iosAudioCtx?.state}, ${err instanceof Error ? err.message : String(err)})`);
   }
 }
 

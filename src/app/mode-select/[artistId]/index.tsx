@@ -906,6 +906,7 @@ export default function ModeSelectHomeScreen() {
     retryMessage,
     retryVoiceForMessage,
     hasStreaming,
+    isTtsFetchPending,
     currentArtistName,
     isQuotaBlocked,
     isSendContextReady,
@@ -1147,7 +1148,7 @@ export default function ModeSelectHomeScreen() {
     isPlaying:
       audioPlayer.isPlaying || audioPlayer.isLoading || hasStreaming || isLatestArtistVoiceGenerating,
     isAudioPlaybackLoading: audioPlayer.isLoading,
-    isResponsePending: hasStreaming || isLatestArtistVoiceGenerating,
+    isResponsePending: hasStreaming || isTtsFetchPending || isLatestArtistVoiceGenerating,
     onSend: (text) => {
       const normalized = text.trim();
       if (!normalized) {
