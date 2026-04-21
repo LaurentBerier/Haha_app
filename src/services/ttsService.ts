@@ -32,6 +32,7 @@ interface FetchTtsResponse {
   code?: string;
   requestId?: string;
   retryAfterSeconds?: number;
+  generateMs?: number;
 }
 
 export type VoiceSynthesisPurpose = 'greeting' | 'reply';
@@ -463,12 +464,16 @@ async function fetchTtsBinary(
       throw { ok: false, status: response.status, code: normalizeTtsErrorCode(response.status) } as FetchTtsResponse;
     }
 
+    const generateMsRaw = parseInt(response.headers.get('X-TTS-Generate-Ms') ?? '', 10);
+    const generateMs = Number.isFinite(generateMsRaw) && generateMsRaw > 0 ? generateMsRaw : undefined;
+
     const arrayBuffer = await response.arrayBuffer();
     return {
       ok: true,
       status: response.status,
       arrayBuffer,
-      contentType
+      contentType,
+      generateMs
     };
   };
 
@@ -564,6 +569,9 @@ export async function fetchAndCacheVoice(
       }
 
       clearTerminalCooldown(scopeKey);
+      if (response.generateMs != null) {
+        console.log(`[tts-client] generateMs=${response.generateMs}, chars=${normalizedText.length}, purpose=${options?.purpose ?? 'reply'}`);
+      }
       const blob = new Blob([response.arrayBuffer], { type: 'audio/mpeg' });
       const blobUrl = URL.createObjectURL(blob);
       writeWebTtsCache(cacheKey, blobUrl);

@@ -1257,11 +1257,15 @@ describe('useChat sendMessage integration', () => {
     await flushAsyncWork();
     await flushAsyncWork();
 
+    // With MAX_TTS_CONCURRENT=2 both chunk 1 and chunk 2 may start before the
+    // 429 response for chunk 1 is processed. At most 2 calls go out; the
+    // terminal-error guard prevents any further calls after that.
     const chunkGenerationCalls = mockFetchAndCacheVoice.mock.calls.filter((call) => {
       const options = (call[4] ?? null) as { purpose?: string } | null;
       return options?.purpose !== 'reply';
     });
-    expect(chunkGenerationCalls).toHaveLength(1);
+    expect(chunkGenerationCalls.length).toBeGreaterThanOrEqual(1);
+    expect(chunkGenerationCalls.length).toBeLessThanOrEqual(2);
 
     const baseArtistMessage =
       state.messagesByConversation[conversation.id]?.messages.find(

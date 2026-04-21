@@ -416,6 +416,11 @@ export function useAudioPlayer(): AudioPlayerController {
   const onQueueCompleteRef = useRef<(() => boolean) | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const iosSourceRef = useRef<any>(null);
+  // Pre-decode cache for the next iOS AudioContext chunk. Keys are blob URIs;
+  // values are Promises that resolve to the decoded AudioBuffer (or null on
+  // error). Filled while the current chunk is playing, consumed at the start
+  // of the next playIndex() call to eliminate the fetch+decode gap.
+  const iosPrefetchCacheRef = useRef<Map<string, Promise<AudioBuffer | null>>>(new Map());
 
   const clearWebListeners = useCallback(() => {
     detachWebListenersRef.current?.();
@@ -544,6 +549,7 @@ export function useAudioPlayer(): AudioPlayerController {
     playbackTokenRef.current += 1;
     queueRef.current = [];
     queueIndexRef.current = 0;
+    iosPrefetchCacheRef.current.clear();
     await releaseAllAudio(forMicReclaim);
     resetState();
   }, [releaseAllAudio, resetState]);
@@ -699,18 +705,34 @@ export function useAudioPlayer(): AudioPlayerController {
                 return toPlaybackFailureResult('interrupted');
               }
 
-              // Fetch and decode audio data
-              const response = await fetch(uri);
-              if (!isMountedRef.current || playbackTokenRef.current !== token) {
-                return toPlaybackFailureResult('interrupted');
-              }
-              const arrayBuffer = await response.arrayBuffer();
-              if (!isMountedRef.current || playbackTokenRef.current !== token) {
-                return toPlaybackFailureResult('interrupted');
-              }
-              const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-              if (!isMountedRef.current || playbackTokenRef.current !== token) {
-                return toPlaybackFailureResult('interrupted');
+              // Fetch and decode — reuse a pre-fetched buffer if available,
+              // otherwise start a fresh fetch. This eliminates the gap between
+              // chunks when the next URI was already prefetched during playback.
+              let audioBuffer: AudioBuffer;
+              const cachedBufferPromise = iosPrefetchCacheRef.current.get(uri);
+              if (cachedBufferPromise) {
+                iosPrefetchCacheRef.current.delete(uri);
+                const cached = await cachedBufferPromise;
+                if (!isMountedRef.current || playbackTokenRef.current !== token) {
+                  return toPlaybackFailureResult('interrupted');
+                }
+                if (!cached) {
+                  throw new Error('prefetch failed, retrying fetch');
+                }
+                audioBuffer = cached;
+              } else {
+                const response = await fetch(uri);
+                if (!isMountedRef.current || playbackTokenRef.current !== token) {
+                  return toPlaybackFailureResult('interrupted');
+                }
+                const arrayBuffer = await response.arrayBuffer();
+                if (!isMountedRef.current || playbackTokenRef.current !== token) {
+                  return toPlaybackFailureResult('interrupted');
+                }
+                audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+                if (!isMountedRef.current || playbackTokenRef.current !== token) {
+                  return toPlaybackFailureResult('interrupted');
+                }
               }
 
               // Create and start source
@@ -736,6 +758,21 @@ export function useAudioPlayer(): AudioPlayerController {
               // Stop the keep-alive oscillator — real audio is starting now.
               stopIosKeepAlive();
               source.start();
+
+              // Pre-fetch and decode the next chunk while this one plays so
+              // that onChunkEnd() → playIndex(N+1) finds the buffer ready.
+              const nextQueueItem = queueRef.current[index + 1];
+              if (
+                nextQueueItem?.uri &&
+                !iosPrefetchCacheRef.current.has(nextQueueItem.uri)
+              ) {
+                const nextUri = nextQueueItem.uri;
+                const prefetchPromise = fetch(nextUri)
+                  .then((r) => r.arrayBuffer())
+                  .then((buf) => audioCtx.decodeAudioData(buf))
+                  .catch(() => null);
+                iosPrefetchCacheRef.current.set(nextUri, prefetchPromise);
+              }
 
               if (isMountedRef.current && playbackTokenRef.current === token) {
                 setIsLoading(false);

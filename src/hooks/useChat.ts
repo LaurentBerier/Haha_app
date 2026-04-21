@@ -988,9 +988,12 @@ export function useChat(conversationId: string) {
       const ttsChunkUrisByIndex = new Map<number, string>();
       const ttsChunkDisplayBoundariesByIndex = new Map<number, number>();
       const ttsPendingPromises: Array<Promise<void>> = [];
-      // Semaphore: keep TTS requests serialized to avoid rate-limit bursts.
+      // Allow 2 concurrent TTS fetches so chunk N+1 is in-flight while chunk N
+      // is still playing, reducing inter-chunk silence. flushReadyPlaybackChunks
+      // enforces strict in-order playback via nextPlayableChunkIndex regardless
+      // of which chunk resolves first.
       let ttsInFlight = 0;
-      const MAX_TTS_CONCURRENT = 1;
+      const MAX_TTS_CONCURRENT = 2;
       const ttsConcurrencyQueue: Array<{ run: () => void; cancel: () => void }> = [];
       let displayTextAccumulator = 0;
       let nextPlayableChunkIndex = 0;

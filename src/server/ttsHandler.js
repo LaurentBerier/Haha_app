@@ -610,6 +610,7 @@ module.exports = async function handler(req, res) {
 
   let upstreamResponse;
   let providerPayload = '';
+  const ttsUpstreamStart = Date.now();
   try {
     upstreamResponse = await requestUpstreamWithRetry(true);
   } catch (error) {
@@ -689,8 +690,12 @@ module.exports = async function handler(req, res) {
     return;
   }
 
+  const ttsGenerateMs = Date.now() - ttsUpstreamStart;
+  console.log(`[api/tts][${requestId}] generated in ${ttsGenerateMs}ms, chars=${payload.text?.length ?? 0}, purpose=${payload.purpose ?? 'reply'}`);
+
   res.statusCode = 200;
   res.setHeader('Content-Type', 'audio/mpeg');
   res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-TTS-Generate-Ms', String(ttsGenerateMs));
   res.send(audioBuffer);
 };
