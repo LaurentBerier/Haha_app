@@ -1681,9 +1681,7 @@ export default function ModeSelectHomeScreen() {
     }
     greetingBootstrapRecoveryCycleRef.current = cycleKey;
 
-    const introConversation = resolveModeSelectSessionHubConversation({
-      requireEmptyConversation: true
-    });
+    const introConversation = resolveModeSelectSessionHubConversation();
     if (!introConversation) {
       return;
     }
@@ -1772,9 +1770,7 @@ export default function ModeSelectHomeScreen() {
       try {
         const greetedArtistCount = sessionStateBeforeGreeting.greetedArtistIds.size;
         const isSessionFirstGreeting = greetedArtistCount === 0;
-        const introConversation = resolveModeSelectSessionHubConversation({
-          requireEmptyConversation: true
-        });
+        const introConversation = resolveModeSelectSessionHubConversation();
         if (!introConversation) {
           return;
         }
@@ -2010,9 +2006,7 @@ export default function ModeSelectHomeScreen() {
       } catch {
         const fallbackConversationId =
           introConversationId.trim() ||
-          resolveModeSelectSessionHubConversation({
-            requireEmptyConversation: true
-          })?.id ||
+          resolveModeSelectSessionHubConversation()?.id ||
           '';
         if (
           !shouldInsertGreetingFallbackAfterFailure({
