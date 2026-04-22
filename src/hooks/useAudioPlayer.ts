@@ -258,6 +258,14 @@ async function primeIosSpeakerRoute(): Promise<void> {
     return;
   }
   try {
+    // Resume the AudioContext before playing the silent WAV. iOS blocks
+    // <audio>.play() when the AudioContext is suspended — even if the context
+    // was originally gesture-unlocked — causing the 300ms race to time out.
+    // This typically happens after ~60 s of inactivity (iOS auto-suspend) when
+    // the greeting fires on the first render without a fresh user gesture.
+    if (iosAudioCtx.state === 'suspended') {
+      await iosAudioCtx.resume();
+    }
     sttDebug(`[STT_DEBUG] primeIosSpeakerRoute: priming loudspeaker (ctx=${iosAudioCtx.state})`);
     iosRouteAudio.src = SILENT_WAV_DATA_URI;
     await Promise.race([
