@@ -152,11 +152,28 @@ export function initSentry(): boolean {
         }
       : {};
 
+  const release =
+    process.env.EXPO_PUBLIC_SENTRY_RELEASE?.trim() ||
+    process.env.EXPO_PUBLIC_VERCEL_GIT_COMMIT_SHA?.trim() ||
+    process.env.VERCEL_GIT_COMMIT_SHA?.trim() ||
+    undefined;
+
+  const nativePerfOptions =
+    Platform.OS !== 'web'
+      ? {
+          enableAutoPerformanceTracing: true,
+          enableNativeFramesTracking: true,
+          enableAppStartTracking: true
+        }
+      : {};
+
   try {
     Sentry.init({
       dsn,
       environment: isDevRuntime ? 'development' : 'production',
+      release,
       tracesSampleRate: isDevRuntime ? 0.2 : 0.1,
+      profilesSampleRate: isDevRuntime ? 0.1 : 0.05,
       sendDefaultPii: true,
       enableNative: Platform.OS !== 'web',
       beforeSend: (event) => {
@@ -166,6 +183,7 @@ export function initSentry(): boolean {
 
         return event;
       },
+      ...nativePerfOptions,
       ...webOptions
     });
     isInitialized = true;

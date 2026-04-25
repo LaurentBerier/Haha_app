@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { AppState, type AppStateStatus, Platform } from 'react-native';
 import { MODE_IDS } from '../config/constants';
+import { useFocusRefetch } from './useFocusRefetch';
 import { normalizeConversationThreadType } from '../models/Conversation';
 import {
   fetchPrimaryThreadIndex,
@@ -232,54 +232,18 @@ export function usePrimaryThreadCloudSync({ pathname, hasHydrated }: UsePrimaryT
     void pullArtistMessagesFromCloud(normalizedArtistId);
   }, [activePrimaryArtistId, hasHydrated, pullArtistMessagesFromCloud, userId]);
 
-  useEffect(() => {
-    if (!hasHydrated || !userId.trim()) {
-      return;
-    }
-
-    const refreshFromFocus = () => {
+  const isActive = hasHydrated && Boolean(userId.trim());
+  useFocusRefetch(
+    useCallback(() => {
+      if (!isActive) {
+        return;
+      }
       void runBootstrap({ force: true });
       const normalizedArtistId = activePrimaryArtistId?.trim() ?? '';
       if (normalizedArtistId) {
         void pullArtistMessagesFromCloud(normalizedArtistId, { force: true });
       }
-    };
-
-    const handleAppStateChange = (nextState: AppStateStatus) => {
-      if (nextState === 'active') {
-        refreshFromFocus();
-      }
-    };
-
-    const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
-
-    const handleWindowFocus = () => {
-      refreshFromFocus();
-    };
-
-    const handleVisibilityChange = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        refreshFromFocus();
-      }
-    };
-
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
-      window.addEventListener('focus', handleWindowFocus);
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-    }
-
-    return () => {
-      appStateSubscription.remove();
-      if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
-        window.removeEventListener('focus', handleWindowFocus);
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-      }
-    };
-  }, [
-    activePrimaryArtistId,
-    hasHydrated,
-    pullArtistMessagesFromCloud,
-    runBootstrap,
-    userId
-  ]);
+    }, [activePrimaryArtistId, isActive, pullArtistMessagesFromCloud, runBootstrap]),
+    { enabled: isActive, runOnMount: false }
+  );
 }

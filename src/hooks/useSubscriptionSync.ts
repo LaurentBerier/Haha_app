@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AppState, type AppStateStatus, Platform } from 'react-native';
 import { t } from '../i18n';
 import { fetchAccountType } from '../services/profileService';
 import {
@@ -8,6 +7,8 @@ import {
   type SubscriptionSummary
 } from '../services/subscriptionService';
 import { useStore } from '../store/useStore';
+import { useFocusRefetch } from './useFocusRefetch';
+import { isPageVisibleNow, subscribePageVisible } from './usePageVisible';
 
 const MAX_CHECKOUT_SYNC_ATTEMPTS = 8;
 const CHECKOUT_SYNC_RETRY_DELAY_MS = 3000;
@@ -112,6 +113,10 @@ export function useSubscriptionSync({
       return;
     }
 
+    if (!isPageVisibleNow()) {
+      return;
+    }
+
     if (checkoutSyncAttemptsRef.current >= MAX_CHECKOUT_SYNC_ATTEMPTS) {
       clearPendingCheckoutSync();
       toast.info(t('settingsSubscriptionSyncPending'));
@@ -166,49 +171,28 @@ export function useSubscriptionSync({
     [syncSubscriptionAfterCheckout]
   );
 
-  useEffect(() => {
-    void loadSummary();
-  }, [loadSummary]);
-
-  useEffect(() => {
-    const handleAppStateChange = (nextState: AppStateStatus) => {
-      if (nextState === 'active') {
-        void loadSummary();
-        void syncSubscriptionAfterCheckout();
-      }
-    };
-
-    const appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
-
-    const handleWindowFocus = () => {
+  useFocusRefetch(
+    useCallback(() => {
       void loadSummary();
       void syncSubscriptionAfterCheckout();
-    };
+    }, [loadSummary, syncSubscriptionAfterCheckout])
+  );
 
-    const handleVisibilityChange = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        void loadSummary();
-        void syncSubscriptionAfterCheckout();
+  useEffect(() => {
+    const unsubscribe = subscribePageVisible((visible) => {
+      if (!visible && checkoutSyncTimerRef.current !== null) {
+        clearTimeout(checkoutSyncTimerRef.current);
+        checkoutSyncTimerRef.current = null;
       }
-    };
-
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
-      window.addEventListener('focus', handleWindowFocus);
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-    }
-
+    });
     return () => {
-      appStateSubscription.remove();
-      if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
-        window.removeEventListener('focus', handleWindowFocus);
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-      }
+      unsubscribe();
       if (checkoutSyncTimerRef.current !== null) {
         clearTimeout(checkoutSyncTimerRef.current);
         checkoutSyncTimerRef.current = null;
       }
     };
-  }, [loadSummary, syncSubscriptionAfterCheckout]);
+  }, []);
 
   return {
     summary,

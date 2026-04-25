@@ -27,6 +27,9 @@ import type { ChatSendPayload } from '../models/ChatSendPayload';
 import { signOut } from '../services/authService';
 import { planGlobalComposerSend } from '../services/conversationSendOrchestrator';
 import { initSentry } from '../services/sentry';
+import { startPerfTelemetry } from '../services/perfTelemetry';
+import { startWebVitals } from '../services/webVitals';
+import { startEnergyProbes } from '../services/energyProbes';
 import { useStore } from '../store/useStore';
 import { useShallow } from 'zustand/react/shallow';
 import { theme } from '../theme';
@@ -299,6 +302,9 @@ export default function RootLayout() {
 
   useEffect(() => {
     initSentry();
+    startPerfTelemetry();
+    startWebVitals();
+    startEnergyProbes();
   }, []);
 
   useLayoutAuthGate({

@@ -1,0 +1,22 @@
+{
+  "_comment": "Baseline metrics for perf regression detection. Update after intentional perf changes by running `npm run perf:baseline -- --update`. Thresholds in scripts/perfBaseline.mjs.",
+  "url": "/",
+  "lighthouse": {
+    "performanceScore": 0.85,
+    "lcpMs": 2500,
+    "tbtMs": 200,
+    "clsScore": 0.1,
+    "fcpMs": 1800,
+    "tti": 3800,
+    "speedIndex": 3000
+  },
+  "tolerance": {
+    "performanceScore": 0.05,
+    "lcpMs": 0.15,
+    "tbtMs": 0.20,
+    "clsScore": 0.20,
+    "fcpMs": 0.15,
+    "tti": 0.20,
+    "speedIndex": 0.20
+  }
+}

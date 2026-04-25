@@ -1,0 +1,57 @@
+name: Perf — Lighthouse
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'app.json'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'perf-baseline.json'
+      - 'scripts/perfBaseline.mjs'
+      - '.github/workflows/perf-lighthouse.yml'
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web export
+        run: npm run export:web
+        env:
+          EXPO_PUBLIC_USE_MOCK_LLM: 'true'
+          EXPO_PUBLIC_SUPABASE_URL: 'https://placeholder.supabase.co'
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: 'placeholder-anon-key'
+
+      - name: Serve build
+        run: npx --yes serve -s dist -l 8082 &
+        shell: bash
+
+      - name: Wait for server
+        run: npx --yes wait-on http://localhost:8082 --timeout 60000
+
+      - name: Run Lighthouse perf check
+        env:
+          PERF_TARGET_URL: http://localhost:8082
+        run: npm run perf:baseline
+
+      - name: Upload Lighthouse report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-report
+          path: ./*.lighthouse.json
+          if-no-files-found: ignore

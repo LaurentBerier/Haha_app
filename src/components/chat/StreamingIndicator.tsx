@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Animated, Platform, StyleSheet, Text, View } from 'react-native';
 import { t } from '../../i18n';
 import { theme } from '../../theme';
+import { usePageVisible } from '../../hooks/usePageVisible';
 
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
@@ -9,8 +10,16 @@ export function StreamingIndicator() {
   const dotA = useRef(new Animated.Value(0.35)).current;
   const dotB = useRef(new Animated.Value(0.35)).current;
   const dotC = useRef(new Animated.Value(0.35)).current;
+  const isVisible = usePageVisible();
 
   useEffect(() => {
+    if (!isVisible) {
+      dotA.setValue(0.35);
+      dotB.setValue(0.35);
+      dotC.setValue(0.35);
+      return;
+    }
+
     const buildLoop = (value: Animated.Value, delayMs: number) =>
       Animated.loop(
         Animated.sequence([
@@ -24,7 +33,7 @@ export function StreamingIndicator() {
     loops.forEach((loop) => loop.start());
 
     return () => loops.forEach((loop) => loop.stop());
-  }, [dotA, dotB, dotC]);
+  }, [dotA, dotB, dotC, isVisible]);
 
   return (
     <View

@@ -2,8 +2,27 @@ import { useEffect } from 'react';
 import { loadPersistedSnapshot, savePersistedSnapshot } from '../services/persistenceService';
 import { selectPersistedSnapshot, useStore } from '../store/useStore';
 
-const SAVE_DEBOUNCE_MS = 500;
+const SAVE_DEBOUNCE_MS = 1500;
 const HYDRATION_TIMEOUT_MS = 4000;
+
+function shallowEqualPersistedSnapshot(
+  a: ReturnType<typeof selectPersistedSnapshot> | null,
+  b: ReturnType<typeof selectPersistedSnapshot>
+): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (!a) {
+    return false;
+  }
+  const keys = Object.keys(b) as (keyof typeof b)[];
+  for (const key of keys) {
+    if (a[key] !== b[key]) {
+      return false;
+    }
+  }
+  return Object.keys(a).length === keys.length;
+}
 
 // Module-level reference to the active flush closure, assigned by the most
 // recent `useStorePersistence` mount. Exposed via `flushStorePersistence()` so
@@ -66,12 +85,17 @@ export function useStorePersistence(): void {
     }
 
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let lastSavedSnapshot: ReturnType<typeof selectPersistedSnapshot> | null = null;
     const flushSnapshot = () => {
       if (timeoutId) {
         clearTimeout(timeoutId);
         timeoutId = null;
       }
       const snapshot = selectPersistedSnapshot(useStore.getState());
+      if (shallowEqualPersistedSnapshot(lastSavedSnapshot, snapshot)) {
+        return;
+      }
+      lastSavedSnapshot = snapshot;
       void savePersistedSnapshot(snapshot);
     };
     activeFlushRef = flushSnapshot;
@@ -120,7 +144,10 @@ export function useStorePersistence(): void {
         timeoutId = null;
       }
       const snapshot = selectPersistedSnapshot(useStore.getState());
-      void savePersistedSnapshot(snapshot);
+      if (!shallowEqualPersistedSnapshot(lastSavedSnapshot, snapshot)) {
+        lastSavedSnapshot = snapshot;
+        void savePersistedSnapshot(snapshot);
+      }
       if (activeFlushRef === flushSnapshot) {
         activeFlushRef = null;
       }

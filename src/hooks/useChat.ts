@@ -10,6 +10,7 @@ import { normalizeConversationThreadType, type Conversation, type ConversationTh
 import type { Message } from '../models/Message';
 import type { ClaudeAvailableExperience, ClaudeContentBlock, ClaudeMessage } from '../services/claudeApiService';
 import { streamClaudeResponse } from '../services/claudeApiService';
+import { incr, mark, measure, track } from '../services/perfTelemetry';
 import { detectImageIntent, type ImageIntent } from '../services/imageIntentService';
 import {
   finalizeMemeImage,
@@ -1253,9 +1254,15 @@ export function useChat(conversationId: string) {
         });
       };
 
+      let firstTokenSeen = false;
       const onToken = (token: string) => {
         if (!isCurrentStream()) {
           return;
+        }
+        if (!firstTokenSeen) {
+          firstTokenSeen = true;
+          measure('chat.send_to_first_token', { artist_id: artistId, mode_id: modeId, language });
+          incr('chat.streams_started');
         }
         bufferedTokensRef.current += token;
         rawTtsResponseRef.current += token;
@@ -1747,6 +1754,8 @@ export function useChat(conversationId: string) {
           onError: failStream
         });
 
+      mark('chat.send_to_first_token');
+      track('chat.stream_start', { artist_id: artistId, mode_id: modeId, mock: USE_MOCK_LLM });
       const rawCancel = USE_MOCK_LLM ? startMockStream() : startClaudeStream();
 
       cancelRef.current = () => {
@@ -2181,12 +2190,9 @@ export function useChat(conversationId: string) {
     const hasImage = Boolean(payload.image);
 
     if (isQuotaBlocked) {
-      if (__DEV__) {
-        console.warn('[useChat] send_blocked', {
-          reason: 'quota_blocked',
-          conversationId: conversationIdRef.current.trim()
-        });
-      }
+      sttDebug(
+        `[STT_DEBUG] sendMessage_blocked: reason=quota_blocked, conversationId=${conversationIdRef.current.trim().slice(-8) || 'empty'}, textLen=${trimmed.length}, hasImage=${hasImage}`
+      );
       return null;
     }
 
@@ -2202,13 +2208,9 @@ export function useChat(conversationId: string) {
     const requestedConversationId = options?.conversationId ?? conversationIdRef.current;
     const sendContext = resolveChatSendContextFromState(latestStateForSend, requestedConversationId);
     if (!sendContext.conversation || !sendContext.artist || sendContext.reason !== null) {
-      if (__DEV__) {
-        console.warn('[useChat] send_blocked', {
-          reason: sendContext.reason,
-          conversationId: sendContext.conversationId,
-          requestedConversationId
-        });
-      }
+      sttDebug(
+        `[STT_DEBUG] sendMessage_blocked: reason=${sendContext.reason ?? 'no_context'}, requested=${requestedConversationId.trim().slice(-8) || 'empty'}, resolved=${sendContext.conversationId?.slice(-8) || 'empty'}, hasConv=${Boolean(sendContext.conversation)}, hasArtist=${Boolean(sendContext.artist)}, textLen=${trimmed.length}`
+      );
       return { code: 'invalidConversation' };
     }
 

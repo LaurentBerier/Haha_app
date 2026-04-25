@@ -22,7 +22,9 @@
     "verify:profile-prompt": "tsx scripts/verifyProfilePrompt.ts",
     "e2e:build:ios": "EXPO_PUBLIC_E2E_AUTH_BYPASS=true EXPO_PUBLIC_USE_MOCK_LLM=true detox build -c ios.sim.debug",
     "e2e:ios": "EXPO_PUBLIC_E2E_AUTH_BYPASS=true EXPO_PUBLIC_USE_MOCK_LLM=true detox test -c ios.sim.debug --cleanup",
-    "import:modes": "tsx scripts/importModes.ts"
+    "import:modes": "tsx scripts/importModes.ts",
+    "perf:baseline": "node scripts/perfBaseline.mjs",
+    "perf:baseline:update": "node scripts/perfBaseline.mjs --update"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.97",
@@ -55,6 +57,7 @@
     "react-native-screens": "~4.11.1",
     "react-native-web": "^0.20.0",
     "stripe": "^20.4.1",
+    "web-vitals": "^5.2.0",
     "zustand": "^4.5.2"
   },
   "devDependencies": {

@@ -19,6 +19,7 @@ import {
   type VoiceSessionEndReason
 } from '../services/voiceEngine';
 import { sttDebug } from '../services/sttDebugLogger';
+import { incr, mark, measure, track } from '../services/perfTelemetry';
 import { ensureIosAudioContextSuspended, waitForIosAudioContextSuspension } from './useAudioPlayer';
 
 const parsedSilenceTimeout = Number.parseInt(process.env[ENV_SILENCE_TIMEOUT_MS] ?? '', 10);
@@ -773,6 +774,20 @@ export function useVoiceConversation({
     assistantBusyRecoveryTimerRef.current = null;
   }, []);
 
+  const clearAllVoiceTimers = useCallback(() => {
+    clearSilenceTimer();
+    clearRecoveryTimer();
+    clearLivenessTimer();
+    clearBusyLoadingTimer();
+    clearAssistantBusyRecoveryTimer();
+  }, [
+    clearAssistantBusyRecoveryTimer,
+    clearBusyLoadingTimer,
+    clearLivenessTimer,
+    clearRecoveryTimer,
+    clearSilenceTimer
+  ]);
+
   const stopActiveSession = useCallback(() => {
     clearLivenessTimer();
     const activeSession = activeSessionRef.current;
@@ -1231,11 +1246,23 @@ export function useVoiceConversation({
         const useBareLocale = preferBareLocaleRef.current;
         preferBareLocaleRef.current = false;
 
+        const sttSessionStartTs = Date.now();
+        mark('stt.session_to_first_result');
+        incr('stt.sessions_started');
+        track('stt.session_start', {
+          locale: languageRef.current,
+          bare_locale: useBareLocale,
+          platform: Platform.OS
+        });
+
         const session = startVoiceListeningSession({
           locale: languageRef.current,
           fallbackLocale: fallbackLanguageRef.current,
           preferBareLocale: useBareLocale,
           onResult: (event) => {
+            if (!resultReceived) {
+              measure('stt.session_to_first_result', { locale: languageRef.current });
+            }
             resultReceived = true;
             if (activeSessionContextRef.current?.id === event.sessionId) {
               activeSessionContextRef.current.hadResult = true;
@@ -1246,6 +1273,11 @@ export function useVoiceConversation({
           onEnd: (event) => {
             clearTimeout(audioStartTimeoutId);
             clearLivenessTimer();
+            track('stt.session_end', {
+              duration_ms: Date.now() - sttSessionStartTs,
+              had_result: resultReceived,
+              audio_started: audioStartFired
+            });
             handleSessionEnd(event);
           },
           onAudioStart: () => {
@@ -1262,6 +1294,7 @@ export function useVoiceConversation({
                   return;
                 }
 
+                incr('stt.liveness_watchdog_fired');
                 stopActiveSession();
 
                 // If this session already used the bare locale and still got
@@ -1540,10 +1573,7 @@ export function useVoiceConversation({
       if (disabled) {
         pendingManualResumeRef.current = false;
       }
-      clearAssistantBusyRecoveryTimer();
-      clearBusyLoadingTimer();
-      clearRecoveryTimer();
-      clearSilenceTimer();
+      clearAllVoiceTimers();
       stopActiveSession();
       dispatch({ type: 'set_off' });
       return;
@@ -1628,10 +1658,8 @@ export function useVoiceConversation({
 
     clearBusyLoadingTimer();
   }, [
-    clearAssistantBusyRecoveryTimer,
+    clearAllVoiceTimers,
     clearBusyLoadingTimer,
-    clearRecoveryTimer,
-    clearSilenceTimer,
     clearTranscript,
     hasTypedDraft,
     disabled,
@@ -1905,19 +1933,10 @@ export function useVoiceConversation({
       isMountedRef.current = false;
       shouldResumeAfterWebFocusLossRef.current = false;
       postPlaybackStartupRecoveryAttemptRef.current = 0;
-      clearAssistantBusyRecoveryTimer();
-      clearBusyLoadingTimer();
-      clearRecoveryTimer();
-      clearSilenceTimer();
+      clearAllVoiceTimers();
       stopActiveSession();
     };
-  }, [
-    clearAssistantBusyRecoveryTimer,
-    clearBusyLoadingTimer,
-    clearRecoveryTimer,
-    clearSilenceTimer,
-    stopActiveSession
-  ]);
+  }, [clearAllVoiceTimers, stopActiveSession]);
 
   // Pre-request mic permission on iOS Safari web as soon as voice conversation
   // is enabled. This ensures the iOS permission dialog appears BEFORE any TTS

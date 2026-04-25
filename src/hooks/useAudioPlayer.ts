@@ -4,6 +4,8 @@ import { markWebAutoplaySessionUnlocked, consumePendingWebAutoplayRetry, hasWebA
 import { sttDebug } from '../services/sttDebugLogger';
 import { markAudioSessionRecordingReady, markAudioSessionPlaybackMode } from '../services/audioSessionState';
 import { isIosMobileWebRuntime } from '../platform/platformCapabilities';
+import { gauge, incr } from '../services/perfTelemetry';
+import { subscribePageVisible } from './usePageVisible';
 
 interface WebAudioLike {
   addEventListener: (event: string, handler: () => void) => void;
@@ -199,11 +201,19 @@ function getOrCreateIosAudioCtx(): AudioContext | null {
   }
 }
 
+// Hard cap so the keep-alive oscillator can't run forever if a TTS response
+// never arrives. After this window, the context is allowed to auto-suspend; a
+// later play() call will re-prime via primeIosSpeakerRoute() / primeCtx().
+const IOS_KEEP_ALIVE_MAX_MS = 8000;
+let iosKeepAliveTimer: ReturnType<typeof setTimeout> | null = null;
+let iosKeepAliveStartedAt: number | null = null;
+
 /** Start a near-silent oscillator to keep the iOS AudioContext in 'running'
  *  state between the priming gesture and the first TTS playback.
  *  iOS Safari auto-suspends AudioContexts that produce no audio output,
  *  which re-locks them even after a gesture-based resume(). The oscillator
- *  (~-60 dB, inaudible) prevents this for the ~15-20s greeting synthesis gap. */
+ *  (~-60 dB, inaudible) prevents this for the synthesis gap. Capped at
+ *  IOS_KEEP_ALIVE_MAX_MS to bound battery cost. */
 function startIosKeepAlive(): void {
   if (!iosAudioCtx || iosKeepAliveOscillator) return;
   try {
@@ -215,13 +225,25 @@ function startIosKeepAlive(): void {
     osc.start();
     iosKeepAliveOscillator = osc;
     iosKeepAliveGain = gain;
+    iosKeepAliveStartedAt = Date.now();
+    incr('audio.ios_keep_alive_started');
     sttDebug('[STT_DEBUG] iOS AudioContext keep-alive started');
+    iosKeepAliveTimer = setTimeout(() => {
+      iosKeepAliveTimer = null;
+      incr('audio.ios_keep_alive_capped');
+      sttDebug('[STT_DEBUG] iOS AudioContext keep-alive auto-stop (cap reached)');
+      stopIosKeepAlive();
+    }, IOS_KEEP_ALIVE_MAX_MS);
   } catch {
     sttDebug('[STT_DEBUG] iOS AudioContext keep-alive failed to start');
   }
 }
 
 function stopIosKeepAlive(): void {
+  if (iosKeepAliveTimer !== null) {
+    clearTimeout(iosKeepAliveTimer);
+    iosKeepAliveTimer = null;
+  }
   if (!iosKeepAliveOscillator) return;
   try {
     iosKeepAliveOscillator.stop();
@@ -230,6 +252,10 @@ function stopIosKeepAlive(): void {
   } catch { /* already stopped */ }
   iosKeepAliveOscillator = null;
   iosKeepAliveGain = null;
+  if (iosKeepAliveStartedAt !== null) {
+    gauge('audio.ios_keep_alive_last_duration_ms', Date.now() - iosKeepAliveStartedAt);
+    iosKeepAliveStartedAt = null;
+  }
   sttDebug('[STT_DEBUG] iOS AudioContext keep-alive stopped');
 }
 
@@ -981,6 +1007,28 @@ export function useAudioPlayer(): AudioPlayerController {
       void stop();
     };
   }, [stop]);
+
+  useEffect(() => {
+    if (!IS_IOS_MOBILE_WEB) {
+      return;
+    }
+
+    return subscribePageVisible((visible) => {
+      if (visible) {
+        return;
+      }
+      const isQueueIdle = queueRef.current.length === 0;
+      const isPlayPending = onQueueCompleteRef.current?.() ?? false;
+      if (!isQueueIdle || isPlayPending) {
+        return;
+      }
+      if (iosAudioCtx && iosAudioCtx.state === 'running') {
+        stopIosKeepAlive();
+        iosAudioCtx.suspend().catch(() => {});
+        sttDebug('[STT_DEBUG] visibility-hidden: suspended iOS AudioContext (idle)');
+      }
+    });
+  }, []);
 
   return {
     isPlaying,

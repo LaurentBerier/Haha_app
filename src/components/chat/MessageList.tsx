@@ -1,5 +1,5 @@
 import { memo, useCallback, useRef } from 'react';
-import { FlatList, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { FlatList, Platform, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import type { Message } from '../../models/Message';
 import { t } from '../../i18n';
 import { theme } from '../../theme';
@@ -60,8 +60,8 @@ function MessageListBase({
   onTailFollowChanged,
   windowSize = 8,
   initialNumToRender = 12,
-  maxToRenderPerBatch,
-  removeClippedSubviews,
+  maxToRenderPerBatch = 6,
+  removeClippedSubviews = Platform.OS === 'web',
   disableVirtualization
 }: MessageListProps) {
   // Keep a ref to the latest audioPlayer so renderItem doesn't need it as a dep.
@@ -133,6 +133,7 @@ function MessageListBase({
       windowSize={windowSize}
       initialNumToRender={initialNumToRender}
       maxToRenderPerBatch={maxToRenderPerBatch}
+      updateCellsBatchingPeriod={80}
       removeClippedSubviews={removeClippedSubviews}
       disableVirtualization={disableVirtualization}
       onContentSizeChange={onContentSizeChange}

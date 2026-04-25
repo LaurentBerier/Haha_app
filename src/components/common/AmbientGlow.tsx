@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import { useStore } from '../../store/useStore';
+import { usePageVisible } from '../../hooks/usePageVisible';
 
 interface AmbientGlowProps {
   variant?: 'home' | 'mode';
@@ -13,6 +14,7 @@ const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 function AmbientGlowBase({ variant = 'home', isActive = true }: AmbientGlowProps) {
   const reduceMotionPreference = useStore((state) => state.reduceMotion);
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
+  const isVisible = usePageVisible();
   const farOrbit = useRef(new Animated.Value(0)).current;
   const midOrbit = useRef(new Animated.Value(0)).current;
   const nearOrbit = useRef(new Animated.Value(0)).current;
@@ -42,6 +44,7 @@ function AmbientGlowBase({ variant = 'home', isActive = true }: AmbientGlowProps
 
   const shouldReduceMotion =
     !isActive ||
+    !isVisible ||
     (reduceMotionPreference === 'on' ? true : reduceMotionPreference === 'off' ? false : reduceMotionEnabled);
 
   useEffect(() => {

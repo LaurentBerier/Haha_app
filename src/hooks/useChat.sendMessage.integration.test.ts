@@ -111,6 +111,17 @@ jest.mock('../config/env', () => ({
   USE_MOCK_LLM: true
 }));
 
+jest.mock('../services/perfTelemetry', () => ({
+  mark: jest.fn(),
+  measure: jest.fn(() => null),
+  withMeasure: <T>(_name: string, fn: () => Promise<T>) => fn(),
+  incr: jest.fn(),
+  gauge: jest.fn(),
+  track: jest.fn(),
+  startPerfTelemetry: jest.fn(),
+  getTelemetrySnapshot: () => ({ platform: 'test', ringSize: 0, counters: {}, gauges: {}, recent: [] })
+}));
+
 jest.mock('./useAudioPlayer', () => ({
   useAudioPlayer: () => mockAudioPlayer
 }));

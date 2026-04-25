@@ -234,10 +234,6 @@ describe('useSubscriptionSync', () => {
       info: jest.fn<void, [string]>(),
       success: jest.fn<void, [string]>()
     };
-    const removeListener = jest.fn();
-    mockAddAppStateListener.mockReturnValue({
-      remove: removeListener
-    });
 
     mockSyncSubscriptionState.mockResolvedValue(undefined);
 
@@ -268,6 +264,5 @@ describe('useSubscriptionSync', () => {
     await flushMicrotasks();
 
     expect(mockSyncSubscriptionState).not.toHaveBeenCalled();
-    expect(removeListener).toHaveBeenCalledTimes(1);
   });
 });

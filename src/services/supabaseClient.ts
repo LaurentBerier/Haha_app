@@ -29,3 +29,18 @@ export const supabase = createClient(hasSupabaseConfig ? SUPABASE_CONFIG.url : f
     detectSessionInUrl: false
   }
 });
+
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  const onVisibility = () => {
+    try {
+      if (document.visibilityState === 'hidden') {
+        supabase.auth.stopAutoRefresh();
+      } else {
+        void supabase.auth.startAutoRefresh();
+      }
+    } catch {
+      // older supabase-js versions may not expose these helpers
+    }
+  };
+  document.addEventListener('visibilitychange', onVisibility);
+}

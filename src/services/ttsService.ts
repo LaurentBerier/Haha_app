@@ -1,6 +1,7 @@
 import * as FileSystem from 'expo-file-system';
 import { Platform } from 'react-native';
 import { API_BASE_URL, CLAUDE_PROXY_URL } from '../config/env';
+import { incr, withMeasure } from './perfTelemetry';
 
 const MAX_TTS_INPUT_CHARS = 1000;
 const TTS_ENDPOINT_TIMEOUT_MS = 10_000;
@@ -387,6 +388,20 @@ async function fetchTtsBinary(
   accessToken: string,
   options?: FetchVoiceOptions
 ): Promise<FetchTtsResponse> {
+  return withMeasure('tts.fetch', () => fetchTtsBinaryImpl(text, artistId, language, accessToken, options), {
+    artist_id: artistId,
+    language,
+    text_length: text.length
+  });
+}
+
+async function fetchTtsBinaryImpl(
+  text: string,
+  artistId: string,
+  language: string,
+  accessToken: string,
+  options?: FetchVoiceOptions
+): Promise<FetchTtsResponse> {
   const candidates = buildTtsProxyCandidates();
   const payload: {
     text: string;
@@ -528,8 +543,10 @@ export async function fetchAndCacheVoice(
   if (Platform.OS === 'web') {
     const cachedUrl = readWebTtsCache(cacheKey);
     if (cachedUrl) {
+      incr('tts.cache_hit');
       return cachedUrl;
     }
+    incr('tts.cache_miss');
   }
 
   const existingInFlight = IN_FLIGHT_TTS_REQUESTS.get(inFlightKey);

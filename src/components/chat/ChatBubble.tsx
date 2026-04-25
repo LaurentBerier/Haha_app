@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useShallow } from 'zustand/react/shallow';
 import { ARTIST_IDS } from '../../config/constants';
 import { t } from '../../i18n';
 import type { Message } from '../../models/Message';
@@ -84,13 +85,16 @@ function ChatBubbleBase({
 }: ChatBubbleProps) {
   const router = useRouter();
   const updateMessage = useStore((state) => state.updateMessage);
-  const accessToken = useStore((state) => state.session?.accessToken ?? '');
-  const accountType = useStore((state) => state.session?.user.accountType ?? null);
-  const conversationArtistId = useStore(
-    (state) => findConversationById(state.conversations, message.conversationId)?.artistId ?? ''
-  );
-  const conversationLanguage = useStore(
-    (state) => findConversationById(state.conversations, message.conversationId)?.language ?? 'fr-CA'
+  const { accessToken, accountType, conversationArtistId, conversationLanguage } = useStore(
+    useShallow((state) => {
+      const conversation = findConversationById(state.conversations, message.conversationId);
+      return {
+        accessToken: state.session?.accessToken ?? '',
+        accountType: state.session?.user.accountType ?? null,
+        conversationArtistId: conversation?.artistId ?? '',
+        conversationLanguage: conversation?.language ?? 'fr-CA'
+      };
+    })
   );
   const enterOpacity = useRef(new Animated.Value(0)).current;
   const enterTranslateY = useRef(new Animated.Value(6)).current;

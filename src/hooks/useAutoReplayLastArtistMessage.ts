@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { AppState, Platform, type AppStateStatus } from 'react-native';
 import type { Message } from '../models/Message';
 import type { AudioPlayerController } from './useAudioPlayer';
+import { useFocusRefetch } from './useFocusRefetch';
 import { attemptVoiceAutoplayQueue, type VoiceAutoplayAttemptState } from '../services/voiceAutoplayService';
 import {
   findLatestReplayableArtistMessage,
@@ -333,12 +334,11 @@ export function useAutoReplayLastArtistMessage({
     voiceAutoPlay
   ]);
 
-  useEffect(() => {
-    if (Platform.OS !== 'web' || !shouldReplayOnFocusLifecycle(enabled, replayOnFocus, voiceAutoPlay)) {
-      return;
-    }
+  const webReplayEnabled =
+    Platform.OS === 'web' && shouldReplayOnFocusLifecycle(enabled, replayOnFocus, voiceAutoPlay);
 
-    const replayPendingOrLatest = () => {
+  useFocusRefetch(
+    useCallback(() => {
       const pendingReplayMessageId = pendingReplayRef.current?.messageId?.trim() ?? '';
       if (pendingReplayMessageId) {
         void attemptReplayRef.current({
@@ -347,29 +347,8 @@ export function useAutoReplayLastArtistMessage({
         });
         return;
       }
-
       void attemptReplayRef.current();
-    };
-
-    const handleWindowFocus = () => {
-      replayPendingOrLatest();
-    };
-    const handleVisibilityChange = () => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        replayPendingOrLatest();
-      }
-    };
-
-    if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-      window.addEventListener('focus', handleWindowFocus);
-      document.addEventListener('visibilitychange', handleVisibilityChange);
-    }
-
-    return () => {
-      if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-        window.removeEventListener('focus', handleWindowFocus);
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
-      }
-    };
-  }, [enabled, replayOnFocus, voiceAutoPlay]);
+    }, []),
+    { enabled: webReplayEnabled, runOnMount: false }
+  );
 }
