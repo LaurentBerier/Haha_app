@@ -42,9 +42,9 @@ export function sttDebug(message: string): void {
   updateOverlayContent();
 
   // Fire-and-forget POST to the log relay (same-origin on Vercel, LAN on local dev).
-  // TEMPORARY: gate removed so iOS Safari prod logs reach /api/debug-log for STT debugging.
-  // RESTORE the __DEV__ gate once the iPhone STT regression is diagnosed.
-  if (LOG_SERVER_URL) {
+  // Gated on __DEV__ so production builds never POST debug logs (battery + bandwidth).
+  const isDev = typeof __DEV__ !== 'undefined' ? __DEV__ : process.env.NODE_ENV !== 'production';
+  if (isDev && LOG_SERVER_URL) {
     try {
       fetch(LOG_SERVER_URL, {
         method: 'POST',
