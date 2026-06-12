@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -135,7 +136,17 @@ export default function SubscriptionScreen() {
   };
 
   const requestCancellation = () => {
-    Alert.alert(t('settingsSubscriptionCancelTitle'), t('settingsSubscriptionCancelConfirm'), [
+    const title = t('settingsSubscriptionCancelTitle');
+    const message = t('settingsSubscriptionCancelConfirm');
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      if (window.confirm(`${title}\n\n${message}`)) {
+        void handleCancelAtPeriodEnd();
+      }
+      return;
+    }
+
+    Alert.alert(title, message, [
       { text: t('cancel'), style: 'cancel' },
       {
         text: t('settingsSubscriptionCancelCta'),
@@ -153,7 +164,7 @@ export default function SubscriptionScreen() {
     }
 
     if (planId === 'free') {
-      if (canCancel) {
+      if (canCancel || isPaidPlan(effectiveAccountType)) {
         requestCancellation();
         return;
       }
@@ -247,7 +258,8 @@ export default function SubscriptionScreen() {
           const checkoutMissing = plan.id !== 'free' && !isCheckoutConfigured('stripe', plan.id as SubscriptionPlanId);
           const disableForNoAction = plan.id === 'free' && !canCancel && !isFreeDowngrade;
           const isBusy = activeActionKey !== null;
-          const isProcessingThisPlan = activeActionKey === `checkout:${plan.id}`;
+          const isProcessingThisPlan =
+            activeActionKey === `checkout:${plan.id}` || (plan.id === 'free' && activeActionKey === 'cancel');
 
           const disabled = isBusy || isCurrentPlan || checkoutMissing || disableForNoAction;
           const buttonLabel = isCurrentPlan
